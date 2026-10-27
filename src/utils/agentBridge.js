@@ -135,12 +135,38 @@ function errorMessages(errors) {
   return out;
 }
 
+/** `{ volume, bbox, bodyCount }` of the last successful run, or null. */
+function lastGoodOf(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const volume = Number(raw.volume);
+  if (!Number.isFinite(volume)) return null;
+  return {
+    volume,
+    bbox: cloneAgentBbox(raw.bbox),
+    bodyCount: raw.bodyCount == null ? null : raw.bodyCount,
+  };
+}
+
+/**
+ * Last good numbers to carry on a failed status: the recovered solid the
+ * viewport still shows (the outcome reports it with `ok: true` and a
+ * recorded feature failure), else the previous status of the same part.
+ */
+function lastGoodFor(outcome, prevStatus, prevPartId, partId) {
+  const recovered = outcome?.ok === true ? lastGoodOf(outcome) : null;
+  if (recovered) return recovered;
+  if (!prevStatus || String(prevPartId || '') !== String(partId || '')) return null;
+  if (prevStatus.runState === 'ok') return lastGoodOf(prevStatus);
+  return lastGoodOf(prevStatus.lastGood);
+}
+
 function statusFrom(outcome, script, extras = {}) {
   const text = typeof script === 'string' ? script : '';
   const ok = outcome?.ok === true;
   const volume = Number(outcome?.volume);
   let runState = extras.runState;
   if (runState == null) runState = ok ? 'ok' : 'failed';
+  const lastGood = runState === 'failed' ? lastGoodOf(extras.lastGood) : null;
   return {
     partId: extras.partId != null ? String(extras.partId) : '',
     partName: typeof outcome?.partName === 'string'
@@ -160,6 +186,9 @@ function statusFrom(outcome, script, extras = {}) {
     // Feature memoisation on that run: blocks served from the cache.
     ...(cacheOf(outcome?.cache) ? { cache: cacheOf(outcome.cache) } : {}),
     ...(cachedOf(outcome?.featureCached) ? { featureCached: cachedOf(outcome.featureCached) } : {}),
+    // Only while failed: the numbers of this part's last successful run, so
+    // a failing feature does not blank volume / bbox / bodyCount (follow-up 9).
+    ...(lastGood ? { lastGood } : {}),
   };
 }
 
@@ -212,6 +241,7 @@ function copyStatus(status) {
     ...(featureMsOf(src.featureMs) ? { featureMs: featureMsOf(src.featureMs) } : {}),
     ...(cacheOf(src.cache) ? { cache: cacheOf(src.cache) } : {}),
     ...(cachedOf(src.featureCached) ? { featureCached: cachedOf(src.featureCached) } : {}),
+    ...(src.runState === 'failed' && lastGoodOf(src.lastGood) ? { lastGood: lastGoodOf(src.lastGood) } : {}),
     ...(src.jointFailures ? { jointFailures: jointFailuresOf({ failed: src.jointFailures }) } : {}),
   };
 }
@@ -316,11 +346,17 @@ export function createSurfcadBridge(hostSource) {
     // A recovered mesh still looks like a good run to the parts list. Keep
     // the failed status until a later successful run clears it.
     if (!lastRunOk && heldFailurePartId && id === heldFailurePartId && snap.runState !== 'failed') {
-      lastStatus = { ...copyStatus(snap), runState: 'failed', volume: null, bbox: null };
+      const lastGood = lastGoodOf(snap) || lastGoodFor(null, lastStatus, lastStatusPartId, id);
+      lastStatus = { ...copyStatus(snap), runState: 'failed', volume: null, bbox: null, ...(lastGood ? { lastGood } : {}) };
       lastStatusPartId = id;
       return;
     }
-    lastStatus = copyStatus(snap);
+    const next = copyStatus(snap);
+    if (next.runState === 'failed' && !next.lastGood) {
+      const lastGood = lastGoodFor(null, lastStatus, lastStatusPartId, id);
+      if (lastGood) next.lastGood = lastGood;
+    }
+    lastStatus = next;
     lastStatusPartId = id;
   }
 
@@ -386,9 +422,11 @@ export function createSurfcadBridge(hostSource) {
       crash,
     });
     const activeId = hostFn('readParts')?.()?.activeId ?? '';
-    lastStatusPartId = activeId != null ? String(activeId) : '';
+    const partId = activeId != null ? String(activeId) : '';
+    const lastGood = ok ? null : lastGoodFor(outcome, lastStatus, lastStatusPartId, partId);
+    lastStatusPartId = partId;
     heldFailurePartId = ok ? '' : lastStatusPartId;
-    lastStatus = statusFrom({ ...outcome, ok }, text, { partId: lastStatusPartId });
+    lastStatus = statusFrom({ ...outcome, ok }, text, { partId: lastStatusPartId, lastGood });
     const result = {
       ok,
       errors: lastErrors.slice(),

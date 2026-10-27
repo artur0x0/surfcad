@@ -105,6 +105,54 @@
             "type": "boolean"
           }
         },
+        "lastGood": {
+          "type": "object",
+          "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+          "additionalProperties": false,
+          "properties": {
+            "volume": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "bbox": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "min": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "max": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "bodyCount": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
         "jointFailures": {
           "type": "object",
           "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -268,6 +316,54 @@
               "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
               "additionalProperties": {
                 "type": "boolean"
+              }
+            },
+            "lastGood": {
+              "type": "object",
+              "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+              "additionalProperties": false,
+              "properties": {
+                "volume": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "bbox": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "min": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "max": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "bodyCount": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
               }
             },
             "jointFailures": {
@@ -580,6 +676,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -822,6 +966,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -927,7 +1119,7 @@
     },
     {
       "name": "status",
-      "description": "Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted). jointFailures { count, ids } names the assembly joints that do not solve right now (a broken reference or a conflict, the red chips on the joints strip); list_joints has each joint with its status and reason. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Status for the active part: id, name, editor script, runState (not_run_yet | ok | failed), and the last run volume/bbox/bodyCount when available. While runState is failed those three are null and lastGood carries the last successful run's volume/bbox/bodyCount (the solid still shown). Updates when the active part changes without requiring another run. unjointedParts lists part ids in no joint when the assembly has two or more parts (empty for a single part; a base part with a fixed joint is omitted). jointFailures { count, ids } names the assembly joints that do not solve right now (a broken reference or a conflict, the red chips on the joints strip); list_joints has each joint with its status and reason. featureCount counts insert_* feature blocks, so a freehand set_script is one feature. bodyCount is null until the first run; a finished run that produced no bodies reports 0. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -1042,6 +1234,54 @@
             "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
             "additionalProperties": {
               "type": "boolean"
+            }
+          },
+          "lastGood": {
+            "type": "object",
+            "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+            "additionalProperties": false,
+            "properties": {
+              "volume": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bbox": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "min": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "max": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "bodyCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
             }
           },
           "jointFailures": {
@@ -1402,6 +1642,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -1620,6 +1908,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -2663,6 +2999,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -2925,6 +3309,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -3223,6 +3655,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -3494,6 +3974,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -3758,6 +4286,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -4056,6 +4632,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -4327,6 +4951,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -4576,6 +5248,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -4798,6 +5518,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -5056,6 +5824,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -5279,6 +6095,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -5603,6 +6467,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -5858,6 +6770,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -6105,6 +7065,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -6348,6 +7356,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -6582,6 +7638,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -6822,6 +7926,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -7054,6 +8206,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -7269,6 +8469,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -7491,6 +8739,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -7747,6 +9043,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -8018,6 +9362,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -8246,6 +9638,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -8458,6 +9898,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -8708,6 +10196,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -8929,6 +10465,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -9222,6 +10806,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -9470,6 +11102,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -9711,6 +11391,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -9959,6 +11687,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -10172,6 +11948,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -10391,6 +12215,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -10616,6 +12488,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -10830,6 +12750,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -11051,6 +13019,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -11276,6 +13292,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -11491,6 +13555,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -11812,6 +13924,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -11952,7 +14112,7 @@
     },
     {
       "name": "delete_feature",
-      "description": "Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Delete a feature block from the active part (or part_id, an opaque surf id) and run that part through mutate, so the result status and errors are current and undo once restores the block. deleted: true means the block is gone; ok is the run after it, so ok: false with deleted: true is a later feature failing on the new solid (read errors), not a delete that did not happen: do not delete again. A face pick does not change the part: id and index resolve against the active part unless part_id names another row (a path or display name is unknown_part). Deleting the feature that declares part while later code still uses it is confirm_required until confirm: true; the result then carries a warning. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -11990,6 +14150,10 @@
         "properties": {
           "deletedId": {
             "type": "string"
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "The block is gone (undo restores it). ok is the run after the delete."
           },
           "ok": {
             "type": "boolean"
@@ -12129,6 +14293,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -12359,6 +14571,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -13680,6 +15940,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -14086,6 +16394,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -14500,6 +16856,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -14818,6 +17222,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -15241,6 +17693,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
@@ -18200,6 +20700,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -20440,6 +22988,54 @@
                   "type": "boolean"
                 }
               },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              },
               "jointFailures": {
                 "type": "object",
                 "description": "Assembly joints that do not solve right now (broken reference or conflict): count and ids. list_joints has each joint with its status and reason.",
@@ -20790,6 +23386,54 @@
                 "description": "Feature blocks (by feature_tree id) served from the cache on the last run: true per id",
                 "additionalProperties": {
                   "type": "boolean"
+                }
+              },
+              "lastGood": {
+                "type": "object",
+                "description": "Only while runState is failed: volume, bbox and bodyCount of this part's last successful run (the solid the viewport still shows), so a failing feature does not blank the numbers",
+                "additionalProperties": false,
+                "properties": {
+                  "volume": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "bbox": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "min": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          },
+                          "max": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "minItems": 3,
+                            "maxItems": 3
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "bodyCount": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
                 }
               },
               "jointFailures": {
