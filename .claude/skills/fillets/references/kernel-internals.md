@@ -266,7 +266,16 @@ distance `r/sin(θ/2)` from the edge (1 mm overshoot each end).
   all three faces (patch tangent to each face) *and* lies on each fillet
   cylinder's axis at the same radius (patch tangent to each sail along a circle
   ⇒ C1 junction). Applied only to box-like ~90° equal-radius triple vertices;
-  other corners keep the cusp.
+  other corners keep the cusp. Each ball's originalID is recorded
+  (`_blendCornerIDs`, read before the `transform`, which reports -1) so
+  `_stampRunsInRange` names it `<block>.corner[k]` instead of `.round`. The
+  cap booleans reuse the sail cylinders, so one cylinder id owns three runs
+  afterwards; the stamp merges every run's faceIDs or the extra runs go
+  nameless. Cost: the 256-segment balls take a 40×30×20 r=5 box from 2.3k
+  to 44k triangles and 0.29 s to 1.33 s; the sail/ball junction is a
+  zig-zag of tiny triangles that the curved merge still splits into a few
+  hundred `<block>.round` patches (open; a mesh-built corner patch sharing
+  the sail ring vertices would fix it).
 
 ## 8. Guard table — `filletAlongPath`
 

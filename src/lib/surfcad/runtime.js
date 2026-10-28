@@ -5158,7 +5158,12 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       const dev = Math.abs(dist - r0*Math.sqrt(3));
       if (dev > 1e-3 * r0 + 1e-6)
         throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r0*Math.sqrt(3)})`);
-      const ball = M.sphere(r0, FILLET_EDGES_CORNER_SEGMENTS).transform(
+      const unitBall = M.sphere(r0, FILLET_EDGES_CORNER_SEGMENTS);
+      // Face identity: the ball's runs are the `<block>.corner` face. Read
+      // the id before the transform; a transformed manifold reports -1 while
+      // its runs still carry the sphere's id.
+      try { _blendCornerIDs.add(unitBall.originalID()); } catch { /* no id: stays .round */ }
+      const ball = unitBall.transform(
         [1,0,0,0, 0,1,0,0, 0,0,1,0, O[0],O[1],O[2], 1]);
       // cap = (cornerBox ∩ cyl1 ∩ cyl2 ∩ cyl3) \ (ball ∩ cornerBox):
       //   cornerBox ∩ all three sails = material T left in the corner
@@ -9716,9 +9721,17 @@ function _probeOriginalID() {
  */
 const FILLET_EDGES_CIRCLE_SEGMENTS = 384;
 const FILLET_EDGES_CORNER_SEGMENTS = 256;
+/**
+ * originalIDs of the corner balls the current blend op built
+ * (`filletEdges` with `sphericalCorners`). Their runs are stamped
+ * `<block>.corner`, not `.round`, so a spherical corner is its own named
+ * face between the sails it joins. Reset per op by `_featureOp`.
+ */
+let _blendCornerIDs = new Set();
 function _featureOp(fn, describe, blendRole = null) {
   return function featureOp(...args) {
     const lo = _probeOriginalID();
+    _blendCornerIDs = new Set();
     const out = fn.apply(this, args);
     const hi = _probeOriginalID();
     let tess = null;
@@ -9733,13 +9746,17 @@ function _featureOp(fn, describe, blendRole = null) {
         cornerDeg: tess && tess.cornerDeg > 0 ? tess.cornerDeg : 0,
       });
       // Face identity: the surface the blend made gets a name too
-      // (`fillet1.round`, `chamfer2.bevel`; a block with no id= is positional,
-      // `fillet-16`), so an edge on it can be
-      // written by name like any other.
+      // (`fillet1.round`, `chamfer2.bevel`, a spherical corner
+      // `fillet1.corner[k]`; a block with no id= is positional,
+      // `fillet-16`), so an edge on it can be written by name like any
+      // other.
       if (blendRole) {
         let role = null;
         try { role = blendRole(args); } catch { role = null; }
-        if (role) _stampRunsInRange(out, role === 'bevel' ? 'chamfer' : 'fillet', lo, hi, role);
+        if (role) {
+          const corners = _blendCornerIDs;
+          _stampRunsInRange(out, role === 'bevel' ? 'chamfer' : 'fillet', lo, hi, (originalID) => (corners.has(originalID) ? 'corner' : role));
+        }
       }
     }
     return out;
@@ -9748,26 +9765,39 @@ function _featureOp(fn, describe, blendRole = null) {
 
 /**
  * Stamp every run of `manifold` whose originalID the op bracket (lo, hi)
- * allocated with one role: the blend surface a fillet or chamfer cut.
- * Runs outside the bracket (the host) keep their stamps.
+ * allocated with the role `roleOf(originalID)` gives it: the blend surface a
+ * fillet or chamfer cut (`round` / `bevel`), or `corner` for a spherical
+ * corner ball. Runs outside the bracket (the host) keep their stamps.
+ *
+ * One originalID can own several runs: a corner cap reuses the sail
+ * cylinders, so after the cap boolean each cylinder is three runs. The
+ * faceIDs of every run are merged before the stamp is written; writing per
+ * run kept only the last run's ranges and left the other runs' triangles
+ * nameless (249 unnamed catalog rows on a 40×30×20 box with corners).
  */
-function _stampRunsInRange(manifold, helper, lo, hi, role) {
+function _stampRunsInRange(manifold, helper, lo, hi, roleOf) {
   if (!manifold || typeof manifold.getMesh !== 'function') return;
   let mesh;
   try { mesh = manifold.getMesh(); } catch { return; }
   const nTri = mesh.numTri;
   if (!nTri || !mesh.faceID || !mesh.runIndex || !mesh.runOriginalID) return;
-  let feature = null;
+  const roleFor = typeof roleOf === 'function' ? roleOf : () => roleOf;
+  const idsByOriginal = new Map();
   for (let r = 0; r + 1 < mesh.runIndex.length; r++) {
     const originalID = mesh.runOriginalID[r];
     if (!(originalID > lo && originalID < hi)) continue;
     const t0 = mesh.runIndex[r] / 3;
     const t1 = Math.min(nTri, mesh.runIndex[r + 1] / 3);
     if (!(t1 > t0)) continue;
-    if (feature === null) feature = _stampFeatureId(helper);
-    const ids = [];
+    let ids = idsByOriginal.get(originalID);
+    if (!ids) { ids = []; idsByOriginal.set(originalID, ids); }
     for (let t = t0; t < t1; t++) ids.push(mesh.faceID[t]);
+  }
+  if (!idsByOriginal.size) return;
+  const feature = _stampFeatureId(helper);
+  for (const [originalID, ids] of idsByOriginal) {
     ids.sort((a, b) => a - b);
+    const role = roleFor(originalID);
     _faceStamps.set(originalID, { feature, helper, roles: [{ role, record: { kind: 'mesh' }, ranges: _idRanges(ids) }] });
   }
 }
@@ -10749,7 +10779,8 @@ function _triNormalOf(mesh, t) {
  * when a name matches nothing, and when `[k]` names a chain the pair no
  * longer has; it never substitutes a nearby edge. Every face a helper built
  * has a name (fillet and chamfer surfaces are `<block>.round` / `.bevel`,
- * uploads `import@1.f<k>`, freehand runs `<block>.f<k>`), so this is the one
+ * spherical corners `<block>.corner[k]`, uploads `import@1.f<k>`, freehand
+ * runs `<block>.f<k>`), so this is the one
  * edge reference a script needs; `edge()` / `edgesBetween()` ids are not
  * stable across edits.
  */
