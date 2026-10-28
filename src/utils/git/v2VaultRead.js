@@ -5,6 +5,7 @@
 import { assemblyName, partDefinitionId, serializeAssembly } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
+import { mapLimit, VAULT_READ_CONCURRENCY } from './mapLimit.js';
 import { readMeshBytes } from './meshSync.js';
 import { parseSurfJsonV2 } from './surfJsonV2.js';
 import { isV2SurfId, readSurfName } from './surfId.js';
@@ -22,14 +23,17 @@ function notFoundError(assemblyId) {
 export async function listV2Assemblies(adapter, repo, ref = 'main') {
   assertGithubAdapter(adapter);
   const tree = await adapter.listTree(repo, ref);
-  const rows = [];
+  const found = [];
   const seen = new Set();
   for (const entry of tree || []) {
     const path = typeof entry === 'string' ? entry : entry?.path;
     const parsed = parseIdPath(path);
     if (parsed?.kind !== 'assembly' || seen.has(parsed.id)) continue;
     seen.add(parsed.id);
-    let name = parsed.id;
+    found.push({ id: parsed.id, path });
+  }
+  const rows = await mapLimit(found, VAULT_READ_CONCURRENCY, async ({ id, path }) => {
+    let name = id;
     try {
       const file = await adapter.readFile(repo, path, ref);
       if (file?.content != null) {
@@ -39,8 +43,8 @@ export async function listV2Assemblies(adapter, repo, ref = 'main') {
     } catch {
       /* keep id as the label */
     }
-    rows.push({ id: parsed.id, name });
-  }
+    return { id, name };
+  });
   rows.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return rows;
 }
@@ -194,19 +198,27 @@ async function loadV2Meshes(adapter, repo, branch, parts) {
   const shaByPath = new Map(
     (tree || []).filter((entry) => entry?.path).map((entry) => [entry.path, entry.sha]),
   );
+  const wanted = [];
+  const seen = new Set();
   for (const part of parts || []) {
     const def = partDefinitionId(part);
     if (!isV2SurfId(def) || part.missing === true) continue;
     let meshPath;
     try { meshPath = partMeshIdPath(def); } catch { continue; }
-    if (!shaByPath.has(meshPath) || assets[meshPath]) continue;
-    try {
-      const bytes = await readMeshBytes(adapter, repo, branch, meshPath, shaByPath.get(meshPath));
-      if (bytes) assets[meshPath] = bytes;
-    } catch {
-      /* sidecar optional */
-    }
+    if (!shaByPath.has(meshPath) || seen.has(meshPath)) continue;
+    seen.add(meshPath);
+    wanted.push(meshPath);
   }
+  // In parallel under a cap; the tree already gave every sha, so a cache
+  // miss is one readBlob, not another listTree. A sidecar is optional.
+  const got = await mapLimit(wanted, VAULT_READ_CONCURRENCY, async (meshPath) => {
+    try {
+      return await readMeshBytes(adapter, repo, branch, meshPath, shaByPath.get(meshPath));
+    } catch {
+      return null;
+    }
+  });
+  wanted.forEach((meshPath, i) => { if (got[i]) assets[meshPath] = got[i]; });
   return assets;
 }
 
@@ -224,35 +236,32 @@ export async function openV2Assembly(adapter, repo, assemblyId, opts = {}) {
   if (!file || file.content == null) throw notFoundError(id);
 
   const parsed = parseSurfJsonV2(file.content);
-  const scripts = {};
-  const parts = [];
-  const missingDefs = new Set();
+  // Scripts are per definition: an instance row reads parts/<instanceOf>.js.
+  // Every definition is read once, in parallel under a cap; the rows are
+  // then rebuilt in order. Nothing in one read depends on another.
+  const defs = [];
+  const defSeen = new Set();
   for (const part of parsed.parts || []) {
-    // Scripts are per definition: an instance row reads parts/<instanceOf>.js.
     const def = partDefinitionId(part);
-    if (typeof scripts[def] === 'string') {
-      parts.push(part);
-      continue;
-    }
-    if (missingDefs.has(def)) {
-      parts.push({ ...part, missing: true });
-      continue;
-    }
-    let scriptPath;
-    try { scriptPath = partIdPath(def); } catch {
-      missingDefs.add(def);
-      parts.push({ ...part, missing: true });
-      continue;
-    }
-    const got = await adapter.readFile(repo, scriptPath, branch);
-    if (!got || typeof got.content !== 'string') {
-      missingDefs.add(def);
-      parts.push({ ...part, missing: true });
-      continue;
-    }
-    scripts[def] = got.content;
-    parts.push(part);
+    if (defSeen.has(def)) continue;
+    defSeen.add(def);
+    defs.push(def);
   }
+  const read = await mapLimit(defs, VAULT_READ_CONCURRENCY, async (def) => {
+    let scriptPath;
+    try { scriptPath = partIdPath(def); } catch { return null; }
+    const got = await adapter.readFile(repo, scriptPath, branch);
+    return got && typeof got.content === 'string' ? got.content : null;
+  });
+  const scripts = {};
+  const missingDefs = new Set();
+  defs.forEach((def, i) => {
+    if (typeof read[i] === 'string') scripts[def] = read[i];
+    else missingDefs.add(def);
+  });
+  const parts = (parsed.parts || []).map((part) => (
+    missingDefs.has(partDefinitionId(part)) ? { ...part, missing: true } : part
+  ));
 
   const doc = serializeAssembly({
     ...parsed,

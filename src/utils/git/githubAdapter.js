@@ -135,9 +135,11 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
 
   async function resolveSha(repo, ref) {
     if (ref == null || ref === '') return null;
+    // A 40-hex ref is a commit sha: do not spend a round trip on
+    // GET /branches/<sha> to learn that it is not a branch name.
+    if (/^[0-9a-f]{40}$/i.test(String(ref))) return String(ref).toLowerCase();
     const br = await getBranchInner(repo, ref);
     if (br) return br.sha;
-    if (/^[0-9a-f]{40}$/i.test(String(ref))) return String(ref);
     return null;
   }
 
