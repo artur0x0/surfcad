@@ -286,6 +286,7 @@ import {
   rememberLastOpened,
 } from './utils/assemblyBoot';
 import { refreshGithubAccessToken } from './utils/git/githubTokenRefresh';
+import { gitTimings } from './utils/git/gitTimings';
 import {
   createMockGithubAdapter,
   createGithubAdapter,
@@ -3615,9 +3616,11 @@ const App = () => {
     const haveReal = have?.kind === 'real';
     if (!have || wantReal !== haveReal || gitTokenRef.current !== token) {
       gitTokenRef.current = token;
-      gitAdapterRef.current = wantReal
-        ? createGithubAdapter({ token })
-        : createMockGithubAdapter({ login: 'local-user', persist: true });
+      // Every adapter call and, on the real adapter, every HTTP request is
+      // counted (git_timings, window.__SURFCAD_GIT_TIMINGS).
+      gitAdapterRef.current = gitTimings.wrapAdapter(wantReal
+        ? createGithubAdapter({ token, fetchImpl: gitTimings.wrapFetch(globalThis.fetch) })
+        : createMockGithubAdapter({ login: 'local-user', persist: true }));
       gitVaultRef.current = null; // vault belongs to the previous adapter
     }
     return gitAdapterRef.current;
@@ -6297,7 +6300,7 @@ const App = () => {
       workingCopy.branch = branch;
       workingCopy.saveTarget = { repo: vault.repo, branch };
       const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
-      const result = await executePlanSave({
+      const result = await gitTimings.measure('save', () => executePlanSave({
         adapter: gitAdapterRef.current,
         repo: vault.repo,
         branch,
@@ -6307,7 +6310,7 @@ const App = () => {
         force,
         create,
         online,
-      });
+      }));
       return adoptV2SaveResult(result, { repo: vault.repo, branch, create });
     } catch (err) {
       const tooBig = err?.code === 'file_too_large' || err?.name === 'VaultFileTooLargeError';
@@ -7628,12 +7631,15 @@ const App = () => {
           if (!signal()) return;
           const branch = gitWorkingBranch();
           const git = adapter || gitAdapterRef.current;
-          const tip = (await git.getBranch(vault.repo, branch))?.sha || null;
           const store = gitSync();
           await store.ready();
-          const opened = await openV2Assembly(git, vault.repo, id, {
-            branch,
-            headSha: tip,
+          const { tip, opened } = await gitTimings.measure('open', async () => {
+            const head = (await git.getBranch(vault.repo, branch))?.sha || null;
+            const result = await openV2Assembly(git, vault.repo, id, {
+              branch,
+              headSha: head,
+            });
+            return { tip: head, opened: result };
           });
           if (!signal()) return;
           progress({
