@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 198,
+  "count": 199,
   "$defs": {
     "status": {
       "type": "object",
@@ -2574,6 +2574,29 @@
       "destructive": false,
       "confirm": false,
       "group": "core",
+      "immediate": true,
+      "uiEntry": null,
+      "example": {}
+    },
+    {
+      "name": "git_timings",
+      "description": "Debug timing of the last git operation (B17): { last, history, unscoped }. last is the most recent Open or Save span: op, ok, ms, calls (adapter calls), http (round trips on the real adapter; 0 on the mock), byMethod { listTree: { n, ms, failed } }, byEndpoint { \"GET git/trees/:sha\": { n, ms, failed } } and rows (one per call, in order). history is the last 20 spans without rows. unscoped counts calls made outside any span (background checks). Read-only; it never touches the vault. Set window.__SURFCAD_GIT_TIMING = true for a console line per call.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "git",
       "immediate": true,
       "uiEntry": null,
       "example": {}
