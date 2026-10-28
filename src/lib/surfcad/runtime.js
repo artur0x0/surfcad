@@ -4568,13 +4568,16 @@ function holesOnContour(part, section, spec) {
 //
 // opts.sphericalCorners: at every vertex where THREE filleted edges meet
 // (~90° corners, equal radii only — v1 scope), the three fillet sails
-// converge to a sharp cusp. The option cuts that cusp pocket with a ball
-// of radius r centered on the trihedral incenter (equidistant r from all
-// three faces and ON all three sail axes) — the result is a spherical
-// corner patch tangent to each sail along a circle (C1) and to each face
-// at one point, i.e. the true CAD corner for an r/r/r box corner. Closed
-// circular runs never participate (a closed loop has no vertex where three
-// DIFFERENT edges converge; interior run vertices are always degree-2).
+// converge to a sharp cusp. The option replaces that cusp with the sphere
+// of radius r about the trihedral incenter (equidistant r from all three
+// faces and ON all three sail axes) — a spherical corner patch tangent to
+// each sail along a circle (C1) and to each face at one point, i.e. the
+// true CAD corner for an r/r/r box corner. An exact right-angle corner is
+// built as meshes that share their ring vertices (trimmed edge prisms plus
+// one pocket per corner, see "Spherical corners, mesh-built" below); a
+// near-90° corner keeps the v1 ball cut. Closed circular runs never
+// participate (a closed loop has no vertex where three DIFFERENT edges
+// converge; interior run vertices are always degree-2).
 // ============================================================================
 function _c6Norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; }
 function _c6Cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
@@ -4919,6 +4922,462 @@ function _c6ClosedRunCutter(M, manifoldModule, run, geoms) {
   return cutter2D.transform(mat);
 }
 
+
+// ============================================================================
+// Spherical corners, mesh-built (see the sphericalCorners note in the block
+// header above). Three right-angle fillets of one radius meeting at a vertex
+// P leave a cusp. The true CAD corner is the sphere of radius r about the
+// trihedral incenter O = P + r(d1 + d2 + d3), tangent to the three faces and
+// to each sail along the circle where the sail's cylinder meets the plane
+// through O perpendicular to that edge.
+//
+// v1 cut that corner with booleans: cornerBox ∩ cyl1 ∩ cyl2 ∩ cyl3 minus a
+// 256-segment ball. The ball is TANGENT to every sail along its junction
+// circle, and a boolean between two tangent surfaces zig-zags: on a 40×30×20
+// box it left 1390 needle triangles and split one `.round` face into 226
+// patches. Nothing in the result was wrong; everything downstream of it
+// (face catalog, edge names, selection) was noisy.
+//
+// v2 never intersects tangent surfaces. Each edge that ends in a spherical
+// corner gets a cutter that STOPS at the junction plane (a prism of the
+// square-minus-quarter-circle section, built as a mesh), and each corner
+// gets one pocket solid: the r-cube at P minus the sphere octant, also built
+// as a mesh. The pocket's three far faces are the same polygons as the
+// prisms' end faces, with the same vertex floats (both are computed from the
+// corner record below), so the union of the cutters merges them away and the
+// sail meets the sphere along a shared ring of vertices. One subtract.
+//
+// Only an EXACT right-angle corner (edge directions orthogonal and every
+// dihedral 90° within _C6_EXACT_CORNER_TOL, each edge long enough to hold
+// its caps) takes this path. A near-90° corner (a drafted box) keeps the v1
+// ball cut: its sails and faces are not where the pocket assumes them.
+//
+// Sphere octant grid: a barycentric grid of FILLET_EDGES_CORNER_SEGMENTS/4
+// steps per side, warped so every boundary arc is uniform in angle, with
+// each boundary step split FILLET_EDGES_CIRCLE_SEGMENTS/FILLET_EDGES_CORNER_SEGMENTS
+// times so the boundary ring has exactly the sail's vertices. Interior
+// facets step 360°/FILLET_EDGES_CORNER_SEGMENTS; the face graph reads that
+// as the corner's facet step.
+// ============================================================================
+const _C6_EXACT_CORNER_TOL = 1e-5;
+
+/** Point v of nFine on a quarter circle, as (cos, sin); the ends are exact. */
+function _c6QuarterArcU(v, nFine) {
+  if (v <= 0) return [1, 0];
+  if (v >= nFine) return [0, 1];
+  const phi = (Math.PI / 2) * (v / nFine);
+  return [Math.cos(phi), Math.sin(phi)];
+}
+
+/**
+ * World point of a unit octant direction u = (u1, u2, u3) on the corner
+ * sphere: O − r·(u1·d1 + u2·d2 + u3·d3). Every solid that touches the corner
+ * computes its shared vertices through this one expression.
+ */
+function _c6CornerSpherePoint(c, u1, u2, u3) {
+  const { O, r, d } = c;
+  return [
+    O[0] - r * (u1 * d[0][0] + u2 * d[1][0] + u3 * d[2][0]),
+    O[1] - r * (u1 * d[0][1] + u2 * d[1][1] + u3 * d[2][1]),
+    O[2] - r * (u1 * d[0][2] + u2 * d[1][2] + u3 * d[2][2]),
+  ];
+}
+
+/** The square corner of edge k's junction section: P + r·dk. */
+function _c6CornerEdgePoint(c, k) {
+  const { P, r, d } = c;
+  return [P[0] + r * d[k][0], P[1] + r * d[k][1], P[2] + r * d[k][2]];
+}
+
+/**
+ * The junction ring of edge k at corner c: nFine + 1 points on the quarter
+ * circle from the tangent point on the face (k, j) to the one on (k, i),
+ * where i < j are the other two edges. Shared verbatim by the prism of edge
+ * k and the pocket of corner c.
+ */
+function _c6CornerArc(c, k, nFine) {
+  const others = [0, 1, 2].filter((x) => x !== k);
+  const [i, j] = others;
+  const out = new Array(nFine + 1);
+  for (let v = 0; v <= nFine; v++) {
+    const [cs, sn] = _c6QuarterArcU(v, nFine);
+    const u = [0, 0, 0];
+    u[i] = cs;
+    u[j] = sn;
+    out[v] = _c6CornerSpherePoint(c, u[0], u[1], u[2]);
+  }
+  return out;
+}
+
+/** Signed volume of a triangle soup (positive when wound outward). */
+function _c6SignedVolume(V, T) {
+  let six = 0;
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+    six += V[a] * (V[b + 1] * V[c + 2] - V[b + 2] * V[c + 1])
+      - V[a + 1] * (V[b] * V[c + 2] - V[b + 2] * V[c])
+      + V[a + 2] * (V[b] * V[c + 1] - V[b + 1] * V[c]);
+  }
+  return six / 6;
+}
+
+/** Build a Manifold from a closed triangle soup; loud on anything but a clean solid. */
+function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
+  const { Mesh } = manifoldModule;
+  // Compact: a welded ring end leaves its duplicate unreferenced.
+  const remap = new Int32Array(verts.length).fill(-1);
+  const used = [];
+  for (const tri of tris) {
+    for (const v of tri) if (remap[v] < 0) { remap[v] = used.length; used.push(v); }
+  }
+  const V = new Float64Array(used.length * 3);
+  for (let i = 0; i < used.length; i++) {
+    V[i * 3] = verts[used[i]][0];
+    V[i * 3 + 1] = verts[used[i]][1];
+    V[i * 3 + 2] = verts[used[i]][2];
+  }
+  const T = new Uint32Array(tris.length * 3);
+  for (let i = 0; i < tris.length; i++) {
+    T[i * 3] = remap[tris[i][0]];
+    T[i * 3 + 1] = remap[tris[i][1]];
+    T[i * 3 + 2] = remap[tris[i][2]];
+  }
+  if (_c6SignedVolume(V, T) < 0) {
+    for (let i = 0; i < T.length; i += 3) { const b = T[i + 1]; T[i + 1] = T[i + 2]; T[i + 2] = b; }
+  }
+  let solid;
+  try {
+    solid = new M(new Mesh({ numProp: 3, vertProperties: new Float32Array(V), triVerts: T }));
+  } catch (e) {
+    throw new Error(`filletEdges: ${what} mesh is not a solid (${e && e.message ? e.message : e})`);
+  }
+  const se = _c4StatusError(solid);
+  if (se) throw new Error(`filletEdges: bad ${what} (${se})`);
+  const vol = solid.volume();
+  if (!(vol > 1e-9) || Math.abs(vol - expectVol) > 0.01 * expectVol) {
+    throw new Error(`filletEdges: ${what} volume ${vol} is off the expected ${expectVol}`);
+  }
+  return solid;
+}
+
+/**
+ * Cutter for one edge of an exact corner: the square-minus-quarter-circle
+ * section extruded along the edge from s0 to s1, where a capped end sits at
+ * the junction plane (r from the vertex) and takes its ring from that
+ * corner, and an open end sits at the vertex like the v1 box did. Quads are
+ * stitched between the two rings vertex for vertex.
+ */
+function _c6TrimmedEdgeCutter(M, g, capA, capB) {
+  const nFine = FILLET_EDGES_CIRCLE_SEGMENTS / 4;
+  const { L, d, r } = g;
+  const shift = (ring, s) => ring.map((p) => [p[0] + s * d[0], p[1] + s * d[1], p[2] + s * d[2]]);
+  let ring0;
+  let ring1;
+  let Q0;
+  let Q1;
+  if (capA) {
+    ring0 = _c6CornerArc(capA.corner, capA.k, nFine);
+    Q0 = _c6CornerEdgePoint(capA.corner, capA.k);
+  }
+  if (capB) {
+    ring1 = _c6CornerArc(capB.corner, capB.k, nFine);
+    Q1 = _c6CornerEdgePoint(capB.corner, capB.k);
+    if (ring0) {
+      // Pair the rings along the generators: the two corners label the
+      // adjacent faces independently, so the far ring may run the other way.
+      const b = _c6Sub(ring1[0], Q1);
+      const dot = (p) => { const a = _c6Sub(p, Q0); return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+      if (dot(ring0[ring0.length - 1]) > dot(ring0[0])) ring1 = ring1.slice().reverse();
+    }
+  }
+  const s0 = capA ? r : 0;
+  const s1 = capB ? L - r : L;
+  if (!(s1 > s0 + 1e-9)) throw new Error('filletEdges: corner caps overlap on a short edge');
+  if (!ring0) {
+    ring0 = shift(ring1, -(s1 - s0));
+    Q0 = [Q1[0] - (s1 - s0) * d[0], Q1[1] - (s1 - s0) * d[1], Q1[2] - (s1 - s0) * d[2]];
+  }
+  if (!ring1) {
+    ring1 = shift(ring0, s1 - s0);
+    Q1 = [Q0[0] + (s1 - s0) * d[0], Q0[1] + (s1 - s0) * d[1], Q0[2] + (s1 - s0) * d[2]];
+  }
+  const n = ring0.length;
+  // Vertex layout: Q0, ring0[0..n), Q1, ring1[0..n).
+  const verts = [Q0, ...ring0, Q1, ...ring1];
+  const R0 = (v) => 1 + v;
+  const R1 = (v) => n + 2 + v;
+  const tris = [];
+  // Section cycle: Q → ring[0] → … → ring[n−1] → Q.
+  const cycle0 = [0];
+  const cycle1 = [n + 1];
+  for (let v = 0; v < n; v++) { cycle0.push(R0(v)); cycle1.push(R1(v)); }
+  for (let v = 0; v < cycle0.length; v++) {
+    const p0 = cycle0[v], q0 = cycle0[(v + 1) % cycle0.length];
+    const p1 = cycle1[v], q1 = cycle1[(v + 1) % cycle1.length];
+    tris.push([p0, q0, q1], [p0, q1, p1]);
+  }
+  for (let v = 0; v + 1 < n; v++) {
+    tris.push([0, R0(v + 1), R0(v)]);
+    tris.push([n + 1, R1(v), R1(v + 1)]);
+  }
+  const expectVol = (s1 - s0) * r * r * (1 - Math.PI / 4);
+  return _c6SolidFromSoup(M, 'corner edge cutter', verts, tris, expectVol);
+}
+
+/**
+ * The pocket of an exact corner: the r-cube at P minus the sphere octant,
+ * as one mesh. Flat faces: three squares on the part's faces, three
+ * square-minus-quarter-circle far faces that match the edge cutters' end
+ * faces. Curved face: the octant grid, boundary rings shared with the sails.
+ */
+function _c6CornerPocket(M, c) {
+  const nFine = FILLET_EDGES_CIRCLE_SEGMENTS / 4;
+  const n = FILLET_EDGES_CORNER_SEGMENTS / 4;
+  const m = nFine / n;
+  const { P, O, r } = c;
+  const verts = [];
+  const tris = [];
+  const add = (p) => { verts.push(p); return verts.length - 1; };
+  // Oriented push: wind so the normal points along `outward`.
+  const face = (a, b, cc, outward) => {
+    const A = verts[a], B = verts[b], C = verts[cc];
+    const nrm = _c6Cross(_c6Sub(B, A), _c6Sub(C, A));
+    if (nrm[0] * outward[0] + nrm[1] * outward[1] + nrm[2] * outward[2] < 0) tris.push([a, cc, b]);
+    else tris.push([a, b, cc]);
+  };
+  const iP = add(P.slice());
+  const iC = [0, 1, 2].map((k) => add(_c6CornerEdgePoint(c, k)));
+  // Junction rings, one per edge; their ends are the three face tangent
+  // points, which are also the octant grid's corners.
+  const arcs = [0, 1, 2].map((k) => _c6CornerArc(c, k, nFine).map(add));
+  // Grid corner e_i ↔ tangent point on the face opposite edge i: arc k runs
+  // from e_i to e_j (i < j the other two edges).
+  const corner = [arcs[1][0], arcs[0][0], arcs[0][nFine]]; // e1 (arc of edge 2 start), e2 (arc 1 start), e3 (arc 1 end)
+  // Boundary vertex lookup: grid (i, j) on a boundary line → ring vertex.
+  //   edge e1–e2 (i = 0): arc of edge 3, v = j·m
+  //   edge e1–e3 (j = 0): arc of edge 2, v = i·m
+  //   edge e2–e3 (i + j = n): arc of edge 1, v = i·m
+  // Arc ends are separate vertices per arc; weld them to one index each.
+  const weld = new Map();
+  weld.set(arcs[2][0], corner[0]);        // e1
+  weld.set(arcs[2][nFine], corner[1]);    // e2
+  weld.set(arcs[1][nFine], corner[2]);    // e3
+  const w = (idx) => (weld.has(idx) ? weld.get(idx) : idx);
+  const ringAt = (k, v) => w(arcs[k][v]);
+  const grid = new Map();
+  const gkey = (i, j) => i * (n + 1) + j;
+  for (let i = 0; i <= n; i++) {
+    for (let j = 0; i + j <= n; j++) {
+      let idx;
+      if (i === 0) idx = ringAt(2, j * m);
+      else if (j === 0) idx = ringAt(1, i * m);
+      else if (i + j === n) idx = ringAt(0, i * m);
+      else {
+        const w1 = Math.sin(((n - i - j) / n) * (Math.PI / 2));
+        const w2 = Math.sin((j / n) * (Math.PI / 2));
+        const w3 = Math.sin((i / n) * (Math.PI / 2));
+        const len = Math.hypot(w1, w2, w3);
+        idx = add(_c6CornerSpherePoint(c, w1 / len, w2 / len, w3 / len));
+      }
+      grid.set(gkey(i, j), idx);
+    }
+  }
+  const G = (i, j) => grid.get(gkey(i, j));
+  // Refined boundary between two adjacent boundary grid vertices, as the ring
+  // vertices strictly between them, ordered from (i0,j0) to (i1,j1).
+  const between = (i0, j0, i1, j1) => {
+    const out = [];
+    const pick = (k, va, vb) => {
+      const step = va < vb ? 1 : -1;
+      for (let v = va + step; v !== vb; v += step) out.push(ringAt(k, v));
+    };
+    if (i0 === 0 && i1 === 0) pick(2, j0 * m, j1 * m);
+    else if (j0 === 0 && j1 === 0) pick(1, i0 * m, i1 * m);
+    else pick(0, i0 * m, i1 * m);
+    return out;
+  };
+  const onBoundary = (i, j) => i === 0 || j === 0 || i + j === n;
+  const sameLine = (a, b) => (a[0] === 0 && b[0] === 0) || (a[1] === 0 && b[1] === 0) || (a[0] + a[1] === n && b[0] + b[1] === n);
+  const sphereFace = (a, b, cc) => {
+    const A = verts[a], B = verts[b], C = verts[cc];
+    const cen = [(A[0] + B[0] + C[0]) / 3, (A[1] + B[1] + C[1]) / 3, (A[2] + B[2] + C[2]) / 3];
+    face(a, b, cc, _c6Sub(O, cen));
+  };
+  // Fan from apex over the polyline [p0, p1, …].
+  const fan = (apex, chain) => {
+    for (let q = 0; q + 1 < chain.length; q++) sphereFace(apex, chain[q], chain[q + 1]);
+  };
+  // Base grid triangles as (i, j) corner triples.
+  const base = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; i + j < n; j++) {
+      base.push([[i, j], [i, j + 1], [i + 1, j]]);
+      if (i + j + 1 < n) base.push([[i, j + 1], [i + 1, j + 1], [i + 1, j]]);
+    }
+  }
+  const tkey = (tri) => tri.map(([i, j]) => gkey(i, j)).sort((x, y) => x - y).join(',');
+  const byEdge = new Map();
+  const ekey = (a, b) => { const x = gkey(a[0], a[1]), y = gkey(b[0], b[1]); return x < y ? `${x}-${y}` : `${y}-${x}`; };
+  for (const tri of base) {
+    for (let e = 0; e < 3; e++) {
+      const k = ekey(tri[e], tri[(e + 1) % 3]);
+      if (!byEdge.has(k)) byEdge.set(k, []);
+      byEdge.get(k).push(tri);
+    }
+  }
+  const boundaryEdgesOf = (tri) => {
+    const bEdges = [];
+    for (let e = 0; e < 3; e++) {
+      const a = tri[e], b = tri[(e + 1) % 3];
+      if (onBoundary(a[0], a[1]) && onBoundary(b[0], b[1]) && sameLine(a, b)) bEdges.push(e);
+    }
+    return bEdges;
+  };
+  // A corner triangle absorbs its neighbour across the interior edge; mark
+  // those first, since two of the three neighbours come earlier in \`base\`.
+  const consumed = new Set();
+  for (const tri of base) {
+    const bEdges = boundaryEdgesOf(tri);
+    if (bEdges.length !== 2) continue;
+    const eInt = [0, 1, 2].find((e) => !bEdges.includes(e));
+    const nb = (byEdge.get(ekey(tri[eInt], tri[(eInt + 1) % 3])) || []).find((t) => t !== tri);
+    if (!nb) throw new Error('filletEdges: corner grid has no neighbour across the corner triangle');
+    if (boundaryEdgesOf(nb).length) throw new Error('filletEdges: corner grid is too coarse for its boundary fans');
+    consumed.add(tkey(nb));
+  }
+  for (const tri of base) {
+    if (consumed.has(tkey(tri))) continue;
+    const bEdges = boundaryEdgesOf(tri);
+    const V = tri.map(([i, j]) => G(i, j));
+    if (bEdges.length === 0) {
+      sphereFace(V[0], V[1], V[2]);
+    } else if (bEdges.length === 1) {
+      const e = bEdges[0];
+      const a = tri[e], b = tri[(e + 1) % 3];
+      const apex = V[(e + 2) % 3];
+      fan(apex, [V[e], ...between(a[0], a[1], b[0], b[1]), V[(e + 1) % 3]]);
+    } else {
+      // Corner triangle: two boundary edges meet at the grid corner. Merge
+      // with the neighbour across the interior edge and fan from its far
+      // vertex, so no fan triangle lies along one arc.
+      const eInt = [0, 1, 2].find((e) => !bEdges.includes(e));
+      const a = tri[eInt], b = tri[(eInt + 1) % 3];
+      const cornerIJ = tri[(eInt + 2) % 3];
+      const nb = (byEdge.get(ekey(a, b)) || []).find((t) => t !== tri);
+      const far = nb.find(([i, j]) => !((i === a[0] && j === a[1]) || (i === b[0] && j === b[1])));
+      const chain = [
+        G(b[0], b[1]),
+        ...between(b[0], b[1], cornerIJ[0], cornerIJ[1]),
+        G(cornerIJ[0], cornerIJ[1]),
+        ...between(cornerIJ[0], cornerIJ[1], a[0], a[1]),
+        G(a[0], a[1]),
+      ];
+      fan(G(far[0], far[1]), chain);
+    }
+  }
+  // Flat faces. Near squares lie on the part's faces (outward −dk); far
+  // faces are the cutters' end polygons (outward +dk), fanned from the edge
+  // point exactly as _c6TrimmedEdgeCutter fans its end caps.
+  const d = c.d;
+  const neg = (v) => [-v[0], -v[1], -v[2]];
+  // Tangent points: on face opposite edge k is grid corner e_k.
+  const T = corner; // T[0] on face (2,3) = e1, T[1] on face (1,3) = e2, T[2] on face (1,2) = e3
+  // Near face perpendicular to d1 (contains P, C2, C3, T[0]).
+  face(iP, iC[1], T[0], neg(d[0])); face(iP, T[0], iC[2], neg(d[0]));
+  face(iP, iC[0], T[1], neg(d[1])); face(iP, T[1], iC[2], neg(d[1]));
+  face(iP, iC[0], T[2], neg(d[2])); face(iP, T[2], iC[1], neg(d[2]));
+  for (let k = 0; k < 3; k++) {
+    for (let v = 0; v < nFine; v++) face(iC[k], ringAt(k, v), ringAt(k, v + 1), d[k]);
+  }
+  const expectVol = r * r * r * (1 - Math.PI / 6);
+  return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol);
+}
+
+/**
+ * Trihedral corners among the live edges: a vertex where exactly three
+ * filleted edges of one radius meet at right angles. Each record carries the
+ * vertex P, unit directions d[k] from P into edge k, the inward face normals
+ * m[k] (v1 cap frame), the incenter O, and whether it is EXACT (pocket path)
+ * or near (v1 ball path). Returns the records and a per-edge cap map.
+ */
+function _c6TrihedralCorners(live) {
+  const byVertex = new Map();
+  for (const g of live) {
+    for (const k of [g.e.a, g.e.b]) {
+      if (!byVertex.has(k)) byVertex.set(k, []);
+      byVertex.get(k).push(g);
+    }
+  }
+  const corners = [];
+  for (const [vk, eg] of byVertex) {
+    if (eg.length !== 3) continue;
+    const [g1, g2, g3] = eg;
+    if (Math.abs(g1.r - g2.r) > 1e-6 || Math.abs(g1.r - g3.r) > 1e-6) continue;
+    // v1: only ~90° corners (all three face angles)
+    if (!eg.every((g) => Math.abs(g.theta - Math.PI / 2) < 0.02)) continue;
+    const P = g1.e.a === vk ? g1.P0 : g1.P1;
+    const dOf = (g) => _c6Norm(_c6Sub(g.e.a === vk ? g.P1 : g.P0, P));
+    const d = eg.map(dOf);
+    if (_c6Len(_c6Cross(d[0], d[1])) < 0.5 || _c6Len(_c6Cross(d[1], d[2])) < 0.5
+      || _c6Len(_c6Cross(d[2], d[0])) < 0.5) continue; // two edges nearly parallel
+    const inwardOf = (a, b, third) => {
+      const nrm = _c6Norm(_c6Cross(a, b));
+      const dot = nrm[0] * third[0] + nrm[1] * third[1] + nrm[2] * third[2];
+      return dot < 0 ? [-nrm[0], -nrm[1], -nrm[2]] : nrm;
+    };
+    const m = [inwardOf(d[0], d[1], d[2]), inwardOf(d[1], d[2], d[0]), inwardOf(d[2], d[0], d[1])];
+    const r = g1.r;
+    const O = [
+      P[0] + r * (m[0][0] + m[1][0] + m[2][0]),
+      P[1] + r * (m[0][1] + m[1][1] + m[2][1]),
+      P[2] + r * (m[0][2] + m[1][2] + m[2][2]),
+    ];
+    const dist = _c6Len(_c6Sub(O, P));
+    const dev = Math.abs(dist - r * Math.sqrt(3));
+    if (dev > 1e-3 * r + 1e-6)
+      throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r * Math.sqrt(3)})`);
+    const dot = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+    const exact = dot(d[0], d[1]) < _C6_EXACT_CORNER_TOL
+      && dot(d[1], d[2]) < _C6_EXACT_CORNER_TOL
+      && dot(d[2], d[0]) < _C6_EXACT_CORNER_TOL
+      && eg.every((g) => Math.abs(g.theta - Math.PI / 2) < _C6_EXACT_CORNER_TOL);
+    corners.push({ vk, P, r, geoms: eg, d, m, O: exact ? [
+      P[0] + r * (d[0][0] + d[1][0] + d[2][0]),
+      P[1] + r * (d[0][1] + d[1][1] + d[2][1]),
+      P[2] + r * (d[0][2] + d[1][2] + d[2][2]),
+    ] : O, exact });
+  }
+  // An exact corner trims its edges to the junction plane, so each edge must
+  // hold its caps: demote every corner on an edge that cannot.
+  const caps = new Map(); // g → { A: cap|null, B: cap|null }
+  const capOf = (g) => { if (!caps.has(g)) caps.set(g, { A: null, B: null }); return caps.get(g); };
+  for (const c of corners) {
+    if (!c.exact) continue;
+    c.geoms.forEach((g, k) => {
+      const slot = capOf(g);
+      if (g.e.a === c.vk) slot.A = { corner: c, k }; else slot.B = { corner: c, k };
+    });
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [g, slot] of caps) {
+      const need = (slot.A ? g.r : 0) + (slot.B ? g.r : 0);
+      if (g.L > need + 1e-6) continue;
+      for (const cap of [slot.A, slot.B]) {
+        if (cap && cap.corner.exact) { cap.corner.exact = false; changed = true; }
+      }
+    }
+    if (changed) {
+      for (const slot of caps.values()) {
+        if (slot.A && !slot.A.corner.exact) slot.A = null;
+        if (slot.B && !slot.B.corner.exact) slot.B = null;
+      }
+    }
+  }
+  return { corners, caps };
+}
+
 /**
  * filletEdges(part, edges, radius, opts) — circular fillet of radius r on
  * a SET of straight convex edges.
@@ -5007,9 +5466,11 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
   }
 
   const cutters = [];
-  const edgeGeom = []; // per SINGLETON/fallback edge: { kA, kB, V0, V1, r, theta, cyl }
+  // per SINGLETON/fallback edge: { kA, kB, V0, V1, r, theta, cyl() } for the v1 corner caps
+  const edgeGeom = [];
   const skippedShort = []; // {L, t} per SINGLETON/fallback edge skipped as a sliver
   const doneRuns = new Set();
+  const live = []; // singleton / fallback edges past the size guard
   for (let i = 0; i < edges.length; i++) {
     const g = geoms[i];
     if (!g) continue;
@@ -5021,40 +5482,33 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       }
       continue;
     }
-    const e = edges[i];
-    const { P0, P1, L, d, f0, f1, theta, t, r } = g;
-    if (t > 0.45 * L) {
+    if (g.t > 0.45 * g.L) {
       // SKIP, don't throw: short edges are tessellation slivers of a curved
       // arc (96/384-seg fillet/chamfer seams) that a filtered edge list
       // picks up alongside the real edge, OR a curved run that didn't fit
       // a clean circle (see block header) — filing one off would only add
       // noise, and one bad sliver must not kill the whole part.
-      skippedShort.push({ L: +L.toFixed(4), t: +t.toFixed(4) });
+      skippedShort.push({ L: +g.L.toFixed(4), t: +g.t.toFixed(4) });
       continue;
     }
-
+    live.push(g);
+  }
+  // Spherical corners are decided before any cutter is built: an exact
+  // right-angle corner trims its three edge cutters to the junction plane and
+  // adds one pocket solid (mesh-built, see _c6CornerPocket); every other
+  // triple corner keeps the v1 ball cut after the main subtract.
+  const cornerInfo = sphericalCorners ? _c6TrihedralCorners(live) : { corners: [], caps: new Map() };
+  for (const g of live) {
+    const { e, P0, P1, L, d, f0, f1, theta, t, r } = g;
     // arc center line: interior bisector, distance r/sin(θ/2) from the edge
     const sLen = Math.hypot(f0[0]+f1[0], f0[1]+f1[1], f0[2]+f1[2]) || 1;
     const bis = [(f0[0]+f1[0])/sLen, (f0[1]+f1[1])/sLen, (f0[2]+f1[2])/sLen];
     const dC = r / Math.sin(theta / 2);
     const O0 = [P0[0] + dC*bis[0], P0[1] + dC*bis[1], P0[2] + dC*bis[2]];
-
-    // parallelepiped spanned by t·f0 and t·f1, extruded along the edge
-    const B = [];
-    for (const s of [0, L]) {
-      const P = [P0[0]+s*d[0], P0[1]+s*d[1], P0[2]+s*d[2]];
-      B.push(
-        P,
-        [P[0]+t*f0[0], P[1]+t*f0[1], P[2]+t*f0[2]],
-        [P[0]+t*f1[0], P[1]+t*f1[1], P[2]+t*f1[2]],
-        [P[0]+t*(f0[0]+f1[0]), P[1]+t*(f0[1]+f1[1]), P[2]+t*(f0[2]+f1[2])],
-      );
-    }
-    const box = M.hull(B);
-
     // cylinder: radius r, axis along the edge, centered on the bisector
     // line (1mm overshoot each end). Rows = local x,y,z axes (row-vector
-    // convention, see frameToMatrix): x = f1, z = d, y = x̂z.
+    // convention, see frameToMatrix): x = f1, z = d, y = x̂z. The v1 cutter
+    // is box − cyl; a prism-built edge only needs it for a v1 corner cap.
     const cyU = _c6Norm(_c6Cross(d, f1));
     const C = [O0[0] + (L/2)*d[0], O0[1] + (L/2)*d[1], O0[2] + (L/2)*d[2]];
     const mat = [
@@ -5063,13 +5517,46 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       d[0],  d[1],  d[2],   0,
       C[0], C[1], C[2], 1,
     ];
-    const cyl = M.cylinder(L + 2, r, r, SEGMENTS, true).transform(mat);
-    const cutter = M.difference(box, cyl);
+    let cyl = null;
+    const cylOf = () => {
+      if (!cyl) cyl = M.cylinder(L + 2, r, r, SEGMENTS, true).transform(mat);
+      return cyl;
+    };
+    const caps = cornerInfo.caps.get(g) || null;
+    let cutter;
+    if (caps && (caps.A || caps.B)) {
+      cutter = _c6TrimmedEdgeCutter(M, g, caps.A, caps.B);
+    } else {
+      // parallelepiped spanned by t·f0 and t·f1, extruded along the edge
+      const B = [];
+      for (const s of [0, L]) {
+        const P = [P0[0]+s*d[0], P0[1]+s*d[1], P0[2]+s*d[2]];
+        B.push(
+          P,
+          [P[0]+t*f0[0], P[1]+t*f0[1], P[2]+t*f0[2]],
+          [P[0]+t*f1[0], P[1]+t*f1[1], P[2]+t*f1[2]],
+          [P[0]+t*(f0[0]+f1[0]), P[1]+t*(f0[1]+f1[1]), P[2]+t*(f0[2]+f1[2])],
+        );
+      }
+      const box = M.hull(B);
+      cutter = M.difference(box, cylOf());
+    }
     const seC = _c4StatusError(cutter);
     if (seC)
       throw new Error(`filletEdges: bad cutter (${seC})`);
     cutters.push(cutter);
-    edgeGeom.push({ kA: e.a, kB: e.b, V0: P0, V1: P1, r, theta, cyl });
+    edgeGeom.push({ kA: e.a, kB: e.b, V0: P0, V1: P1, r, theta, cyl: cylOf, g });
+  }
+  for (const c of cornerInfo.corners) {
+    if (!c.exact) continue;
+    const pocket = _c6CornerPocket(M, c);
+    // Face identity: the pocket's runs are the `<block>.corner` face. A
+    // mesh-built solid reports originalID −1; its one run carries the id.
+    try {
+      const ids = pocket.getMesh().runOriginalID;
+      for (let i = 0; i < ids.length; i++) _blendCornerIDs.add(ids[i]);
+    } catch { /* no id: stays .round */ }
+    cutters.push(pocket);
   }
   if (!cutters.length) {
     // Slice-01: never silently "succeed" with an unchanged part when the
@@ -5105,59 +5592,18 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
   //     CIRCLE (C1-smooth junction).
   // Only applied to box-like (~90°) triple-vertex corners with equal
   // radii; other corners keep the cusp (v1 scope).
+  // v1 path, kept for the near-90° corners _c6TrihedralCorners did not take:
+  // cut the cusp pocket out of the already-filleted solid with a ball.
   if (sphericalCorners) {
-    // group edges by endpoint vertex index
-    const byVertex = new Map(); // vertexIndex -> [edgeGeom entries]
-    for (const g of edgeGeom) {
-      for (const k of [g.kA, g.kB]) {
-        if (!byVertex.has(k)) byVertex.set(k, []);
-        byVertex.get(k).push(g);
-      }
-    }
     const caps = [];
-    for (const [vk, eg] of byVertex) {
+    const geomOf = new Map(edgeGeom.map((row) => [row.g, row]));
+    for (const c of cornerInfo.corners) {
+      if (c.exact) continue;
+      const eg = c.geoms.map((g) => geomOf.get(g)).filter(Boolean);
       if (eg.length !== 3) continue;
-      const [g1, g2, g3] = eg;
-      if (Math.abs(g1.r - g2.r) > 1e-6 || Math.abs(g1.r - g3.r) > 1e-6) continue;
-      // v1: only ~90° corners (all three face angles)
-      if (!eg.every(g => Math.abs(g.theta - Math.PI/2) < 0.02)) continue;
-
-      // P = the shared vertex point; d_i = unit direction from P INTO edge i
-      const P = g1.kA === vk ? g1.V0 : g1.V1;
-      const dOf = (g) => {
-        const other = g.kA === vk ? g.V1 : g.V0; // endpoint that is NOT P
-        return _c6Norm(_c6Sub(other, P));
-      };
-      const d1 = dOf(g1), d2 = dOf(g2), d3 = dOf(g3);
-      if (_c6Len(_c6Cross(d1, d2)) < 0.5 || _c6Len(_c6Cross(d2, d3)) < 0.5 ||
-          _c6Len(_c6Cross(d3, d1)) < 0.5) continue; // two edges nearly parallel
-
-      // inward face normals: face(d1,d2) ⊥ d3, so its inward normal is
-      // ±(d1×d2) with the sign pointing toward the solid — i.e. positive
-      // dot with the THIRD edge direction (which lies in the solid's
-      // trihedral cone for a convex corner). For a convex trihedral corner
-      // the three inward normals are mutually orthogonal, and the corner
-      // box basis is {m12, m23, m31}.
-      const inwardOf = (a, b, third) => {
-        const n = _c6Norm(_c6Cross(a, b));
-        const dot = n[0]*third[0] + n[1]*third[1] + n[2]*third[2];
-        return dot < 0 ? [-n[0], -n[1], -n[2]] : n;
-      };
-      const m12 = inwardOf(d1, d2, d3); // normal of the face containing d1,d2
-      const m23 = inwardOf(d2, d3, d1);
-      const m31 = inwardOf(d3, d1, d2);
-      const r0 = g1.r;
-      // incenter: equidistant r0 from all three faces
-      const O = [
-        P[0] + r0*(m12[0]+m23[0]+m31[0]),
-        P[1] + r0*(m12[1]+m23[1]+m31[1]),
-        P[2] + r0*(m12[2]+m23[2]+m31[2]),
-      ];
-      // sanity: for orthogonal faces |O−P| = r0·√3
-      const dist = _c6Len(_c6Sub(O, P));
-      const dev = Math.abs(dist - r0*Math.sqrt(3));
-      if (dev > 1e-3 * r0 + 1e-6)
-        throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r0*Math.sqrt(3)})`);
+      const { P, r: r0 } = c;
+      const [m12, m23, m31] = c.m;
+      const O = c.O;
       const unitBall = M.sphere(r0, FILLET_EDGES_CORNER_SEGMENTS);
       // Face identity: the ball's runs are the `<block>.corner` face. Read
       // the id before the transform; a transformed manifold reports -1 while
@@ -5181,7 +5627,7 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
         mkPt(1,1,0), mkPt(1,0,1), mkPt(0,1,1), mkPt(1,1,1),
       ]);
       let cap = cornerBox;
-      for (const g of eg) cap = M.intersection(cap, g.cyl);
+      for (const g of eg) cap = M.intersection(cap, g.cyl());
       const seCap = _c4StatusError(cap);
       if (seCap || cap.volume() < 1e-9)
         throw new Error(`filletEdges: bad corner material (${seCap || 'ok'}, vol ${cap.volume()})`);
@@ -9716,11 +10162,16 @@ function _probeOriginalID() {
 }
 /**
  * Full-circle counts inside filletEdges. The cylinder is the fillet arc;
- * the ball is the spherical corner. The face graph turns these into a
- * per-source facet step (360°/count).
+ * the corner count is the spherical corner's grid (a quarter of it per
+ * side of the octant) and must divide the cylinder count, so the corner's
+ * boundary ring is the sail's own vertices. The face graph turns these into
+ * a per-source facet step (360°/count).
  */
 const FILLET_EDGES_CIRCLE_SEGMENTS = 384;
-const FILLET_EDGES_CORNER_SEGMENTS = 256;
+const FILLET_EDGES_CORNER_SEGMENTS = 128;
+if ((FILLET_EDGES_CIRCLE_SEGMENTS / 4) % (FILLET_EDGES_CORNER_SEGMENTS / 4) !== 0) {
+  throw new Error('filletEdges: the corner grid must divide the sail ring');
+}
 /**
  * originalIDs of the corner balls the current blend op built
  * (`filletEdges` with `sphericalCorners`). Their runs are stamped

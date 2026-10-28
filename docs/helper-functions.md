@@ -1076,16 +1076,22 @@ and non-circular chains).**
 
 **Spherical corner caps** (`opts.sphericalCorners: true`). Three fillets
 meeting at a box corner converge to a sharp cusp point — the plain
-result is a valid but pointy corner. With this option the cusp pocket is
-cut away by a ball of radius `r` centered on the trihedral incenter
+result is a valid but pointy corner. With this option the cusp is
+replaced by the sphere of radius `r` centered on the trihedral incenter
 (equidistant `r` from all three faces and lying ON all three fillet
-cylinder axes), leaving a spherical corner patch that is tangent to each
+cylinder axes): a spherical corner patch that is tangent to each
 fillet sail along a circle (C1 junction) and to each face at one point —
-i.e. the true CAD r/r/r rounded corner. v1 scope: applies only at
-vertices where exactly THREE filleted edges meet at ~90° with EQUAL
-radii; other corners keep the cusp, and non-triple corners are
-unaffected (the option is a no-op on an edge set whose corners have
-fewer than three fillets).
+i.e. the true CAD r/r/r rounded corner. An exact right-angle corner is
+built as meshes (each edge cutter stops at the junction plane and one
+pocket solid holds the sphere octant) that share their ring vertices, so
+nothing is cut between tangent surfaces: on a 40×30×20 box each sail is
+one face, each corner is one face (`<block>.corner[k]`, see
+[architecture.md](architecture.md) → Face graph walls), and the result
+has no needle triangles. v1 scope: applies only at vertices where exactly
+THREE filleted edges meet at ~90° with EQUAL radii; other corners keep
+the cusp, and non-triple corners are unaffected (the option is a no-op
+on an edge set whose corners have fewer than three fillets). A corner a
+fraction of a degree off square keeps the older ball cut.
 
 **Verified** against analytic volumes: single edge, 4 top edges, all 12
 box edges (pair + triple corner overlaps), an obtuse wedge (90°/116°/153°
