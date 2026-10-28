@@ -95,6 +95,8 @@ Finish each stage across the whole assembly before starting the next, and take a
 - **`git_save`** `{ message }`: the one vault content write, same planSave / writeVaultCommit path as the Save button. Clean working copy → `{ status: "clean" }`, no commit. `git_add_to_repo` is an alias; prefer `git_save`.
 - `git_move_to_repo` (first Save of a local assembly, consent on a real repo), `git_upgrade_vault`, `git_behind_resolve`, `git_force_overwrite`, and the branch tools `git_branch_create` / `git_branch_switch` / `git_branch_delete` (`git_list_branches` is read-only).
 
+A save is many GitHub round trips. When it is still running after about 20 s, `git_save` answers `{ status: "running", saveId }` and the save keeps going; poll `git_save_status { save_id }` until it answers the save result (`committed` with `sha`, `clean`, or the error). The bridge is free for other calls meanwhile.
+
 `git_save` errors pass through unchanged ([git-save-model.md §3.7](../git-save-model.md#37-error-contract)): `consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`.
 
 `dirty.unsaved` is working copy vs the last AssemblyCommit (survives reload; rename / hide / remove count; changing `activeId` does not). `dirty.pendingSave` is an offline plan waiting for a second Save.

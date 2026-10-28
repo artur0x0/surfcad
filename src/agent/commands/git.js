@@ -11,6 +11,79 @@ import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../../utils/git/upgrad
 export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
 
 /**
+ * How long git_save waits for the host before answering `running`. MCP
+ * clients give up at about 60 s and the bridge runs commands on one
+ * chain, so a save that is still talking to GitHub after this budget is
+ * handed back as `{ status: 'running', saveId }` and finished by
+ * git_save_status { save_id }. The save itself keeps going. Tests shorten
+ * the budget through `globalThis.__SURFCAD_AGENT_GIT_SAVE_WAIT_MS`.
+ */
+export const AGENT_GIT_SAVE_WAIT_MS = 20_000;
+/** Finished saves stay readable this long after they end. */
+const SAVE_RECORD_TTL_MS = 10 * 60_000;
+
+function saveWaitMs() {
+  const override = Number(globalThis.__SURFCAD_AGENT_GIT_SAVE_WAIT_MS);
+  return Number.isFinite(override) && override >= 0 ? override : AGENT_GIT_SAVE_WAIT_MS;
+}
+
+/** saveId -> { saveId, message, startedAt, done, finishedAt, outcome } for saves that outlived the budget. */
+const runningSaves = new Map();
+let saveSeq = 0;
+
+function pruneSaves(now = Date.now()) {
+  for (const [id, entry] of runningSaves) {
+    if (entry.done && now - entry.finishedAt > SAVE_RECORD_TTL_MS) runningSaves.delete(id);
+  }
+}
+
+/** Test hook: forget every recorded save. */
+export function _resetRunningSaves() {
+  runningSaves.clear();
+}
+
+export const SAVE_RUNNING_MESSAGE = 'Save is still running (GitHub round trips); poll git_save_status { save_id } until it answers with the save result.';
+
+function runningResult(entry, now = Date.now()) {
+  return {
+    result: {
+      status: 'running',
+      saveId: entry.saveId,
+      elapsedMs: now - entry.startedAt,
+      message: SAVE_RUNNING_MESSAGE,
+    },
+  };
+}
+
+/**
+ * Run the host save; if it is still going after the budget, record it and
+ * answer `running`. The host promise is awaited either way, so a late
+ * failure lands in the record, never as an unhandled rejection.
+ */
+async function saveWithBudget(work, message) {
+  const startedAt = Date.now();
+  saveSeq += 1;
+  const entry = { saveId: `save-${saveSeq}-${startedAt.toString(36)}`, message, startedAt, done: false, finishedAt: 0, outcome: null };
+  const settled = work.then(
+    (out) => { entry.done = true; entry.finishedAt = Date.now(); entry.outcome = out; return out; },
+    (err) => {
+      entry.done = true;
+      entry.finishedAt = Date.now();
+      entry.outcome = { error: { code: 'internal', message: String(err?.message || err) } };
+      return entry.outcome;
+    },
+  );
+  let timer = null;
+  const budget = new Promise((resolve) => { timer = setTimeout(() => resolve(null), saveWaitMs()); });
+  const first = await Promise.race([settled.then(() => entry), budget]);
+  if (timer) clearTimeout(timer);
+  if (first === entry) return entry.outcome;
+  pruneSaves();
+  runningSaves.set(entry.saveId, entry);
+  return runningResult(entry);
+}
+
+/**
  * Returns null when the agent may write, else a structured refusal. Never
  * awaits the user: an interactive tab shows the modal and the call returns
  * `consent_pending` at once, so the MCP client can retry after Allow.
@@ -99,7 +172,45 @@ export const gitSaveCommand = Object.freeze({
   },
   async run(ctx, args) {
     const message = String(args?.message || '').trim();
-    return hostGit(ctx, 'agentGitSave', { message }, { commandName: 'git_save' });
+    return saveWithBudget(hostGit(ctx, 'agentGitSave', { message }, { commandName: 'git_save' }), message);
+  },
+});
+
+/**
+ * The outcome of a git_save that answered `running`: the same result or
+ * error git_save would have returned, or `running` again. Immediate, so it
+ * answers while the save is still on the wire.
+ */
+export const gitSaveStatusCommand = Object.freeze({
+  name: 'git_save_status',
+  schema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['save_id'],
+    properties: {
+      save_id: { type: 'string', description: 'saveId from a git_save that answered status running' },
+    },
+  }),
+  example: { save_id: 'save-1-abc' },
+  immediate: true,
+  checkArgs(args) {
+    const id = typeof args?.save_id === 'string' ? args.save_id.trim() : '';
+    if (!id) return { code: 'bad_args', message: 'git_save_status needs save_id' };
+    return null;
+  },
+  run(ctx, args) {
+    const id = String(args?.save_id || '').trim();
+    pruneSaves();
+    const entry = runningSaves.get(id);
+    if (!entry) {
+      return { error: { code: 'unknown_save', message: `No running or recent save ${id}; git_save answers its result directly when it finishes within the budget.` } };
+    }
+    if (!entry.done) return runningResult(entry);
+    const out = entry.outcome;
+    if (out && out.result && typeof out.result === 'object' && !Array.isArray(out.result)) {
+      return { result: { ...out.result, saveId: entry.saveId } };
+    }
+    return out;
   },
 });
 

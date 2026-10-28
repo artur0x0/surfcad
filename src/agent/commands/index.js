@@ -98,6 +98,7 @@ import { partGetTransformCommand, partSetTransformCommand } from './partTransfor
 import {
   gitMoveToRepoCommand,
   gitSaveCommand,
+  gitSaveStatusCommand,
   gitUpgradeVaultCommand,
   gitAddToRepoCommand,
   gitBehindResolveCommand,
@@ -356,6 +357,7 @@ const V1_COMMAND_LIST = [
   feaPickCommand,
   gitMoveToRepoCommand,
   gitSaveCommand,
+  gitSaveStatusCommand,
   gitUpgradeVaultCommand,
   gitAddToRepoCommand,
   gitBehindResolveCommand,
