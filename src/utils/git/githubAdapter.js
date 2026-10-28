@@ -16,6 +16,7 @@ import {
   GITHUB_COMPARE_FILE_LIMIT,
   assertGithubAdapter,
 } from './githubAdapterInterface.js';
+import { mapLimit, VAULT_READ_CONCURRENCY } from './mapLimit.js';
 import { normalizeRepoPath } from '../assembly.js';
 import { decodeBase64, encodeBase64, prepareCommitFiles } from './binaryContent.js';
 import { parseVaultPath, VAULT_MARKER_PATH } from './vaultLayout.js';
@@ -178,7 +179,18 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
    * An empty repo may be seeded only when `seed` is set and the commit
    * itself writes a valid marker — that is the repo find-or-create just created.
    */
-  async function guardVaultWrite(repo, { seed = false, files = null, ref = null } = {}) {
+  async function guardVaultWrite(repo, opts = {}) {
+    return (await guardVaultWriteInfo(repo, opts)).repo;
+  }
+
+  /**
+   * The guard, keeping what it learned on the way: the repo info and the
+   * target branch head, so `commitFiles` does not ask GitHub for either a
+   * second time. `head` is the branch row for `ref` (or the default
+   * branch), or null when that branch does not exist.
+   * -> { repo, info, target, head }
+   */
+  async function guardVaultWriteInfo(repo, { seed = false, files = null, ref = null } = {}) {
     const { res, data } = await json(repoPath(repo));
     if (res.status === 404) {
       throw new GitAdapterError('not_found', `Repo ${repo.owner}/${repo.name} not found`);
@@ -196,8 +208,9 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
 
     const target = ref || info.defaultBranch || 'main';
     const head = await getBranchInner(canonical, target);
+    const ok = { repo: canonical, info, target, head: head?.sha ? head : null };
     if (head?.sha) {
-      if (await marked(target)) return canonical;
+      if (await marked(target)) return ok;
       return refuse();
     }
 
@@ -205,28 +218,38 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
     if (target !== defaultBranch) {
       const defaultHead = await getBranchInner(canonical, defaultBranch);
       if (defaultHead?.sha) {
-        if (await marked(defaultBranch)) return canonical;
+        if (await marked(defaultBranch)) return ok;
         return refuse();
       }
     }
 
     const branches = await listBranchNames(canonical);
     if (branches.length > 0) {
-      if (await marked(branches[0])) return canonical;
+      if (await marked(branches[0])) return ok;
       return refuse();
     }
 
-    if (seed && filesIncludeVaultMarker(files)) return canonical;
+    if (seed && filesIncludeVaultMarker(files)) return ok;
     return refuse();
   }
 
+  /**
+   * GET /branches/:name. GitHub embeds the head commit, so `treeSha` is the
+   * head's tree when the response carries it (a fake server may not), and
+   * a commit built on it needs no GET /git/commits/:sha.
+   */
   async function getBranchInner(repo, branch) {
     const { res, data } = await json(
       `${repoPath(repo)}/branches/${encodeURIComponent(branch)}`,
     );
     if (res.status === 404) return null;
     if (!res.ok) throw new GitAdapterError('invalid', data?.message || 'getBranch failed');
-    return { name: data.name, sha: data.commit?.sha };
+    const treeSha = data.commit?.commit?.tree?.sha;
+    return {
+      name: data.name,
+      sha: data.commit?.sha,
+      ...(typeof treeSha === 'string' && treeSha ? { treeSha } : {}),
+    };
   }
 
   /**
@@ -501,13 +524,13 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
       if (typeof onLargeFile === 'function') {
         for (const item of prepared.largeFiles) onLargeFile(item);
       }
-      repo = await guardVaultWrite(repo, { seed, files, ref: branch || null });
-      const info = await this.getRepo(repo);
-      if (!info) throw new GitAdapterError('not_found', `Repo ${repo.owner}/${repo.name} not found`);
-      const target = branch || info.defaultBranch || 'main';
+      // The guard already fetched the repo and the target branch head.
+      const guarded = await guardVaultWriteInfo(repo, { seed, files, ref: branch || null });
+      repo = guarded.repo;
+      const { info, target } = guarded;
 
       let head = null;
-      const br = await getBranchInner(repo, target);
+      const br = guarded.head;
       if (br) head = br.sha;
       else if (!info.empty) {
         const branches = await this.listBranches(repo);
@@ -530,14 +553,23 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
         return { ...created, largeFiles: prepared.largeFiles };
       }
 
-      let baseEntries = [];
-      let parentTreeSha = null;
-      {
+      // The parent tree sha: from the branch row when GitHub embedded the
+      // head commit, else one GET of the commit.
+      let parentTreeSha = br?.treeSha || null;
+      if (!parentTreeSha) {
         const { res: cRes, data: cData } = await json(
           `${repoPath(repo)}/git/commits/${encodeURIComponent(head)}`,
         );
         if (!cRes.ok) throw new GitAdapterError('invalid', cData?.message || 'parent commit failed');
         parentTreeSha = cData.tree.sha;
+      }
+
+      // Deletes need a full tree (no base_tree), so only a delete downloads
+      // the parent tree. Adds and edits go on base_tree with just their
+      // own entries: the plan already handed us only the files that changed.
+      const hasDelete = files.some((f) => f.delete);
+      let baseEntries = [];
+      if (hasDelete) {
         const { res: tRes, data: tData } = await json(
           `${repoPath(repo)}/git/trees/${encodeURIComponent(parentTreeSha)}?recursive=1`,
         );
@@ -545,34 +577,46 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
         baseEntries = (tData.tree || []).filter((e) => e.type === 'blob');
       }
 
-      const byPath = new Map(baseEntries.map((e) => [e.path, e]));
-      for (const f of prepared.files) {
+      const paths = prepared.files.map((f) => {
         const path = normalizeRepoPath(f?.path);
         if (!path) throw new GitAdapterError('invalid', `Bad path "${f?.path}"`);
+        return path;
+      });
+      // Blobs upload in parallel under the read cap; a script and its mesh
+      // used to go up one after the other.
+      const uploads = await mapLimit(prepared.files, VAULT_READ_CONCURRENCY, async (f) => {
+        if (f.delete) return null;
+        const { res, data } = await json(`${repoPath(repo)}/git/blobs`, {
+          method: 'POST',
+          body: blobApiBody(f),
+        });
+        if (!res.ok) throw new GitAdapterError('invalid', data?.message || 'blob create failed');
+        return data.sha;
+      });
+
+      const byPath = new Map(baseEntries.map((e) => [e.path, e]));
+      const changed = [];
+      prepared.files.forEach((f, i) => {
+        const path = paths[i];
         if (f.delete) {
           byPath.delete(path);
-        } else {
-          const { res, data } = await json(`${repoPath(repo)}/git/blobs`, {
-            method: 'POST',
-            body: blobApiBody(f),
-          });
-          if (!res.ok) throw new GitAdapterError('invalid', data?.message || 'blob create failed');
-          byPath.set(path, { path, mode: '100644', type: 'blob', sha: data.sha });
+          return;
         }
-      }
+        const entry = { path, mode: '100644', type: 'blob', sha: uploads[i] };
+        byPath.set(path, entry);
+        changed.push(entry);
+      });
 
-      const fullTree = [...byPath.values()].map((e) => ({
-        path: e.path,
-        mode: e.mode || '100644',
-        type: 'blob',
-        sha: e.sha,
-      }));
-
-      // Deletes need a full tree (no base_tree). Adds/edits can use base_tree.
-      const hasDelete = files.some((f) => f.delete);
-      const treeBody = (!hasDelete && parentTreeSha)
-        ? { base_tree: parentTreeSha, tree: treeDiff(baseEntries, fullTree) }
-        : { tree: fullTree };
+      const treeBody = hasDelete
+        ? {
+          tree: [...byPath.values()].map((e) => ({
+            path: e.path,
+            mode: e.mode || '100644',
+            type: 'blob',
+            sha: e.sha,
+          })),
+        }
+        : { base_tree: parentTreeSha, tree: changed };
 
       const { res: treeRes, data: treeData } = await json(`${repoPath(repo)}/git/trees`, {
         method: 'POST',
@@ -726,17 +770,6 @@ function filterTree(tree, prefix) {
     out.push({ path: e.path, type: 'blob', sha: e.sha });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
-}
-
-function treeDiff(baseEntries, nextEntries) {
-  const base = new Map(baseEntries.map((e) => [e.path, e.sha]));
-  const changes = [];
-  for (const e of nextEntries) {
-    if (base.get(e.path) !== e.sha) {
-      changes.push({ path: e.path, mode: e.mode || '100644', type: 'blob', sha: e.sha });
-    }
-  }
-  return changes;
 }
 
 function mapFileStatus(s) {

@@ -164,7 +164,7 @@ test('pin: opening a three-part assembly with three meshes on the mock is 3 + pa
   assert.equal(peak, 3, 'the three scripts (and the three meshes) are read at the same time');
 });
 
-test('pin: a one-part Save after a seed commit is 6 adapter calls on the mock (planSave reads back every tip file); the seed is 5', async () => {
+test('pin: a one-part Save after a seed commit is 3 adapter calls on the mock (the tree listing carries every hash); the seed is 5', async () => {
   const { timings } = recorder();
   const gh = timings.wrapAdapter(createMockGithubAdapter({ login: 'artur' }));
   const store = createSyncStore({ persist: false });
@@ -190,19 +190,76 @@ test('pin: a one-part Save after a seed commit is 6 adapter calls on the mock (p
   }));
   assert.equal(saved.status, 'committed', saved.error);
   const s = timings.last();
-  // getBranch (tip), listTree (tip tree), then one read per file on the
-  // tip: readFile(assembly), readFile(part), readBlob(mesh); then the
-  // commit. compare is skipped because the stored tip equals the remote.
+  // getBranch (tip), listTree (tip tree: every entry's sha is its blob
+  // hash, so no tip file is read back; PR 1 pinned a readFile per script
+  // and assembly and a readBlob per mesh), then the commit. compare is
+  // skipped because the stored tip equals the remote.
   assert.deepEqual(s.byMethod, {
     getBranch: { n: 1, ms: s.byMethod.getBranch.ms, failed: 0 },
     listTree: { n: 1, ms: s.byMethod.listTree.ms, failed: 0 },
-    readFile: { n: 2, ms: s.byMethod.readFile.ms, failed: 0 },
-    readBlob: { n: 1, ms: s.byMethod.readBlob.ms, failed: 0 },
     commitFiles: { n: 1, ms: s.byMethod.commitFiles.ms, failed: 0 },
   });
-  assert.equal(s.calls, 6);
-  assert.deepEqual(s.rows.map((r) => r.method), ['getBranch', 'listTree', 'readFile', 'readFile', 'readBlob', 'commitFiles']);
+  assert.equal(s.calls, 3, 'PR 1 pinned 6');
+  assert.deepEqual(s.rows.map((r) => r.method), ['getBranch', 'listTree', 'commitFiles']);
   // One mock commitFiles is a dozen HTTP calls on the real adapter; that is
   // what the HTTP counter is for. Here there is none.
   assert.equal(s.http, 0);
+});
+
+test('pin: commitFiles of a script and its mesh on the real adapter is 8 HTTP round trips, the two blobs in flight together', async () => {
+  const HEAD = '1111111111111111111111111111111111111111';
+  const TREE = '2222222222222222222222222222222222222222';
+  const MARKER_TEXT = globalThis.btoa(MARKER);
+  let blobs = 0;
+  let inFlight = 0;
+  let peak = 0;
+  const body = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+  const fakeFetch = async (url, init) => {
+    const method = init?.method || 'GET';
+    const path = new URL(url).pathname;
+    if (method === 'GET' && path === '/repos/artur/surfcad-vault') return body(200, { name: 'surfcad-vault', owner: { login: 'artur' }, default_branch: 'main', private: true, size: 1 });
+    if (method === 'GET' && path.endsWith('/branches/main')) {
+      // GitHub embeds the head commit, tree sha included.
+      return body(200, { name: 'main', commit: { sha: HEAD, commit: { tree: { sha: TREE } } } });
+    }
+    if (method === 'GET' && path.includes('/contents/surfcad.json')) return body(200, { type: 'file', content: MARKER_TEXT, encoding: 'base64', sha: 'm' });
+    if (method === 'POST' && path.endsWith('/git/blobs')) {
+      blobs += 1;
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight -= 1;
+      return body(201, { sha: `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb${blobs}` });
+    }
+    if (method === 'POST' && path.endsWith('/git/trees')) {
+      assert.equal(init.body.includes('"base_tree":"' + TREE + '"'), true, 'adds and edits build on base_tree without downloading the parent tree');
+      return body(201, { sha: '3333333333333333333333333333333333333333' });
+    }
+    if (method === 'POST' && path.endsWith('/git/commits')) return body(201, { sha: '4444444444444444444444444444444444444444' });
+    if (method === 'PATCH' && path.endsWith('/git/refs/heads/main')) return body(200, { object: { sha: '4444444444444444444444444444444444444444' } });
+    return body(404, { message: `unexpected ${method} ${path}` });
+  };
+  const { timings } = recorder();
+  const gh = timings.wrapAdapter(createGithubAdapter({ token: 'test-token', fetchImpl: timings.wrapFetch(fakeFetch) }));
+  const end = timings.begin('commit');
+  const out = await gh.commitFiles(REPO, {
+    branch: 'main',
+    message: 'edit',
+    baseSha: HEAD,
+    files: [
+      { path: partIdPath(P), content: 'return 2;\n' },
+      { path: partMeshIdPath(P), content: MESH, binary: true },
+    ],
+  });
+  const s = end();
+  assert.equal(out.sha, '4444444444444444444444444444444444444444');
+  // repo, branch (with the tree sha), marker, two blobs, tree, commit, ref.
+  assert.deepEqual(Object.keys(s.byEndpoint), [
+    'GET /', 'GET branches/:path', 'GET contents/:path', 'POST git/blobs', 'POST git/trees', 'POST git/commits', 'PATCH git/refs/heads/main',
+  ]);
+  assert.equal(s.http, 8);
+  assert.equal(s.byEndpoint['POST git/blobs'].n, 2);
+  assert.equal(peak, 2, 'the two blobs upload at the same time');
+  assert.equal('GET git/commits/:sha' in s.byEndpoint, false, 'the parent commit is not fetched when the branch row carried its tree');
+  assert.equal('GET git/trees/:sha' in s.byEndpoint, false, 'the parent tree is downloaded only for a delete');
 });
