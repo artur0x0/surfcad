@@ -134,6 +134,7 @@ export const ERROR_HINTS = Object.freeze({
   real_repo_blocked: { hint: 'This session cannot get consent for a real-repo write: tell the user and stop; do not loop.', guide: CONSENT_GUIDE },
   confirm_required: { hint: 'Nothing changed: ask the user (details lists what the change touches), and only then retry with confirm: true.', guide: CONSENT_GUIDE },
   pending_save: { hint: 'The write is planned offline: ask the user to Save again when online; nothing more to do now.' },
+  unknown_save: { hint: 'No save with that id is running or recent in this tab: a git_save that finished within its budget answered its result directly; call git_save { message } again if the save is still wanted.' },
   upgrade_required: { hint: 'Legacy vault: after the user agrees, git_upgrade_vault { confirm: true }, then git_save again.' },
   upgrade_unavailable: { hint: 'The vault cannot be upgraded from here (message says why): tell the user and stop.' },
   conflict: { hint: 'A remote edit overlaps this save: git_behind_resolve { action: "reload" | "branch", confirm: true } after the user chooses, or git_force_overwrite with confirm: true.' },

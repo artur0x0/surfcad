@@ -458,6 +458,7 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `confirm_required` | Destructive git without `confirm: true` | Ask the user; only then pass `confirm: true` |
 | `conflict` / `repo-moved` | Save (or main-moved) and compare overlaps planned files | `git_force_overwrite`, `git_behind_resolve { action: "reload" }` (Get latest), or `{ action: "branch" }` with confirm; or stop (Dismiss) |
 | `pending_save` | Offline plan waiting | Tell the user to Save again when online |
+| `unknown_save` | `git_save_status` with a `save_id` no save in this tab ran past the budget with, or one that finished over 10 minutes ago | `git_save` again if the save is still wanted |
 | `feature_failed` | Kernel/script error | Same text the UI shows (T16 — MCP batch; contract still requires it) |
 
 Never return a generic `"Feature failed"` as the only message. Never pass `confirm: true` unless the user asked for that destructive action. **Do not** return `path_less_parts` or `vault_tree_unavailable` for occupancy (occupancy is gone). A `path` argument is `unknown_part` / `unknown_assembly` (or `bad_args` if the schema rejects it). `listTree` may still be used to scan references on delete; failure there is fail-closed (`part_still_referenced` / refuse delete), not “empty tree.”
