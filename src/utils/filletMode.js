@@ -60,6 +60,7 @@ import {
 } from './selectEdge.js';
 import { defaultBlendSizeMm } from './blendSize.js';
 import { classifyFilletEdges } from './filletEdgeClass.js';
+import { boxCornerRadiusMax, detectBoxCornerPick } from './filletBoxCorners.js';
 import { shouldUseHardVariableSweep } from './filletKernelSpike.js';
 import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
@@ -325,28 +326,45 @@ export function validateFilletAccept(edges, params = {}) {
     return { ok: false, message: FILLET_BLEND_ONLY };
   }
   let components = [list];
+  // Box corners: a pick where three edges meet at a vertex is not a sweep
+  // chain. When every picked edge is a straight right-angle edge between flat
+  // faces, Accept routes it to the planar rolling-ball kernel, which rounds
+  // each such vertex with a spherical patch. Any other junction is refused.
+  let boxCorners = 0;
   if (resolveFilletStrategy(params.strategy) === 'sweep') {
-    const split = splitEdgePathComponents(list);
-    if (!split.ok) {
-      if (split.code === 'branch') return { ok: false, message: FILLET_SWEEP_BRANCH };
-      return { ok: false, message: split.message || FILLET_MODE_EMPTY };
-    }
-    components = split.components;
-    for (const comp of components) {
-      const gate = canBuildFilletAlongPath(comp);
-      if (!gate.ok) {
-        const msg = gate.message || FILLET_MODE_EMPTY;
-        if (/branch/i.test(msg)) return { ok: false, message: FILLET_SWEEP_BRANCH };
-        if (/disconnect/i.test(msg)) {
-          return { ok: false, message: msg.includes('disconnected') ? msg : FILLET_SWEEP_DISCONNECTED };
+    const box = params.profile === 'chamfer' ? null : detectBoxCornerPick(list, { geometry: params.geometry || null });
+    if (box && !box.ok) return { ok: false, message: box.message };
+    if (box) {
+      boxCorners = box.junctions;
+    } else {
+      const split = splitEdgePathComponents(list);
+      if (!split.ok) {
+        if (split.code === 'branch') return { ok: false, message: FILLET_SWEEP_BRANCH };
+        return { ok: false, message: split.message || FILLET_MODE_EMPTY };
+      }
+      components = split.components;
+      for (const comp of components) {
+        const gate = canBuildFilletAlongPath(comp);
+        if (!gate.ok) {
+          const msg = gate.message || FILLET_MODE_EMPTY;
+          if (/branch/i.test(msg)) return { ok: false, message: FILLET_SWEEP_BRANCH };
+          if (/disconnect/i.test(msg)) {
+            return { ok: false, message: msg.includes('disconnected') ? msg : FILLET_SWEEP_DISCONNECTED };
+          }
+          return { ok: false, message: msg };
         }
-        return { ok: false, message: msg };
       }
     }
   }
   // Clamp shared radius to the tightest per-component sweep hard-max so one
   // Accept radius is safe for every independent filletAlongPath.
-  const n = normalizeFilletParams(params, list);
+  const n = normalizeFilletParams(boxCorners ? { ...params, strategy: 'planar' } : params, list);
+  if (boxCorners) {
+    // The planar kernel skips an edge whose setback passes 0.45 of its
+    // length; the preview paints the same clamped radius.
+    n.sphericalCorners = true;
+    n.radius = Math.min(n.radius, boxCornerRadiusMax(list));
+  }
   if (n.strategy === 'sweep' && components.length > 1) {
     let hard = Infinity;
     for (const comp of components) {
@@ -356,7 +374,7 @@ export function validateFilletAccept(edges, params = {}) {
       n.radius = Math.min(n.radius, hard);
     }
   }
-  return { ok: true, normalized: n, components };
+  return { ok: true, normalized: n, components, boxCorners };
 }
 
 function _sub(a, b) {
@@ -637,6 +655,54 @@ export function buildFilletBlendPreview(edges, params = {}) {
   }
 
   if (n.strategy === 'sweep') {
+    // Box corners (see validateFilletAccept): one wedge per edge; the
+    // spherical corners themselves are not drawn.
+    const box = n.profile === 'chamfer' ? null : detectBoxCornerPick(list, { geometry: params.geometry || null });
+    if (box && !box.ok) {
+      return {
+        ...base,
+        ok: false,
+        message: box.message,
+        code: 'box-corner',
+        path: null,
+        preview: null,
+        rings: null,
+        polylines: disconnectedPathPolylines(list),
+        componentCount: 0,
+        boxCorners: 0,
+      };
+    }
+    if (box) {
+      const boxR = Math.min(radius, boxCornerRadiusMax(list));
+      const parts = list.map((edge) => buildSingleFilletBlendPreview([edge], {
+        ...params,
+        strategy: 'sweep',
+        radius: boxR,
+      }));
+      const allOk = parts.every((p) => p.ok);
+      const polylines = [];
+      for (const p of parts) {
+        if (p.preview?.points?.length) polylines.push(p.preview.points);
+        else if (p.polylines?.length) polylines.push(...p.polylines);
+      }
+      return {
+        ...base,
+        strategy: 'planar',
+        radius: boxR,
+        sweepMax: boxCornerRadiusMax(list),
+        ok: allOk,
+        message: allOk ? undefined : (parts.find((p) => !p.ok)?.message || FILLET_MODE_EMPTY),
+        path: null,
+        preview: null,
+        rings: null,
+        components: parts,
+        componentCount: 1,
+        boxCorners: box.junctions,
+        polylines,
+        closed: false,
+        length: parts.reduce((s, p) => s + (Number(p.length) || 0), 0),
+      };
+    }
     const split = splitEdgePathComponents(list);
     if (!split.ok) {
       return {
@@ -756,8 +822,10 @@ export function composeFilletCommit(buffer, {
   geometry = null,
   reservedNames = null,
 } = {}) {
-  const gate = validateFilletAccept(edges, params);
+  const geom = geometry || params.geometry || null;
+  const gate = validateFilletAccept(edges, geom ? { ...params, geometry: geom } : params);
   if (!gate.ok) return gate;
+  const boxCorners = gate.boxCorners || 0;
 
   const text = String(buffer || '');
   if (markersUnbalanced(text, FILLET_MODE_BEGIN, FILLET_MODE_END)) {
@@ -770,8 +838,8 @@ export function composeFilletCommit(buffer, {
   // Prefer an explicit class from the viewport (#50 chip). Without geometry,
   // untagged edges look "hard" to classifyFilletEdges — do not flip goldens /
   // one-shot Accept onto the hard variable-profile path unless callers ask.
-  let klass = filletClass || params.filletClass || null;
-  const geom = geometry || params.geometry || null;
+  // A box-corner pick is the planar kernel's own case: no hard class.
+  let klass = boxCorners ? 'easy' : (filletClass || params.filletClass || null);
   if (!klass && geom) {
     klass = classifyFilletEdges(edges, {
       radius: gate.normalized.radius,
@@ -779,11 +847,12 @@ export function composeFilletCommit(buffer, {
     }).klass;
   }
   if (!klass) klass = 'easy';
-  const hardVariable = shouldUseHardVariableSweep(klass);
+  const hardVariable = !boxCorners && shouldUseHardVariableSweep(klass);
   const emitParams = {
     ...gate.normalized,
     _filletMode: true,
     ...(hardVariable ? { _hardVariableProfile: true } : {}),
+    ...(boxCorners ? { _boxCorners: boxCorners } : {}),
   };
 
   const base = commitMode === 'append' ? text : stripFilletModeBlock(text);
@@ -842,6 +911,11 @@ export function composeFilletCommit(buffer, {
       ok: false,
       message: 'composeFilletCommit: filletEdges missing — refusing silent no-op.',
     };
+  } else if (boxCorners && !/sphericalCorners:\s*true/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeFilletCommit: box corners need sphericalCorners — refusing silent no-op.',
+    };
   }
   if (!hasFilletModeBlock(composed)) {
     return {
@@ -849,11 +923,14 @@ export function composeFilletCommit(buffer, {
       message: 'composeFilletCommit: fillet-mode markers missing — refusing unscoped insert.',
     };
   }
+  let kernel = hardVariable ? 'variable-profile-sweep' : 'sweep-dihedral';
+  if (gate.normalized.strategy === 'planar') kernel = boxCorners ? 'planar-box-corners' : 'planar-rolling-ball';
   return {
     ok: true,
     buffer: composed,
     run: true,
-    kernel: hardVariable ? 'variable-profile-sweep' : 'sweep-dihedral',
+    kernel,
+    ...(boxCorners ? { boxCorners } : {}),
   };
 }
 

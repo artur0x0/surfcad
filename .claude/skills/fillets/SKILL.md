@@ -25,7 +25,7 @@ the bundled WASM Manifold has no solid `offset()` / minkowski. 2D
 | --- | --- | --- |
 | **easy** — boxy, short chain, ~constant dihedral | dihedral **sweep**: per-segment in-face frames, θ-grouped runs | `filletAlongPath(part, path, r)` |
 | **hard** — loft walls, twisted, variable θ, long chain | **varying-profile sweep** (C3.3): densified path-normal inscribed-arc frames, one cutter with a **per-knot cross-section** | `filletAlongPath(part, path, r, { variableProfile: true })` |
-| manual override | classic **planar rolling-ball**: parallelepiped − cylinder per edge | `filletEdges(part, edges, r, { sphericalCorners })` |
+| **box corners** — a pick where three straight right-angle edges between flat faces meet at a vertex (one corner, or the whole box); also the manual override | classic **planar rolling-ball**: parallelepiped − cylinder per edge, mesh-built spherical patch where three equal fillets meet | `filletEdges(part, edges, r, { sphericalCorners: true })` |
 
 **Concave edges are supported (C4)** and route automatically: the sign is read
 per knot, convex runs become cutters (`difference`), concave runs become fillers
@@ -61,8 +61,17 @@ Kernel choice is one function: `filletKernelSpike.js` →
    path via `assembleSweepPath` and paints wedge rings with the *same*
    `dihedralFilletContour` math the worker runs. Path topology is strict: one
    contiguous open chain or closed loop. Gaps ⇒ `FILLET_SWEEP_DISCONNECTED`; Y/T
-   junctions ⇒ `FILLET_SWEEP_BRANCH`. Disconnected picks still draw their
-   polylines so the user sees why.
+   junctions ⇒ `FILLET_SWEEP_BRANCH`, **unless the pick is a box corner**
+   (`filletBoxCorners.js` `detectBoxCornerPick`: a vertex joins three picked
+   edges, every row is straight and 90° within 2°, and, with the part
+   geometry at hand, `classifyFilletEdges` reads flat faces on both sides).
+   A box-corner pick previews one wedge per edge (the spherical corners are
+   not drawn), the card reads `Box fillet · N spherical corners`, and the
+   radius is clamped under the planar size guard (0.45 × the shortest picked
+   edge, which also leaves room for two caps per edge). Any other junction
+   is still refused, with `FILLET_BOX_CORNER_FLAT` / `_STRAIGHT` as the
+   reason. Chamfer picks never take this route. Disconnected picks still
+   draw their polylines so the user sees why.
 
    Radius: the card and the helper sheet seed 2 mm in every display unit
    (inches show 0.0787). The slider is a log from 0.5 mm to 25 mm. Hard max
@@ -95,6 +104,18 @@ Kernel choice is one function: `filletKernelSpike.js` →
    else the literal `va/vb` wire, which `filletAlongPath` now refuses when it
    is no longer on the solid. Reopening the card parses `edgesNamed` and
    resolves the names on the live edges (`parseStoredEdges` kind `named`).
+
+   A box-corner pick writes the planar kernel instead, by name:
+
+   ```js
+   const selEdges = edgesNamed(part, "seed.back~seed.bottom", …); // every picked pair
+   part = filletEdges(part, selEdges, 5, { sphericalCorners: true }); // box corners: a spherical patch where three fillets meet
+   ```
+
+   `composeFilletCommit` reports `kernel: 'planar-box-corners'` and refuses
+   a block without `sphericalCorners: true`. Spherical corners are on by
+   default and need no toggle: the kernel caps every vertex where three
+   equal fillets meet at exactly 90° and leaves any other vertex a cusp.
 
    A second Accept **appends** a block (`commitMode: 'append'`, chosen by
    `hasFilletModeBlock`) so it fillets the already-filleted solid.
@@ -187,6 +208,7 @@ The viewport scrap banner is **delta-based** (pre-Accept degenerate-tri count vi
 | `src/utils/filletEdgeClass.js` | easy/hard classification + `countDegenerateTriangles` |
 | `src/utils/filletKernelSpike.js` | kernel choice + `FILLET_HARD_KERNEL_TRIAL` |
 | `src/utils/filletMode.js` | in-mode state, validation, live preview, `composeFilletCommit` |
+| `src/utils/filletBoxCorners.js` | box-corner pick detection (junction + straight + flat), planar radius clamp |
 | `src/utils/filletSliverGuard.js` | degenerate-tri thresholds — import, never restate |
 | `src/utils/edgeSweepPath.js` | `assembleSweepPath` / ordering / topology gates |
 | `src/utils/edgeTangencyField.js` | tangency field, densify, transport, variable-profile frames |
