@@ -19,6 +19,7 @@ const FilletModeChip = ({
   params = {},
   pathOk = false,
   componentCount = 0,
+  boxCorners = 0,
   compact = false,
   onToggleTangent,
   onClear,
@@ -50,13 +51,17 @@ const FilletModeChip = ({
   const title = chamfer ? 'Chamfer' : 'Fillet';
   const heading = `${title} · ${edgeCount} edge${edgeCount === 1 ? '' : 's'}`;
   const subtitle = pathOk
-    ? (componentCount > 1
-      ? `${componentCount} independent ${chamfer ? 'chamfers' : 'fillets'} · Confirm commits and exits`
-      : (chamfer
-        ? 'Sweep chamfer preview · Confirm commits and exits'
-        : 'Sweep blend preview · Confirm commits and exits'))
+    ? (!chamfer && boxCorners > 0
+      ? `Box fillet · ${boxCorners} spherical corner${boxCorners === 1 ? '' : 's'} · Confirm commits and exits`
+      : componentCount > 1
+        ? `${componentCount} independent ${chamfer ? 'chamfers' : 'fillets'} · Confirm commits and exits`
+        : (chamfer
+          ? 'Sweep chamfer preview · Confirm commits and exits'
+          : 'Sweep blend preview · Confirm commits and exits'))
     : edgeCount
-      ? 'Path not ready — branched picks need a simple chain (Tangent on)'
+      ? (chamfer
+        ? 'Path not ready — branched picks need a simple chain (Tangent on)'
+        : 'Path not ready — a branched pick needs a simple chain (Tangent on) or straight box edges')
       : (chamfer ? 'Tap edges, then Confirm' : 'Tap edges — shallow blend tessellation is not pickable');
 
   return (
