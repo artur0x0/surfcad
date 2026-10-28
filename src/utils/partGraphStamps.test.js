@@ -34,13 +34,22 @@ test('a tangent fillet does not merge the flats it meets: every stamped face is 
   const faces = fingerprintsFromGeometry(geometry, faceIDs);
   assert.ok(faces.length > 7, `patches ${faces.length}`);
 
-  // Named faces only: an unnamed sliver the fillet op left on a flat's plane
-  // may join that flat, but two helper-named faces never share a patch.
+  // Two helper-named faces share a patch only across a true coplanar seam:
+  // the rolling-ball cutter's legs lie on the flats, so a flat's patch may
+  // carry a few thin strips stamped with the blend's name. A curved patch
+  // never spans two names.
   const walls = wallTriFace(geometry.userData.faceIdentity.pieceOfTri, geometry.userData.faceIdentity.pieces);
   for (const face of faces) {
     const named = new Set(face.tris.map((t) => walls[t]).filter((p) => p >= 0));
-    assert.ok(named.size <= 1, `patch ${face.id} spans ${named.size} named faces`);
+    if (face.kind !== 'planar') assert.ok(named.size <= 1, `patch ${face.id} spans ${named.size} named faces`);
   }
+  // Every triangle has a name: the cap booleans split each sail cylinder
+  // into several runs, and the stamp covers all of them.
+  const pieceOfTri = geometry.userData.faceIdentity.pieceOfTri;
+  let unstamped = 0;
+  for (let t = 0; t < pieceOfTri.length; t++) if (pieceOfTri[t] < 0) unstamped++;
+  assert.equal(unstamped, 0, 'unstamped triangles');
+  for (const face of faces) assert.ok(stampedNameForTriangles(table, face.tris)?.name, `patch ${face.id} has no name`);
   // The largest patch per stamped name: a one-triangle sliver the curvature
   // rules split off a blend carries the blend's name too.
   const byName = new Map();
@@ -59,6 +68,21 @@ test('a tangent fillet does not merge the flats it meets: every stamped face is 
   const round = byName.get('rim.round');
   assert.ok(round && round.kind !== 'planar', `the fillet surface is its own blend patch: ${JSON.stringify(round)}`);
   assert.ok(round.area < 1000, `the blend patch is the fillet alone, not the box: ${round.area}`);
+  // The eight corner balls are their own named faces, one eighth of a
+  // sphere each (4π·25/8 = 39.3 mm²), and the top names its own patch by
+  // area even though the strips in its plane outnumber its two triangles.
+  const corners = table.faces.filter((f) => f.role === 'corner');
+  assert.equal(corners.length, 8, corners.map((f) => f.name).join(' '));
+  for (const corner of corners) {
+    assert.match(corner.name, /^rim\.corner\[[0-7]\]$/);
+    assert.ok(Math.abs(corner.area - 39.27) < 1.5, `${corner.name} area ${corner.area}`);
+    const patch = byName.get(corner.name);
+    assert.ok(patch && patch.kind !== 'planar', `${corner.name} is a catalog row of its own`);
+    assert.ok(Math.abs(patch.area - corner.area) < 2, `${corner.name} patch area ${patch.area}`);
+  }
+  assert.equal(stampedNameForTriangles(table, top.tris).name, 'seed.top');
+  assert.ok(top.tris.length > 2, 'the top patch carries the strips the cutter left in its plane');
+  assert.equal(table.byName.get('seed.top').tris.length, 2);
 
   // The joint catalog applies the same boundaries.
   const joint = catalogFromMeshData(ran.mesh);

@@ -85,7 +85,8 @@ Kernel choice is one function: `filletKernelSpike.js` →
    (`withEdgeNames` in Viewport, `edgeNamesForPicks` in `faceIdentity.js`),
    and `emitNamedEdgeLines` writes one `edgesNamed(part, ...)` per contiguous
    component: a pair whose every chain is picked is bare, a partial set keeps
-   `[k]`. Blend surfaces are named too (`fillet1.round`, `chamfer2.bevel`: the
+   `[k]`. Blend surfaces are named too (`fillet1.round`, `chamfer2.bevel`, a
+   spherical corner ball `fillet1.corner[k]`: the
    block id Accept mints on the markers; an older block with no `id=` is
    positional, `fillet-2`), so a fillet on a fillet is
    `edgesNamed(part, "fillet1.round~plate.top")`.
