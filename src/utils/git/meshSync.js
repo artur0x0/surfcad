@@ -235,8 +235,9 @@ export function partMeshRecordsFromBaseline(doc, scripts, baselineAssets) {
 }
 
 /**
- * Cache by blob sha, then `readVaultAsset` (tree sha + readBlob).
- * A fetched blob is stored with `putAsset`.
+ * Cache by blob sha, then the blob itself by that sha (one `readBlob`),
+ * then `readVaultAsset` (tree + readBlob) when no sha was given or the
+ * blob is gone. A fetched blob is stored with `putAsset`.
  * -> { sha, bytes, source: 'cache'|'vault' } | null
  */
 export async function readMeshBytes(adapter, repo, ref, meshPath, sha) {
@@ -248,7 +249,14 @@ export async function readMeshBytes(adapter, repo, ref, meshPath, sha) {
       /* cache miss falls through to the vault */
     }
   }
-  const got = await readVaultAsset(adapter, repo, meshPath, ref);
+  let got = null;
+  if (sha && typeof adapter?.readBlob === 'function') {
+    // The caller read the tree already; asking for it again per mesh was
+    // the other half of every mesh's cost.
+    const bytes = await adapter.readBlob(repo, sha);
+    if (bytes instanceof Uint8Array) got = { path: meshPath, sha, bytes };
+  }
+  if (!got) got = await readVaultAsset(adapter, repo, meshPath, ref);
   if (!(got?.bytes instanceof Uint8Array)) return null;
   let stored = got.sha || sha || null;
   try {

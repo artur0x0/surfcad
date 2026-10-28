@@ -75,7 +75,7 @@ test('wrapAdapter counts every adapter call inside a span and leaves the adapter
   assert.equal('rows' in timings.snapshot().history[0], false);
 });
 
-test('wrapFetch labels GitHub endpoints by shape; listTree on the real adapter is three round trips, one of them wasted for a sha ref', async () => {
+test('wrapFetch labels GitHub endpoints by shape; listTree on the real adapter is three round trips by branch, two by sha', async () => {
   assert.equal(endpointLabel('get', 'https://api.github.com/repos/o/r/git/trees/0123456789abcdef0123456789abcdef01234567?recursive=1'), 'GET git/trees/:sha');
   assert.equal(endpointLabel('GET', 'https://api.github.com/repos/o/r/contents/parts/x.js?ref=main'), 'GET contents/:path');
   assert.equal(endpointLabel('GET', 'https://api.github.com/repos/o/r/branches/main'), 'GET branches/:path');
@@ -105,11 +105,11 @@ test('wrapFetch labels GitHub endpoints by shape; listTree on the real adapter i
   end = timings.begin('tree-by-sha');
   await gh.listTree(REPO, SHA);
   s = end();
-  assert.equal(s.http, 3, 'a 40-hex ref still asks /branches first, gets a 404, then reads commit and tree');
-  assert.equal(s.byEndpoint['GET branches/:path'].failed, 1, 'the branch lookup is the wasted round trip');
+  assert.equal(s.http, 2, 'a 40-hex ref is a sha: commit and tree, no /branches lookup');
+  assert.deepEqual(Object.keys(s.byEndpoint), ['GET git/commits/:sha', 'GET git/trees/:sha']);
 });
 
-test('pin: opening a three-part assembly with three meshes on the mock is 3 + parts + 2·meshes adapter calls', async () => {
+test('pin: opening a three-part assembly with three meshes on the mock is 3 + parts + meshes adapter calls, scripts and meshes in parallel', async () => {
   const { timings } = recorder();
   const gh = createMockGithubAdapter({ login: 'artur' });
   const seeded = gh._seedRepo({
@@ -126,26 +126,42 @@ test('pin: opening a three-part assembly with three meshes on the mock is 3 + pa
     },
   });
   const repo = { owner: seeded.owner, name: seeded.name };
-  const timed = timings.wrapAdapter(gh);
+  // Overlap: a call that starts before the previous one ended.
+  let inFlight = 0;
+  let peak = 0;
+  const slow = new Proxy(gh, {
+    get(target, key) {
+      if (key !== 'readFile' && key !== 'readBlob') return target[key];
+      return async (...args) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 2));
+        try { return await target[key](...args); } finally { inFlight -= 1; }
+      };
+    },
+  });
+  const timed = timings.wrapAdapter(slow);
   const opened = await timings.measure('open', () => openV2Assembly(timed, repo, A));
   assert.equal(Object.keys(opened.scripts).length, 3);
   assert.equal(Object.keys(opened.assets).length, 3);
+  assert.deepEqual(opened.doc.parts.map((p) => p.id), [P, Q, R], 'rows keep their order');
   const s = timings.last();
   assert.equal(s.op, 'open');
   assert.equal(s.ok, true);
-  // readFile(assembly) 1, readFile(part) ×3 in sequence, listTree 1 for the
-  // mesh shas, then per mesh a cache miss costs listTree + readBlob (the
-  // sha it was handed is ignored), then getBranch for the tip.
+  // readFile(assembly) 1, then the part scripts in parallel, listTree 1 for
+  // the mesh shas, one readBlob per mesh in parallel (PR 1 pinned
+  // listTree + readBlob per mesh), then getBranch for the tip.
   const PARTS = 3;
   const MESHES = 3;
   assert.deepEqual(s.byMethod, {
     readFile: { n: 1 + PARTS, ms: s.byMethod.readFile.ms, failed: 0 },
-    listTree: { n: 1 + MESHES, ms: s.byMethod.listTree.ms, failed: 0 },
+    listTree: { n: 1, ms: s.byMethod.listTree.ms, failed: 0 },
     readBlob: { n: MESHES, ms: s.byMethod.readBlob.ms, failed: 0 },
     getBranch: { n: 1, ms: s.byMethod.getBranch.ms, failed: 0 },
   });
-  assert.equal(s.calls, 3 + PARTS + 2 * MESHES);
-  assert.equal(s.calls, 12);
+  assert.equal(s.calls, 3 + PARTS + MESHES);
+  assert.equal(s.calls, 9, 'PR 1 pinned 12');
+  assert.equal(peak, 3, 'the three scripts (and the three meshes) are read at the same time');
 });
 
 test('pin: a one-part Save after a seed commit is 6 adapter calls on the mock (planSave reads back every tip file); the seed is 5', async () => {
