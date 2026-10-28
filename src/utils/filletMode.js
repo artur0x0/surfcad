@@ -206,10 +206,10 @@ export function composeChamferCommit(buffer, {
       message: 'composeChamferCommit: makeSweepPath/filletAlongPath missing — refusing silent no-op.',
     };
   }
-  if (pathCount !== expectedComps || alongCount !== expectedComps) {
+  if (pathCount !== 1 || alongCount !== 1) {
     return {
       ok: false,
-      message: `composeChamferCommit: expected ${expectedComps} makeSweepPath/filletAlongPath pair(s), got ${pathCount}/${alongCount}.`,
+      message: `composeChamferCommit: expected one makeSweepPath/filletAlongPath pair for ${expectedComps} component(s), got ${pathCount}/${alongCount}.`,
     };
   }
   if (!/profile:\s*'chamfer'/.test(owned)) {
@@ -888,10 +888,11 @@ export function composeFilletCommit(buffer, {
         message: 'composeFilletCommit: filletAlongPath missing — refusing silent no-op.',
       };
     }
-    if (pathCount !== expectedComps || filletCount !== expectedComps) {
+    // One pair per Accept: makeSweepPath carries every chain of the pick.
+    if (pathCount !== 1 || filletCount !== 1) {
       return {
         ok: false,
-        message: `composeFilletCommit: expected ${expectedComps} makeSweepPath/filletAlongPath pair(s), got ${pathCount}/${filletCount}.`,
+        message: `composeFilletCommit: expected one makeSweepPath/filletAlongPath pair for ${expectedComps} component(s), got ${pathCount}/${filletCount}.`,
       };
     }
     if (hardVariable && !/variableProfile:\s*true/.test(owned)) {

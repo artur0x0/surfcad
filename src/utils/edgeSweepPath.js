@@ -981,6 +981,93 @@ export function assembleSweepPath(selectedEdges, opts = {}) {
 }
 
 /**
+ * Every chain of an edge SET. Connected components are found over welded
+ * endpoints; a vertex where three or more picked edges meet (a Y/T junction,
+ * a box corner) splits its component into chains that end there, and a
+ * component with no end and no junction is a closed loop. Each chain is then
+ * an ordinary `assembleSweepPath`. Chains come back in pick order.
+ *
+ * One chain: `value` is that path, as `assembleSweepPath` returns it. More:
+ * `value` is the longest chain (so `sweep` / `sweepPoints` keep a usable
+ * path) with `components` listing every chain, `edgeCount` and `length`
+ * over the whole set, and `junctions` the vertices that split chains.
+ *
+ * @param {object[]} selectedEdges
+ * @param {{ reverse?: boolean, thinPath?: boolean, smoothCorners?: boolean }} [opts]
+ * @returns {{ ok: true, value: object, components: object[] } | { ok: false, code: string, message: string }}
+ */
+export function assembleSweepPathSet(selectedEdges, opts = {}) {
+  const raw = Array.isArray(selectedEdges) ? selectedEdges : [];
+  const uniq = new Map();
+  const orig = new Map();
+  for (const e of raw) {
+    if (!e) continue;
+    if (!Number.isFinite(e.a) || !Number.isFinite(e.b)) continue;
+    const n = normalizePathEdge(e);
+    if (!n) continue;
+    if (!uniq.has(n.key)) { uniq.set(n.key, n); orig.set(n.key, e); }
+  }
+  const unique = [...uniq.values()];
+  if (!unique.length) return { ok: false, code: 'empty', message: SWEEP_PATH_EMPTY };
+
+  const linked = _weldCoincidentEnds(unique);
+  const adj = buildEdgeVertexAdj(linked);
+  const degree = new Map();
+  for (const [v, list] of adj) degree.set(v, list.length);
+  const isStop = (v) => (degree.get(v) || 0) !== 2;
+  const used = new Set();
+  const chains = [];
+  const walk = (start, first) => {
+    const chain = [];
+    let v = start;
+    let e = first;
+    for (let guard = 0; guard <= linked.length; guard++) {
+      used.add(edgeKey(e));
+      chain.push(e);
+      v = e.a === v ? e.b : e.a;
+      if (isStop(v)) break;
+      const next = (adj.get(v) || []).find((x) => !used.has(edgeKey(x)));
+      if (!next) break;
+      e = next;
+    }
+    return chain;
+  };
+  // Chains that end at a junction or an open end first, in pick order.
+  for (const e of linked) {
+    if (used.has(edgeKey(e))) continue;
+    const start = isStop(e.a) ? e.a : (isStop(e.b) ? e.b : null);
+    if (start == null) continue;
+    chains.push(walk(start, e));
+  }
+  // Whatever is left has no stop vertex: closed loops.
+  for (const e of linked) {
+    if (used.has(edgeKey(e))) continue;
+    chains.push(walk(e.a, e));
+  }
+  const junctions = [];
+  for (const [v, list] of adj) if (list.length > 2) junctions.push({ vertex: v, edgeCount: list.length });
+
+  const components = [];
+  for (const chain of chains) {
+    const rows = chain.map((e) => orig.get(e.key) || e);
+    const built = assembleSweepPath(rows, opts);
+    if (!built.ok) return built;
+    components.push(built.value);
+  }
+  if (components.length === 1) return { ok: true, value: components[0], components };
+  let longest = components[0];
+  for (const c of components) if ((c.length || 0) > (longest.length || 0)) longest = c;
+  const value = {
+    ...longest,
+    components,
+    edgeCount: components.reduce((n, c) => n + (c.edgeCount || 0), 0),
+    setLength: components.reduce((n, c) => n + (c.length || 0), 0),
+    junctions,
+  };
+  return { ok: true, value, components };
+}
+
+/**
  * Loud variant for script/golden parity with sandboxWorker makeSweepPath.
  * @param {object[]} edges
  * @param {{ reverse?: boolean }} [opts]

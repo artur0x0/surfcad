@@ -26,7 +26,9 @@ import {
 import { densifyPathPoints, buildVariableProfileFrames, maxConsecutiveFrameAngleDeg, countThetaRuns, variableProfileDensifyStep, pathPolylineLength, FRAME_DENSIFY_MAX_TURN_DEG } from '../../utils/edgeTangencyField.js';
 import { indexBoundaryEdges } from '../../utils/boundaryEdgeIds.js';
 import { chainNamedEdges, describeEdgeNames, matchEdgeName } from './namedEdges.js';
-import { assembleSweepPath } from '../../utils/edgeSweepPath.js';
+import {
+  assembleSweepPathSet,
+} from '../../utils/edgeSweepPath.js';
 import {
   calibrateScriptLineOffset,
   createFeatureTracker,
@@ -3410,17 +3412,38 @@ function c4MeshData(m) {
   for (let i = 0; i < nVerts; i++)
     V.push([mesh.vertProperties[i*np], mesh.vertProperties[i*np+1], mesh.vertProperties[i*np+2]]);
 
+  // A face group is one Manifold faceID WITHIN ONE ORIGINAL. faceID restarts
+  // at 0 for every input mesh of a boolean (the part, each cutter), so after a
+  // fillet the box's bottom triangle and the sail triangle next to it can both
+  // carry id 8. Grouped by id alone they fused across their shared edge and
+  // that 90° edge was never a feature edge: the bottom rim of a box lost two
+  // arc segments after the vertical fillets, makeSweepPath saw a broken loop,
+  // and the next fillet missed a corner. The run tables say which original
+  // each triangle came from; the key carries both.
+  const runIndex = mesh.runIndex;
+  const runOriginalID = mesh.runOriginalID;
+  const triRun = new Int32Array(mesh.numTri);
+  if (runIndex && runOriginalID && runIndex.length > 1) {
+    for (let r = 0; r + 1 < runIndex.length; r++) {
+      const t0 = runIndex[r] / 3;
+      const t1 = Math.min(mesh.numTri, runIndex[r + 1] / 3);
+      for (let t = t0; t < t1; t++) triRun[t] = runOriginalID[r];
+    }
+  }
   const faceMap = new Map();
+  const faceMapFid = new Map();
   const triFace = [];
   for (let i = 0; i < mesh.numTri; i++) {
     const fid = mesh.faceID[i];
     triFace.push(fid);
-    if (!faceMap.has(fid)) faceMap.set(fid, []);
-    faceMap.get(fid).push(i);
+    const key = `${triRun[i]}:${fid}`;
+    if (!faceMap.has(key)) { faceMap.set(key, []); faceMapFid.set(key, fid); }
+    faceMap.get(key).push(i);
   }
   const faces = [];
   const triToFace = new Int32Array(mesh.numTri).fill(-1);
-  for (const [fid, tris] of faceMap) {
+  for (const [groupKey, tris] of faceMap) {
+    const fid = faceMapFid.get(groupKey);
     const n = [0, 0, 0];
     for (const t of tris) {
       const v0 = V[mesh.triVerts[t*3]], v1 = V[mesh.triVerts[t*3+1]], v2 = V[mesh.triVerts[t*3+2]];
@@ -6041,8 +6064,13 @@ function makeCrossSection(plane, profile) {
  * Does NOT sweep a cutter — path value only (consume later via sweepPoints / fillet-via-sweep).
  */
 function makeSweepPath(edges, opts = {}) {
-  const r = assembleSweepPath(edges, opts);
-  if (r.ok) return r.value;
+  // An edge SET: every connected chain or loop, with Y/T junctions split into
+  // chains. One component is the plain path. Several come back as the
+  // longest one (so sweep / sweepPoints behave as before) with `components`
+  // carrying every chain for filletAlongPath, which fillets them all.
+  const set = assembleSweepPathSet(edges, opts);
+  if (set.ok) return set.value;
+  const r = set;
   if (r.code === 'empty') {
     const noUsable = /usable|endpoint/i.test(r.message || '');
     throw new Error(
@@ -6051,19 +6079,7 @@ function makeSweepPath(edges, opts = {}) {
         : 'makeSweepPath: need at least one edge — pick edges in Edge mode (Tangent for circular rims)',
     );
   }
-  if (r.code === 'disconnected') {
-    const extra = (r.message || '').match(/\([^)]*component[^)]*\)/);
-    throw new Error(
-      'makeSweepPath: edges are disconnected — pick a single contiguous chain or loop'
-      + (extra ? ` ${extra[0]}` : ''),
-    );
-  }
-  if (r.code === 'branch') {
-    throw new Error(
-      'makeSweepPath: edges branch (junction) — need a simple open chain or closed loop',
-    );
-  }
-  throw new Error('makeSweepPath: could not order edges into a path');
+  throw new Error(`makeSweepPath: could not order edges into a path${r.message ? ` — ${r.message}` : ''}`);
 }
 
 // ---------------------------------------------------------------- Slice 23 fillet via swept cross-section
@@ -8656,6 +8672,133 @@ function _s23ExtendSheetCornerSpan(part, points) {
 }
 
 /**
+ * Count the zero-area triangles of a solid (the sliver-scrap signal).
+ * @returns {{ tiny: number, nTri: number }}
+ */
+function _s23TinyTriangles(solid) {
+  const mesh = solid.getMesh();
+  const np = mesh.numProp || 3;
+  const V = mesh.vertProperties;
+  const T = mesh.triVerts;
+  const nTri = T.length / 3;
+  let tiny = 0;
+  for (let ti = 0; ti < nTri; ti++) {
+    const i0 = T[ti * 3] * np;
+    const i1 = T[ti * 3 + 1] * np;
+    const i2 = T[ti * 3 + 2] * np;
+    const ax = V[i1] - V[i0], ay = V[i1 + 1] - V[i0 + 1], az = V[i1 + 2] - V[i0 + 2];
+    const bx = V[i2] - V[i0], by = V[i2 + 1] - V[i0 + 1], bz = V[i2 + 2] - V[i0 + 2];
+    const A = 0.5 * Math.hypot(ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);
+    if (A < 1e-8) tiny++;
+  }
+  return { tiny, nTri };
+}
+
+/**
+ * Fillet an edge SET: one filletAlongPath per component in collect mode
+ * (cutters and fillers built against the untouched solid, no boolean), then
+ * one n-way subtract, the fillers unioned, and the set-level guards: removed
+ * volume against the summed expectation, scrap components, degenerate
+ * triangles. Components are built in pick order; the probes of a later chain
+ * still see the vertex it shares with an earlier one.
+ */
+function _s23FilletEdgeSet(M, part, path, radius, opts) {
+  const pieces = path.components.map((comp) => filletAlongPath(part, comp, radius, { ...opts, _collect: true }));
+  const cutters = [];
+  const fillers = [];
+  let expectVol = 0;
+  let expectAdd = 0;
+  for (const piece of pieces) {
+    for (const c of piece.cutters) cutters.push(c);
+    for (const f of piece.fillers) fillers.push(f);
+    if (Number.isFinite(piece.expectVol)) expectVol += piece.expectVol;
+    if (Number.isFinite(piece.expectAdd)) expectAdd += piece.expectAdd;
+  }
+  if (!cutters.length && !fillers.length) {
+    throw new Error('filletAlongPath: the edge set produced no cutter — re-pick edges');
+  }
+  let out = part;
+  let removed = 0;
+  if (cutters.length) {
+    let cut;
+    try {
+      cut = cutters.length === 1 ? M.difference(out, cutters[0]) : M.difference([out, ...cutters]);
+    } catch (e) {
+      throw new Error(`filletAlongPath: edge-set subtract failed — ${e && e.message ? e.message : e}`);
+    }
+    const se = _c4StatusError(cut);
+    if (se) throw new Error(`filletAlongPath: bad edge-set result (${se})`);
+    const v = cut.volume();
+    if (!(v > 1e-9)) throw new Error('filletAlongPath: result is EMPTY (cutters consumed the solid) — reduce radius');
+    removed = out.volume() - v;
+    out = cut;
+    if (expectVol > 1e-3 && removed < 0.02 * expectVol) {
+      throw new Error(
+        `filletAlongPath: edge set removed only ${removed.toFixed(4)} vs expected ~${expectVol.toFixed(4)} `
+        + '(orientation/overlap failure) — failing loud rather than shipping a near-no-op solid',
+      );
+    }
+    if (expectVol > 1e-3 && removed > 8 * expectVol) {
+      throw new Error(
+        `filletAlongPath: edge set removed ${removed.toFixed(4)} vs expected ~${expectVol.toFixed(4)} `
+        + '(cutter far larger than requested radius) — failing loud',
+      );
+    }
+  }
+  if (fillers.length) {
+    const vPre = out.volume();
+    let add;
+    try {
+      add = M.union([out, ...fillers.map((f) => f.filler)]);
+    } catch (e) {
+      throw new Error(`filletAlongPath: edge-set union failed — ${e && e.message ? e.message : e}`);
+    }
+    const se = _c4StatusError(add);
+    if (se) throw new Error(`filletAlongPath: bad edge-set result (${se})`);
+    const added = add.volume() - vPre;
+    out = add;
+    if (expectAdd > 1e-3 && added < 0.02 * expectAdd) {
+      throw new Error(
+        `filletAlongPath: edge set added only ${added.toFixed(4)} vs expected ~${expectAdd.toFixed(4)} — failing loud`,
+      );
+    }
+    for (const f of fillers) {
+      if (f.openEndBBox) out = _s23ClipToBBox(M, out, f.openEndBBox, f.openEndGrow);
+    }
+  }
+  // Scrap: the open-path rule (keep the largest when the rest is dust).
+  out = _filletJoinOwnedPieces(M, out);
+  if (typeof out.decompose === 'function') {
+    const bodies = out.decompose();
+    if (Array.isArray(bodies) && bodies.length > 1) {
+      let best = bodies[0];
+      let bestVol = best.volume();
+      let total = bestVol;
+      for (let i = 1; i < bodies.length; i++) {
+        const v = bodies[i].volume();
+        total += v;
+        if (v > bestVol) { bestVol = v; best = bodies[i]; }
+      }
+      const scrapVol = total - bestVol;
+      if (scrapVol > 0.05 * bestVol && scrapVol > 1e-2) {
+        throw new Error(
+          `filletAlongPath: edge set left ${bodies.length} components with scrap vol ${scrapVol.toFixed(4)} — failing loud rather than shipping a dirty solid`,
+        );
+      }
+      out = best;
+    }
+  }
+  out = _s23WeldFilletResult(out);
+  const { tiny, nTri } = _s23TinyTriangles(out);
+  if (isFilletSliverDirty(tiny, nTri)) {
+    throw new Error(
+      `filletAlongPath: edge set result has ${tiny}/${nTri} degenerate triangles (sliver scraps) — failing loud rather than shipping a dirty solid`,
+    );
+  }
+  return out;
+}
+
+/**
  * filletAlongPath(part, path, radius, opts?)
  * Sweep a dihedral fillet (or equal-leg chamfer) along path → boolean subtract.
  *
@@ -8685,10 +8828,23 @@ function filletAlongPath(part, path, radius, opts = {}) {
   const { CrossSection } = manifoldModule;
   _c4RequirePositive('filletAlongPath', 'radius', radius);
 
+  // An edge set (makeSweepPath of several chains or loops, or a pick with a
+  // junction): every component builds its cutters against the ORIGINAL solid,
+  // with its own frames, then one n-way subtract. Chains that meet at a
+  // vertex share it; filleting them one after another would move that
+  // vertex off the solid before the second chain was probed.
+  if (path && typeof path === 'object' && Array.isArray(path.components) && path.components.length > 1 && !opts._collect) {
+    if (!opts._filletBodySplit) {
+      const owned = _filletOnlyOwningBody(M, part, path, radius, opts);
+      if (owned) return owned;
+    }
+    return _s23FilletEdgeSet(M, part, path, radius, opts);
+  }
+
   // Keep-both siblings are real components. Filleting the whole compose makes
   // the scrap check name the other body. Fillet the owner, compose the rest,
   // and leave the 5% / 0.01 test on the single result.
-  if (!opts._filletBodySplit) {
+  if (!opts._filletBodySplit && !opts._collect) {
     const owned = _filletOnlyOwningBody(M, part, path, radius, opts);
     if (owned) return owned;
   }
@@ -8783,6 +8939,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
       // seams that spiked long-fin counts on the Artur box-stack wrap.
       const scale = 1;
       const cutters = [];
+      const collectedFillers = [];
       let expectVolSum = 0;
       const closedRuns = Array.isArray(plan.closedRuns) ? plan.closedRuns : null;
       for (let ri = 0; ri < plan.runs.length; ri++) {
@@ -8810,6 +8967,10 @@ function filletAlongPath(part, path, radius, opts = {}) {
           if (Number.isFinite(built.expectVol)) expectVolSum += built.expectVol;
         }
         if (built?.filler) {
+          if (opts._collect) {
+            collectedFillers.push({ filler: built.filler, openEndBBox: built.openEndBBox || null, openEndGrow: built.openEndGrow || null });
+            continue;
+          }
           // Concave filler runs: apply as union into part after the subtract batch.
           // Rare on same-r wrap; keep sequential for fillers.
           try {
@@ -8821,6 +8982,9 @@ function filletAlongPath(part, path, radius, opts = {}) {
       }
       if (!cutters.length) {
         throw new Error('filletAlongPath: corner-arc semi-arc split produced no valid cutters');
+      }
+      if (opts._collect) {
+        return { cutters, fillers: collectedFillers, expectVol: expectVolSum, expectAdd: 0, closed };
       }
       // One n-way subtract. A − (C1 ∪ C2 ∪ …) is the same solid as A − C1 − C2 − …,
       // and Manifold evaluates that as a single arrangement. Chaining
@@ -9051,6 +9215,19 @@ function filletAlongPath(part, path, radius, opts = {}) {
   }
   if (!cutter && !filler) {
     throw new Error('filletAlongPath: no cutter or filler was built — re-pick edges');
+  }
+
+  if (opts._collect) {
+    const area = profileKind === 'chamfer'
+      ? 0.5 * radius * radius
+      : radius * radius * (1 - Math.PI / 4);
+    return {
+      cutters: cutter ? [cutter] : [],
+      fillers: filler ? [{ filler, openEndBBox, openEndGrow }] : [],
+      expectVol: cutter ? (expectVolOverride != null ? expectVolOverride : area * length) : 0,
+      expectAdd: filler ? expectAddOverride : 0,
+      closed,
+    };
   }
 
   let out = part;

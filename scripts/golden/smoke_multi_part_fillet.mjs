@@ -221,7 +221,7 @@ const sel = [...vertA.slice(0, 2), ...vertB.slice(0, 1)].map((e) => toggleEdgeSe
     check('each part gets its own fillet-mode block',
       hasFilletModeBlock(out.editor.buffer) && hasFilletModeBlock(out.writes[0].buffer)
       && (out.editor.buffer.match(/filletAlongPath\s*\(/g) || []).length === 1
-      && (out.writes[0].buffer.match(/filletAlongPath\s*\(/g) || []).length === 2);
+      && (out.writes[0].buffer.match(/filletAlongPath\s*\(/g) || []).length === 1);
     check('no external copy is written for a fillet', !/externalBody\(/.test(out.editor.buffer + out.writes[0].buffer));
     const runEditor = await exec(out.editor.buffer);
     const runOther = await exec(out.writes[0].buffer);
@@ -242,7 +242,7 @@ const sel = [...vertA.slice(0, 2), ...vertB.slice(0, 1)].map((e) => toggleEdgeSe
     });
     check('a part that already has a fillet block gets an append',
       again.ok
-      && (again.writes[0].buffer.match(/filletAlongPath\s*\(/g) || []).length === 4
+      && (again.writes[0].buffer.match(/filletAlongPath\s*\(/g) || []).length === 2
       && (again.editor.buffer.match(/filletAlongPath\s*\(/g) || []).length === 2,
       again.message || '');
   }
