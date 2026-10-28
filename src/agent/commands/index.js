@@ -29,6 +29,7 @@ import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
 import { listBodiesCommand } from './listBodies.js';
 import { geometryWorkersCommand } from './geometryWorkers.js';
+import { gitTimingsCommand } from './gitTimings.js';
 import { listEdgesCommand } from './listEdges.js';
 import { listFeatureEdgesCommand } from './listFeatureEdges.js';
 import { invokeHelperCommand, buildHelperPaletteCommands } from './invokeHelper.js';
@@ -224,6 +225,7 @@ const V1_COMMAND_LIST = [
   listFacesCommand,
   listBodiesCommand,
   geometryWorkersCommand,
+  gitTimingsCommand,
   listEdgesCommand,
   listFeatureEdgesCommand,
   invokeHelperCommand,

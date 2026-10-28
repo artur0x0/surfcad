@@ -48,3 +48,7 @@ We've shipped stale amber dots more than once (most recently #614, fixed in #621
 - **Heal the rest from the vault.** A document persisted before the stamp, or a local one that went git on connect, is stamped by `ensureDocVaultLayout` (`detectVaultLayout`; no repo yet is v2) on connect and again before Save. Save fails closed when the vault cannot be read; it never guesses the v1 writer.
 - **Test:** make an assembly with + › Assembly, build parts, Save once; the commit is `assemblies/<id>.surf.json` plus `parts/<id>.js` for every part, and the strip is clean.
 
+## 8. Count the round trips
+
+Every adapter method is at least one HTTPS round trip to GitHub (`listTree` is three, `commitFiles` about a dozen), and the callers run them one after another, so wall time is the call count. `src/utils/git/gitTimings.js` counts them: `git_timings` (bridge and MCP) or `window.__SURFCAD_GIT_TIMINGS` after an Open or Save, `window.__SURFCAD_GIT_TIMING = true` for a line per call. `gitTimings.test.js` pins the adapter calls an Open and a one-part Save make on the mock. When you change the open or save path, run it: the number should go down, and the pin moves in the same PR with the reason.
+
