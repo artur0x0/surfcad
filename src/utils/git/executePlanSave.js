@@ -9,7 +9,8 @@
  * No git write on load, reload, edit, online, or connect.
  */
 import { normalizeRepoPath } from '../assembly.js';
-import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';
+import { mapLimit, VAULT_READ_CONCURRENCY } from './mapLimit.js';
+import { isBinaryContent, toUint8Array } from './binaryContent.js';
 import {
   assertGithubAdapter,
   GitAdapterError,
@@ -31,15 +32,6 @@ import { SAVE_QUEUED_COPY } from './workingSidecar.js';
 export const SAVE_CONFLICT_COPY = 'These files also changed on the remote. Nothing was written. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.';
 export const SAVE_REFUSED_SUFFIX = ' Nothing was written.';
 export const SAVE_PENDING_COPY = SAVE_QUEUED_COPY;
-
-function utf8Bytes(text) {
-  return new TextEncoder().encode(String(text ?? ''));
-}
-
-function contentHash(content) {
-  if (typeof content === 'string') return gitBlobSha(utf8Bytes(content));
-  return gitBlobSha(toUint8Array(content));
-}
 
 function repoRef(repo) {
   const owner = typeof repo?.owner === 'string' ? repo.owner.trim() : '';
@@ -258,8 +250,12 @@ function plannedPathsOf(files) {
 
 /**
  * Tip `.surf.json` rows + blob hashes from the **current remote tip**.
- * Hashes are git blob shas of the bytes (mock tree ids for text are not
- * git blob shas). A failed listTree returns `{ treeFailed: true }`.
+ * A blob hash is the git blob sha of the bytes, which is exactly what the
+ * tree listing carries for every entry (the mock's tree shas are git blob
+ * shas too), so no part script or mesh is read back to be hashed; only the
+ * other assemblies' files are read, for their part rows, in parallel. An
+ * entry with no sha goes on `unreadPaths` and refuses a plan that writes
+ * it. A failed listTree returns `{ treeFailed: true }`.
  */
 export async function loadBranchContext(adapter, repo, tipSha, selfId) {
   const branchFiles = {};
@@ -272,46 +268,27 @@ export async function loadBranchContext(adapter, repo, tipSha, selfId) {
   } catch {
     return { branchFiles: null, branchAssemblies: null, treeFailed: true };
   }
+  const others = [];
   for (const entry of tree || []) {
     const path = normalizeRepoPath(entry?.path);
     const parsed = parseIdPath(path);
     if (!parsed) continue;
-    if (parsed.kind === 'mesh') {
-      if (!entry.sha) {
-        unreadPaths.push(path);
-        continue;
-      }
-      try {
-        const bytes = await adapter.readBlob(repo, entry.sha);
-        if (bytes) branchFiles[path] = { contentHash: contentHash(bytes) };
-        else unreadPaths.push(path);
-      } catch {
-        unreadPaths.push(path);
-      }
-      continue;
-    }
-    let file;
-    try {
-      file = await adapter.readFile(repo, path, tipSha);
-    } catch {
-      if (parsed.kind === 'assembly') {
-        return { branchFiles: null, branchAssemblies: null, treeFailed: true };
-      }
-      unreadPaths.push(path);
-      continue;
-    }
-    if (!file || typeof file.content !== 'string') {
-      if (parsed.kind === 'assembly') {
-        return { branchFiles: null, branchAssemblies: null, treeFailed: true };
-      }
-      unreadPaths.push(path);
-      continue;
-    }
-    branchFiles[path] = { contentHash: contentHash(file.content) };
-    if (parsed.kind === 'assembly' && parsed.id !== selfId) {
-      branchAssemblies.push(assemblyRowFromContent(file.content));
-    }
+    if (typeof entry?.sha === 'string' && entry.sha) branchFiles[path] = { contentHash: entry.sha.toLowerCase() };
+    else unreadPaths.push(path);
+    if (parsed.kind === 'assembly' && parsed.id !== selfId) others.push(path);
   }
+  let rows;
+  try {
+    rows = await mapLimit(others, VAULT_READ_CONCURRENCY, async (path) => {
+      const file = await adapter.readFile(repo, path, tipSha);
+      if (!file || typeof file.content !== 'string') throw new Error(`unreadable ${path}`);
+      return assemblyRowFromContent(file.content);
+    });
+  } catch {
+    // An unreadable sibling assembly would fail-open a part delete.
+    return { branchFiles: null, branchAssemblies: null, treeFailed: true };
+  }
+  branchAssemblies.push(...rows);
   return { branchFiles, branchAssemblies, unreadPaths };
 }
 
