@@ -12,6 +12,7 @@ import { buildSolidGeometry } from './partSolidCache.js';
 import { fingerprintsFromGeometry } from './facePaint.js';
 import { stampedFaceTable, stampedNameForTriangles, wallTriFace } from './faceIdentity.js';
 import { catalogFromMeshData } from './jointResolve.js';
+import { countDegenerateTriangles } from './filletEdgeClass.js';
 
 const FILLETED_BOX = `// --- cube begin id=seed ---
 let part = Manifold.cube([40, 30, 20], true);
@@ -87,6 +88,23 @@ test('a tangent fillet does not merge the flats it meets: every stamped face is 
   // The joint catalog applies the same boundaries.
   const joint = catalogFromMeshData(ran.mesh);
   assert.equal(joint?.faces?.length, faces.length, 'viewport and joint catalogs have the same patches');
+
+  // The corner is built as a mesh that shares its ring vertices with the
+  // sails, so nothing is cut between tangent surfaces: every sail is one
+  // patch per edge (16 edges on this two-box part: twelve of the seed and
+  // the four the second box adds that are not merged), each corner is one
+  // patch, and there is no needle anywhere. The v1 ball cut left 1390
+  // needles and 226 `rim.round` patches on a plain 40×30×20 box.
+  const patchesByName = new Map();
+  for (const face of faces) {
+    const name = stampedNameForTriangles(table, face.tris)?.name;
+    patchesByName.set(name, (patchesByName.get(name) || 0) + 1);
+  }
+  for (const corner of corners) assert.equal(patchesByName.get(corner.name), 1, `${corner.name} is one patch`);
+  const sails = table.byName.get('rim.round');
+  assert.ok(sails, 'the sail face exists');
+  assert.ok(patchesByName.get('rim.round') <= 20, `rim.round splits into ${patchesByName.get('rim.round')} patches`);
+  assert.equal(countDegenerateTriangles(geometry), 0, 'no needle triangles');
 });
 
 test('a mesh with no stamps keeps the geometric grouping', async () => {

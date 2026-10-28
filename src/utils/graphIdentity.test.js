@@ -19,7 +19,7 @@ const EXPECTED = {
   // the named flats it is tangent to (stamped-face wall in the curved pass),
   // and again the same day: the corner balls are their own stamped faces
   // (`.corner[k]`), so the ball/sail junctions are walls too.
-  fillet: 'e6f3d90ddbbc500a23b6d602751f0525e984c54f57d514d915040323fd641e31',
+  fillet: 'cf08805ebfb8c0c08fe13dbc8066e9f66f1bdf7cce3d27b0afe450abbb00b253',
   two: '1153cc70086e9c52eb9da22710ce67d2a56a3f59fee5bcbb26f7b60d9f25beb1',
   sphere450: '412d496a2c5f01fe0624f6f29d9a230070046401f22fa0ed1dff17635b212ae3',
 };

@@ -261,21 +261,48 @@ distance `r/sin(θ/2)` from the edge (1 mm overshoot each end).
   (matches analytic inclusion–exclusion).
 - **Zero cutters with a non-empty edge list is a loud failure.** An empty edge
   list is a no-op. The old `console.warn` hid missed hole rims.
-- `sphericalCorners`: where three filleted edges meet, a ball of radius `r` at
-  the trihedral incenter replaces the cusp. The incenter is equidistant `r` from
-  all three faces (patch tangent to each face) *and* lies on each fillet
-  cylinder's axis at the same radius (patch tangent to each sail along a circle
-  ⇒ C1 junction). Applied only to box-like ~90° equal-radius triple vertices;
-  other corners keep the cusp. Each ball's originalID is recorded
-  (`_blendCornerIDs`, read before the `transform`, which reports -1) so
-  `_stampRunsInRange` names it `<block>.corner[k]` instead of `.round`. The
-  cap booleans reuse the sail cylinders, so one cylinder id owns three runs
-  afterwards; the stamp merges every run's faceIDs or the extra runs go
-  nameless. Cost: the 256-segment balls take a 40×30×20 r=5 box from 2.3k
-  to 44k triangles and 0.29 s to 1.33 s; the sail/ball junction is a
-  zig-zag of tiny triangles that the curved merge still splits into a few
-  hundred `<block>.round` patches (open; a mesh-built corner patch sharing
-  the sail ring vertices would fix it).
+- `sphericalCorners`: where three filleted edges meet, the sphere of radius
+  `r` about the trihedral incenter replaces the cusp. The incenter is
+  equidistant `r` from all three faces (patch tangent to each face) *and* lies
+  on each fillet cylinder's axis at the same radius (patch tangent to each sail
+  along a circle ⇒ C1 junction). Applied only to box-like ~90° equal-radius
+  triple vertices; other corners keep the cusp.
+  - **Exact corners are mesh-built, never a boolean between tangent
+    surfaces.** `_c6TrihedralCorners` finds the corners before any cutter
+    exists. For an exact one (edge directions orthogonal and dihedrals 90°
+    within `_C6_EXACT_CORNER_TOL = 1e-5`, every edge long enough to hold its
+    caps) each edge cutter is `_c6TrimmedEdgeCutter`: the square-minus-
+    quarter-circle section extruded as a mesh, stopping at the junction plane
+    `r` from the vertex. Each corner is one `_c6CornerPocket`: the r-cube at
+    the vertex minus the sphere octant, as a mesh. The pocket's far faces are
+    the same polygons as the prisms' end faces, computed through the same
+    expressions (`_c6CornerSpherePoint`, `_c6CornerArc`), so the cutter union
+    merges them and the sail meets the sphere on a shared ring. One subtract,
+    as before.
+  - **Why.** v1 cut `(cornerBox ∩ cyl₁ ∩ cyl₂ ∩ cyl₃) − ball`. The ball is
+    tangent to each sail along the junction circle, and a boolean between
+    tangent surfaces zig-zags. On a 40×30×20 r=5 box: 44k triangles, 1390
+    needles, `rim.round` split into 226 patches, 1.33 s. v2: 12k triangles,
+    0 needles, 12 sail patches + 8 corner patches, 0.38 s. A rotated box went
+    from 19 s / 76k triangles to 0.65 s / 13.6k.
+  - **Octant grid.** Barycentric grid with `FILLET_EDGES_CORNER_SEGMENTS/4`
+    steps per side (128 → 32), weights `sin(w·π/2)` so each boundary arc is
+    uniform in angle, every boundary step split `384/128 = 3` times to the
+    sail's 96-per-quarter ring. Corner triangles of the grid are merged with
+    their inner neighbour and fanned from its far vertex, so no fan triangle
+    lies along one arc. `FILLET_EDGES_CORNER_SEGMENTS` must divide
+    `FILLET_EDGES_CIRCLE_SEGMENTS` (asserted at load).
+  - **Near-90° corners** (a corner whose edges are within 0.02 rad of 90° but
+    not exact, such as a lightly drafted box) keep the v1 ball cut on the
+    already-filleted solid; `_c6TrihedralCorners` hands those records to that
+    loop, and the sail cylinder it intersects is built on demand (`cyl()`).
+  - **Identity.** Each pocket's run id goes into `_blendCornerIDs` (read from
+    `getMesh().runOriginalID`: a mesh-built solid reports `originalID() === -1`)
+    so `_stampRunsInRange` names it `<block>.corner[k]` instead of `.round`.
+    The face graph needed one rule for this: a mesh-built pocket and a
+    mesh-built prism both number their triangles from 0, so equal Manifold
+    face ids meet across the shared ring. `buildPartGraphPatches` no longer
+    joins two triangles into one atom across a stamped-face boundary.
 
 ## 8. Guard table — `filletAlongPath`
 

@@ -529,13 +529,17 @@ export function buildPartGraphPatches(mesh, opts = {}) {
   }
 
   // --- Atoms: faceID connected components ---------------------------------
-  // Face ids restart per source mesh, so equal ids from two features are not one face.
+  // Face ids restart per source mesh, so equal ids from two features are not
+  // one face. Two mesh-built solids of ONE op (a fillet's corner pocket and
+  // its sail prism) also restart at 0 and meet along a shared ring, so equal
+  // ids across a stamped-face boundary are not one face either.
+  const sameFace = (t0, t1) => !triFace || triFace[t0] === triFace[t1];
   let needsMerge = false;
   for (let i = 0; i < pairN; i++) {
     const t0 = pairTri0[i];
     const t1 = pairTri1[i];
     if (!sameBody(t0, t1)) continue;
-    if (rawFid[t0] === rawFid[t1] && sameSource(t0, t1)) {
+    if (rawFid[t0] === rawFid[t1] && sameSource(t0, t1) && sameFace(t0, t1)) {
       needsMerge = true;
       break;
     }
@@ -548,7 +552,7 @@ export function buildPartGraphPatches(mesh, opts = {}) {
       const t0 = pairTri0[i];
       const t1 = pairTri1[i];
       if (!sameBody(t0, t1)) continue;
-      if (rawFid[t0] === rawFid[t1] && sameSource(t0, t1)) atomUF.unite(t0, t1);
+      if (rawFid[t0] === rawFid[t1] && sameSource(t0, t1) && sameFace(t0, t1)) atomUF.unite(t0, t1);
     }
     const atomRootToIdx = new Map();
     triAtom = new Int32Array(numTri);
@@ -595,7 +599,7 @@ export function buildPartGraphPatches(mesh, opts = {}) {
   };
 
   // The named face of each atom (-1 none). An atom is one faceID component
-  // of one source, so its triangles share a stamp.
+  // of one source and one stamped face, so its triangles share a stamp.
   const atomFace = new Int32Array(atomCount).fill(-1);
   if (triFace) {
     for (let a = 0; a < atomCount; a++) atomFace[a] = triFace[atomList[atomOff[a]]];
