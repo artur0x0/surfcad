@@ -21,6 +21,13 @@ import { normalizeRepoPath } from '../assembly.js';
 import { decodeBase64, encodeBase64, prepareCommitFiles } from './binaryContent.js';
 import { parseVaultPath, VAULT_MARKER_PATH } from './vaultLayout.js';
 import { isVaultMarker, vaultWriteRefusalMessage } from './vaultNames.js';
+import {
+  GITHUB_PERMISSIONS_GUIDANCE,
+  githubAppInstallUrl,
+  githubInstallGuidance,
+  integrationAccessDenied,
+  surfCadInstalledOnSignedInUser,
+} from './githubAppInstall.js';
 
 /**
  * GitHub Contents API path. Each segment is encodeURIComponent; slashes stay
@@ -40,10 +47,14 @@ const REPO_NAME_RE = /^[A-Za-z0-9._-]{1,100}$/;
 
 /**
  * Build unauthorized GitAdapterError from a 401/403 Response.
- * Surfaces GitHub `message` and `X-Accepted-GitHub-Permissions` when present
- * (needed when App lacks Administration R/W for POST /user/repos).
+ * Surfaces GitHub `message` and `X-Accepted-GitHub-Permissions` when present.
+ *
+ * `Resource not accessible by integration` is both "the app is not installed
+ * on this user" and "it is installed but the token's grant is short".
+ * `readInstallations` is `GET /user/installations` with the same token
+ * (null when that lookup fails — then we keep the permissions guidance).
  */
-async function unauthorizedFromResponse(res) {
+async function unauthorizedFromResponse(res, { readInstallations = null } = {}) {
   let data = null;
   try {
     const bodyText = await res.text();
@@ -56,16 +67,35 @@ async function unauthorizedFromResponse(res) {
   const githubMessage = (data && typeof data.message === 'string' && data.message.trim())
     ? data.message.trim()
     : null;
-  const parts = [githubMessage || `GitHub ${res.status}`];
-  if (accepted) parts.push(`required permissions: ${accepted}`);
-  if (res.status === 403 && /not accessible by integration|Resource not accessible/i.test(githubMessage || '')) {
-    parts.push('GitHub App needs Administration R/W (and Contents R/W to seed); approve updated permissions / re-authorize, then Connect again');
-  }
-  return new GitAdapterError('unauthorized', parts.join(' — '), {
+  const details = {
     status: res.status,
     acceptedPermissions: accepted || null,
     githubMessage,
-  });
+  };
+  if (integrationAccessDenied(res.status, githubMessage)) {
+    let installations = null;
+    if (typeof readInstallations === 'function') {
+      try { installations = await readInstallations(); } catch { installations = null; }
+    }
+    if (Array.isArray(installations) && !surfCadInstalledOnSignedInUser(installations)) {
+      const installUrl = githubAppInstallUrl();
+      return new GitAdapterError('unauthorized', githubInstallGuidance(installUrl), {
+        ...details,
+        githubAccess: 'install',
+        installUrl,
+      });
+    }
+    const parts = [githubMessage || `GitHub ${res.status}`];
+    if (accepted) parts.push(`required permissions: ${accepted}`);
+    parts.push(GITHUB_PERMISSIONS_GUIDANCE);
+    return new GitAdapterError('unauthorized', parts.join(' — '), {
+      ...details,
+      githubAccess: 'permissions',
+    });
+  }
+  const parts = [githubMessage || `GitHub ${res.status}`];
+  if (accepted) parts.push(`required permissions: ${accepted}`);
+  return new GitAdapterError('unauthorized', parts.join(' — '), details);
 }
 
 function headerGet(res, name) {
@@ -104,9 +134,48 @@ export function createGithubAdapter({ token, fetchImpl = globalThis.fetch, apiBa
       throw new GitAdapterError('invalid', `GitHub network error: ${err?.message || err}`);
     }
     if (res.status === 401 || res.status === 403) {
-      throw await unauthorizedFromResponse(res);
+      throw await unauthorizedFromResponse(res, { readInstallations: listInstallationsForToken });
     }
     return res;
+  }
+
+  /**
+   * Installations of this app the user token can access.
+   * null when the lookup itself fails (do not call that "not installed").
+   * Direct fetch: a 403 here must not re-enter `api()`.
+   */
+  async function listInstallationsForToken() {
+    const rows = [];
+    for (let page = 1; page <= 3; page += 1) {
+      let res;
+      try {
+        res = await doFetch(`${apiBase}/user/installations?per_page=100&page=${page}`, {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        });
+      } catch {
+        return page === 1 ? null : rows;
+      }
+      if (!res || res.status !== 200) return page === 1 ? null : rows;
+      let data = null;
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        return page === 1 ? null : rows;
+      }
+      const batch = Array.isArray(data?.installations) ? data.installations : [];
+      rows.push(...batch);
+      if (surfCadInstalledOnSignedInUser(rows)) return rows;
+      const total = Number(data?.total_count);
+      if (batch.length < 100 || (Number.isFinite(total) && rows.length >= total)) return rows;
+    }
+    return rows;
   }
 
   async function json(path, opts) {

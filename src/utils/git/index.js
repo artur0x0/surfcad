@@ -4,6 +4,7 @@ export * from './githubAdapterInterface.js';
 export * from './mockGithubAdapter.js';
 export * from './githubAdapter.js';
 export * from './githubAuth.js';
+export * from './githubAppInstall.js';
 export * from './vaultLayout.js';
 export * from './surfJson.js';
 export * from './surfJsonV2.js';
