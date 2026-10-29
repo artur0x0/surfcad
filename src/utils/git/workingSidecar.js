@@ -4,6 +4,7 @@
  * assembly document or `.surf.json` (`validateSurfJson` rejects unknown keys).
  */
 import { normalizeRepoPath } from '../assembly.js';
+import { githubSaveErrorFields } from './githubAppInstall.js';
 import { partRepoPath } from './partIdentity.js';
 import { assetPathForScript, vaultSegment } from './vaultLayout.js';
 
@@ -26,7 +27,11 @@ export function gitOpCatchResult(err, fallback = 'Git operation failed') {
   if (err?.message === NO_REPO_YET_COPY || err?.code === NO_REPO_YET_CODE) {
     return noRepoYetOpResult();
   }
-  return { status: 'error', error: err?.message || fallback };
+  return {
+    status: 'error',
+    error: err?.message || fallback,
+    ...githubSaveErrorFields(err),
+  };
 }
 
 export function emptyWorkingSidecar() {
