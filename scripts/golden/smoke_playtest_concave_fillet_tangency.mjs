@@ -270,8 +270,9 @@ try {
 }
 
 check('playtest script builds', !!got && got.status === 'NoError' && got.vol > 0, `status=${got?.status} vol=${got?.vol}`);
-// Measured after the arc restore: 6812.022 (pre-fillet shell 6630.511).
-check('volume stays on the restored fillet', got && Math.abs(got.vol - 6812.022) < 0.05, `vol=${got?.vol}`);
+// Measured after the arc restore: 6812.022 (pre-fillet shell 6630.511); with
+// the sweep's legs ending exactly on planar walls, 6810.190 (shell 6628.68).
+check('volume stays on the restored fillet', got && Math.abs(got.vol - 6810.190) < 0.05, `vol=${got?.vol}`);
 check(
   'frame jump stays inside the 5° lattice',
   got && Number.isFinite(got.jump) && got.jump <= 5,

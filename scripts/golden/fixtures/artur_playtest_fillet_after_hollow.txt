@@ -7,7 +7,10 @@ const selEdges2 = [{ a: 29, b: 31, va: [20, -15, 10], vb: [20, 11.049527, 10], l
 const path2 = makeSweepPath(selEdges2);
 part = filletAlongPath(part, path2, 4.83, { variableProfile: true });
 part = hollow(part, 2.5, { center: [-0.0795, -0.0585, -10], normal: [0, 0, -1] });
-const selEdges3 = edgesBetween(part, 2, 31);
+// The inner vertical corner at (-17.5, -12.5) from the cavity floor to the ceiling. Face ids
+// follow the tessellation (they were 2 and 31), so pick it by position.
+const selEdges3 = concaveEdges(part).filter((e) => Math.abs(e.va[0] + 17.5) < 0.05 && Math.abs(e.vb[0] + 17.5) < 0.05 && Math.abs(e.va[1] + 12.5) < 0.05 && Math.abs(e.vb[1] + 12.5) < 0.05);
+if (selEdges3.length < 1) throw new Error('inner corner pick: ' + selEdges3.length + ' edges');
 const path3 = makeSweepPath(selEdges3);
 part = filletAlongPath(part, path3, 1.75);
 return part;
