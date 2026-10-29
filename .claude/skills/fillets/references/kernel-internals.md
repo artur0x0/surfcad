@@ -242,6 +242,24 @@ sliver count. Fillet mode writes one `makeSweepPath` + `filletAlongPath`
 pair per Accept for this reason; the per-component clamp of the radius stays
 in the Accept gate.
 
+**Junction pockets** (`_s23JunctionPockets`). Before the components are
+collected, every vertex where exactly three chains end is tested the way
+the planar kernel tests a corner: directions orthogonal (1e-4), each end
+segment's probed dihedral 90° within 1e-4, every chain convex, each chain
+long enough for its caps (r per trimmed end). Such a corner gets the same
+`_c6CornerPocket` as `filletEdges`, with one difference: the pocket's three
+boundary arcs are the chains' own end rings, the dihedral contour with
+`faceEps: 0` (legs exactly on the faces) placed through the probed frame at
+the junction knot `P + r·d`. Each chain is trimmed to that knot, its draft
+end extension is skipped there (`trimStart` / `trimEnd` through
+`_s23CuttersFromSegs` to `_s23ExtendOpenRunEnds`), and its contour runs
+with exact legs for the whole chain. The pocket ids go to `_blendCornerIDs`
+so the face is `<block>.corner[k]`. Measured on the 40×30×20 r=5 box through
+`makeSweepPath(convexEdges(part))`: 5.2k triangles, 0 needles, 12 sail
+patches + 8 corner patches, 0.11 s, volume 4.7 mm³ under analytic (the
+24-step arc removes a little more than the circle). Chamfer, variable-profile,
+`initialNormal` and raw-point paths keep the cusp.
+
 ## 5. Closed loops
 
 Try the exact revolve fast path first (`_s23TryRevolveCutter`): the 2D profile

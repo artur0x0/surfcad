@@ -53,13 +53,13 @@ globalThis.__note = { components: path.components.length, junctions: path.juncti
 part = filletAlongPath(part, path, ${R});\n`);
   // Eight edges meet three at a time at the four top corners: eight single-edge chains.
   assert.deepEqual(mixed.note, { components: 8, junctions: 4 });
-  // The whole box: twelve chains, eight junctions, every edge rounded; corners
-  // stay cusps here (the junction patch is the next slice), so the planar
-  // kernel without spherical corners is the reference.
+  // The whole box: twelve chains, eight junctions, every edge rounded and
+  // every corner a spherical patch (see filletSweepJunctions.test.js), so the
+  // planar kernel with spherical corners is the reference.
   const box = await run(`const path = makeSweepPath(convexEdges(part));
 globalThis.__note = { components: path.components.length, junctions: path.junctions.length };
 part = filletAlongPath(part, path, ${R});\n`);
   assert.deepEqual(box.note, { components: 12, junctions: 8 });
-  const planar = await run(`part = filletEdges(part, convexEdges(part), ${R}, { sphericalCorners: false });\n`);
-  assert.ok(Math.abs(box.volume - planar.volume) < 0.02 * (24000 - planar.volume), `sweep ${box.volume} planar ${planar.volume}`);
+  const planar = await run(`part = filletEdges(part, convexEdges(part), ${R}, { sphericalCorners: true });\n`);
+  assert.ok(Math.abs(box.volume - planar.volume) < 6, `sweep ${box.volume} planar ${planar.volume}`);
 });

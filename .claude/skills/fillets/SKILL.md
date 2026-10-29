@@ -26,6 +26,7 @@ the bundled WASM Manifold has no solid `offset()` / minkowski. 2D
 | **easy** — boxy, short chain, ~constant dihedral | dihedral **sweep**: per-segment in-face frames, θ-grouped runs | `filletAlongPath(part, path, r)` |
 | **hard** — loft walls, twisted, variable θ, long chain | **varying-profile sweep** (C3.3): densified path-normal inscribed-arc frames, one cutter with a **per-knot cross-section** | `filletAlongPath(part, path, r, { variableProfile: true })` |
 | **box corners** — a pick where three straight right-angle edges between flat faces meet at a vertex (one corner, or the whole box); also the manual override | classic **planar rolling-ball**: parallelepiped − cylinder per edge, mesh-built spherical patch where three equal fillets meet | `filletEdges(part, edges, r, { sphericalCorners: true })` |
+| **edge sets** — any pick: disjoint edges, loops, junctions | the sweep above, every chain of the set built against the untouched solid and subtracted once; a right-angle junction of three convex chains gets the same mesh-built spherical patch (`_s23JunctionPockets`) | `filletAlongPath(part, makeSweepPath(edges), r)` |
 
 **Concave edges are supported (C4)** and route automatically: the sign is read
 per knot, convex runs become cutters (`difference`), concave runs become fillers

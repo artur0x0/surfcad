@@ -5153,10 +5153,16 @@ function _c6TrimmedEdgeCutter(M, g, capA, capB) {
  * square-minus-quarter-circle far faces that match the edge cutters' end
  * faces. Curved face: the octant grid, boundary rings shared with the sails.
  */
-function _c6CornerPocket(M, c) {
-  const nFine = FILLET_EDGES_CIRCLE_SEGMENTS / 4;
-  const n = FILLET_EDGES_CORNER_SEGMENTS / 4;
+function _c6CornerPocket(M, c, pocketOpts = {}) {
+  // Rings handed in (a sweep chain's own end ring, see _s23JunctionPockets)
+  // set the boundary; the grid then has that many steps per side.
+  const given = Array.isArray(pocketOpts.arcs) ? pocketOpts.arcs : null;
+  const nFine = given ? given[0].length - 1 : FILLET_EDGES_CIRCLE_SEGMENTS / 4;
+  const n = given ? nFine : FILLET_EDGES_CORNER_SEGMENTS / 4;
   const m = nFine / n;
+  if (given && (given.length !== 3 || given.some((a) => a.length !== nFine + 1) || nFine < 3)) {
+    throw new Error('filletEdges: corner pocket rings must be three arcs of one length');
+  }
   const { P, O, r } = c;
   const verts = [];
   const tris = [];
@@ -5172,7 +5178,7 @@ function _c6CornerPocket(M, c) {
   const iC = [0, 1, 2].map((k) => add(_c6CornerEdgePoint(c, k)));
   // Junction rings, one per edge; their ends are the three face tangent
   // points, which are also the octant grid's corners.
-  const arcs = [0, 1, 2].map((k) => _c6CornerArc(c, k, nFine).map(add));
+  const arcs = [0, 1, 2].map((k) => (given ? given[k] : _c6CornerArc(c, k, nFine)).map(add));
   // Grid corner e_i ↔ tangent point on the face opposite edge i: arc k runs
   // from e_i to e_j (i < j the other two edges).
   const corner = [arcs[1][0], arcs[0][0], arcs[0][nFine]]; // e1 (arc of edge 2 start), e2 (arc 1 start), e3 (arc 1 end)
@@ -6620,11 +6626,11 @@ function _s23RunGeometry(run, closedPath, onlyRun) {
   return { points: pts, frames, closed: false };
 }
 
-function _s23DihedralContour(radius, theta, profileKind, arcSegs, testScale) {
+function _s23DihedralContour(radius, theta, profileKind, arcSegs, testScale, exactLegs = false) {
   const nominal = profileKind === 'chamfer'
     ? dihedralChamferContour(radius, theta)
     : dihedralFilletContour(radius, theta, arcSegs);
-  const contour = expandDihedralCutterContour(nominal, radius, theta);
+  const contour = expandDihedralCutterContour(nominal, radius, theta, exactLegs ? { faceEps: 0 } : {});
   if (testScale > 1) {
     for (const p of contour) {
       p[0] *= testScale;
@@ -6923,7 +6929,7 @@ function _s23SweepKnotRings(points, frames, contour) {
   return solid;
 }
 
-function _s23SweepRun(Manifold, CrossSection, runGeom, radius, profileKind, arcSegs, testScale) {
+function _s23SweepRun(Manifold, CrossSection, runGeom, radius, profileKind, arcSegs, testScale, runOpts = {}) {
   const thetaUse = runGeom.theta;
   if (runGeom.closed && !(testScale > 1)) {
     try {
@@ -6952,7 +6958,7 @@ function _s23SweepRun(Manifold, CrossSection, runGeom, radius, profileKind, arcS
     ]);
     sweepFrames = runGeom.frames.concat([runGeom.frames[0]]);
   }
-  const contour = _s23DihedralContour(radius, thetaUse, profileKind, arcSegs, testScale);
+  const contour = _s23DihedralContour(radius, thetaUse, profileKind, arcSegs, testScale, !!runOpts.exactLegs);
   // One ring at every knot of this run, including the closed-loop overlap
   // stations appended above. Uniform Manifold.extrude slices space themselves
   // by arc length, so a 28 mm straight in the same run as 0.3 mm arc chords
@@ -7364,9 +7370,15 @@ function _s23CuttersFromSegs(M, CrossSection, segs, closed, radius, profileKind,
     : _s23SplitRunsAtCorners(_s23GroupRuns(segs, closed));
   const cutters = [];
   let expectVol = 0;
-  for (const run of runs) {
+  for (let ri = 0; ri < runs.length; ri++) {
+    const run = runs[ri];
     if (opts.part && !(closed && runs.length === 1)) {
-      _s23ExtendOpenRunEnds(opts.part, run, radius, profileKind, arcSegs);
+      // A chain end that meets a mesh-built corner pocket stops at the
+      // junction plane: no draft extension past that knot.
+      _s23ExtendOpenRunEnds(opts.part, run, radius, profileKind, arcSegs, {
+        start: ri === 0 && !!opts.trimStart,
+        end: ri === runs.length - 1 && !!opts.trimEnd,
+      });
     }
     let theta = run[0].theta;
     if (singleRun && run.length > 1) {
@@ -7383,7 +7395,7 @@ function _s23CuttersFromSegs(M, CrossSection, segs, closed, radius, profileKind,
     for (const fr of geom.frames) fr.theta = theta;
     let piece;
     try {
-      piece = _s23SweepRun(M, CrossSection, geom, radius, profileKind, arcSegs, testScale);
+      piece = _s23SweepRun(M, CrossSection, geom, radius, profileKind, arcSegs, testScale, { exactLegs: !!opts.exactLegs });
     } catch (e) {
       if (/too large for this rim|face angle|radius/i.test(String(e && e.message))) throw e;
       throw new Error(`filletAlongPath: sweep failed — ${e && e.message ? e.message : e}`);
@@ -8207,10 +8219,11 @@ function _s23RunRounded(segs) {
  * A rounded path samples the face at the back end and extends only that end.
  * Returns the longest extension applied (mm).
  */
-function _s23ExtendOpenRunEnds(part, segs, radius, profileKind, arcSegs) {
+function _s23ExtendOpenRunEnds(part, segs, radius, profileKind, arcSegs, skip = null) {
   if (!part || !Array.isArray(segs) || !segs.length) return 0;
   if (segs.some((s) => s && s.convex === false)) return 0;
-  const whichEnds = _s23RunRounded(segs) ? ['end'] : ['start', 'end'];
+  const whichEnds = (_s23RunRounded(segs) ? ['end'] : ['start', 'end'])
+    .filter((which) => !(skip && skip[which]));
   let applied = 0;
   const drafted = new Set();
   for (const which of whichEnds) {
@@ -8327,10 +8340,14 @@ function _s23BuildVariableProfileCutter(
   return cut;
 }
 
-function _s23BuildDihedralCutter(M, CrossSection, part, points, closed, radius, profileKind, arcSegs, testScale, junction) {
+function _s23BuildDihedralCutter(M, CrossSection, part, points, closed, radius, profileKind, arcSegs, testScale, junction, ends = null) {
   const segs = _s23ProbeSegments(part, points, closed);
   _s23StampJunctionTurns(segs, junction);
-  return _s23CuttersFromSegs(M, CrossSection, segs, closed, radius, profileKind, arcSegs, testScale, { part });
+  const trimStart = !!(ends && ends.start);
+  const trimEnd = !!(ends && ends.end);
+  return _s23CuttersFromSegs(M, CrossSection, segs, closed, radius, profileKind, arcSegs, testScale, {
+    part, trimStart, trimEnd, exactLegs: trimStart || trimEnd,
+  });
 }
 
 /** Up to 48 samples along an already-normalized path, endpoints included. */
@@ -8702,9 +8719,122 @@ function _s23TinyTriangles(solid) {
  * triangles. Components are built in pick order; the probes of a later chain
  * still see the vertex it shares with an earlier one.
  */
+/**
+ * Spherical corners inside a sweep edge set. A vertex where exactly three
+ * chains end at right angles, all convex and all long enough, is the same
+ * corner the planar kernel builds (`_c6CornerPocket`): the three chains are
+ * trimmed to the junction planes r from the vertex, lose their draft end
+ * extension there, keep their legs exactly on the faces, and one pocket
+ * solid holds the sphere octant. The pocket's boundary arcs ARE the chains'
+ * own end rings (the dihedral contour placed through the probed frame), so
+ * the sail and the sphere share every ring vertex. Fillet profile only; a
+ * chamfer, a variable-profile chain, or a legacy initialNormal sweep keeps
+ * the cusp. Returns the trimmed components (with their trim flags) and the
+ * pocket solids.
+ */
+function _s23JunctionPockets(M, part, path, radius, opts, arcSegs) {
+  const comps = path.components.map((c) => ({ comp: c, trimStart: false, trimEnd: false }));
+  const none = { components: comps, pockets: [] };
+  if (opts.profile === 'chamfer' || opts.variableProfile || opts.initialNormal || opts._rawPath) return none;
+  const ends = [];
+  comps.forEach((row, ci) => {
+    const pts = row.comp.points;
+    if (row.comp.closed || !Array.isArray(pts) || pts.length < 2) return;
+    const dirAt = (a, b) => _s23Norm(_s23Sub(pts[b], pts[a]));
+    ends.push({ ci, which: 'start', P: pts[0], d: dirAt(0, 1) });
+    ends.push({ ci, which: 'end', P: pts[pts.length - 1], d: dirAt(pts.length - 1, pts.length - 2) });
+  });
+  if (ends.length < 3) return none;
+  // Group chain ends by vertex.
+  const groups = [];
+  for (const e of ends) {
+    const g = groups.find((grp) => _c6Len(_c6Sub(grp[0].P, e.P)) <= 0.05);
+    if (g) g.push(e); else groups.push([e]);
+  }
+  const candidates = groups.filter((g) => g.length === 3);
+  if (!candidates.length) return none;
+  const dot = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+  const orthogonal = (g) => dot(g[0].d, g[1].d) < 1e-4 && dot(g[1].d, g[2].d) < 1e-4 && dot(g[2].d, g[0].d) < 1e-4;
+  const probes = new Map(); // ci → segs | null
+  const probe = (ci) => {
+    if (probes.has(ci)) return probes.get(ci);
+    let segs = null;
+    try {
+      const pts = comps[ci].comp.points;
+      const carried = _s23CarriedEdges(comps[ci].comp);
+      const scan = _s23ProbeKnotNormals(part, pts, false, carried);
+      if (scan.segmentConvex.every((c) => c !== false)) segs = _s23ProbeSegments(part, pts, false);
+    } catch { segs = null; }
+    probes.set(ci, segs);
+    return segs;
+  };
+  const endSeg = (e) => {
+    const segs = probe(e.ci);
+    if (!segs || !segs.length) return null;
+    return e.which === 'start' ? segs[0] : segs[segs.length - 1];
+  };
+  const right = (seg) => seg && Number.isFinite(seg.theta) && Math.abs(seg.theta - Math.PI / 2) < 1e-4 && seg.N && seg.B;
+  const corners = candidates
+    .filter(orthogonal)
+    .filter((g) => g.every((e) => right(endSeg(e))));
+  if (!corners.length) return none;
+  // Each trimmed end costs r of its chain; a chain too short for its caps
+  // demotes every corner it touches.
+  const trimmed = new Map();
+  for (const g of corners) for (const e of g) trimmed.set(e.ci, (trimmed.get(e.ci) || 0) + 1);
+  const keep = corners.filter((g) => g.every((e) => {
+    const L = pathPolylineLength(comps[e.ci].comp.points, false);
+    return L > radius * trimmed.get(e.ci) + 1e-6;
+  }));
+  if (!keep.length) return none;
+  const pockets = [];
+  for (const g of keep) {
+    const P = g[0].P;
+    const d = g.map((e) => e.d);
+    const O = [
+      P[0] + radius * (d[0][0] + d[1][0] + d[2][0]),
+      P[1] + radius * (d[0][1] + d[1][1] + d[2][1]),
+      P[2] + radius * (d[0][2] + d[1][2] + d[2][2]),
+    ];
+    const c = { P, r: radius, d, O };
+    const arcs = g.map((e, k) => {
+      const seg = endSeg(e);
+      const K = [P[0] + radius * d[k][0], P[1] + radius * d[k][1], P[2] + radius * d[k][2]];
+      // The chain's own end ring: dihedral contour with exact legs, placed
+      // through the probed frame at the junction knot. Arc = contour[1..].
+      const nominal = dihedralFilletContour(radius, seg.theta, arcSegs);
+      const expanded = expandDihedralCutterContour(nominal, radius, seg.theta, { faceEps: 0 });
+      const arc2D = expanded.slice(2, expanded.length - 1);
+      let ring = _s23PlaceContourRing(arc2D, K, seg.N, seg.B);
+      // Canonical order for the pocket: from the tangent point on face (k, j)
+      // to the one on face (k, i), i < j the other two edges.
+      const [i] = [0, 1, 2].filter((x) => x !== k);
+      const want = [O[0] - radius * d[i][0], O[1] - radius * d[i][1], O[2] - radius * d[i][2]];
+      if (_c6Len(_c6Sub(ring[0], want)) > _c6Len(_c6Sub(ring[ring.length - 1], want))) ring = ring.slice().reverse();
+      // Trim the chain to the junction plane.
+      const row = comps[e.ci];
+      const pts = row.comp.points.slice();
+      if (e.which === 'start') { pts[0] = K; row.trimStart = true; } else { pts[pts.length - 1] = K; row.trimEnd = true; }
+      row.comp = { ...row.comp, points: pts };
+      return ring;
+    });
+    const pocket = _c6CornerPocket(M, c, { arcs });
+    try {
+      const ids = pocket.getMesh().runOriginalID;
+      for (let i = 0; i < ids.length; i++) _blendCornerIDs.add(ids[i]);
+    } catch { /* no id: stays .round */ }
+    pockets.push(pocket);
+  }
+  return { components: comps, pockets };
+}
+
 function _s23FilletEdgeSet(M, part, path, radius, opts) {
-  const pieces = path.components.map((comp) => filletAlongPath(part, comp, radius, { ...opts, _collect: true }));
-  const cutters = [];
+  const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
+  const prep = _s23JunctionPockets(M, part, path, radius, opts, arcSegs);
+  const pieces = prep.components.map((row) => filletAlongPath(part, row.comp, radius, {
+    ...opts, _collect: true, _trimStart: row.trimStart, _trimEnd: row.trimEnd,
+  }));
+  const cutters = [...prep.pockets];
   const fillers = [];
   let expectVol = 0;
   let expectAdd = 0;
@@ -8714,6 +8844,10 @@ function _s23FilletEdgeSet(M, part, path, radius, opts) {
     if (Number.isFinite(piece.expectVol)) expectVol += piece.expectVol;
     if (Number.isFinite(piece.expectAdd)) expectAdd += piece.expectAdd;
   }
+  // A corner pocket removes the cusp: r³(1 − π/6) less the three sail
+  // overlaps it replaces. The sum is only a [2 %, 8×] band, so the cube is
+  // close enough.
+  expectVol += prep.pockets.length * radius * radius * radius * (1 - Math.PI / 6);
   if (!cutters.length && !fillers.length) {
     throw new Error('filletAlongPath: the edge set produced no cutter — re-pick edges');
   }
@@ -8958,6 +9092,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
             )
             : _s23BuildDihedralCutter(
               M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, junction,
+              { start: ri === 0 && !!opts._trimStart, end: ri === plan.runs.length - 1 && !!opts._trimEnd },
             );
         } catch (_) {
           continue;
@@ -9062,7 +9197,8 @@ function filletAlongPath(part, path, radius, opts = {}) {
         M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale, rawSegCount, null, carried,
       )
       : _s23BuildDihedralCutter(
-        M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale,
+        M, CrossSection, part, points, closed, radius, profileKind, arcSegs, scale, null,
+        { start: !!opts._trimStart, end: !!opts._trimEnd },
       );
     cutter = built.cutter;
     filler = built.filler || null;
