@@ -35,9 +35,23 @@ Two normal sources, used for different jobs, and swapping them breaks things:
 | sign + feature angle | adjacent **triangles** | a group normal is an area-weighted average; on a fillet sail it points nowhere near the local surface and flips the cross product (2101 false concaves on a filleted box) |
 | returned `n0`/`n1`, coplanarity gate | **face groups** | downstream (`chamferEdges`, the framing) consumes these and rejects a coplanar pair; gating on triangle normals alone hands it coplanar groups — this broke pilot case 94480bca |
 
-Fallbacks, both load-bearing:
+Fallbacks, all load-bearing:
 - A **degenerate sliver triangle** has no usable normal → its group normal
   stands in. Tessellated lofts carry hundreds (218 on the playtest loft).
+- A **folded sliver** (`_c6UnfoldedNormal`): a planar face bounded by a dense
+  arc (a 96-step fillet, then `hollow`) can carry ~1 mm² slivers that
+  Manifold wound against their own face, each with its own faceID, so the
+  group normal is the sliver's own. Among the triangle and its coplanar or
+  folded neighbours the largest one is the surface; a sliver borrows that
+  normal. Signing a concave crease from such a sliver called it convex and
+  the next fillet cut instead of filled.
+- A **fold pair's shared edge** (two triangles with `n0·n1 < −0.9`) is a
+  fin, not a crease; it is skipped. `dropPlanarFins` removes the same fins
+  before drawing.
+- The sweep-path **endpoint weld** (`_weldCoincidentEnds`, 0.05 mm) now
+  stays under 0.4 × the shortest edge of the set: the first chord of a dense
+  arc is a quarter chord long, and welding its far end onto the straight it
+  starts from turned a closed rim into eight junctions.
 - A **zero face-group normal** → the triangle normal stands in. `c4MeshData`
   sums a group's triangle normals, and on a difference-derived solid a group can
   cancel to zero: 13 of 17 convex edges on an L-shape, flowing straight into the

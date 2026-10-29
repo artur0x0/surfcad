@@ -315,10 +315,22 @@ function _weldCoincidentEnds(edges) {
     if (a !== b) parent[a] = b;
   };
   const at = (i) => ((i & 1) === 0 ? edges[i >> 1].va : edges[i >> 1].vb);
+  // The weld joins duplicate vertices (a flat/bend seam keeps two indices at
+  // one point). It must never swallow a real edge: the first chord of a
+  // dense fillet arc is about a quarter of a chord long (0.02 mm on r=6 at
+  // 96 steps), and welding its far end onto the straight it starts from
+  // turned a closed rim into eight junctions. Keep the tolerance under half
+  // the shortest edge in the set.
+  let minLen = Infinity;
+  for (const e of edges) {
+    const L = _dist(e.va, e.vb);
+    if (L > 1e-12 && L < minLen) minLen = L;
+  }
+  const tol = Math.min(PATH_ENDPOINT_WELD_MM, Number.isFinite(minLen) ? 0.4 * minLen : PATH_ENDPOINT_WELD_MM);
   for (let i = 0; i < parent.length; i++) {
     for (let j = i + 1; j < parent.length; j++) {
       if ((i >> 1) === (j >> 1)) continue;
-      if (_dist(at(i), at(j)) <= PATH_ENDPOINT_WELD_MM) unite(i, j);
+      if (_dist(at(i), at(j)) <= tol) unite(i, j);
     }
   }
   const id = new Map();
