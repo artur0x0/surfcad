@@ -522,7 +522,8 @@ return shifted;
   const fillet = readFileSync(new URL('../../src/utils/filletAlongPath.js', import.meta.url), 'utf8');
   const scraps = worker.match(/scrapVol > 0\.05 \* bestVol && scrapVol > 1e-2/g) || [];
   check('fillet arc stays 24 segments', /export const FILLET_ARC_SEGMENTS = 24;/.test(fillet));
-  check('scrap gate is unchanged', scraps.length === 2, `n=${scraps.length}`);
+  // Single path, semi-arc batch, and the edge set each keep the same gate.
+  check('scrap gate is unchanged', scraps.length === 3, `n=${scraps.length}`);
   check('Move Face still forces the legacy walk',
     /legacy: legacyTap \|\| !!moveFaceModeRef\.current/.test(vp));
   check('moveFace includes the coplanar seam and the plane that scrap was cut from',

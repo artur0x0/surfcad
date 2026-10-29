@@ -28,7 +28,8 @@ console.log('fillet after keep-both cut — source pins');
   const w = readRepo('src/workers/sandboxWorker.js') + '\n' + readRepo('src/lib/surfcad/runtime.js');
   const gate = 'scrapVol > 0.05 * bestVol && scrapVol > 1e-2';
   const n = w.split(gate).length - 1;
-  check('open-path and semi-arc scrap gates both still 5% and 0.01', n === 2, `count=${n}`);
+  // Open path, semi-arc batch, and the edge set (one subtract for a whole pick) share the gate.
+  check('open-path, semi-arc and edge-set scrap gates all still 5% and 0.01', n === 3, `count=${n}`);
   check('scrap messages still fail loud',
     w.includes('decompose found ${parts.length} components with scrap vol')
     && w.includes('semi-arc batch decompose found ${parts.length} components with scrap vol'));

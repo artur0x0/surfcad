@@ -267,7 +267,7 @@ await compare('typed radius 3, B active', [['A', [edgeA]], ['B', [edgeB]]], 'B',
   const i = vp.indexOf('const acceptFillet = useCallback');
   const body = vp.slice(i, vp.indexOf('const exitShellMode', i));
   check('acceptFillet validates each part with partEdgeParams',
-    /validateFilletAccept\(list, partEdgeParams\(state\.params, list/.test(body));
+    /validateFilletAccept\(list, \{\s*\.\.\.partEdgeParams\(state\.params, list/.test(body));
   check('a typed radius (radiusTouched) skips the per-part reseed',
     /touched: !!state\.radiusTouched/.test(body));
   check('the per-part seed is the fixed 2 mm radius',
