@@ -159,7 +159,10 @@ if (!(await waitForServer())) {
     const done = await agentCall('pick_done', { accept: true });
     check('pick_done accept on the edit card writes both edges', done.ok === true && done.result?.accepted === true && done.result?.ok === true, JSON.stringify(done.result || done.error).slice(0, 300));
     const src2 = await script();
-    check('the chamfer block now names both edges', /edgesNamed\(part, "plate\.left~plate\.top"\)/.test(src2) && /edgesNamed\(part, "plate\.right~plate\.top"\)/.test(src2), src2.slice(-600));
+    // Edge sets: one edgesNamed call carries every name of the pick
+    // (`edgesNamed(part, "a", "b")`), so match each name inside a call.
+    const named2 = [...src2.matchAll(/edgesNamed\(part, ([^)]*)\)/g)].map((m) => m[1]).join(' ');
+    check('the chamfer block now names both edges', /"plate\.left~plate\.top"/.test(named2) && /"plate\.right~plate\.top"/.test(named2), src2.slice(-600));
     check('still one chamfer block', (await agentCall('feature_tree', {})).result?.features?.filter((f) => f.kind === 'chamfer').length === 1);
     const afterRows = (await agentCall('list_feature_edges', {})).result?.edges || [];
     check('the chamfer surface is a named face on the edge list', afterRows.some((r) => /\.bevel/.test(r.name)), [...nameSet(afterRows)].filter((n) => /bevel/.test(n)).join(','));
