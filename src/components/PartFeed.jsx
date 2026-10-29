@@ -17,6 +17,7 @@ import OpenAssemblyChoiceDialog from './OpenAssemblyChoiceDialog';
 import DeleteAssemblyDialog, { AssemblyOpenList } from './DeleteAssemblyDialog';
 import ProfileChip from './ProfileChip';
 import VaultPickerDialog from './VaultPickerDialog';
+import GithubSaveAccessNotice from './GithubSaveAccessNotice';
 import { useAuthState } from '../hooks/useAuthState';
 import { useCartChrome } from '../hooks/useCart';
 import { scriptHash } from '../utils/cart.js';
@@ -2757,7 +2758,10 @@ const PartFeed = forwardRef(function PartFeed({
             </p>
           )}
           {commitFlow.stage === 'error' && (
-            <p className="text-xs text-amber-300" data-git-commit-error="">{commitFlow.error}</p>
+            <GithubSaveAccessNotice
+              message={commitFlow.error}
+              installUrl={commitFlow.result?.githubAccess === 'install' ? commitFlow.result.installUrl : ''}
+            />
           )}
         </VaultPickerDialog>
       )}

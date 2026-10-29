@@ -387,6 +387,7 @@ import {
   SAVE_QUEUED_COPY,
   noRepoYetError,
   gitOpCatchResult,
+  githubSaveErrorFields,
   checkRemoteBehind,
   behindToastMessage,
   behindToastTarget,
@@ -6320,6 +6321,7 @@ const App = () => {
         status: 'error',
         error: text,
         code: err.code || null,
+        ...githubSaveErrorFields(err),
       };
     }
   };
@@ -6610,6 +6612,7 @@ const App = () => {
         error: message,
         code: err.code || null,
         stray: Array.isArray(err.stray) ? err.stray : null,
+        ...githubSaveErrorFields(err),
       };
     }
   };
