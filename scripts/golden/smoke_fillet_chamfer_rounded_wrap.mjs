@@ -270,9 +270,9 @@ return part;
   const e23 = mk(2, 3);
   const starter = 'let part = Manifold.cube([40, 30, 20], true);\nreturn part;\n';
   const c = composeChamferCommit(starter, { edges: [e01, e23], params: { chamfer: 2 } });
-  check('compose chamfer disjoint emits 2 pairs', c.ok
-    && (c.buffer.match(/makeSweepPath\s*\(/g) || []).length === 2
-    && (c.buffer.match(/profile:\s*'chamfer'/g) || []).length === 2);
+  check('compose chamfer disjoint emits one pair for the set', c.ok
+    && (c.buffer.match(/makeSweepPath\s*\(/g) || []).length === 1
+    && (c.buffer.match(/profile:\s*'chamfer'/g) || []).length === 1);
 }
 
 if (failed) {

@@ -1748,12 +1748,13 @@ export const HELPER_PALETTE_ITEMS = [
       // variableProfile:true (densified path-normal inscribed-arc frames).
       const hardVariable = !!p._hardVariableProfile;
       if (strategy === 'sweep' || hardVariable) {
-        // Disjoint picks → one makeSweepPath + filletAlongPath per contiguous
-        // component (connected chains still emit a single pair). Branch/Y
-        // junctions still soft-fail (null → no broken JS).
+        // One pair for the whole pick. makeSweepPath hands filletAlongPath
+        // every chain of the set (disjoint picks, loops, junctions), so a
+        // disjoint pick is no longer one pair per component. The split only
+        // checks that the rows are usable (null → no broken JS).
         const split = splitEdgePathComponents(edgeCtx || []);
-        if (!split.ok) return null;
-        const comps = split.components;
+        if (!split.ok && split.code !== 'branch') return null;
+        const comps = split.ok ? [split.components.flat()] : [(edgeCtx || []).filter(Boolean)];
         if (!comps.length || !comps.some((c) => Array.isArray(c) && c.length)) return null;
         const rev = bool(p.reverse, false);
         const optsPath = rev ? ', { reverse: true }' : '';
@@ -1836,9 +1837,10 @@ export const HELPER_PALETTE_ITEMS = [
       // components OK). Script-style allConvex / face scope keeps classic
       // chamferEdges for bulk planar edges.
       if (scope === 'selected' || (hasPicked && scope !== 'face' && scope !== 'allConvex')) {
+        // One pair for the whole pick: makeSweepPath hands filletAlongPath every chain.
         const split = splitEdgePathComponents(edgeCtx || []);
-        if (!split.ok) return null;
-        const comps = split.components;
+        if (!split.ok && split.code !== 'branch') return null;
+        const comps = split.ok ? [split.components.flat()] : [(edgeCtx || []).filter(Boolean)];
         if (!comps.length || !comps.some((comp) => Array.isArray(comp) && comp.length)) return null;
         const wrote = appendResolvedSweepBlends(
           feat,

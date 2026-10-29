@@ -7,6 +7,16 @@ editing any of it. The map, the flow and the invariants are in `../SKILL.md`.
 
 ## 0. Finding the edges — `signedFeatureEdges`
 
+**Face groups are per original.** `c4MeshData` groups triangles by Manifold
+`faceID` *within one original* (`runOriginalID` from the run tables). `faceID`
+restarts at 0 for every input of a boolean, so after a fillet a box triangle
+and the sail triangle beside it can both carry id 8; grouped by id alone they
+fused across their shared 90° edge and that edge was no feature edge. On a
+40×30×20 box the bottom rim lost two arc segments after the vertical fillets
+(the top kept all 100), `makeSweepPath` saw a broken loop, kept the largest
+piece, and the next fillet missed a corner by 138 mm³. The coplanar re-merge
+that follows still joins same-plane components of one body.
+
 Convexity is a **local winding test**, not a CSG query:
 
 ```
@@ -215,6 +225,22 @@ Diagnostics land on `globalThis.__filletVariableProfileMeta`:
 `usedFrames`, `frameCount`, `densifiedPoints`, `rawSegCount`, `strongFrames`,
 `alongPathTransport`, `maxFrameJumpDeg`, `singleRunCutter`, `runCount`,
 `thetaRunCount`. The C3 goldens assert against these — keep them populated.
+
+## 4b. Edge sets — `_s23FilletEdgeSet`
+
+`makeSweepPath` on several chains (or a pick with junctions, split into
+chains at every vertex of degree ≥ 3) returns `components`. `filletAlongPath`
+then runs each component in **collect mode** (`opts._collect`): the component
+takes its usual route (runs mode, dihedral, variable-profile, legacy RMF) up
+to the point where it would subtract, and returns its cutters, fillers and
+expected volumes instead. All cutters are built against the untouched solid,
+so a chain sharing a vertex with an earlier chain still finds it; filleting
+components one after another failed the stale-wire guard on the second chain.
+Then one n-way `difference`, fillers unioned, and the set guards: removed
+within [2 %, 8×] of the summed expectation, open-path scrap rule, weld,
+sliver count. Fillet mode writes one `makeSweepPath` + `filletAlongPath`
+pair per Accept for this reason; the per-component clamp of the radius stays
+in the Accept gate.
 
 ## 5. Closed loops
 

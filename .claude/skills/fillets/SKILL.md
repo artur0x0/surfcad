@@ -120,11 +120,12 @@ Kernel choice is one function: `filletKernelSpike.js` →
    A second Accept **appends** a block (`commitMode: 'append'`, chosen by
    `hasFilletModeBlock`) so it fillets the already-filleted solid.
 
-   Several disjoint corners are separate pairs in that one block. Every
-   `edgesNamed` lookup is written before the first `filletAlongPath`, as the
-   `edgesBetween` / `edge` lookups were: the first blend renames the faces it
-   cut (`<block>.round`), so a lookup of the next corner after that blend
-   would name faces that no longer meet.
+   A pick of several disjoint corners, or of edges that meet at a vertex,
+   is ONE pair: `makeSweepPath` returns every chain of the set as
+   `components` and `filletAlongPath` builds every cutter against the
+   untouched solid and subtracts once (`_s23FilletEdgeSet`). The composer
+   refuses a block with more than one pair. One lookup, one path, one blend,
+   so the pre-blend face names resolve before anything is cut.
 
 5. **Execute** — `src/workers/sandboxWorker.js` against WASM Manifold.
 
@@ -140,6 +141,9 @@ Each one is a scar. Changing it reintroduces a shipped bug.
 - **The cutter pad is size-neutral.** Every first-quadrant contour vertex stays at
   exactly `r`; only the rear `(−e,−e)` bumper grows. A uniform Q1 scale silently
   redefines the requested radius — never do it.
+- **Never drop part of a pick.** `makeSweepPath` used to keep the largest
+  component of a disconnected set and fillet that; one missing arc segment
+  turned into a missing corner with no error. Every component is a chain now.
 - **Keep the full wire.** `planFilletSweepPath` always returns `as-is`. PR #27
   skipped prior-fillet micro-arcs and left a *gap* instead of wrapping the old
   blend. Slivers are consumed by the exterior overlap, never by dropping path

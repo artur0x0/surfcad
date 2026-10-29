@@ -21,7 +21,7 @@ import {
   annotateFeatureEdges,
   indexBoundaryEdges,
 } from '../../src/utils/boundaryEdgeIds.js';
-import { composeFilletCommit, composeChamferCommit } from '../../src/utils/filletMode.js';
+import { composeFilletCommit, composeChamferCommit, countMakeSweepPath } from '../../src/utils/filletMode.js';
 import { FILLET_ARC_SEGMENTS } from '../../src/utils/filletAlongPath.js';
 import { FRAME_DENSIFY_MAX_TURN_DEG } from '../../src/utils/edgeTangencyField.js';
 
@@ -143,8 +143,11 @@ const commit = composeFilletCommit(starter, {
 });
 check('picker Accept writes a script', commit.ok === true, commit.message || '');
 if (commit.ok) {
-  const lookups = (commit.buffer.match(/edgesBetween\s*\(/g) || []).length;
-  check('picker Accept writes four edge lookups', lookups === 4, `n=${lookups}`);
+  // One edge set: the four corners resolve in one lookup line (four
+  // edge() ids, one makeSweepPath, one filletAlongPath).
+  const idList = commit.buffer.match(/\[([\d,\s]+)\]\.flatMap\(\(id\) => edge\(part, id\)\)/);
+  const lookups = idList ? idList[1].split(',').filter((x) => x.trim()).length : 0;
+  check('picker Accept resolves four edges in one set', lookups === 4 && countMakeSweepPath(commit.buffer) === 1, `n=${lookups} paths=${countMakeSweepPath(commit.buffer)}`);
   check(
     'picker Accept resolves every corner before the first blend',
     lookupsBeforeBlends(commit.buffer),

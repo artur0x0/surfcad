@@ -235,8 +235,8 @@ const e30 = mk(3, 0);
   check('disconnected Accept writes', disc.ok === true && typeof disc.buffer === 'string');
   check('disconnected Accept one fillet-mode block',
     (disc.buffer.match(/fillet-mode begin/g) || []).length === 1);
-  check('disconnected Accept two makeSweepPath', countMakeSweepPath(disc.buffer) === 2);
-  check('disconnected Accept two filletAlongPath', countFilletAlongPath(disc.buffer) === 2);
+  check('disconnected Accept one makeSweepPath (the set)', countMakeSweepPath(disc.buffer) === 1);
+  check('disconnected Accept one filletAlongPath (the set)', countFilletAlongPath(disc.buffer) === 1);
   const stay = buildFilletBlendPreview([e01, e23], { strategy: 'sweep', radius: 3 });
   check('disconnected preview stays visible after Accept compose', (stay.polylines?.length || 0) >= 2);
 }
@@ -251,10 +251,10 @@ const e30 = mk(3, 0);
     params: { strategy: 'sweep', radius: 2 },
   });
   check('2 disjoint edges Accept ok', twoAlone.ok === true);
-  check('2 disjoint edges two pairs inside markers',
+  check('2 disjoint edges one pair inside markers (edge set)',
     hasFilletModeBlock(twoAlone.buffer)
-    && countMakeSweepPath(filletModeOwnedRegion(twoAlone.buffer)) === 2
-    && countFilletAlongPath(filletModeOwnedRegion(twoAlone.buffer)) === 2);
+    && countMakeSweepPath(filletModeOwnedRegion(twoAlone.buffer)) === 1
+    && countFilletAlongPath(filletModeOwnedRegion(twoAlone.buffer)) === 1);
 
   // Other opposite pair + one contiguous chain still one component when connected.
   const chain = validateFilletAccept([e01, e12], { strategy: 'sweep', radius: 2 });
@@ -271,7 +271,7 @@ const e30 = mk(3, 0);
     params: { strategy: 'sweep', radius: 2.5 },
   });
   check('other opposite pair Accept ok', otherOpp.ok === true);
-  check('other opposite pair two filletAlongPath', countFilletAlongPath(otherOpp.buffer) === 2);
+  check('other opposite pair one filletAlongPath', countFilletAlongPath(otherOpp.buffer) === 1);
 }
 
 // ── One-shot palette Confirm still unmarked (prior goldens) ────
@@ -400,9 +400,9 @@ const e30 = mk(3, 0);
     params: { chamfer: 1.5 },
   });
   check('chamfer disconnected ok (independent)', disc.ok === true, disc.message || '');
-  check('chamfer disconnected two pairs',
-    (disc.buffer.match(/makeSweepPath\s*\(/g) || []).length === 2
-    && (disc.buffer.match(/filletAlongPath\s*\(/g) || []).length === 2);
+  check('chamfer disconnected one pair (edge set)',
+    (disc.buffer.match(/makeSweepPath\s*\(/g) || []).length === 1
+    && (disc.buffer.match(/filletAlongPath\s*\(/g) || []).length === 1);
   const again = composeChamferCommit(commit.buffer, {
     edges: [e12],
     params: { chamfer: 1 },

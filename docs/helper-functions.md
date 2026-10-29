@@ -1279,8 +1279,18 @@ return part;
 
 **Returns:** `{ kind:'sweepPath', closed, points, length, edgeCount }`
 
-**Loud failures (script):** empty / unusable edges; disconnected selection;
-branched junctions; walk failure.
+**Edge sets.** The edges need not form one chain. Every connected chain or
+loop is a component; a vertex where three or more edges meet (a box corner)
+splits its component into chains that end there. One component is returned
+as the plain path. Several come back as the longest component (so
+`sweep` / `sweepPoints` keep a usable path) with `components` listing every
+chain, `edgeCount` and `setLength` over the whole set, and `junctions`. The
+box's twelve edges are twelve chains and eight junctions; four vertical
+edges plus the top rim are eight chains and four junctions.
+`filletAlongPath` fillets every component. Nothing is dropped: an earlier
+version kept the largest piece of a broken loop and filleted that.
+
+**Loud failures (script):** empty / unusable edges; walk failure.
 
 **UI:** FEAT rail → **Path** → param popup (Body, Reverse). Uses current Edge
 selection + Tangent chip. Viewport preview shows order/direction (green→magenta
@@ -1318,7 +1328,15 @@ return part;
 
 **Parameters:**
 - `part` — manifold body
-- `path` — `makeSweepPath` result, `{ points, closed }`, or `points[]` (+ `opts.closed`)
+- `path` — `makeSweepPath` result, `{ points, closed }`, or `points[]` (+ `opts.closed`).
+  A `makeSweepPath` result with `components` (an edge set: disjoint edges,
+  several loops, a pick with junctions) fillets every component: each builds
+  its cutter against the untouched solid, with its own frames, then one
+  n-way subtract and the set-level guards (removed volume against the summed
+  expectation, scrap components, degenerate triangles). Chains meeting at a
+  vertex are cut from the same solid, so the shared vertex is still there
+  when the second chain is probed. Corners where three chains meet are
+  cusps (the spherical patch is the planar kernel's, `filletEdges`).
 - `radius` — fillet radius, or chamfer leg length (> 0)
 - `opts.profile` — `'fillet'` (default) or `'chamfer'`
 - `opts.segments` — arc segments for the fillet profile (default 12)

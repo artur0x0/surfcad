@@ -421,7 +421,7 @@ if (fillet.ok) {
     const freshRadiusRun = freshRadius.ok ? await exec(freshRadius.buffer) : null;
     check(
       'disconnected fillet places without error',
-      !createdRun?.featureSkip && countMakeSweepPath(two.buffer) === 2 && countFilletAlongPath(two.buffer) === 2,
+      !createdRun?.featureSkip && countMakeSweepPath(two.buffer) === 1 && countFilletAlongPath(two.buffer) === 1,
       createdRun?.featureSkip?.message || '',
     );
     check(
@@ -430,8 +430,8 @@ if (fillet.ok) {
         && radiusEdit.changed === true
         && !radiusRun?.featureSkip
         && !freshRadiusRun?.featureSkip
-        && countMakeSweepPath(radiusEdit.buffer) === 2
-        && countFilletAlongPath(radiusEdit.buffer) === 2
+        && countMakeSweepPath(radiusEdit.buffer) === 1
+        && countFilletAlongPath(radiusEdit.buffer) === 1
         && radiusEdit.buffer === freshRadius.buffer
         && Math.abs(Number(radiusRun.volume) - Number(freshRadiusRun.volume)) < 1e-4
         && Math.abs(Number(radiusRun.volume) - Number(createdRun.volume)) > 1,
@@ -486,7 +486,7 @@ const chamferTwo = composeChamferCommit(starter, {
   edges: vertical.slice(0, 2),
   params: { chamfer: 1.5 },
 });
-check('disconnected chamfer places', chamferTwo.ok && countMakeSweepPath(chamferTwo.buffer) === 2, chamferTwo.message || '');
+check('disconnected chamfer places', chamferTwo.ok && countMakeSweepPath(chamferTwo.buffer) === 1, chamferTwo.message || '');
 if (chamferTwo.ok) {
   const chamferFeature = parseFeatureMarkers(chamferTwo.buffer).find((item) => item.kind === 'chamfer');
   const chamferSame = replaceEditedBlend(chamferTwo.buffer, chamferFeature, {
@@ -515,7 +515,7 @@ if (chamferTwo.ok) {
     chamferEdit.ok && chamferFresh.ok
       && !chamferRun?.featureSkip
       && !chamferFreshRun?.featureSkip
-      && countFilletAlongPath(chamferEdit.buffer) === 2
+      && countFilletAlongPath(chamferEdit.buffer) === 1
       && chamferEdit.buffer === chamferFresh.buffer
       && Math.abs(Number(chamferRun.volume) - Number(chamferFreshRun.volume)) < 1e-4,
     chamferEdit.message || chamferRun?.featureSkip?.message || '',
