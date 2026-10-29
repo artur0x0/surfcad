@@ -82,7 +82,9 @@ test('a tangent fillet does not merge the flats it meets: every stamped face is 
     assert.ok(Math.abs(patch.area - corner.area) < 2, `${corner.name} patch area ${patch.area}`);
   }
   assert.equal(stampedNameForTriangles(table, top.tris).name, 'seed.top');
-  assert.ok(top.tris.length > 2, 'the top patch carries the strips the cutter left in its plane');
+  // The top is two triangles of its own; the rolling-ball cutter may leave
+  // thin strips in its plane (it did at 96 steps per quarter, not at 72).
+  assert.ok(top.tris.length >= 2, 'the top patch holds the flat');
   assert.equal(table.byName.get('seed.top').tris.length, 2);
 
   // The joint catalog applies the same boundaries.

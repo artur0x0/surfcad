@@ -60,8 +60,12 @@ arc of radius `r` → setback along face 1.
 - At θ = 90° this degenerates to the classic square-minus-quarter-disk wedge,
   area `r²(1 − π/4)`.
 - Chamfer is the equal-leg triangle, area `½c²·sin θ`.
-- `FILLET_ARC_SEGMENTS = 24` — a 7.5° facet at 90°, chosen so the 15° / 5%
-  boundary filter drops blend strips and keeps real edges.
+- `FILLET_ARC_SEGMENTS = 96` — a 0.94° facet at 90°, the planar kernel's
+  density (`FILLET_EDGES_CIRCLE_SEGMENTS / 4`), so a sweep fillet and a
+  planar fillet of one radius are the same solid and a sweep box with
+  junction pockets is bit for bit the planar rounded box (12 044 triangles,
+  0.36 s). Far under the 15° / 5% boundary filter, so blend strips are not
+  picked as edges. It was 24 for years; see the constant's comment.
 
 `filletSetback` throws on degenerate θ rather than returning a huge number.
 

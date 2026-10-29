@@ -30,7 +30,7 @@ Two kernel choices made that mesh, and the graphs, expensive:
 
 Merge `d87b983`. Keep all of this.
 
-- One extrusion ring per 5° path knot (`_s23SweepKnotRings`, sweep frames). No 48-slice floor. Cross-section stays `FILLET_ARC_SEGMENTS = 24`. Same-radius semi-arc split stays. No sphere caps. No extra concave pad.
+- One extrusion ring per 5° path knot (`_s23SweepKnotRings`, sweep frames). No 48-slice floor. Cross-section is `FILLET_ARC_SEGMENTS = 96`, the planar kernel's density. Same-radius semi-arc split stays. No sphere caps. No extra concave pad.
 - N-way `difference([part, ...cutters])` instead of chaining cutter unions.
 - `signedFeatureEdges` cached on the same part object across semi-arc runs (`_s23ProbeFeatureEdges`). The boolean result is a new object, so the next fillet misses and rebuilds.
 - Face-id vertex dedup is a `Set` of vertex indices, not `array.includes` on vector refs.

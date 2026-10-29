@@ -37,7 +37,7 @@ console.log('wrap onto a drafted face — source pins');
   check('a rounded run extends only its back end',
     /_s23RunRounded\(segs\) \? \['end'\]/.test(w));
   check('FRAME_DENSIFY_MAX_TURN_DEG stays 5', /FRAME_DENSIFY_MAX_TURN_DEG = 5/.test(field));
-  check('FILLET_ARC_SEGMENTS stays 24', /FILLET_ARC_SEGMENTS = 24/.test(fillet));
+  check('FILLET_ARC_SEGMENTS floor stays 24', /FILLET_ARC_SEGMENTS = 24/.test(fillet));
   check('coherent gate stays 15°', /minDeg = typeof opts\.minDeg === 'number' \? opts\.minDeg : 15/.test(
     readRepo('src/utils/selectEdge.js'),
   ));
@@ -165,11 +165,11 @@ return out;`);
       if (area < 1e-8) tiny++;
     }
     // The drafted face keeps a denser boolean tessellation than an axis-aligned
-    // cube (about 2000 tris here). The shred left the crease and broke the
-    // side contours; those are the gates above and below. A 5512-tri blow-up
-    // still fails this cap.
+    // cube (about 7000 tris at the 96-step arc; 2000 at the old 24). The shred
+    // left the crease and broke the side contours; those are the gates above
+    // and below. A blow-up past twice the measured count still fails this cap.
     check('wrap mesh is not scrap-sheet dirty',
-      r.tris > 40 && r.tris < 4000 && !isFilletSliverDirty(tiny, r.tris),
+      r.tris > 40 && r.tris < 14000 && !isFilletSliverDirty(tiny, r.tris),
       `tris=${r.tris} tiny=${tiny}`);
     check('no vertices left on the open drafted crease',
       note.onCrease === 0,

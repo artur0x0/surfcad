@@ -45,7 +45,7 @@ import {
   resolveFilletStrategy,
   FILLET_SWEEP_DISCONNECTED,
   FILLET_SWEEP_BRANCH,
-  FILLET_ARC_SEGMENTS,
+  filletArcSegments,
 } from './filletAlongPath.js';
 import {
   assembleSweepPath,
@@ -558,7 +558,7 @@ function buildSingleFilletBlendPreview(list, params = {}) {
   try {
     wedge = n.profile === 'chamfer'
       ? dihedralChamferContour(radius, Math.PI / 2)
-      : filletWedgeContour(radius, FILLET_ARC_SEGMENTS);
+      : filletWedgeContour(radius, filletArcSegments(radius));
   } catch {
     wedge = null;
   }
@@ -602,7 +602,7 @@ function buildSingleFilletBlendPreview(list, params = {}) {
       try {
         frameWedge = n.profile === 'chamfer'
           ? dihedralChamferContour(radius, theta)
-          : dihedralFilletContour(radius, theta, FILLET_ARC_SEGMENTS);
+          : dihedralFilletContour(radius, theta, filletArcSegments(radius));
       } catch {
         frameWedge = wedge;
       }

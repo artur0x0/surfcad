@@ -22,6 +22,8 @@ import {
   orientFilletFrame,
   varyingProfileTubeMesh,
   FILLET_ARC_SEGMENTS,
+  FILLET_ARC_CHORD_MM,
+  filletArcSegments,
 } from '../../utils/filletAlongPath.js';
 import { densifyPathPoints, buildVariableProfileFrames, maxConsecutiveFrameAngleDeg, countThetaRuns, variableProfileDensifyStep, pathPolylineLength, FRAME_DENSIFY_MAX_TURN_DEG } from '../../utils/edgeTangencyField.js';
 import { indexBoundaryEdges } from '../../utils/boundaryEdgeIds.js';
@@ -4142,6 +4144,35 @@ function _c4TriArea(tri) {
  * @param {number} [minAngleDeg] dihedral gate; raised to FEATURE_EDGE_MIN_DEG
  * @returns {object[]} edges with { n0, n1, convex, dihedralDeg }
  */
+/**
+ * The surface normal at a triangle, for signing an edge. A planar face
+ * bounded by a dense arc (96 steps per quarter) can carry long slivers that
+ * Manifold wound the wrong way: about 1 mm² each, normal opposite to the face
+ * around them, each with its own faceID, so the group normal is the sliver's
+ * own. Signing a concave crease from one called it convex and the next
+ * fillet cut instead of filled (concave playtest after hollow). Among the
+ * triangle and its neighbours that lie in its plane, folded or not, the
+ * largest one is the surface; a sliver borrows that normal, a real face
+ * keeps its own.
+ */
+function _c6UnfoldedNormal(info, ti, tri, g, gOK) {
+  let bestN = tri.n;
+  let bestA = _c4TriArea(tri);
+  for (let k = 0; k < 3; k++) {
+    const a = tri.vs[k];
+    const b = tri.vs[(k + 1) % 3];
+    const key = a < b ? a * 1e9 + b : b * 1e9 + a;
+    const pair = info.pairMap.get(key);
+    if (!pair || pair.length !== 2) continue;
+    const other = info.tris[pair[0] === ti ? pair[1] : pair[0]];
+    if (!other || Math.abs(_c4Dot(tri.n, other.n)) < 0.9) continue;
+    const area = _c4TriArea(other);
+    if (area > bestA) { bestA = area; bestN = other.n; }
+  }
+  if (bestN === tri.n && gOK && _c4Dot(tri.n, g) < 0) return g;
+  return bestN;
+}
+
 function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
   const data = c4MeshData(m);
   const info = _c6BuildMeshInfo(m);
@@ -4173,8 +4204,19 @@ function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
     const gOK0 = _c4Len(g0) > 0.5;
     const gOK1 = _c4Len(g1) > 0.5;
     if ((!tOK0 && !gOK0) || (!tOK1 && !gOK1)) continue;
-    const n0 = tOK0 ? t0.n : g0;
-    const n1 = tOK1 ? t1.n : g1;
+    // A planar face bounded by a dense arc (96 steps per quarter) can carry a
+    // long sliver that Manifold wound the wrong way: 1.1 mm² with a normal
+    // opposite to its own face. Signing a concave crease from that triangle
+    // called it convex and the next fillet cut instead of filled (concave
+    // playtest after hollow). A triangle that points against its group is
+    // not the surface; the group is.
+    // Two triangles folded flat against each other share a fin, not a crease
+    // (a knife edge does not exist on a solid). Those fins come from the
+    // triangulation of a planar face bounded by a dense arc and are what
+    // dropPlanarFins removes before drawing; here they are no edge at all.
+    if (tOK0 && tOK1 && _c4Dot(t0.n, t1.n) < -0.9) continue;
+    const n0 = tOK0 ? _c6UnfoldedNormal(info, i0, t0, g0, gOK0) : g0;
+    const n1 = tOK1 ? _c6UnfoldedNormal(info, i1, t1, g1, gOK1) : g1;
     const outN0 = gOK0 ? g0 : t0.n;
     const outN1 = gOK1 ? g1 : t1.n;
     // Gate 1 (consumer contract): the normals this helper RETURNS are the
@@ -4975,11 +5017,10 @@ function _c6ClosedRunCutter(M, manifoldModule, run, geoms) {
 // its caps) takes this path. A near-90° corner (a drafted box) keeps the v1
 // ball cut: its sails and faces are not where the pocket assumes them.
 //
-// Sphere octant grid: a barycentric grid of FILLET_EDGES_CORNER_SEGMENTS/4
-// steps per side, warped so every boundary arc is uniform in angle, with
-// each boundary step split FILLET_EDGES_CIRCLE_SEGMENTS/FILLET_EDGES_CORNER_SEGMENTS
-// times so the boundary ring has exactly the sail's vertices. Interior
-// facets step 360°/FILLET_EDGES_CORNER_SEGMENTS; the face graph reads that
+// Sphere octant grid: a barycentric grid of filletArcSegments(r)/3 steps per
+// side, warped so every boundary arc is uniform in angle, with each boundary
+// step split three times so the boundary ring has exactly the sail's
+// vertices. Interior facets step three ring steps; the face graph reads that
 // as the corner's facet step.
 // ============================================================================
 const _C6_EXACT_CORNER_TOL = 1e-5;
@@ -5045,7 +5086,7 @@ function _c6SignedVolume(V, T) {
 }
 
 /** Build a Manifold from a closed triangle soup; loud on anything but a clean solid. */
-function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
+function _c6SolidFromSoup(M, what, verts, tris, expectVol, tolerance = 0.01) {
   const { Mesh } = manifoldModule;
   // Compact: a welded ring end leaves its duplicate unreferenced.
   const remap = new Int32Array(verts.length).fill(-1);
@@ -5077,7 +5118,7 @@ function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
   const se = _c4StatusError(solid);
   if (se) throw new Error(`filletEdges: bad ${what} (${se})`);
   const vol = solid.volume();
-  if (!(vol > 1e-9) || Math.abs(vol - expectVol) > 0.01 * expectVol) {
+  if (!(vol > 1e-9) || Math.abs(vol - expectVol) > tolerance * expectVol) {
     throw new Error(`filletEdges: ${what} volume ${vol} is off the expected ${expectVol}`);
   }
   return solid;
@@ -5091,8 +5132,8 @@ function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
  * stitched between the two rings vertex for vertex.
  */
 function _c6TrimmedEdgeCutter(M, g, capA, capB) {
-  const nFine = FILLET_EDGES_CIRCLE_SEGMENTS / 4;
   const { L, d, r } = g;
+  const nFine = filletArcSegments(r);
   const shift = (ring, s) => ring.map((p) => [p[0] + s * d[0], p[1] + s * d[1], p[2] + s * d[2]]);
   let ring0;
   let ring1;
@@ -5157,8 +5198,12 @@ function _c6CornerPocket(M, c, pocketOpts = {}) {
   // Rings handed in (a sweep chain's own end ring, see _s23JunctionPockets)
   // set the boundary; the grid then has that many steps per side.
   const given = Array.isArray(pocketOpts.arcs) ? pocketOpts.arcs : null;
-  const nFine = given ? given[0].length - 1 : FILLET_EDGES_CIRCLE_SEGMENTS / 4;
-  const n = given ? nFine : FILLET_EDGES_CORNER_SEGMENTS / 4;
+  const nFine = given ? given[0].length - 1 : filletArcSegments(c.r);
+  // Interior grid: one step per FILLET_CORNER_GRID_RATIO ring steps whenever
+  // the ring allows it (filletArcSegments is a multiple of 12), so a corner
+  // is a fraction of its sails' triangles.
+  const ratio = FILLET_CORNER_GRID_RATIO;
+  const n = nFine % ratio === 0 && nFine / ratio >= 3 ? nFine / ratio : nFine;
   const m = nFine / n;
   if (given && (given.length !== 3 || given.some((a) => a.length !== nFine + 1) || nFine < 3)) {
     throw new Error('filletEdges: corner pocket rings must be three arcs of one length');
@@ -5318,8 +5363,10 @@ function _c6CornerPocket(M, c, pocketOpts = {}) {
   for (let k = 0; k < 3; k++) {
     for (let v = 0; v < nFine; v++) face(iC[k], ringAt(k, v), ringAt(k, v + 1), d[k]);
   }
+  // The octant grid is inscribed, so the pocket is a little larger than the
+  // cube minus the sphere: about 1 % at 12 grid steps (r=3), less when finer.
   const expectVol = r * r * r * (1 - Math.PI / 6);
-  return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol);
+  return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol, 0.05);
 }
 
 /**
@@ -5433,7 +5480,8 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
   // whole fillet (measured 4.5e-2 mm³ per 20 mm edge vs the analytic
   // circle-exact fillet). 384 segments cut that ~16x (2.7e-3 mm³) for a
   // trivial mesh cost (~400 tris per edge vs ~108).
-  const SEGMENTS = FILLET_EDGES_CIRCLE_SEGMENTS;
+  // Full-circle count per edge: the shared radius-scaled quarter, times four.
+  const segmentsFor = (rr) => 4 * filletArcSegments(rr);
   const sphericalCorners = !!opts.sphericalCorners;
   // Slice C2 hard path: skip local planar-adjacent assert so loft generators
   // can use the same parallelepiped−cylinder cutter per coherent segment.
@@ -5548,7 +5596,7 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
     ];
     let cyl = null;
     const cylOf = () => {
-      if (!cyl) cyl = M.cylinder(L + 2, r, r, SEGMENTS, true).transform(mat);
+      if (!cyl) cyl = M.cylinder(L + 2, r, r, segmentsFor(r), true).transform(mat);
       return cyl;
     };
     const caps = cornerInfo.caps.get(g) || null;
@@ -5633,7 +5681,7 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       const { P, r: r0 } = c;
       const [m12, m23, m31] = c.m;
       const O = c.O;
-      const unitBall = M.sphere(r0, FILLET_EDGES_CORNER_SEGMENTS);
+      const unitBall = M.sphere(r0, 4 * Math.max(8, Math.round(filletArcSegments(r0) / FILLET_CORNER_GRID_RATIO)));
       // Face identity: the ball's runs are the `<block>.corner` face. Read
       // the id before the transform; a transformed manifold reports -1 while
       // its runs still carry the sphere's id.
@@ -6682,7 +6730,8 @@ function _s23AddRingOrigins(origins) {
  * triangles with a short edge under this distance and a long edge along a
  * ruling; the rounded-wrap rim comes back as several chains because those
  * duplicated vertices are not shared by index. Snapping them does not move
- * a real feature: arc chords at FILLET_ARC_SEGMENTS are ~0.2 mm.
+ * a real feature: arc chords at filletArcSegments(r) are 0.1 mm or more
+ * past r=2, and ~0.03–0.13 mm under it (24-step floor).
  */
 const _S23_RESULT_WELD_MM = 0.001;
 
@@ -6968,8 +7017,9 @@ function _s23SweepRun(Manifold, CrossSection, runGeom, radius, profileKind, arcS
 }
 
 /**
- * Minimum spacing between variable-profile knots after densify. Arc chords at
- * FILLET_ARC_SEGMENTS are ~0.2 mm, so nothing real lives below this.
+ * Minimum spacing between variable-profile knots after densify. A prior
+ * fillet's arc chords at filletArcSegments(r) stay near 0.1 mm past r=2 and
+ * 0.03 mm at the 0.5 mm minimum radius, so nothing real lives below this.
  */
 const _S23_MICRO_KNOT_MM = 0.05;
 /** Turn above which a knot is a real corner and is never dropped. */
@@ -8829,7 +8879,7 @@ function _s23JunctionPockets(M, part, path, radius, opts, arcSegs) {
 }
 
 function _s23FilletEdgeSet(M, part, path, radius, opts) {
-  const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
+  const arcSegs = opts.segments != null ? opts.segments : filletArcSegments(radius);
   const prep = _s23JunctionPockets(M, part, path, radius, opts, arcSegs);
   const pieces = prep.components.map((row) => filletAlongPath(part, row.comp, radius, {
     ...opts, _collect: true, _trimStart: row.trimStart, _trimEnd: row.trimEnd,
@@ -8985,7 +9035,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
   _s23BeginSweepRingCall();
 
   const profileKind = (opts.profile === 'chamfer') ? 'chamfer' : 'fillet';
-  const arcSegs = opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS;
+  const arcSegs = opts.segments != null ? opts.segments : filletArcSegments(radius);
   let { points, closed, length } = _s23NormalizePath(path, opts);
   const carried = _s23CarriedEdges(path);
   // A stored edge wire that no longer lies on this solid must fail here,
@@ -9094,7 +9144,11 @@ function filletAlongPath(part, path, radius, opts = {}) {
               M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, junction,
               { start: ri === 0 && !!opts._trimStart, end: ri === plan.runs.length - 1 && !!opts._trimEnd },
             );
-        } catch (_) {
+        } catch (err) {
+          // Diagnostics only: a golden reads which semi-arc run was skipped.
+          if (globalThis.__filletRunErrors) {
+            globalThis.__filletRunErrors.push({ run: ri, knots: run.length, message: String(err && err.message ? err.message : err) });
+          }
           continue;
         }
         if (built?.cutter) {
@@ -10480,9 +10534,9 @@ function _probeOriginalID() {
  * boundary ring is the sail's own vertices. The face graph turns these into
  * a per-source facet step (360°/count).
  */
-const FILLET_EDGES_CIRCLE_SEGMENTS = 384;
-const FILLET_EDGES_CORNER_SEGMENTS = 128;
-if ((FILLET_EDGES_CIRCLE_SEGMENTS / 4) % (FILLET_EDGES_CORNER_SEGMENTS / 4) !== 0) {
+/** Ring steps per corner-grid step; filletArcSegments is a multiple of it. */
+const FILLET_CORNER_GRID_RATIO = 3;
+if (FILLET_ARC_SEGMENTS % FILLET_CORNER_GRID_RATIO !== 0) {
   throw new Error('filletEdges: the corner grid must divide the sail ring');
 }
 /**
@@ -10592,11 +10646,24 @@ function _roundedBoxTess(args) {
   const segments = Math.max(3, Math.round(Number(args[2] == null ? 16 : args[2]) || 16));
   return { facetDeg: 360 / segments, cornerDeg: 0 };
 }
-/** filletEdges cylinder is a full circle; the corner ball is its own count. */
-function _filletEdgesTess() {
+/** Smallest radius a filletEdges call cuts with (number, array, or [{ edge, radius }]). */
+function _filletEdgesMinRadius(args) {
+  const edges = args[1];
+  const radius = args[2];
+  let min = Infinity;
+  const take = (v) => { const x = Number(v); if (x > 0 && x < min) min = x; };
+  if (Array.isArray(radius)) radius.forEach(take);
+  else take(radius);
+  if (Array.isArray(edges)) for (const row of edges) if (row && row.edge) take(row.radius);
+  return Number.isFinite(min) ? min : FILLET_ARC_CHORD_MM;
+}
+/** filletEdges cylinder is a full circle; the corner grid is a third of its quarter. */
+function _filletEdgesTess(args) {
+  // The coarsest radius of the call sets the step the face graph tolerates.
+  const segs = filletArcSegments(_filletEdgesMinRadius(args));
   return {
-    facetDeg: 360 / FILLET_EDGES_CIRCLE_SEGMENTS,
-    cornerDeg: 360 / FILLET_EDGES_CORNER_SEGMENTS,
+    facetDeg: 90 / segs,
+    cornerDeg: 90 / Math.max(3, Math.floor(segs / FILLET_CORNER_GRID_RATIO)),
   };
 }
 /**
@@ -10606,7 +10673,7 @@ function _filletEdgesTess() {
 function _filletAlongPathTess(args) {
   const opts = args[3] && typeof args[3] === 'object' ? args[3] : {};
   if (opts.profile === 'chamfer') return null;
-  const segments = Math.max(2, Math.round(Number(opts.segments != null ? opts.segments : FILLET_ARC_SEGMENTS) || FILLET_ARC_SEGMENTS));
+  const segments = Math.max(2, Math.round(Number(opts.segments != null ? opts.segments : filletArcSegments(args[2])) || FILLET_ARC_SEGMENTS));
   return { facetDeg: 90 / segments, cornerDeg: 0 };
 }
 /** Per run: the outermost op that reserved its originalID (−(op+1)), else the originalID. */

@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runScript } from './index.js';
+import { filletArcSegments } from '../../utils/filletAlongPath.js';
 
 const R = 5;
 const BOX = 'let part = Manifold.cube([40, 30, 20], true);\n';
@@ -26,8 +27,9 @@ async function run(body) {
 
 test('after four vertical sweep fillets both rims are whole loops and fillet alike', { timeout: 120_000 }, async () => {
   const { note } = await run(`${VERT}globalThis.__note = { top: ${rim(1)}.length, bottom: ${rim(-1)}.length };\n`);
-  assert.equal(note.top, 100);
-  assert.equal(note.bottom, 100, 'the bottom rim keeps every arc segment');
+  // Four straights and four quarter arcs of filletArcSegments(5) = 72 steps.
+  assert.equal(note.top, 4 + 4 * filletArcSegments(R));
+  assert.equal(note.bottom, note.top, 'the bottom rim keeps every arc segment');
   const top = await run(`${VERT}part = filletAlongPath(part, makeSweepPath(${rim(1)}), ${R});\n`);
   const bottom = await run(`${VERT}part = filletAlongPath(part, makeSweepPath(${rim(-1)}), ${R});\n`);
   assert.ok(Math.abs(top.volume - bottom.volume) < 0.5, `top ${top.volume} bottom ${bottom.volume}`);

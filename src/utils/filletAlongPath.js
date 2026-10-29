@@ -27,12 +27,40 @@ export const FILLET_SWEEP_BRANCH =
   'Selected edges branch (junction) — sweep fillet needs a simple open chain or closed loop, not a Y/T junction.';
 
 /**
- * Default fillet-arc tessellation. 12 steps on a 90° corner is a 7.5° facet
- * (and a ~3% face on a box-scale edge). Kept at 24 — denser turns come from
- * FRAME_DENSIFY_MAX_TURN_DEG (5°) and semi-arc independent subtracts; raising
- * the wedge segment count spiked long-fin counts on wrap goldens.
+ * Fillet-arc tessellation, shared by both kernels, scaled by radius.
+ *
+ * A quarter circle gets `filletArcSegments(r)` steps: as many multiples of
+ * 12 as keep each chord at or above FILLET_ARC_CHORD_MM, between 24 and 96.
+ * r=2 → 24, r=4 → 60, r=5 → 72, r≥7.6 → 96. The planar rolling-ball kernel
+ * (`filletEdges`) and the sweep kernel (`filletAlongPath`) read the same
+ * function, so a planar fillet and a sweep fillet of one radius are the
+ * same solid and meet on shared rulings; the corner pocket's grid is a third
+ * of the ring (hence multiples of 12).
+ *
+ * Why not a flat 96: a planar face bounded by an arc whose chords fall under
+ * about 0.1 mm gets fold pairs from Manifold's triangulation (two ~1 mm²
+ * slivers wound against each other). Measured on the R=2 multi-rotation
+ * chamfer: 2.8 mm² of inverted top facets at 48 and 96 steps, none at 36
+ * and 24; the concave playtest after hollow lost its tangency the same way.
+ * Why not stay at 24: a 3.75° facet is visible on any radius past a few mm,
+ * and it never matched the planar kernel. FILLET_ARC_SEGMENTS is the floor.
  */
 export const FILLET_ARC_SEGMENTS = 24;
+export const FILLET_ARC_SEGMENTS_MAX = 96;
+export const FILLET_ARC_SEGMENTS_STEP = 12;
+export const FILLET_ARC_CHORD_MM = 0.1;
+
+/**
+ * Steps per quarter circle for a fillet of this radius (see above).
+ * @param {number} radius
+ * @returns {number}
+ */
+export function filletArcSegments(radius) {
+  const r = Number(radius);
+  if (!(r > 0) || !Number.isFinite(r)) return FILLET_ARC_SEGMENTS;
+  const byChord = Math.floor(((r * Math.PI) / 2 / FILLET_ARC_CHORD_MM) / FILLET_ARC_SEGMENTS_STEP) * FILLET_ARC_SEGMENTS_STEP;
+  return Math.max(FILLET_ARC_SEGMENTS, Math.min(FILLET_ARC_SEGMENTS_MAX, byChord));
+}
 
 /**
  * Fillet cutter wedge in UV (u≥0, v≥0): origin → (r,0) → arc (center (r,r)) → (0,r).
@@ -41,7 +69,7 @@ export const FILLET_ARC_SEGMENTS = 24;
  * @param {number} [arcSegments=12]
  * @returns {number[][]} closed polyline (first ≠ last)
  */
-export function filletWedgeContour(radius, arcSegments = FILLET_ARC_SEGMENTS) {
+export function filletWedgeContour(radius, arcSegments = filletArcSegments(radius)) {
   const r = Number(radius);
   if (!(r > 0) || !Number.isFinite(r)) {
     throw new Error('filletWedgeContour: radius must be > 0');
@@ -498,7 +526,7 @@ function _requireDihedral(name, radius, theta) {
  * @param {number} [arcSegments=12]
  * @returns {number[][]}
  */
-export function dihedralFilletContour(radius, theta, arcSegments = FILLET_ARC_SEGMENTS) {
+export function dihedralFilletContour(radius, theta, arcSegments = filletArcSegments(radius)) {
   const { r, th } = _requireDihedral('dihedralFilletContour', radius, theta);
   const seg = Math.max(2, Math.round(Number(arcSegments) || FILLET_ARC_SEGMENTS));
   const t = r / Math.tan(th / 2);
@@ -896,7 +924,7 @@ function _densifySweepArcTurns(points, isClosed, maxTurnDeg, rotated, opts) {
       ];
     };
     // A prior fillet's quarter-arc is already sampled on the profile lattice
-    // (FILLET_ARC_SEGMENTS over 90°, 3.75° at 24). Equal 5° chords of that
+    // (filletArcSegments(R) over 90°). Equal 5° chords of that
     // span fall BETWEEN those rulings, so the later corner's rings cross the
     // earlier fillet instead of meeting it on shared lines — a stray triangle
     // on the inside after the shell. When the input samples already share
@@ -910,7 +938,7 @@ function _densifySweepArcTurns(points, isClosed, maxTurnDeg, rotated, opts) {
     // chamfer, box-stack bottom). Fillet sweeps want the shared rulings.
     const alignLattice = !opts || opts.alignFilletLattice !== false;
     if (alignLattice && Math.abs(Math.abs(sweep) - QUARTER) <= 4 * Math.PI / 180 && seq.length >= 5) {
-      const step = QUARTER / FILLET_ARC_SEGMENTS;
+      const step = QUARTER / filletArcSegments(R);
       const fit2 = circFit3(seq[1], seq[Math.floor(seq.length / 2)], seq[seq.length - 2]);
       if (fit2 && step <= lim + 1e-9 && Math.abs(fit2.R - R) <= Math.max(0.05, 0.02 * R)) {
         let n2 = fit2.n;

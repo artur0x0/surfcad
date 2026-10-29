@@ -1342,7 +1342,7 @@ return part;
   makeSweepPath(convexEdges(part)), r)` on a box is the fully rounded box.
 - `radius` — fillet radius, or chamfer leg length (> 0)
 - `opts.profile` — `'fillet'` (default) or `'chamfer'`
-- `opts.segments` — arc segments for the fillet profile (default 12)
+- `opts.segments` — arc segments for the fillet profile (default 96, the planar kernel's density)
 - `opts.initialNormal` — optional. When set, keeps the legacy 90° wedge and a single start-frame RMF. Leave unset for the dihedral cutter.
 - `opts.arcSamples` / `opts.extrudeSegments` — legacy RMF sweep quality only
 

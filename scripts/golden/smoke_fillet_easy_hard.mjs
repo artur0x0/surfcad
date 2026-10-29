@@ -6,6 +6,7 @@
  * with a stable UI reason, and Accept is still allowed.
  */
 import { register } from 'node:module';
+import { buildSolidGeometry } from '../../src/utils/partSolidCache.js';
 import { readFileSync } from 'node:fs';
 import { BufferGeometry, BufferAttribute } from 'three';
 import {
@@ -225,7 +226,11 @@ return placeInFrame(fr, makeLoft([xs0, xs1]));
     const path = makeSweepPath([edges[0]]);
     return filletAlongPath(part, path, 4);
   `);
-  const g = geomOf(payload.mesh);
+  // The drawn mesh: a 96-step arc on a planar end face leaves one long
+  // planar sliver in Manifold's triangulation (the planar kernel's 384-segment
+  // fillet has the same one), and buildSolidGeometry drops planar fins
+  // before the face graph sees them.
+  const { geometry: g } = buildSolidGeometry(payload.mesh);
   check('default cube fillet leaves no zero-area triangles', countDegenerateTriangles(g) === 0, `n=${countDegenerateTriangles(g)}`);
 }
 
