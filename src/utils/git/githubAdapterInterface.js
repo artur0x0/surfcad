@@ -92,7 +92,13 @@ export class GitAdapterError extends Error {
   /**
    * @param {string} code one of GIT_ADAPTER_ERROR_CODES
    * @param {string} [message]
-   * @param {{ status?: number, acceptedPermissions?: string|null, githubMessage?: string|null }} [details]
+   * @param {{
+   *   status?: number,
+   *   acceptedPermissions?: string|null,
+   *   githubMessage?: string|null,
+   *   githubAccess?: 'install'|'permissions'|null,
+   *   installUrl?: string|null,
+   * }} [details]
    */
   constructor(code, message, details = {}) {
     super(message || code);
@@ -104,6 +110,12 @@ export class GitAdapterError extends Error {
     }
     if (details.githubMessage !== undefined) {
       this.githubMessage = details.githubMessage;
+    }
+    if (details.githubAccess === 'install' || details.githubAccess === 'permissions') {
+      this.githubAccess = details.githubAccess;
+    }
+    if (typeof details.installUrl === 'string' && details.installUrl) {
+      this.installUrl = details.installUrl;
     }
   }
 }
