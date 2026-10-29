@@ -521,6 +521,7 @@ import { fitJointAxis } from '../utils/jointResolve';
 import { jointHighlightSlot } from '../joints/jointUi';
 import {
   activePartEdges,
+  edgePartId,
   foreignPartEdgeGroups,
   groupEdgesByPart,
   partEdgeParams,
@@ -1424,6 +1425,7 @@ const Viewport = forwardRef(({
   const agentListFeatureEdgesRef = useRef(() => ({ edges: [], partId: null }));
   /** Edge identity: annotate edge rows with their named edge (set once the per-part lookups exist). */
   const withEdgeNamesRef = useRef((edges) => edges);
+  const filletPartGeometryRef = useRef(() => null);
   const agentSketchBeginRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchAcceptPlaneRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
   const agentSketchAddRef = useRef(() => ({ error: { code: 'internal', message: 'Viewport not ready' } }));
@@ -5174,10 +5176,15 @@ const Viewport = forwardRef(({
             : { ...state.params, chamfer: defaultFilletRadius() };
           return validateChamferAccept(list, params);
         }
-        return validateFilletAccept(list, partEdgeParams(state.params, list, {
-          touched: !!state.radiusTouched,
-          seed: () => defaultFilletRadius(),
-        }));
+        // The part's geometry lets a branched pick prove its faces are flat
+        // (box corners) instead of being refused as a junction.
+        return validateFilletAccept(list, {
+          ...partEdgeParams(state.params, list, {
+            touched: !!state.radiusTouched,
+            seed: () => defaultFilletRadius(),
+          }),
+          geometry: filletPartGeometryRef.current(edgePartId(list[0], activeId)),
+        });
       },
       partName: (id) => partLabelsRef.current?.[id] || id,
     });
@@ -5512,7 +5519,16 @@ const Viewport = forwardRef(({
     [selectedEdges, meshEpoch],
   );
 
-  const filletPreviewParams = useCallback((mode) => (
+  // The geometry a part's picks sit on: the live result for the active part,
+  // the assembly extra for any other. Box-corner picks read it to prove the
+  // faces around a junction are flat.
+  const filletPartGeometry = useCallback((partId) => (
+    (partId == null || partId === '' || String(partId) === String(activePartIdRef.current))
+      ? resultRef.current?.geometry || null
+      : assemblyExtrasRef.current?.get(partId)?.geometry || null
+  ), []);
+  filletPartGeometryRef.current = filletPartGeometry;
+  const filletPreviewParams = useCallback((mode, geometry = filletPartGeometry(null)) => (
     mode.entry === 'chamferEdges'
       ? {
         ...(mode.params || {}),
@@ -5520,30 +5536,37 @@ const Viewport = forwardRef(({
         profile: 'chamfer',
         radius: mode.params?.chamfer,
       }
-      : mode.params
-  ), []);
+      : { ...(mode.params || {}), geometry }
+  ), [filletPartGeometry]);
   const filletBlendPayload = useMemo(() => {
     if (!filletMode) return null;
     return buildFilletBlendPreview(filletActiveEdges, filletPreviewParams(filletMode));
-  }, [filletMode, filletActiveEdges, filletPreviewParams]);
+    // meshEpoch: a new run is a new geometry for the same picks.
+  }, [filletMode, filletActiveEdges, filletPreviewParams, meshEpoch]);
   // Chip status across every part with picks: each part's chain must build.
   const filletChipStatus = useMemo(() => {
-    if (!filletMode) return { ok: false, componentCount: 0 };
+    if (!filletMode) return { ok: false, componentCount: 0, boxCorners: 0 };
     if (filletPartCount <= 1) {
       return {
         ok: filletBlendPayload?.ok === true,
         componentCount: filletBlendPayload?.componentCount || 0,
+        boxCorners: filletBlendPayload?.boxCorners || 0,
       };
     }
     let ok = true;
     let componentCount = 0;
+    let boxCorners = 0;
     for (const group of groupEdgesByPart(selectedEdges, activePartIdRef.current)) {
-      const payload = buildFilletBlendPreview(group.edges, filletPreviewParams(filletMode));
+      const payload = buildFilletBlendPreview(
+        group.edges,
+        filletPreviewParams(filletMode, filletPartGeometry(group.partId)),
+      );
       if (payload?.ok !== true) ok = false;
       componentCount += payload?.componentCount || 0;
+      boxCorners += payload?.boxCorners || 0;
     }
-    return { ok, componentCount };
-  }, [filletMode, filletPartCount, filletBlendPayload, selectedEdges, filletPreviewParams]);
+    return { ok, componentCount, boxCorners };
+  }, [filletMode, filletPartCount, filletBlendPayload, selectedEdges, filletPreviewParams, filletPartGeometry]);
   useEffect(() => {
     if (!filletMode) {
       clearFilletBlendPreview();
@@ -16422,6 +16445,7 @@ const Viewport = forwardRef(({
           params={filletMode.params}
           pathOk={filletChipStatus.ok}
           componentCount={filletChipStatus.componentCount}
+          boxCorners={filletChipStatus.boxCorners || 0}
           compact={isMobile}
           onToggleTangent={() => setTangentProp((v) => !v)}
           onClear={() => {

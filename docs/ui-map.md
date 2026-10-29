@@ -914,7 +914,9 @@ Contour / Extrude / Revolve / Loft / Sweep: `src/utils/contourMode.js` +
 `exitContourMode` (`:4125`), and `confirmContourProfile` (`:4562`).
 Fillet / Chamfer: `src/utils/filletMode.js` + `FilletModeChip.jsx` (same
 edge-pick card on `FeatureSheet`; both commit path sweeps — Fillet → `filletAlongPath`,
-Chamfer → `filletAlongPath({ profile: 'chamfer' })`). Size defaults to 2 mm
+Chamfer → `filletAlongPath({ profile: 'chamfer' })`; a Fillet pick with a box-corner
+junction commits `filletEdges(…, { sphericalCorners: true })` and the subtitle reads
+`Box fillet · N spherical corners`, see `filletBoxCorners.js`). Size defaults to 2 mm
 (`blendSize.js`); the slider is a log from 0.5 mm to 25 mm, and a typed size
 outside that range is kept. Card: Tangent / Clear / Undo / Confirm. That link row sits above Delete and Confirm with the shared feature-card footer gap. Undo undoes the last edge pick only; X / Escape / dismiss without Confirm clears all picks and exits; no hard-edge warning; no
 strategy helper line. Confirm is the card footer. The standalone edge card has no Confirm.

@@ -1787,7 +1787,10 @@ export const HELPER_PALETTE_ITEMS = [
         let edgesExpr = `convexEdges(${body})`;
         const scope = p.edgeScope || (edgeCtx && edgeCtx.length ? 'selected' : (faceCtx ? 'face' : 'allConvex'));
         if (scope === 'selected' || (edgeCtx && edgeCtx.length && scope !== 'face' && scope !== 'allConvex')) {
-          const edge = emitSelectedEdgeLines(body, edgeCtx || [], names, allocateUniqueName);
+          // Edge identity first (a Fillet-mode box-corner pick arrives here
+          // with names); rows without a name keep the midpoint match.
+          const edge = emitNamedEdgeLines(body, edgeCtx || [], names, allocateUniqueName)
+            || emitSelectedEdgeLines(body, edgeCtx || [], names, allocateUniqueName);
           // Soft-fail: never write throw/partial JS — caller clears stale selection.
           if (!edge || !edge.ok) return null;
           feat.push(...edge.lines);
@@ -1799,8 +1802,11 @@ export const HELPER_PALETTE_ITEMS = [
         } else if (scope === 'allConvex') {
           edgesExpr = `convexEdges(${body})`;
         }
+        const boxNote = p._boxCorners
+          ? ' // box corners: a spherical patch where three fillets meet'
+          : '';
         feat.push(
-          `${body} = filletEdges(${body}, ${edgesExpr}, ${r}, { sphericalCorners: ${sc} });`,
+          `${body} = filletEdges(${body}, ${edgesExpr}, ${r}, { sphericalCorners: ${sc} });${boxNote}`,
         );
         feat.push(...syncPartLines(body, names, hasPartDecl([...lines, ...feat], empty)));
       }
