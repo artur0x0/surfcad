@@ -75,7 +75,7 @@ const exec = async (s) =>
 const here = dirname(fileURLToPath(import.meta.url));
 const full = readFileSync(join(here, 'fixtures', 'artur_playtest_fillet_after_hollow.txt'), 'utf8');
 const hollowOnly = full.replace(
-  /const selEdges3 = edgesBetween[\s\S]*return part;/,
+  /const selEdges3 = [\s\S]*return part;/,
   'return part;',
 );
 
@@ -140,7 +140,9 @@ function analyze(mesh) {
     const cx = CORNER[0] + 1.75;
     const cy = CORNER[1] + 1.75;
     const d = Math.hypot(p[0] - cx, p[1] - cy);
-    if (Math.abs(d - 1.75) < 0.2 && p[2] > -9 && p[2] < 7 && p[0] < -15.5 && p[1] < -10.5) arcVerts++;
+    // The whole height, rims included: once the cavity walls are single planes
+    // the arc strip needs no row between its two ends (24 segments → 50 verts).
+    if (Math.abs(d - 1.75) < 0.2 && p[2] > -10.01 && p[2] < 7.51 && p[0] < -15.5 && p[1] < -10.5) arcVerts++;
   }
   // Triangular fan on the open face: a triangle in the z=-10 plane that still
   // touches the sharp inner corner and reaches into the cavity.
@@ -294,8 +296,10 @@ check('not sliver-dirty', got && !got.dirty, `tiny=${got?.tiny}/${got?.nTri}`);
 // shell. #115 open-end pad: 336 (ceiling 338). Inner-end pad retessellates
 // those same cavity faces: measured 358. The #136/#154 kernels retessellate
 // again: 360 inward-visible of 5432 tris (was 358 of 5710; fins 62 → 29).
+// Exact offset planes (open-rim corners included) keep each cavity wall one
+// plane, so the hollow boolean no longer fans it: 303 of 2996 tris.
 // Not the lip (that probe is `lip`).
-check('inward-visible count does not rise', got && got.inwardVis <= 360, `inwardVis=${got?.inwardVis}`);
+check('inward-visible count does not rise', got && got.inwardVis <= 303, `inwardVis=${got?.inwardVis}`);
 // Pre-fix fins=39 (the fan). Open-end pad: 41. Quarter-arc lattice
 // (3.75° instead of ~4.92°) adds zero-area slivers along the r=4 cylinder:
 // measured fins=62. Not the interior stray triangle (that probe is `stray`).

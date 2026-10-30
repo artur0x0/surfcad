@@ -158,7 +158,13 @@ cavity so the older `part.subtract(shell(part, 2, 'z'))` still works.
 Every boundary vertex is placed on the inward offset of each face meeting it, so
 the wall measures `thickness` perpendicular to every face and corners stay sharp.
 (The pre-2026 version scaled the solid by one ratio, which gave a 60x20 box a
-2.5mm wall on Y and a 7.5mm wall on X.)
+2.5mm wall on Y and a 7.5mm wall on X.) A flat met by a fillet keeps its
+tangency line: those vertices move purely along the flat's normal, every
+vertex on a real flat lands exactly on the offset plane (an open rim's
+corners too, so the rim keeps its corners instead of a fan of collinear
+vertices), and a sliver the warp turns inside out gets its diagonal swapped
+before the cavity is built, so a dense fillet (96 steps per quarter) hollows
+without fold pairs.
 
 ```javascript
 // Uniform 2mm wall, open at the top

@@ -61,6 +61,7 @@ import {
 import { defaultBlendSizeMm } from './blendSize.js';
 import { classifyFilletEdges } from './filletEdgeClass.js';
 import { boxCornerRadiusMax, detectBoxCornerPick } from './filletBoxCorners.js';
+import { accumulateFilletCommit, findFilletAccumulationTarget } from './filletAccumulate.js';
 import { shouldUseHardVariableSweep } from './filletKernelSpike.js';
 import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
@@ -758,6 +759,17 @@ export function buildFilletBlendPreview(edges, params = {}) {
   return { ...one, componentCount: 1, components: [one] };
 }
 
+/**
+ * The fillet block a pick would extend, for the card: `{ id, added }` or null.
+ */
+export function filletAccumulationFor(buffer, edges, params = {}) {
+  if (!Array.isArray(edges) || !edges.length) return null;
+  if (params.profile === 'chamfer') return null;
+  const n = normalizeFilletParams(params, edges);
+  const target = findFilletAccumulationTarget(buffer, edges, n.radius);
+  return target ? { id: target.feature.id, added: target.added } : null;
+}
+
 export function hasFilletModeBlock(buffer) {
   const t = String(buffer || '');
   return hasFeatureBlock(t, FILLET_MODE_BEGIN, FILLET_MODE_END);
@@ -833,6 +845,14 @@ export function composeFilletCommit(buffer, {
       ok: false,
       message: 'composeFilletCommit: unbalanced fillet markers — refusing silent no-op.',
     };
+  }
+
+  // A pick on the arcs of an earlier fillet of the same radius extends that
+  // block instead of wrapping a second fillet over its sails (the corner is
+  // then one junction of one op). See filletAccumulate.js.
+  if (params.profile !== 'chamfer' && !reservedNames) {
+    const target = findFilletAccumulationTarget(text, edges, gate.normalized.radius);
+    if (target) return accumulateFilletCommit(text, target);
   }
 
   // Prefer an explicit class from the viewport (#50 chip). Without geometry,

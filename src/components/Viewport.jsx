@@ -340,6 +340,7 @@ import {
   solidMinExtent,
   hasFilletModeBlock,
   hasChamferModeBlock,
+  filletAccumulationFor,
 } from '../utils/filletMode';
 import {
   applyContourEditSeed,
@@ -5545,12 +5546,23 @@ const Viewport = forwardRef(({
   }, [filletMode, filletActiveEdges, filletPreviewParams, meshEpoch]);
   // Chip status across every part with picks: each part's chain must build.
   const filletChipStatus = useMemo(() => {
-    if (!filletMode) return { ok: false, componentCount: 0, boxCorners: 0 };
+    if (!filletMode) return { ok: false, componentCount: 0, boxCorners: 0, joins: '' };
+    // A pick on an earlier fillet's arcs of the same radius extends that
+    // block (filletAccumulate.js); the card says so.
+    let joins = '';
+    if (filletMode.entry !== 'chamferEdges' && filletBlendPayload?.ok === true) {
+      try {
+        const buf = (typeof getHelperBuffer === 'function' ? getHelperBuffer() : '') || '';
+        const hit = filletAccumulationFor(buf, withEdgeNamesRef.current(filletActiveEdges), filletMode.params || {});
+        joins = hit ? hit.id : '';
+      } catch { joins = ''; }
+    }
     if (filletPartCount <= 1) {
       return {
         ok: filletBlendPayload?.ok === true,
         componentCount: filletBlendPayload?.componentCount || 0,
         boxCorners: filletBlendPayload?.boxCorners || 0,
+        joins,
       };
     }
     let ok = true;
@@ -5565,8 +5577,8 @@ const Viewport = forwardRef(({
       componentCount += payload?.componentCount || 0;
       boxCorners += payload?.boxCorners || 0;
     }
-    return { ok, componentCount, boxCorners };
-  }, [filletMode, filletPartCount, filletBlendPayload, selectedEdges, filletPreviewParams, filletPartGeometry]);
+    return { ok, componentCount, boxCorners, joins };
+  }, [filletMode, filletPartCount, filletBlendPayload, selectedEdges, filletPreviewParams, filletPartGeometry, filletActiveEdges, getHelperBuffer]);
   useEffect(() => {
     if (!filletMode) {
       clearFilletBlendPreview();
@@ -16446,6 +16458,7 @@ const Viewport = forwardRef(({
           pathOk={filletChipStatus.ok}
           componentCount={filletChipStatus.componentCount}
           boxCorners={filletChipStatus.boxCorners || 0}
+          joinsFeature={filletChipStatus.joins || ''}
           compact={isMobile}
           onToggleTangent={() => setTangentProp((v) => !v)}
           onClear={() => {
