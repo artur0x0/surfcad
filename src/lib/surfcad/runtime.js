@@ -587,7 +587,7 @@ function _c4ResolveFaceSelection(md, spec, opts = {}) {
  * float32 — a shelled cube came out right and a shelled cylinder came out 0.1mm
  * thick. Going through the mesh keeps positions and indices in lockstep.
  */
-function _c4RebuildWithVerts(md, verts, label) {
+function _c4RebuildWithVerts(md, verts, label, triVerts = null) {
   const { Manifold, Mesh } = manifoldModule;
   const vp = new Float32Array(verts.length * 3);
   for (let i = 0; i < verts.length; i++) {
@@ -598,7 +598,7 @@ function _c4RebuildWithVerts(md, verts, label) {
   const out = new Manifold(new Mesh({
     numProp: 3,
     vertProperties: vp,
-    triVerts: new Uint32Array(md.T),
+    triVerts: new Uint32Array(triVerts || md.T),
   }));
   const se = _c4StatusError(out);
   if (se) {
@@ -607,6 +607,93 @@ function _c4RebuildWithVerts(md, verts, label) {
     );
   }
   return out;
+}
+
+/**
+ * Re-triangulate the slivers a vertex warp turned inside out.
+ *
+ * Manifold triangulates a planar face bounded by a dense arc (a fillet at 96
+ * steps per quarter) with long thin triangles from a far corner to adjacent
+ * arc vertices, a fraction of a micron high. A uniform offset moves those two
+ * vertices by amounts that differ by about as much, and the sliver flips: the
+ * cavity then carries fold pairs (a ~1 mm² sliver wound against the face it
+ * lies in) that flip crease signs and break moveFace downstream. The surface
+ * is still a plane; only the diagonal is wrong. For every triangle whose
+ * normal reversed under the move, flip the edge it shares with a neighbour
+ * when both resulting triangles come out the right way round. Topology and
+ * vertex positions are unchanged; a few passes settle chains of slivers.
+ *
+ * @returns {Uint32Array} the triangle list to rebuild with (md.T when nothing flipped)
+ */
+function _c4RepairFlippedTriangles(md, out) {
+  const T = new Uint32Array(md.T);
+  const nTri = md.numTri;
+  const before = new Array(nTri);
+  const normalAfter = (t) => {
+    const i0 = T[t * 3], i1 = T[t * 3 + 1], i2 = T[t * 3 + 2];
+    return _c4Cross(_c4Sub(out[i1], out[i0]), _c4Sub(out[i2], out[i0]));
+  };
+  for (let t = 0; t < nTri; t++) {
+    const i0 = md.T[t * 3], i1 = md.T[t * 3 + 1], i2 = md.T[t * 3 + 2];
+    before[t] = _c4Cross(_c4Sub(md.V[i1], md.V[i0]), _c4Sub(md.V[i2], md.V[i0]));
+  }
+  const flippedNow = (t) => _c4Len(before[t]) > 1e-9 && _c4Dot(before[t], normalAfter(t)) < 0;
+  let any = false;
+  for (let t = 0; t < nTri && !any; t++) if (flippedNow(t)) any = true;
+  if (!any) return md.T;
+  const key = (a, b) => (a < b ? a * 4294967296 + b : b * 4294967296 + a);
+  const edgeTris = new Map();
+  const addEdges = (t) => {
+    for (let k = 0; k < 3; k++) {
+      const kk = key(T[t * 3 + k], T[t * 3 + ((k + 1) % 3)]);
+      let list = edgeTris.get(kk);
+      if (!list) { list = []; edgeTris.set(kk, list); }
+      if (!list.includes(t)) list.push(t);
+    }
+  };
+  const dropEdges = (t) => {
+    for (let k = 0; k < 3; k++) {
+      const kk = key(T[t * 3 + k], T[t * 3 + ((k + 1) % 3)]);
+      const list = edgeTris.get(kk);
+      if (list) { const i = list.indexOf(t); if (i >= 0) list.splice(i, 1); }
+    }
+  };
+  for (let t = 0; t < nTri; t++) addEdges(t);
+  const third = (t, u, w) => {
+    for (let k = 0; k < 3; k++) { const v = T[t * 3 + k]; if (v !== u && v !== w) return v; }
+    return -1;
+  };
+  const ok = (a, b, c, ref) => {
+    const n = _c4Cross(_c4Sub(out[b], out[a]), _c4Sub(out[c], out[a]));
+    return _c4Len(n) > 1e-12 && _c4Dot(n, ref) > 0;
+  };
+  let changed = true;
+  for (let pass = 0; pass < 6 && changed; pass++) {
+    changed = false;
+    for (let t = 0; t < nTri; t++) {
+      if (!flippedNow(t)) continue;
+      for (let k = 0; k < 3 && flippedNow(t); k++) {
+        const u = T[t * 3 + k];
+        const w = T[t * 3 + ((k + 1) % 3)];
+        const list = edgeTris.get(key(u, w));
+        if (!list || list.length !== 2) continue;
+        const sIdx = list[0] === t ? list[1] : list[0];
+        const c = third(t, u, w);
+        const d = third(sIdx, u, w);
+        if (c < 0 || d < 0 || c === d) continue;
+        // t = (u, w, c), s = (w, u, d) → t' = (u, d, c), s' = (w, c, d).
+        if (!ok(u, d, c, before[t]) || !ok(w, c, d, before[sIdx])) {
+          continue;
+        }
+        dropEdges(t); dropEdges(sIdx);
+        T[t * 3] = u; T[t * 3 + 1] = d; T[t * 3 + 2] = c;
+        T[sIdx * 3] = w; T[sIdx * 3 + 1] = c; T[sIdx * 3 + 2] = d;
+        addEdges(t); addEdges(sIdx);
+        changed = true;
+      }
+    }
+  }
+  return T;
 }
 
 /** 3x3 solve (Cramer). Returns null when the matrix is effectively singular. */
@@ -801,6 +888,96 @@ function _c4VertexOffset(closedNormals, openNormals, t) {
   return d;
 }
 
+/** A face is an exact plane when every facet normal is within this of the face normal. */
+const _C4_EXACT_PLANE_DEG = 0.5;
+/** Smaller planar faces (fold slivers, boolean chips) do not define a plane. */
+const _C4_EXACT_PLANE_MIN_AREA = 0.5;
+/**
+ * Narrower planar faces are facets of a smooth surface (a 96-step sail
+ * facet on r=4 is 0.07 mm wide), not flats: a vertex on two of them must
+ * take the clustered smooth-surface move, never their exact intersection,
+ * which for near-parallel planes runs off along the surface.
+ */
+const _C4_EXACT_PLANE_MIN_WIDTH = 1.0;
+
+/**
+ * Offset planes of the large planar closed faces, and which vertices sit on
+ * them: `{ planes: [{ n, c }], ofVertex: Array<number[]|null> }` with the
+ * plane `n·x = c` already moved inward by `t`.
+ */
+function _c4ExactOffsetPlanes(md, t, openSet) {
+  const cosExact = Math.cos((_C4_EXACT_PLANE_DEG * Math.PI) / 180);
+  const planes = [];
+  const ofVertex = new Array(md.V.length).fill(null);
+  for (let fi = 0; fi < md.faces.length; fi++) {
+    if (openSet && openSet.has && openSet.has(fi)) continue;
+    const f = md.faces[fi];
+    if (!f || !Array.isArray(f.tris) || !f.normal) continue;
+    const n = _c4Norm(f.normal);
+    if (!(_c4Len(n) > 0.5)) continue;
+    let area = 0;
+    let planar = true;
+    let sumC = 0;
+    let maxEdge = 0;
+    for (const ti of f.tris) {
+      const a = md.V[md.T[ti * 3]], b = md.V[md.T[ti * 3 + 1]], c = md.V[md.T[ti * 3 + 2]];
+      const cx = _c4Cross(_c4Sub(b, a), _c4Sub(c, a));
+      const a2 = _c4Len(cx);
+      if (a2 < 1e-12) continue;
+      if (_c4Dot(_c4Mul(1 / a2, cx), n) < cosExact) { planar = false; break; }
+      area += 0.5 * a2;
+      sumC += 0.5 * a2 * _c4Dot(n, a);
+      maxEdge = Math.max(maxEdge, _c4Len(_c4Sub(b, a)), _c4Len(_c4Sub(c, b)), _c4Len(_c4Sub(a, c)));
+    }
+    if (!planar || !(area >= _C4_EXACT_PLANE_MIN_AREA)) continue;
+    // Width of the face across its longest edge: a strip facet fails this.
+    if (!(maxEdge > 0) || (2 * area) / maxEdge < _C4_EXACT_PLANE_MIN_WIDTH) continue;
+    const pi = planes.length;
+    planes.push({ n, c: sumC / area - t });
+    for (const ti of f.tris) {
+      for (let k = 0; k < 3; k++) {
+        const vi = md.T[ti * 3 + k];
+        let list = ofVertex[vi];
+        if (!list) { list = []; ofVertex[vi] = list; }
+        if (!list.includes(pi)) list.push(pi);
+      }
+    }
+  }
+  return { planes, ofVertex };
+}
+
+/**
+ * Closest point to `p` on the intersection of up to three independent
+ * planes `n·x = c` (minimum-norm correction). Parallel duplicates are
+ * dropped; a fourth plane is ignored (a vertex on four large flats is a
+ * degenerate corner the LS move already handled).
+ */
+function _c4ProjectOntoPlanes(p, ids, planes) {
+  const use = [];
+  for (const id of ids) {
+    const pl = planes[id];
+    if (!use.some((q) => Math.abs(_c4Dot(q.n, pl.n)) > 0.999999)) use.push(pl);
+    if (use.length === 3) break;
+  }
+  if (!use.length) return p;
+  // x = p + Nᵀ λ, with (N Nᵀ) λ = c − N p.
+  const k = use.length;
+  const r = use.map((pl) => pl.c - _c4Dot(pl.n, p));
+  if (k === 1) return _c4Add(p, _c4Mul(r[0], use[0].n));
+  const G = Array.from({ length: 3 }, () => [0, 0, 0]);
+  const rhs = [0, 0, 0];
+  for (let i = 0; i < k; i++) {
+    for (let j = 0; j < k; j++) G[i][j] = _c4Dot(use[i].n, use[j].n);
+    rhs[i] = r[i];
+  }
+  for (let i = k; i < 3; i++) G[i][i] = 1;
+  const lam = _c4Solve3(G, rhs);
+  if (!lam) return _c4Add(p, _c4Mul(r[0], use[0].n));
+  let x = p;
+  for (let i = 0; i < k; i++) x = _c4Add(x, _c4Mul(lam[i], use[i].n));
+  return x;
+}
+
 /**
  * The CAVITY of a uniform-thickness shell: the whole boundary offset inward by
  * `thickness`, as one warp of the solid (O(vertices), no per-facet booleans).
@@ -894,6 +1071,17 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
   // orthogonal case (box corner: t√3). Anything far beyond that is a blown
   // solve — clamp magnitude along the LS direction (do NOT avg-cancel).
   const dCap = thickness * 4;
+  // Exact planes. The LS move above treats a planar face and the first facet
+  // of a fillet it is tangent to as one cluster (they are within 10°), so a
+  // vertex on the tangency lands about half a micron off the plane. The
+  // cavity's walls were then not quite planar, and once a fillet's chords
+  // dropped under ~0.05 mm Manifold's triangulation of those walls folded:
+  // pairs of ~1 mm² slivers wound against each other, which flipped crease
+  // signs, broke moveFace and showed as inverted facets. After the solve,
+  // every closed vertex is projected onto the offset planes of the large
+  // planar faces it lies on; the arc keeps its LS position (accurate to
+  // 1e-4 mm at any density).
+  const exactPlanes = _c4ExactOffsetPlanes(md, thickness, openSet);
   let moved = 0;
   const out = md.V.map((v) => v.slice());
   for (let vi = 0; vi < nV; vi++) {
@@ -937,11 +1125,35 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
         Math.min(bbMax[2], Math.max(bbMin[2], nv[2])),
       ];
     }
+    const planes = exactPlanes.ofVertex[vi];
+    if (planes && planes.length === 1 && closedF.every((n) => _c4Dot(n, exactPlanes.planes[planes[0]].n) >= COS_CLUSTER)) {
+      // On one flat, every other closed facet near-tangent to it (a fillet's
+      // tangency line): the exact answer is a pure move along the plane
+      // normal, the same for every vertex on that line, plus the outward push
+      // of any open face the vertex sits on. The LS move drifts in-plane by
+      // t·tan(δ/2), δ the first facet's angle, which reorders the
+      // near-collinear vertices of the flat's long slivers and flips them.
+      // The arc's own vertices move along their facet normals and land where
+      // the offset cylinder puts them.
+      let d = _c4Mul(-thickness, exactPlanes.planes[planes[0]].n);
+      for (const n of open[vi]) d = _c4Add(d, _c4Mul(thickness, n));
+      nv = _c4Add(v0, d);
+    } else if (planes && planes.length) {
+      // Every other vertex on a flat, open rim included: snap the LS result
+      // onto the flat's exact offset plane(s). The open faces are not in the
+      // list (they offset outward and the LS move already carries that
+      // push), so an open-rim corner keeps its push and lands exactly in
+      // the walls it belongs to. Left at its LS position it sat 5 µm off
+      // the wall every other vertex was projected onto, the wall's fan from
+      // that corner was no longer one plane to Manifold, and the hollow
+      // kept two dozen collinear vertices along the open rim.
+      nv = _c4ProjectOntoPlanes(nv, planes, exactPlanes.planes);
+    }
     out[vi] = nv;
   }
   if (!moved) throw new Error(`${label}: nothing to offset — the body has no faces`);
   _c4RequireNoFold(md, out, label, thickness);
-  return _c4RebuildWithVerts(md, out, label);
+  return _c4RebuildWithVerts(md, out, label, _c4RepairFlippedTriangles(md, out));
 }
 
 
@@ -1629,37 +1841,89 @@ function _c4MaxPlaneOff(md, face, normal, off) {
 
 function _c4ExpandSamePlane(md, sel) {
   const COS = Math.cos((10 * Math.PI) / 180);
+  const COS_STRIP = Math.cos((0.1 * Math.PI) / 180);
   const ON_PLANE = 0.012;
   const seeds = [...sel];
   const out = new Set(sel);
+  // Every vertex of a member face maps back to the ORIGINAL seed it grew
+  // from, so the area and plane tests below are always against the scrap
+  // the user picked. The walk is transitive: a scrap at a fillet's tangency
+  // can touch a medium strip that touches the main flat, and all three are
+  // one plane the user meant.
   const vertToSeed = new Map();
   for (const fi of seeds) {
     for (const vi of _c4FaceVertIndices(md, md.faces[fi])) vertToSeed.set(vi, fi);
   }
-  for (let fj = 0; fj < md.faces.length; fj++) {
-    if (out.has(fj)) continue;
-    const other = md.faces[fj];
-    let seedFi = -1;
-    for (const vi of _c4FaceVertIndices(md, other)) {
-      if (vertToSeed.has(vi)) { seedFi = vertToSeed.get(vi); break; }
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (let fj = 0; fj < md.faces.length; fj++) {
+      if (out.has(fj)) continue;
+      const other = md.faces[fj];
+      let seedFi = -1;
+      const otherVerts = _c4FaceVertIndices(md, other);
+      for (const vi of otherVerts) {
+        if (vertToSeed.has(vi)) { seedFi = vertToSeed.get(vi); break; }
+      }
+      if (seedFi < 0) continue;
+      const face = md.faces[seedFi];
+      if (other.body !== face.body) continue;
+      const nd = face.normal[0] * other.normal[0]
+        + face.normal[1] * other.normal[1]
+        + face.normal[2] * other.normal[2];
+      if (nd < COS) continue;
+      // Only the plane this scrap was cut from. A similar-sized neighbor is the
+      // next fillet step; pulling it in leaves a new edge the walls cannot meet.
+      // A similar-sized neighbour that is exactly coplanar (normals within
+      // 0.1°, where a fillet step is at least 0.9°) is a strip of the same
+      // flat, as a sweep fillet's tangency leaves beside a flat: it joins.
+      const aSeed = _c4FaceArea(md, face);
+      const aOther = _c4FaceArea(md, other);
+      const exactlyCoplanar = nd >= COS_STRIP;
+      if (!(aOther > aSeed * 4) && !exactlyCoplanar) continue;
+      const n = other.normal;
+      const p0 = md.V[otherVerts[0]];
+      const off = n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2];
+      if (_c4MaxPlaneOff(md, face, n, off) > ON_PLANE) continue;
+      out.add(fj);
+      for (const vi of otherVerts) if (!vertToSeed.has(vi)) vertToSeed.set(vi, seedFi);
+      grew = true;
     }
-    if (seedFi < 0) continue;
-    const face = md.faces[seedFi];
-    if (other.body !== face.body) continue;
-    const nd = face.normal[0] * other.normal[0]
-      + face.normal[1] * other.normal[1]
-      + face.normal[2] * other.normal[2];
-    if (nd < COS) continue;
-    // Only the plane this scrap was cut from. A similar-sized neighbor is the
-    // next fillet step; pulling it in leaves a new edge the walls cannot meet.
+  }
+  // A small scrap that shares no vertex with its plane: a boolean seam can
+  // leave a strip of a flat whose vertices are copies of the flat's own,
+  // a few microns apart, so the walk above never reaches it. It is still a
+  // piece of that flat when a much larger face lies in its plane (within
+  // ON_PLANE, under the same 10° normal slack: a strip a quarter millimetre
+  // wide reads a degree off) with a vertex within NEAR of one of its own.
+  const NEAR = 0.05;
+  for (const fi of seeds) {
+    const face = md.faces[fi];
     const aSeed = _c4FaceArea(md, face);
-    const aOther = _c4FaceArea(md, other);
-    if (!(aOther > aSeed * 4)) continue;
-    const n = other.normal;
-    const p0 = md.V[_c4FaceVertIndices(md, other)[0]];
-    const off = n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2];
-    if (_c4MaxPlaneOff(md, face, n, off) > ON_PLANE) continue;
-    out.add(fj);
+    if (!(aSeed < 4)) continue;
+    const seedVerts = _c4FaceVertIndices(md, face).map((vi) => md.V[vi]);
+    for (let fj = 0; fj < md.faces.length; fj++) {
+      if (out.has(fj)) continue;
+      const other = md.faces[fj];
+      if (other.body !== face.body) continue;
+      const nd = face.normal[0] * other.normal[0] + face.normal[1] * other.normal[1] + face.normal[2] * other.normal[2];
+      if (nd < COS) continue;
+      if (!(_c4FaceArea(md, other) > aSeed * 4)) continue;
+      const otherVerts = _c4FaceVertIndices(md, other);
+      const n = other.normal;
+      const p0 = md.V[otherVerts[0]];
+      const off = n[0] * p0[0] + n[1] * p0[1] + n[2] * p0[2];
+      if (_c4MaxPlaneOff(md, face, n, off) > ON_PLANE) continue;
+      let near = false;
+      for (const vi of otherVerts) {
+        const q = md.V[vi];
+        for (const sv of seedVerts) {
+          if (_c4Len(_c4Sub(q, sv)) <= NEAR) { near = true; break; }
+        }
+        if (near) break;
+      }
+      if (near) out.add(fj);
+    }
   }
   return out;
 }
@@ -4154,6 +4418,9 @@ function _c4TriArea(tri) {
  * keeps its own.
  */
 function _c6UnfoldedNormal(info, ti, tri, g, gOK) {
+  // Only a FOLDED neighbour (wound against this triangle) that is larger
+  // overrides; a coplanar neighbour never does, so the dense facets of a
+  // loft keep their own normals and their per-knot dihedrals.
   let bestN = tri.n;
   let bestA = _c4TriArea(tri);
   for (let k = 0; k < 3; k++) {
@@ -4163,7 +4430,7 @@ function _c6UnfoldedNormal(info, ti, tri, g, gOK) {
     const pair = info.pairMap.get(key);
     if (!pair || pair.length !== 2) continue;
     const other = info.tris[pair[0] === ti ? pair[1] : pair[0]];
-    if (!other || Math.abs(_c4Dot(tri.n, other.n)) < 0.9) continue;
+    if (!other || _c4Dot(tri.n, other.n) > -0.9) continue;
     const area = _c4TriArea(other);
     if (area > bestA) { bestA = area; bestN = other.n; }
   }
@@ -4171,9 +4438,27 @@ function _c6UnfoldedNormal(info, ti, tri, g, gOK) {
   return bestN;
 }
 
+/** Face groups whose every facet normal lies within 0.5° of the group normal. */
+function _c6PlanarFaceFlags(data, info) {
+  const cosExact = Math.cos((0.5 * Math.PI) / 180);
+  return data.faces.map((f) => {
+    if (!f || !Array.isArray(f.tris) || !f.normal) return false;
+    const n = _c4Norm(f.normal);
+    if (!(_c4Len(n) > 0.5)) return false;
+    for (const ti of f.tris) {
+      const t = info.tris[ti];
+      if (!t) continue;
+      if (_c4TriArea(t) < 1e-9) continue;
+      if (_c4Dot(t.n, n) < cosExact) return false;
+    }
+    return true;
+  });
+}
+
 function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
   const data = c4MeshData(m);
   const info = _c6BuildMeshInfo(m);
+  const planarFace = _c6PlanarFaceFlags(data, info);
   const gate = Math.max(Number(minAngleDeg) || 0, FEATURE_EDGE_MIN_DEG);
   const cosGate = Math.cos((gate * Math.PI) / 180);
   // The old helper's coplanarity pre-gate, kept verbatim at its 2° default.
@@ -4233,7 +4518,9 @@ function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
     if (!dir) continue;
     const convex = _c4Dot(_c4Cross(n0, n1), dir) > 0;
     const dihedralDeg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
-    out.push({ ...e, n0: outN0, n1: outN1, convex, dihedralDeg });
+    // planar0/planar1: both faces are true planes. The sweep ends its legs
+    // exactly on such faces; a curved neighbour keeps the nudge.
+    out.push({ ...e, n0: outN0, n1: outN1, convex, dihedralDeg, planar0: !!planarFace[e.faces[0]], planar1: !!planarFace[e.faces[1]] });
   }
   return out;
 }
@@ -6587,6 +6874,7 @@ function _s23ProbeSegments(part, points, closed) {
     seg.theta = frame.theta;
     seg.f0 = f0;
     seg.f1 = f1;
+    seg.planar = !!(best.planar0 && best.planar1);
     prevN = frame.N;
   }
 
@@ -6607,6 +6895,7 @@ function _s23ProbeSegments(part, points, closed) {
     raw[i].f0 = carried.f0;
     raw[i].f1 = carried.f1;
     raw[i].T = carried.T;
+    raw[i].planar = !!src.planar;
   }
 
   return raw.map((seg) => ({
@@ -6619,6 +6908,7 @@ function _s23ProbeSegments(part, points, closed) {
     f1: seg.f1,
     p0: seg.p0,
     p1: seg.p1,
+    planar: !!seg.planar,
   }));
 }
 
@@ -7427,9 +7717,14 @@ function _s23CuttersFromSegs(M, CrossSection, segs, closed, radius, profileKind,
     const geom = _s23RunGeometry(run, closed, runs.length === 1);
     geom.theta = theta;
     for (const fr of geom.frames) fr.theta = theta;
+    // Legs end exactly on the faces when both walls of the whole run are
+    // planes (the box case, which hollow and the corner pocket need); a
+    // curved wall keeps the 2.5 µm nudge that keeps the boolean clean on
+    // bends and lofts.
+    const exactLegs = !!opts.exactLegs || (profileKind !== 'chamfer' && run.every((seg) => seg.planar));
     let piece;
     try {
-      piece = _s23SweepRun(M, CrossSection, geom, radius, profileKind, arcSegs, testScale, { exactLegs: !!opts.exactLegs });
+      piece = _s23SweepRun(M, CrossSection, geom, radius, profileKind, arcSegs, testScale, { exactLegs });
     } catch (e) {
       if (/too large for this rim|face angle|radius/i.test(String(e && e.message))) throw e;
       throw new Error(`filletAlongPath: sweep failed — ${e && e.message ? e.message : e}`);

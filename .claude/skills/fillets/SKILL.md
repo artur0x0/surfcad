@@ -153,6 +153,10 @@ Each one is a scar. Changing it reintroduces a shipped bug.
   unbalanced markers, or a missing marker block ⇒ refusal, never a silent no-op.
 - **C3 supersedes C2.** `filletEdges(..., { relaxPlanar: true })` was the old hard
   path. `composeFilletCommit` actively refuses to emit it on the hard path.
+- **Between two planes the legs end exactly on the faces; on a curved wall
+  they keep the 2.5 µm nudge.** Exact legs make the first facet tangent like
+  the planar kernel's, which `hollow` and the corner pocket need; the nudge
+  keeps a facet from grazing a bend or loft wall and leaving sliver sheets.
 - **The cutter pad is size-neutral.** Every first-quadrant contour vertex stays at
   exactly `r`; only the rear `(−e,−e)` bumper grows. A uniform Q1 scale silently
   redefines the requested radius — never do it.

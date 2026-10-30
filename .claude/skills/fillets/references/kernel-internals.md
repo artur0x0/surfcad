@@ -101,7 +101,21 @@ the floor and cap. A uniform Q1 scale was tried and rejected — it only
 redefined `r`.
 
 The `(0,0)` corner is skipped by the loop, so the bumper vertex must replace it
-or the contour collapses. The floor/cap pair is an unvalidated
+or the contour collapses.
+
+**The legs end exactly on the faces between two planes** (`exactLegs`,
+`faceEps` 0, decided per run from `seg.planar`: both walls of every segment
+are true planes, from `signedFeatureEdges`' `planar0`/`planar1`). The leg
+then rises from the pad at `(t, −e)` straight to the tangency `(t, 0)`, so
+the cutter touches the face only along that line and the arc's first facet
+is tangent to the face, as the planar kernel's is. The default 2.5 µm nudge
+of the setback endpoints off the face kinks that facet by about 1.5°; a
+later `hollow` then moved the tangency vertex along the wall normal and the
+first arc vertex along the kinked facet normal, reordered them, and folded
+the wall's slivers once arc chords were under ~0.05 mm. On a curved wall
+(a bend, a loft) the nudge stays: a facet grazing a curved face leaves
+sliver sheets in the boolean (artur-bend-fillet, c3.3). The mesh-built
+corner pocket needs the exact tangent points too. The floor/cap pair is an unvalidated
 boolean-robustness margin: the rim gap net cannot certify it, but the legs must
 not coplanar-coincide with faces. Leave it alone unless you have a new net.
 

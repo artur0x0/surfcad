@@ -562,8 +562,15 @@ export function expandDihedralCutterContour(contour, radius, theta, opts = {}) {
   // Fillet: nudge face-ray setback endpoints into empty space (same as
   // expandFilletCutterContour). Chamfer keeps historical on-face legs.
   const isChamfer = contour.length <= 3;
-  // opts.faceEps = 0 keeps the legs exactly on the faces: a chain that ends
-  // in a mesh-built corner pocket must share the pocket's tangent points.
+  // Default: nudge the setback endpoints 2.5 µm off the faces so the arc's
+  // first facet crosses the face plane instead of grazing it; on a curved
+  // wall (a bend, a loft) the grazing facet leaves sliver sheets. Between
+  // two planes the kernel passes faceEps 0 (`exactLegs`): the leg then rises
+  // from the pad at (t, −e) straight to the tangency, the first facet is
+  // tangent like the planar kernel's, and a later hollow keeps the tangency
+  // vertex and the first arc vertex in order. With the nudge, that facet is
+  // kinked by about 1.5° and a hollow of a dense fillet folded the wall's
+  // slivers. The mesh-built corner pocket needs the exact tangent points.
   const faceEps = opts.faceEps != null ? Number(opts.faceEps) : Math.min(0.0025, Math.max(1e-4, 5e-4 * r));
   const nFace0 = [0, -1];
   const nFace1 = [-sin, cos];
