@@ -4142,6 +4142,35 @@ function _c4TriArea(tri) {
  * @param {number} [minAngleDeg] dihedral gate; raised to FEATURE_EDGE_MIN_DEG
  * @returns {object[]} edges with { n0, n1, convex, dihedralDeg }
  */
+/**
+ * The surface normal at a triangle, for signing an edge. A planar face
+ * bounded by a dense arc (96 steps per quarter) can carry long slivers that
+ * Manifold wound the wrong way: about 1 mm² each, normal opposite to the face
+ * around them, each with its own faceID, so the group normal is the sliver's
+ * own. Signing a concave crease from one called it convex and the next
+ * fillet cut instead of filled (concave playtest after hollow). Among the
+ * triangle and its neighbours that lie in its plane, folded or not, the
+ * largest one is the surface; a sliver borrows that normal, a real face
+ * keeps its own.
+ */
+function _c6UnfoldedNormal(info, ti, tri, g, gOK) {
+  let bestN = tri.n;
+  let bestA = _c4TriArea(tri);
+  for (let k = 0; k < 3; k++) {
+    const a = tri.vs[k];
+    const b = tri.vs[(k + 1) % 3];
+    const key = a < b ? a * 1e9 + b : b * 1e9 + a;
+    const pair = info.pairMap.get(key);
+    if (!pair || pair.length !== 2) continue;
+    const other = info.tris[pair[0] === ti ? pair[1] : pair[0]];
+    if (!other || Math.abs(_c4Dot(tri.n, other.n)) < 0.9) continue;
+    const area = _c4TriArea(other);
+    if (area > bestA) { bestA = area; bestN = other.n; }
+  }
+  if (bestN === tri.n && gOK && _c4Dot(tri.n, g) < 0) return g;
+  return bestN;
+}
+
 function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
   const data = c4MeshData(m);
   const info = _c6BuildMeshInfo(m);
@@ -4173,8 +4202,13 @@ function signedFeatureEdges(m, minAngleDeg = FEATURE_EDGE_MIN_DEG) {
     const gOK0 = _c4Len(g0) > 0.5;
     const gOK1 = _c4Len(g1) > 0.5;
     if ((!tOK0 && !gOK0) || (!tOK1 && !gOK1)) continue;
-    const n0 = tOK0 ? t0.n : g0;
-    const n1 = tOK1 ? t1.n : g1;
+    // Two triangles folded flat against each other share a fin, not a crease
+    // (a knife edge does not exist on a solid). Those fins come from the
+    // triangulation of a planar face bounded by a dense arc and are what
+    // dropPlanarFins removes before drawing; here they are no edge at all.
+    if (tOK0 && tOK1 && _c4Dot(t0.n, t1.n) < -0.9) continue;
+    const n0 = tOK0 ? _c6UnfoldedNormal(info, i0, t0, g0, gOK0) : g0;
+    const n1 = tOK1 ? _c6UnfoldedNormal(info, i1, t1, g1, gOK1) : g1;
     const outN0 = gOK0 ? g0 : t0.n;
     const outN1 = gOK1 ? g1 : t1.n;
     // Gate 1 (consumer contract): the normals this helper RETURNS are the
@@ -9094,7 +9128,11 @@ function filletAlongPath(part, path, radius, opts = {}) {
               M, CrossSection, part, run, runClosed, radius, profileKind, arcSegs, scale, junction,
               { start: ri === 0 && !!opts._trimStart, end: ri === plan.runs.length - 1 && !!opts._trimEnd },
             );
-        } catch (_) {
+        } catch (err) {
+          // Diagnostics only: a golden reads which semi-arc run was skipped.
+          if (globalThis.__filletRunErrors) {
+            globalThis.__filletRunErrors.push({ run: ri, knots: run.length, message: String(err && err.message ? err.message : err) });
+          }
           continue;
         }
         if (built?.cutter) {
