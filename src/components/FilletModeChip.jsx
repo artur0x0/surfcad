@@ -20,6 +20,7 @@ const FilletModeChip = ({
   pathOk = false,
   componentCount = 0,
   boxCorners = 0,
+  joinsFeature = '',
   compact = false,
   onToggleTangent,
   onClear,
@@ -51,7 +52,9 @@ const FilletModeChip = ({
   const title = chamfer ? 'Chamfer' : 'Fillet';
   const heading = `${title} · ${edgeCount} edge${edgeCount === 1 ? '' : 's'}`;
   const subtitle = pathOk
-    ? (!chamfer && boxCorners > 0
+    ? (!chamfer && joinsFeature
+      ? `Joins ${joinsFeature} · spherical corners where they meet · Confirm commits and exits`
+      : !chamfer && boxCorners > 0
       ? `Box fillet · ${boxCorners} spherical corner${boxCorners === 1 ? '' : 's'} · Confirm commits and exits`
       : componentCount > 1
         ? `${componentCount} independent ${chamfer ? 'chamfers' : 'fillets'} · Confirm commits and exits`

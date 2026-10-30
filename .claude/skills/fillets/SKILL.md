@@ -118,8 +118,22 @@ Kernel choice is one function: `filletKernelSpike.js` →
    default and need no toggle: the kernel caps every vertex where three
    equal fillets meet at exactly 90° and leaves any other vertex a cusp.
 
-   A second Accept **appends** a block (`commitMode: 'append'`, chosen by
-   `hasFilletModeBlock`) so it fillets the already-filleted solid.
+   **Sequential picks accumulate** (`filletAccumulate.js`). A pick that
+   touches the blend faces of an earlier fillet block of the same radius
+   (its rim arcs are `fillet1.round[k]~seed.top`) extends THAT block's
+   `edgesNamed` list with the new pairs by their pre-blend names instead of
+   wrapping a second fillet over its sails: verticals, then the top rim,
+   then the bottom rim at one radius is one block, one op, eight junction
+   corners. The arcs themselves are implied by the junction and not written.
+   Conditions: exactly one block touched, same radius, the block writes
+   names, and no picked face comes from a block after it in the script (a
+   later boss is not on the solid the block cuts). The card reads
+   `Joins fillet1 · spherical corners where they meet`;
+   `composeFilletCommit` returns `kernel: 'accumulate'`. A different radius,
+   a chamfer, or an unnamed row takes the paths below.
+
+   A second Accept otherwise **appends** a block (`commitMode: 'append'`,
+   chosen by `hasFilletModeBlock`) so it fillets the already-filleted solid.
 
    A pick of several disjoint corners, or of edges that meet at a vertex,
    is ONE pair: `makeSweepPath` returns every chain of the set as
@@ -214,6 +228,7 @@ The viewport scrap banner is **delta-based** (pre-Accept degenerate-tri count vi
 | `src/utils/filletKernelSpike.js` | kernel choice + `FILLET_HARD_KERNEL_TRIAL` |
 | `src/utils/filletMode.js` | in-mode state, validation, live preview, `composeFilletCommit` |
 | `src/utils/filletBoxCorners.js` | box-corner pick detection (junction + straight + flat), planar radius clamp |
+| `src/utils/filletAccumulate.js` | a pick on an earlier fillet's arcs at the same radius extends that block's `edgesNamed` |
 | `src/utils/filletSliverGuard.js` | degenerate-tri thresholds — import, never restate |
 | `src/utils/edgeSweepPath.js` | `assembleSweepPath` / ordering / topology gates |
 | `src/utils/edgeTangencyField.js` | tangency field, densify, transport, variable-profile frames |
