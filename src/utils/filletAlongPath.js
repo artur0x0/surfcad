@@ -535,7 +535,7 @@ export function dihedralChamferContour(size, theta) {
  * @param {number} theta
  * @returns {number[][]}
  */
-export function expandDihedralCutterContour(contour, radius, theta) {
+export function expandDihedralCutterContour(contour, radius, theta, opts = {}) {
   if (!Array.isArray(contour) || contour.length < 3) {
     throw new Error('expandDihedralCutterContour: need a wedge (≥3 pts)');
   }
@@ -562,7 +562,9 @@ export function expandDihedralCutterContour(contour, radius, theta) {
   // Fillet: nudge face-ray setback endpoints into empty space (same as
   // expandFilletCutterContour). Chamfer keeps historical on-face legs.
   const isChamfer = contour.length <= 3;
-  const faceEps = Math.min(0.0025, Math.max(1e-4, 5e-4 * r));
+  // opts.faceEps = 0 keeps the legs exactly on the faces: a chain that ends
+  // in a mesh-built corner pocket must share the pocket's tangent points.
+  const faceEps = opts.faceEps != null ? Number(opts.faceEps) : Math.min(0.0025, Math.max(1e-4, 5e-4 * r));
   const nFace0 = [0, -1];
   const nFace1 = [-sin, cos];
   const q1 = [];

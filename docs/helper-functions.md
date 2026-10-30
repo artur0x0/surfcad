@@ -1335,8 +1335,11 @@ return part;
   n-way subtract and the set-level guards (removed volume against the summed
   expectation, scrap components, degenerate triangles). Chains meeting at a
   vertex are cut from the same solid, so the shared vertex is still there
-  when the second chain is probed. Corners where three chains meet are
-  cusps (the spherical patch is the planar kernel's, `filletEdges`).
+  when the second chain is probed. A vertex where exactly three convex
+  chains end at right angles gets the spherical corner patch (one face,
+  `<block>.corner[k]`), built as a mesh on the chains' own end rings; any
+  other junction keeps the cusp. `filletAlongPath(part,
+  makeSweepPath(convexEdges(part)), r)` on a box is the fully rounded box.
 - `radius` — fillet radius, or chamfer leg length (> 0)
 - `opts.profile` — `'fillet'` (default) or `'chamfer'`
 - `opts.segments` — arc segments for the fillet profile (default 12)
