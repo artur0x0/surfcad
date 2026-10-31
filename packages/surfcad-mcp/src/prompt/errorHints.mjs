@@ -45,6 +45,8 @@ export const ERROR_HINTS = Object.freeze({
   unknown_entity: { hint: 'The sketch entity id is not in the open contour: list_sketch_entities {} and use an id from it (p0, e0, a0, ...).' },
   no_body: { hint: 'Name the body: body_index or at from list_bodies {}, face or face_id from list_faces, or select a face and pass use_selection: true.' },
   no_mesh: { hint: 'No solid is shown yet: insert a block (insert_cube, insert_cylinder, ...) or run {} the part, then call again.' },
+  quote_failed: { hint: 'The molding quote service did not answer: retry mold_quote once. The part is unchanged and nothing was ordered.' },
+  rate_limited: { hint: 'Too many requests in a short window: wait, then retry the same call once. Do not loop.' },
   not_picked: { hint: 'pick_next { remove: true } named keys that are not picked: pick_next with no remove to see the live picks, or pick_clear {}.' },
   empty_pick: { hint: 'The card needs at least one pick: pick_next { keys } before pick_done, or pick_cancel {}.' },
   pick_count: { hint: 'Fewer picks than the card\'s minimum: pick_next more keys, then pick_done again.' },

@@ -335,6 +335,12 @@ export const COMMAND_META = {
     errors: ['no_mesh', 'internal'],
     mutates: false,
   },
+  mold_quote: {
+    description: 'Show or hide the budgetary molding quote for the active part. on true measures the mesh and asks the server to rank anonymized vendors. The panel says Budgetary, not binding. It lists aluminum and steel unit cost, the part-plus-tooling range, and the quantity where steel becomes cheaper. quantity and cavityCount recompute that quote. grade picks a resin from the selected vendor. The server sets the price. on false closes the panel. Omit on to toggle. It does not paint a skin and it does not place an order. Read-only.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['no_mesh', 'bad_args', 'quote_failed', 'rate_limited', 'internal'],
+    mutates: false,
+  },
   mold_wall_map: {
     description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
     result: { type: 'object', additionalProperties: true },
