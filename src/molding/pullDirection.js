@@ -24,12 +24,14 @@
  * a local field, the nominal wall, max wall, and thin or thick regions.
  * `wall: { thinRatio, thickRatio }` overrides the 0.6× and 1.5× defaults.
  * It also carries the core / cavity split and parting line
- * (`src/molding/parting.js`) for that same pull.
+ * (`src/molding/parting.js`) for that same pull, and the side-action
+ * groups (`src/molding/sideActions.js`) clustered from these undercuts.
  */
 
 import { meshBodyComponents } from '../utils/meshBodyComponents.js';
 import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
 import { classifyParting } from './parting.js';
+import { groupSideActions } from './sideActions.js';
 
 export const MOLD_ANALYSIS_VERSION = 1;
 
@@ -431,11 +433,25 @@ function clusterRegions(hits) {
     const r = find(i);
     let g = groups.get(r);
     if (!g) {
-      g = { area: 0, triangleCount: 0, n: [0, 0, 0], side: hits[i].side, seed: hits[i].t };
+      g = {
+      area: 0,
+      triangleCount: 0,
+      n: [0, 0, 0],
+      side: hits[i].side,
+      seed: hits[i].t,
+      centroid: [0, 0, 0],
+      triangles: [],
+    };
       groups.set(r, g);
     }
     g.area += hits[i].area;
     g.triangleCount += 1;
+    g.triangles.push(hits[i].t);
+    const weight = hits[i].area;
+    const at = hits[i].centroid;
+    g.centroid[0] += at[0] * weight;
+    g.centroid[1] += at[1] * weight;
+    g.centroid[2] += at[2] * weight;
     g.n[0] += hits[i].n[0] * hits[i].area;
     g.n[1] += hits[i].n[1] * hits[i].area;
     g.n[2] += hits[i].n[2] * hits[i].area;
@@ -444,6 +460,7 @@ function clusterRegions(hits) {
   regions.sort((a, b) => b.area - a.area || b.n[2] - a.n[2] || b.n[1] - a.n[1] || b.n[0] - a.n[0]);
   return regions.map((g, id) => {
     const n = unit(g.n) || [0, 0, 0];
+    const weight = g.area || 1;
     return {
       id,
       area: round(g.area, 6),
@@ -451,6 +468,8 @@ function clusterRegions(hits) {
       normal: round3(n),
       side: g.side,
       seed: g.seed,
+      centroid: round3(g.centroid.map((c) => c / weight)),
+      triangles: g.triangles.slice().sort((a, b) => a - b),
     };
   });
 }
@@ -517,6 +536,7 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
     bodies: bodyReport(positions, indices, regions),
     wall,
     parting,
+    sideActions: groupSideActions(regions, pull),
   };
 }
 

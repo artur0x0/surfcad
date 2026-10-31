@@ -3,7 +3,7 @@
  *
  * Same child mesh as the face-color skin. While it is visible the paint
  * skin is hidden. Detach puts that visibility back, unless a wall-thickness
- * skin or a stress skin is still holding the paint hidden.
+ * skin, a side-action skin, or a stress skin is still holding the paint hidden.
  */
 
 import { BufferAttribute, BufferGeometry, DoubleSide, FrontSide, Mesh } from 'three';
@@ -34,7 +34,7 @@ function restorePaintSkin(host) {
   const saved = host?.userData?.partingPaintHidden;
   if (!saved) return;
   host.userData.partingPaintHidden = null;
-  if (host.userData?.stressSkin || host.userData?.wallSkin) return;
+  if (host.userData?.stressSkin || host.userData?.wallSkin || host.userData?.sideActionSkin) return;
   const paint = host.userData?.faceColorSkin;
   if (paint) paint.visible = saved.visible;
 }

@@ -5,7 +5,8 @@
  * unwelded triangles, vertex colours, no raycast, the face-skin headlight.
  * Render order sits above paint (2) and under the stress skin (2.5). While
  * this skin is visible the paint skin is hidden. Detach puts that visibility
- * back, unless a stress skin is still holding the paint hidden.
+ * back, unless a parting skin, a side-action skin, or a stress skin is still
+ * holding the paint hidden.
  * Turning the mode off removes this mesh, so the part colour and face paint
  * show again.
  */
@@ -38,7 +39,7 @@ function restorePaintSkin(host) {
   const saved = host?.userData?.wallPaintHidden;
   if (!saved) return;
   host.userData.wallPaintHidden = null;
-  if (host.userData?.stressSkin || host.userData?.partingSkin) return;
+  if (host.userData?.stressSkin || host.userData?.partingSkin || host.userData?.sideActionSkin) return;
   const paint = host.userData?.faceColorSkin;
   if (paint) paint.visible = saved.visible;
 }
