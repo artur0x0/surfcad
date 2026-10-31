@@ -52,11 +52,22 @@ export default defineConfig({
       // Mirrors the prod nginx /agent block (docs/ops/agent-relay-nginx.md).
       // The caret makes this a regex so /agentx stays on the SPA. ws is on
       // so the tab socket reaches the backend instead of index.html.
+      // Dev only: preview inherits server.proxy unless preview.proxy is set,
+      // and the playtest's ws://127.0.0.1:<port>/agent would then die against
+      // a backend that is not running.
       '^/agent(/|\\?|$)': {
         target: 'http://localhost:3000',
         changeOrigin: true,
         ws: true,
       },
     }
-  }
+  },
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+    },
+  },
 });
