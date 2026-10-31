@@ -23,10 +23,13 @@
  * The same result carries wall thickness (`src/molding/wallThickness.js`):
  * a local field, the nominal wall, max wall, and thin or thick regions.
  * `wall: { thinRatio, thickRatio }` overrides the 0.6× and 1.5× defaults.
+ * It also carries the core / cavity split and parting line
+ * (`src/molding/parting.js`) for that same pull.
  */
 
 import { meshBodyComponents } from '../utils/meshBodyComponents.js';
 import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
+import { classifyParting } from './parting.js';
 
 export const MOLD_ANALYSIS_VERSION = 1;
 
@@ -494,7 +497,7 @@ function publicRegions(regions) {
   }));
 }
 
-function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall }) {
+function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall, parting }) {
   const undercutCount = regions.length;
   return {
     version: MOLD_ANALYSIS_VERSION,
@@ -513,6 +516,7 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
     undercuts: publicRegions(regions),
     bodies: bodyReport(positions, indices, regions),
     wall,
+    parting,
   };
 }
 
@@ -544,6 +548,10 @@ export function analyzePullDirection(input) {
   const skinMm = Math.max(MOLD_SKIN_MM, MOLD_SKIN_DIAG_FRAC * diag);
   const normals = { stamped: prepared.stampedCount, triangle: prepared.triangleCount };
   const wall = measureWallThickness(prepared.tris, Math.floor(indices.length / 3), wallOpts);
+  const faceInfo = input.stamped?.names?.length
+    ? { triFace: input.stamped.triFace, names: input.stamped.names }
+    : null;
+  const partingFor = (pull) => classifyParting(prepared.tris, pull, faceInfo);
   if (override.pull) {
     const regions = undercutsAlong(override.pull, prepared.tris, skinMm);
     return resultOf({
@@ -556,6 +564,7 @@ export function analyzePullDirection(input) {
       indices,
       skinMm,
       wall,
+      parting: partingFor(override.pull),
     });
   }
   const { dirs, primary } = candidateDirections(prepared.tris, input.patches);
@@ -577,5 +586,6 @@ export function analyzePullDirection(input) {
     indices,
     skinMm,
     wall,
+    parting: partingFor(best.pull),
   });
 }

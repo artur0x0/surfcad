@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -46,6 +46,10 @@ const CrossSectionPanel = forwardRef(({
   showWall = false,
   wallActive = false,
   onWallToggle = null,
+  /** Core / cavity coloring. Inspection group, immediately after wall thickness. Hidden in game. */
+  showParting = false,
+  partingActive = false,
+  onPartingToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -545,6 +549,25 @@ const handleButtonClick = () => {
             data-ui-action="data-wall-heatmap"
           >
             <AlignHorizontalSpaceAround size={20} />
+          </button>
+        )}
+        {showParting && (
+          <button
+            type="button"
+            onClick={() => onPartingToggle?.()}
+            className={`p-2 rounded font-ui ${
+              partingActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
+            aria-label={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
+            aria-pressed={!!partingActive}
+            data-mold-parting=""
+            data-mold-parting-state={partingActive ? 'on' : 'off'}
+            data-ui-action="data-mold-parting"
+          >
+            <SquareSplitHorizontal size={20} />
           </button>
         )}
         <button

@@ -608,7 +608,10 @@ import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceName
 import { moldFitFromGeometry } from '../molding/fromGeometry.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
+import { partingLegendModel } from '../molding/parting.js';
+import { detachPartingSkin, syncPartingSkin } from '../molding/partingSkin.js';
 import WallLegend from './molding/WallLegend';
+import PartingLegend from './molding/PartingLegend';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1428,8 +1431,17 @@ const Viewport = forwardRef(({
   const clearWallMapRef = useRef(() => {});
   const applyWallSkinRef = useRef(() => {});
   const [wallLegend, setWallLegend] = useState(null);
+  const agentMoldPartingRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const partingOnRef = useRef(false);
+  const partingFieldRef = useRef(null);
+  const clearPartingRef = useRef(() => {});
+  const applyPartingSkinRef = useRef(() => {});
+  const [partingLegend, setPartingLegend] = useState(null);
   useEffect(() => {
-    if (mode === 'game') clearWallMapRef.current();
+    if (mode === 'game') {
+      clearWallMapRef.current();
+      clearPartingRef.current();
+    }
   }, [mode]);
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
   const agentResolveMoveAnchorRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh' } }));
@@ -2713,6 +2725,7 @@ const Viewport = forwardRef(({
       listFaces: (args) => agentListFacesRef.current(args),
       moldFit: (args) => agentMoldFitRef.current(args),
       moldWallMap: (args) => agentMoldWallMapRef.current(args),
+      moldParting: (args) => agentMoldPartingRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -5365,6 +5378,7 @@ const Viewport = forwardRef(({
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
     clearWallMapRef.current();
+    clearPartingRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -13658,11 +13672,29 @@ const Viewport = forwardRef(({
   };
   clearWallMapRef.current = clearWallMap;
 
+  const clearParting = () => {
+    partingOnRef.current = false;
+    partingFieldRef.current = null;
+    setPartingLegend(null);
+    detachPartingSkin(resultRef.current);
+    for (const mesh of assemblyExtrasRef.current.values()) detachPartingSkin(mesh);
+  };
+  clearPartingRef.current = clearParting;
+
   const showWallMap = (wall, geometry) => {
+    clearParting();
     wallMapOnRef.current = true;
     wallFieldRef.current = { geometry, wall };
     setWallLegend(thicknessLegendModel(wall));
     syncThicknessSkin(resultRef.current, wall);
+  };
+
+  const showParting = (parting, geometry) => {
+    clearWallMap();
+    partingOnRef.current = true;
+    partingFieldRef.current = { geometry, parting };
+    setPartingLegend(partingLegendModel(parting));
+    syncPartingSkin(resultRef.current, parting);
   };
 
   applyWallSkinRef.current = (host) => {
@@ -13684,6 +13716,27 @@ const Viewport = forwardRef(({
       setWallLegend(thicknessLegendModel(analyzed.wall));
     }
     syncThicknessSkin(host, cached.wall);
+  };
+
+  applyPartingSkinRef.current = (host) => {
+    if (!host) return;
+    if (!partingOnRef.current || host !== resultRef.current) {
+      detachPartingSkin(host);
+      return;
+    }
+    const geometry = host.geometry;
+    let cached = partingFieldRef.current;
+    if (!cached || cached.geometry !== geometry) {
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+      if (analyzed?.error || !analyzed?.parting) {
+        clearParting();
+        return;
+      }
+      cached = { geometry, parting: analyzed.parting };
+      partingFieldRef.current = cached;
+      setPartingLegend(partingLegendModel(analyzed.parting));
+    }
+    syncPartingSkin(host, cached.parting);
   };
 
   agentMoldWallMapRef.current = ({ on } = {}) => {
@@ -13712,6 +13765,32 @@ const Viewport = forwardRef(({
     };
   };
 
+  agentMoldPartingRef.current = ({ on } = {}) => {
+    const next = typeof on === 'boolean' ? on : !partingOnRef.current;
+    if (!next) {
+      clearParting();
+      return { on: false };
+    }
+    const geometry = resultRef.current?.geometry;
+    if (!geometry?.attributes?.position) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    if (analyzed?.error) return analyzed;
+    if (!analyzed.parting) {
+      return { error: { code: 'no_mesh', message: 'No parting split on that mesh' } };
+    }
+    showParting(analyzed.parting, geometry);
+    return {
+      on: true,
+      pull: analyzed.pull,
+      cavity: analyzed.parting.counts.cavity,
+      core: analyzed.parting.counts.core,
+      parting: analyzed.parting.counts.parting,
+      lines: analyzed.parting.lines.length,
+    };
+  };
+
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
     const painting = paintModeRef.current;
@@ -13727,6 +13806,7 @@ const Viewport = forwardRef(({
       detachFaceColorSkin(host);
       if (host === resultRef.current) applyStressSkinRef.current(host);
       applyWallSkinRef.current(host);
+      applyPartingSkinRef.current(host);
       if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
       return;
     }
@@ -13741,6 +13821,7 @@ const Viewport = forwardRef(({
     });
     if (host === resultRef.current) applyStressSkinRef.current(host);
     applyWallSkinRef.current(host);
+    applyPartingSkinRef.current(host);
     if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
   };
 
@@ -16074,6 +16155,7 @@ const Viewport = forwardRef(({
       )}
 
       {mode !== 'game' && <WallLegend legend={wallLegend} />}
+      {mode !== 'game' && <PartingLegend legend={partingLegend} />}
 
       {/* Cross-Section Panel */}
         <CrossSectionPanel
@@ -16102,11 +16184,15 @@ const Viewport = forwardRef(({
           analyzeActive={feaActive}
           onAnalyzeToggle={() => {
             clearWallMapRef.current();
+            clearPartingRef.current();
             feaToggleRef.current?.();
           }}
           showWall={mode !== 'game'}
           wallActive={!!wallLegend}
           onWallToggle={() => agentMoldWallMapRef.current({})}
+          showParting={mode !== 'game'}
+          partingActive={!!partingLegend}
+          onPartingToggle={() => agentMoldPartingRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();

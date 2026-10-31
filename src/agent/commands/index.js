@@ -29,6 +29,7 @@ import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
 import { moldFitCommand } from './moldFit.js';
 import { moldWallMapCommand } from './moldWallMap.js';
+import { moldPartingCommand } from './moldParting.js';
 import { listBodiesCommand } from './listBodies.js';
 import { geometryWorkersCommand } from './geometryWorkers.js';
 import { gitTimingsCommand } from './gitTimings.js';
@@ -228,6 +229,7 @@ const V1_COMMAND_LIST = [
   listFacesCommand,
   moldFitCommand,
   moldWallMapCommand,
+  moldPartingCommand,
   listBodiesCommand,
   geometryWorkersCommand,
   gitTimingsCommand,
