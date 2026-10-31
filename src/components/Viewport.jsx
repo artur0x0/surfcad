@@ -606,6 +606,7 @@ import {
 } from '../utils/rigidSuffix.js';
 import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { moldFitFromGeometry } from '../molding/fromGeometry.js';
+import { dropWallJobs, requestWallField } from '../molding/wallFieldClient.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
 import { partingLegendModel } from '../molding/parting.js';
@@ -1440,6 +1441,7 @@ const Viewport = forwardRef(({
   const agentMoldWallMapRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const wallMapOnRef = useRef(false);
   const wallFieldRef = useRef(null);
+  const wallJobGenRef = useRef(0);
   const clearWallMapRef = useRef(() => {});
   const applyWallSkinRef = useRef(() => {});
   const [wallLegend, setWallLegend] = useState(null);
@@ -13719,7 +13721,39 @@ const Viewport = forwardRef(({
     return listDroppedFacePaints(parts, map);
   };
 
+  const wallFieldMessage = (geometry) => {
+    const positions = geometry?.attributes?.position?.array;
+    const indices = geometry?.index?.array;
+    if (!positions || !indices || indices.length < 3) return null;
+    let stamped = null;
+    try {
+      const table = stampedFaceTable(geometry, faceIDsRef.current);
+      if (table?.triFace && table.faces?.length) {
+        stamped = {
+          triFace: table.triFace,
+          normals: table.faces.map((face) => face.normal),
+        };
+      }
+    } catch {
+      stamped = null;
+    }
+    return { positions, indices, stamped };
+  };
+
+  const wallLegendPayload = (wall) => {
+    const legend = wall ? thicknessLegendModel(wall) : null;
+    return {
+      on: true,
+      nominal: legend?.nominalMm ?? null,
+      max: wall?.max ?? null,
+      thinMm: legend?.thinMm ?? null,
+      thickMm: legend?.thickMm ?? null,
+    };
+  };
+
   const clearWallMap = () => {
+    wallJobGenRef.current += 1;
+    dropWallJobs();
     wallMapOnRef.current = false;
     wallFieldRef.current = null;
     setWallLegend(null);
@@ -13755,12 +13789,12 @@ const Viewport = forwardRef(({
   };
   clearMoldDraftRef.current = clearMoldDraft;
 
-  const showWallMap = (wall, geometry) => {
+  const paintWallField = (wall, geometry, pending) => {
     clearParting();
     clearSideActions();
     clearMoldDraft();
     wallMapOnRef.current = true;
-    wallFieldRef.current = { geometry, wall };
+    wallFieldRef.current = { geometry, wall, pending: !!pending };
     setWallLegend(thicknessLegendModel(wall));
     syncThicknessSkin(resultRef.current, wall);
   };
@@ -13782,18 +13816,39 @@ const Viewport = forwardRef(({
       return;
     }
     const geometry = host.geometry;
-    let cached = wallFieldRef.current;
-    if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { wallOnly: true });
-      if (analyzed?.error || analyzed?.wall?.nominal == null) {
-        clearWallMap();
+    const cached = wallFieldRef.current;
+    if (cached && cached.geometry === geometry && (cached.pending || cached.wall)) {
+      if (cached.wall) syncThicknessSkin(host, cached.wall);
+      return;
+    }
+    const message = wallFieldMessage(geometry);
+    if (!message) {
+      clearWallMap();
+      return;
+    }
+    const gen = wallJobGenRef.current + 1;
+    wallJobGenRef.current = gen;
+    wallFieldRef.current = { geometry, pending: true };
+    requestWallField({
+      ...message,
+      onCoarse: (coarse) => {
+        if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+        if (resultRef.current?.geometry !== geometry) return;
+        if (coarse?.error || coarse?.wall?.nominal == null) return;
+        paintWallField(coarse.wall, geometry, true);
+      },
+    }).then((analyzed) => {
+      if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+      if (resultRef.current?.geometry !== geometry) return;
+      if (analyzed?.dropped || analyzed?.error || analyzed?.wall?.nominal == null) {
+        if (!analyzed?.dropped) clearWallMap();
         return;
       }
-      cached = { geometry, wall: analyzed.wall };
-      wallFieldRef.current = cached;
-      setWallLegend(thicknessLegendModel(analyzed.wall));
-    }
-    syncThicknessSkin(host, cached.wall);
+      paintWallField(analyzed.wall, geometry, false);
+    }).catch(() => {
+      if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+      clearWallMap();
+    });
   };
 
   applyPartingSkinRef.current = (host) => {
@@ -13817,30 +13872,50 @@ const Viewport = forwardRef(({
     syncPartingSkin(host, cached.parting);
   };
 
-  agentMoldWallMapRef.current = ({ on } = {}) => {
+  agentMoldWallMapRef.current = async ({ on } = {}) => {
     const next = typeof on === 'boolean' ? on : !wallMapOnRef.current;
     if (!next) {
       clearWallMap();
       return { on: false };
     }
     const geometry = resultRef.current?.geometry;
-    if (!geometry?.attributes?.position) {
+    const message = wallFieldMessage(geometry);
+    if (!message) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { wallOnly: true });
-    if (analyzed?.error) return analyzed;
+    const gen = wallJobGenRef.current + 1;
+    wallJobGenRef.current = gen;
+    wallMapOnRef.current = true;
+    wallFieldRef.current = { geometry, pending: true };
+    let analyzed;
+    try {
+      analyzed = await requestWallField({
+        ...message,
+        onCoarse: (coarse) => {
+          if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+          if (resultRef.current?.geometry !== geometry) return;
+          if (coarse?.error || coarse?.wall?.nominal == null) return;
+          paintWallField(coarse.wall, geometry, true);
+        },
+      });
+    } catch (err) {
+      if (wallJobGenRef.current === gen) clearWallMap();
+      return { error: { code: 'internal', message: err?.message || 'Wall field failed' } };
+    }
+    if (analyzed?.dropped || wallJobGenRef.current !== gen || !wallMapOnRef.current) {
+      if (!wallMapOnRef.current) return { on: false };
+      return wallLegendPayload(wallFieldRef.current?.wall);
+    }
+    if (analyzed?.error) {
+      clearWallMap();
+      return analyzed;
+    }
     if (analyzed.wall?.nominal == null) {
+      clearWallMap();
       return { error: { code: 'no_mesh', message: 'No wall thickness on that mesh' } };
     }
-    showWallMap(analyzed.wall, geometry);
-    const legend = thicknessLegendModel(analyzed.wall);
-    return {
-      on: true,
-      nominal: legend?.nominalMm ?? null,
-      max: analyzed.wall.max,
-      thinMm: legend?.thinMm ?? null,
-      thickMm: legend?.thickMm ?? null,
-    };
+    paintWallField(analyzed.wall, geometry, false);
+    return wallLegendPayload(analyzed.wall);
   };
 
   agentMoldPartingRef.current = ({ on } = {}) => {

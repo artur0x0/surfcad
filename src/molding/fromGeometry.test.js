@@ -18,7 +18,7 @@ test('a stamped cube through the viewport mesh is a good fit along +Z', { timeou
   assert.equal(result.normals.triangle, 0);
   assert.equal(result.wall.nominalMethod, 'mode');
   assert.ok(Math.abs(result.wall.nominal - 5) < 1e-3, `nominal ${result.wall.nominal}`);
-  assert.ok(Math.abs(result.wall.max - 20) < 1e-3, `max ${result.wall.max}`);
+  assert.ok(Math.abs(result.wall.max - 5) < 1e-3, `max ${result.wall.max}`);
   const byRole = Object.fromEntries(result.parting.faces.map((face) => [face.name, face.role]));
   const roleOf = (suffix) => byRole[Object.keys(byRole).find((name) => name.endsWith(`.${suffix}`))];
   assert.equal(roleOf('top'), 'cavity');

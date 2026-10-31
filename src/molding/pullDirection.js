@@ -21,7 +21,8 @@
  * d and −d are the same searched axis. An override keeps the caller's sign.
  *
  * The same result carries wall thickness (`src/molding/wallThickness.js`):
- * a local field, the nominal wall, max wall, and thin or thick regions.
+ * a ray plus an inscribed sphere, the nominal wall, max wall, and thin or
+ * thick regions.
  * `wall: { thinRatio, thickRatio }` overrides the 0.6× and 1.5× defaults.
  * It also carries the core / cavity split and parting line
  * (`src/molding/parting.js`) for that same pull, and the side-action
@@ -53,10 +54,17 @@ export function analyzeWallOnly(input) {
   if (wallOpts.error) return wallOpts;
   const prepared = prepareTriangles(positions, indices, input.stamped || null);
   if (!prepared.tris.length) return { error: { code: 'no_mesh', message: 'No mesh to score' } };
+  const measured = {
+    ...wallOpts,
+    pass: input.wallPass === 'centroid' ? 'centroid' : 'refine',
+  };
+  if (Object.prototype.hasOwnProperty.call(input, 'nominalHint')) {
+    measured.nominalHint = input.nominalHint;
+  }
   return {
     version: MOLD_ANALYSIS_VERSION,
     kind: 'mold-analysis',
-    wall: measureWallThickness(prepared.tris, Math.floor(indices.length / 3), wallOpts),
+    wall: measureWallThickness(prepared.tris, Math.floor(indices.length / 3), measured),
   };
 }
 
