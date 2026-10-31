@@ -1063,6 +1063,87 @@ textarea {
   bottom: 0;
 }
 
+/* Phone molding panes (legends, DFM report, quote). Unlayered so
+   pointer-events:auto beats the legend's Tailwind pointer-events-none
+   and the height cap beats the desktop min(32rem, 70vh).
+   The shell is touch-action:none and overflow:hidden. A pane that is
+   its own scroll container keeps a vertical pan here: overscroll stays
+   in the pane, and capture-phase listeners stop the gesture before it
+   bubbles toward the canvas. The cap is the visible viewport (100dvh,
+   or visualViewport via --modal-vvh / --modal-vv-top) minus the top
+   safe area, the feature-strip stack the anchor already uses as `top`,
+   and the home-indicator pill (30px + its padding, which includes the
+   bottom safe area, + 10px). A legend that is also open shifts the
+   report and the quote down 12rem; that variant gives the same 12rem
+   back so the shifted box still ends above the pill. Desktop is
+   unchanged: this block is max-width 768px only. */
+@media (max-width: 768px) {
+  :root {
+    --mold-pane-bottom-reserve: calc(30px + max(8px, var(--safe-area-bottom)) + 10px);
+  }
+  .mold-analysis-pane {
+    box-sizing: border-box;
+    pointer-events: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    max-height: calc(
+      min(100dvh, var(--modal-vvh, 100dvh))
+      - var(--modal-vv-top, 0px)
+      - var(--safe-area-top)
+      - var(--feature-strip-offset-mobile)
+      - var(--feature-strip-height)
+      - var(--joint-row-height)
+      - var(--feature-strip-rail-gap)
+      - var(--mold-pane-bottom-reserve)
+    );
+  }
+  .mold-analysis-pane.dfm-report-shifted {
+    max-height: calc(
+      min(100dvh, var(--modal-vvh, 100dvh))
+      - var(--modal-vv-top, 0px)
+      - var(--safe-area-top)
+      - var(--feature-strip-offset-mobile)
+      - var(--feature-strip-height)
+      - var(--joint-row-height)
+      - var(--feature-strip-rail-gap)
+      - 12rem
+      - var(--mold-pane-bottom-reserve)
+    );
+  }
+}
+@supports not (height: 100dvh) {
+  @media (max-width: 768px) {
+    .mold-analysis-pane {
+      max-height: calc(
+        min(100vh, var(--modal-vvh, 100vh))
+        - var(--modal-vv-top, 0px)
+        - var(--safe-area-top)
+        - var(--feature-strip-offset-mobile)
+        - var(--feature-strip-height)
+        - var(--joint-row-height)
+        - var(--feature-strip-rail-gap)
+        - var(--mold-pane-bottom-reserve, calc(30px + max(8px, var(--safe-area-bottom)) + 10px))
+      );
+    }
+    .mold-analysis-pane.dfm-report-shifted {
+      max-height: calc(
+        min(100vh, var(--modal-vvh, 100vh))
+        - var(--modal-vv-top, 0px)
+        - var(--safe-area-top)
+        - var(--feature-strip-offset-mobile)
+        - var(--feature-strip-height)
+        - var(--joint-row-height)
+        - var(--feature-strip-rail-gap)
+        - 12rem
+        - var(--mold-pane-bottom-reserve, calc(30px + max(8px, var(--safe-area-bottom)) + 10px))
+      );
+    }
+  }
+}
+
 /* Order-flow sheets (quote, checkout, SendCutSend handoff, login, address).
    The panel stays inside the visible viewport: 100dvh, or visualViewport
    (--modal-vvh / --modal-vv-top) when the iOS toolbar or keyboard is shorter.

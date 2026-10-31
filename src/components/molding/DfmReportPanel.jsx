@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 
 function pullText(pull) {
   if (!Array.isArray(pull)) return '—';
@@ -32,7 +33,7 @@ export default function DfmReportPanel({ report, shifted = false }) {
   const pullSource = report.pullSource === 'override' ? 'Override' : 'Search';
 
   return (
-    <div
+    <MoldAnalysisPane
       data-mold-dfm-report=""
       className={`pointer-events-auto absolute wall-legend-anchor z-30 dfm-report-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}`}
     >
@@ -96,7 +97,7 @@ export default function DfmReportPanel({ report, shifted = false }) {
           </dd>
           <div className="text-muted-on-dark">Heuristic</div>
         </div>
-        <div data-mold-dfm-names="">
+        <div data-mold-dfm-names="" data-mold-pane-end="">
           <div className="text-muted-on-dark">Faces</div>
           {naming.stamped ? (
             <ul className="text-on-dark">
@@ -112,6 +113,6 @@ export default function DfmReportPanel({ report, shifted = false }) {
           )}
         </div>
       </dl>
-    </div>
+    </MoldAnalysisPane>
   );
 }

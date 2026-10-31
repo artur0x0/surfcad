@@ -8,8 +8,8 @@
 // The row is one step tighter than view snap so six icons clear the left
 // rail on a 390px phone.
 //
-// A chosen tool stays in the menu. These are toggles, not one-shot snaps,
-// so closing on the first tap would hide the rest of the set.
+// A tool press closes the flyout, then opens or toggles that pane.
+// These stay toggles: a second press on the same tool turns the pane off.
 import React, { useState } from 'react';
 import {
   AlignHorizontalSpaceAround,
@@ -21,6 +21,7 @@ import {
   Receipt,
   SquareSplitHorizontal,
 } from 'lucide-react';
+import { pressMoldTool } from './pressMoldTool';
 import { toolToggleClass } from './toolToggle';
 
 const MoldingToolsControl = ({
@@ -69,7 +70,7 @@ const MoldingToolsControl = ({
           {showWall && (
             <button
               type="button"
-              onClick={() => onWallToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onWallToggle)}
               className={toolToggleClass(wallActive)}
               title={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
               aria-label={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
@@ -84,7 +85,7 @@ const MoldingToolsControl = ({
           {showParting && (
             <button
               type="button"
-              onClick={() => onPartingToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onPartingToggle)}
               className={toolToggleClass(partingActive)}
               title={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
               aria-label={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
@@ -99,7 +100,7 @@ const MoldingToolsControl = ({
           {showSideActions && (
             <button
               type="button"
-              onClick={() => onSideActionsToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onSideActionsToggle)}
               className={toolToggleClass(sideActionsActive)}
               title={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
               aria-label={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
@@ -114,7 +115,7 @@ const MoldingToolsControl = ({
           {showMoldDraft && (
             <button
               type="button"
-              onClick={() => onMoldDraftToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onMoldDraftToggle)}
               className={toolToggleClass(moldDraftActive)}
               title={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
               aria-label={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
@@ -129,7 +130,7 @@ const MoldingToolsControl = ({
           {showDfm && (
             <button
               type="button"
-              onClick={() => onDfmToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onDfmToggle)}
               className={toolToggleClass(dfmActive)}
               title={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
               aria-label={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
@@ -144,7 +145,7 @@ const MoldingToolsControl = ({
           {showQuote && (
             <button
               type="button"
-              onClick={() => onQuoteToggle?.()}
+              onClick={() => pressMoldTool(setOpen, onQuoteToggle)}
               className={toolToggleClass(quoteActive)}
               title={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
               aria-label={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}

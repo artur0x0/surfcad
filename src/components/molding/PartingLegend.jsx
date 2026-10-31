@@ -4,11 +4,12 @@
  */
 
 import React from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 
 export default function PartingLegend({ legend }) {
   if (!legend) return null;
   return (
-    <div
+    <MoldAnalysisPane
       data-parting-legend=""
       className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
     >
@@ -28,9 +29,9 @@ export default function PartingLegend({ legend }) {
           </li>
         ))}
       </ul>
-      <div className="mt-1 text-ui-sm text-muted-on-dark" data-parting-lines="">
+      <div className="mt-1 text-ui-sm text-muted-on-dark" data-parting-lines="" data-mold-pane-end="">
         {`Parting line · ${legend.lineCount}`}
       </div>
-    </div>
+    </MoldAnalysisPane>
   );
 }

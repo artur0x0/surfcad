@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { importJsx } from '../../test/jsxTestModule.js';
+import { pressMoldTool } from './pressMoldTool.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
@@ -122,6 +123,34 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     showQuote: false,
   }));
   assert.doesNotMatch(hidden, /data-mold-tools-toggle/);
+});
+
+test('a molding tool press closes the drawer before it toggles the pane', () => {
+  const drawer = read('src/components/MoldingToolsControl.jsx');
+  const press = read('src/components/pressMoldTool.js');
+  assert.match(drawer, /import \{ pressMoldTool \} from '\.\/pressMoldTool'/);
+  assert.match(press, /export function pressMoldTool\(setOpen, toggle\)/);
+  assert.match(press, /setOpen\(false\);\s*if \(typeof toggle === 'function'\) toggle\(\);/);
+  assert.doesNotMatch(drawer, /A chosen tool stays in the menu/);
+  for (const name of [
+    'onWallToggle',
+    'onPartingToggle',
+    'onSideActionsToggle',
+    'onMoldDraftToggle',
+    'onDfmToggle',
+    'onQuoteToggle',
+  ]) {
+    assert.match(drawer, new RegExp(`onClick=\\{\\(\\) => pressMoldTool\\(setOpen, ${name}\\)\\}`));
+  }
+  const order = [];
+  pressMoldTool(
+    (value) => order.push(['open', value]),
+    () => order.push('toggle'),
+  );
+  assert.deepEqual(order, [['open', false], 'toggle']);
+  const closedOnly = [];
+  pressMoldTool((value) => closedOnly.push(value), null);
+  assert.deepEqual(closedOnly, [false]);
 });
 
 test('the closed rail fits a 390px iPhone without scrolling', () => {

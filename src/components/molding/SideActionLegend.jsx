@@ -5,11 +5,12 @@
  */
 
 import React from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 
 export default function SideActionLegend({ legend }) {
   if (!legend) return null;
   return (
-    <div
+    <MoldAnalysisPane
       data-side-action-legend=""
       className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
     >
@@ -38,9 +39,9 @@ export default function SideActionLegend({ legend }) {
       {legend.more > 0 && (
         <div className="mt-1 text-ui-sm text-muted-on-dark">{`+${legend.more} more`}</div>
       )}
-      <div className="mt-1 text-ui-sm text-muted-on-dark" data-side-action-heuristic="">
+      <div className="mt-1 text-ui-sm text-muted-on-dark" data-side-action-heuristic="" data-mold-pane-end="">
         Heuristic
       </div>
-    </div>
+    </MoldAnalysisPane>
   );
 }
