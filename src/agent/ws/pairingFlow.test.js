@@ -5,6 +5,7 @@ import {
   AGENT_CONNECTED_TOAST_MS,
   PAIRING_ORIGIN_REJECTED_COPY,
   PAIRING_WAITING_COPY,
+  SERVER_PAIRING_WAITING_COPY,
   agentConnectedToastReducer,
   createCloseMenuRegistry,
   disposePairingHost,
@@ -47,6 +48,27 @@ test('Connect stays up until a server socket is actually open', () => {
     relayTarget: 'server', usingServer: true, serverUnreachable: true,
   }), true);
   assert.equal(serverBlocksLocalPairing({ relayTarget: 'local' }), false);
+});
+
+test('a forced server client never falls back to local pairing or a localhost probe', () => {
+  assert.equal(serverBlocksLocalPairing({
+    forcedServer: true, relayTarget: 'server', usingServer: false, serverUnreachable: true,
+  }), true);
+  assert.equal(shouldShowLocalAgentConnect({
+    forcedServer: true, relayTarget: 'server', serverUnreachable: true,
+  }), true);
+  assert.equal(shouldShowLocalAgentConnect({
+    flowOpen: true, forcedServer: true, serverUnreachable: true,
+  }), false);
+  assert.equal(shouldShowLocalAgentConnect({
+    paired: true, forcedServer: true,
+  }), false);
+  assert.equal(shouldPollRelay({
+    flowOpen: true, relayReachable: false, state: 'idle', forcedServer: true,
+  }), false);
+  assert.equal(SERVER_PAIRING_WAITING_COPY, 'Waiting for your agent to sign in…');
+  assert.doesNotMatch(SERVER_PAIRING_WAITING_COPY, /Waiting for relay/);
+  assert.doesNotMatch(SERVER_PAIRING_WAITING_COPY, /\bEdge\b/);
 });
 
 test('shouldPollRelay only while flow is open and relay is not reachable', () => {

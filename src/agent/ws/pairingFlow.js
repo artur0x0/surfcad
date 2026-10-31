@@ -29,6 +29,7 @@ const TERMINAL_PROBE_ISSUES = new Set([
  * }} input
  */
 export function shouldPollRelay(input) {
+  if (input.forcedServer === true) return false;
   if (!input.flowOpen) return false;
   if (input.relayReachable) return false;
   if (isRelayTabConnected(input.state)) return false;
@@ -104,8 +105,9 @@ export function shouldShowAgentBridgeDisconnect(input = {}) {
 /**
  * The server path hides Connect agent only while that socket is still being
  * tried or is open. Auto keeps the button until the server socket opens.
- * A forced server target (Safari, phone width, or the Server setting) that
- * never opens the socket falls back so local pairing stays available.
+ * Desktop Chrome "Server only" that never opens the socket falls back so
+ * local pairing stays available. A forced server client (Safari, iOS, phone
+ * width) keeps Connect agent, and that click is the server dialog, not local.
  *
  * @param {{
  *   flowOpen?: boolean,
@@ -113,10 +115,12 @@ export function shouldShowAgentBridgeDisconnect(input = {}) {
  *   relayTarget?: string,
  *   usingServer?: boolean,
  *   serverUnreachable?: boolean,
+ *   forcedServer?: boolean,
  * }} input
  */
 export function shouldShowLocalAgentConnect(input = {}) {
   if (input.flowOpen || input.paired) return false;
+  if (input.forcedServer === true) return true;
   if (serverBlocksLocalPairing(input)) return false;
   return true;
 }
@@ -126,9 +130,11 @@ export function shouldShowLocalAgentConnect(input = {}) {
  *   relayTarget?: string,
  *   usingServer?: boolean,
  *   serverUnreachable?: boolean,
+ *   forcedServer?: boolean,
  * }} input
  */
 export function serverBlocksLocalPairing(input = {}) {
+  if (input.forcedServer === true) return true;
   if (input.usingServer) return true;
   if (input.relayTarget === 'server' && input.serverUnreachable !== true) return true;
   return false;
@@ -220,6 +226,7 @@ export function disposePairingHost(host) {
 }
 
 export const PAIRING_WAITING_COPY = 'Waiting for relay…';
+export const SERVER_PAIRING_WAITING_COPY = 'Waiting for your agent to sign in…';
 export const PAIRING_ORIGIN_REJECTED_COPY =
   'This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.';
 

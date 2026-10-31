@@ -14,13 +14,21 @@ import {
   detectBrowserFamily,
 } from '../agent/ws/connectionErrors.js';
 import AgentBridgePopupStatus from './AgentBridgePopupStatus.jsx';
-import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingPrompt.js';
+import {
+  AGENT_PAIRING_PROMPT,
+  clipPairingPrompt,
+  pairingPromptPreview,
+  serverPairingPrompt,
+} from '../agent/ws/pairingPrompt.js';
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  forcesServerRelay,
+  readPhoneWidth,
   readRelayPreference,
   resolveRelayTarget,
   serverAgentWsUrl,
+  shouldProbeLocalRelay,
 } from '../agent/ws/relayPreference.js';
 import { createServerTabConnection } from '../agent/ws/serverTabConnection.js';
 import {
@@ -37,6 +45,7 @@ import {
   shouldShowLocalAgentConnect,
   serverBlocksLocalPairing,
   shouldShowPairingApproval,
+  SERVER_PAIRING_WAITING_COPY,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
 } from '../agent/ws/pairingFlow.js';
@@ -53,8 +62,10 @@ import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/age
  * in-page agent bridge is active. No silent auto-pair: the user must open
  * pairing and approve each local client.
  *
- * Desktop Safari on https uses the loopback bridge window. Connect Agent
- * opens it from the same click; tab reconnects reuse that window.
+ * Desktop Chrome Auto probes the loopback relay. Safari, iOS, and a
+ * phone-width page open the server-relay dialog instead and never probe
+ * localhost. Desktop Safari's loopback bridge window is only for a
+ * non-forced popup transport.
  */
 export default function AgentBridgePairing({
   enabled,
@@ -82,10 +93,9 @@ export default function AgentBridgePairing({
     typeof localStorage === 'undefined' ? 'auto' : readRelayPreference(localStorage)
   ));
   const [narrow, setNarrow] = useState(() => (
-    typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(max-width: 768px)').matches
+    typeof window === 'undefined' ? false : readPhoneWidth(window)
   ));
+  const [serverKick, setServerKick] = useState(0);
   const connRef = useRef(null);
   const serverModeRef = useRef(false);
   const serverUnreachableRef = useRef(false);
@@ -117,12 +127,19 @@ export default function AgentBridgePairing({
   const popupModeRef = useRef(popupMode);
   popupModeRef.current = popupMode;
   const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-  const relayTarget = resolveRelayTarget({
+  const relayEnv = {
     preference,
     userAgent,
+    platform: typeof navigator === 'undefined' ? '' : navigator.platform,
+    maxTouchPoints: typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints,
     isMobile: narrow,
-  });
-  const webkitHttpsBlocked = mode === 'unsupported' && relayTarget !== 'server' && !usingServer;
+    innerWidth: typeof window === 'undefined' ? 0 : window.innerWidth,
+  };
+  const forcedServer = forcesServerRelay(relayEnv);
+  const relayTarget = resolveRelayTarget(relayEnv);
+  const forcedServerRef = useRef(false);
+  forcedServerRef.current = forcedServer;
+  const webkitHttpsBlocked = mode === 'unsupported' && !forcedServer && relayTarget !== 'server' && !usingServer;
 
   const disposeTransport = useCallback(() => {
     transportRef.current?.dispose?.();
@@ -189,12 +206,16 @@ export default function AgentBridgePairing({
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-    const mq = window.matchMedia('(max-width: 768px)');
-    const apply = () => setNarrow(mq.matches);
+    if (typeof window === 'undefined') return undefined;
+    const apply = () => setNarrow(readPhoneWidth(window));
     apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 768px)') : null;
+    mq?.addEventListener('change', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      mq?.removeEventListener('change', apply);
+      window.removeEventListener('resize', apply);
+    };
   }, []);
 
   useEffect(() => () => {
@@ -259,7 +280,10 @@ export default function AgentBridgePairing({
   }, []);
 
   const copyPairingPrompt = useCallback(() => {
-    void copyText(AGENT_PAIRING_PROMPT, 'prompt');
+    const text = forcedServerRef.current
+      ? serverPairingPrompt(typeof window === 'undefined' ? null : window.location)
+      : AGENT_PAIRING_PROMPT;
+    void copyText(text, 'prompt');
   }, [copyText]);
 
   const copyMcpCommand = useCallback(() => {
@@ -332,6 +356,13 @@ export default function AgentBridgePairing({
 
   const beginConnectFlow = useCallback(() => {
     onBeginFlow?.();
+    if (forcedServerRef.current) {
+      userStoppedRef.current = false;
+      if (!serverModeRef.current) setServerKick((n) => n + 1);
+      setFlowOpen(true);
+      setIssue(null);
+      return;
+    }
     if (serverBlocksLocalPairing({
       relayTarget,
       usingServer: serverModeRef.current,
@@ -376,6 +407,7 @@ export default function AgentBridgePairing({
       relayTarget,
       usingServer,
       serverUnreachable,
+      forcedServer,
     })) {
       stopPolling();
       return undefined;
@@ -405,14 +437,14 @@ export default function AgentBridgePairing({
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, serverUnreachable, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, forcedServer, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, serverUnreachable, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
-    if (popupMode) return;
+    if (popupMode || forcedServer) return;
     if (flowOpen && relayReachable && state === 'idle' && token && connRef.current) {
       connRef.current.connect();
     }
-  }, [flowOpen, popupMode, relayReachable, state, token]);
+  }, [flowOpen, forcedServer, popupMode, relayReachable, state, token]);
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return undefined;
@@ -439,7 +471,9 @@ export default function AgentBridgePairing({
     const openServer = () => {
       if (pending.cancelled || userStoppedRef.current) return;
       if (!window.surfcad?.call) return;
-      if (flowOpenRef.current && connRef.current && !serverModeRef.current) return;
+      // A local dialog that is already open owns the socket. The server
+      // dialog does not: the tab stays registered while that dialog is up.
+      if (!forcedServerRef.current && flowOpenRef.current && connRef.current && !serverModeRef.current) return;
       if (serverModeRef.current && connRef.current) return;
       stopPolling();
       serverAttemptRef.current = false;
@@ -453,7 +487,7 @@ export default function AgentBridgePairing({
         onState: (next) => {
           if (pending.cancelled || !isCurrentPairingConnection(connRef.current, conn)) return;
           if (next === 'advertising' || next === 'paired') {
-            if (flowOpenRef.current || userStoppedRef.current) {
+            if (userStoppedRef.current || (flowOpenRef.current && !forcedServerRef.current)) {
               if (pending.giveUp) clearTimeout(pending.giveUp);
               serverAttemptRef.current = false;
               conn.disconnect();
@@ -471,6 +505,7 @@ export default function AgentBridgePairing({
           if (!serverModeRef.current && next === 'reconnecting') {
             if (pending.giveUp) clearTimeout(pending.giveUp);
             serverAttemptRef.current = false;
+            if (forcedServerRef.current) return;
             markServerUnreachable();
             conn.disconnect();
             return;
@@ -487,7 +522,7 @@ export default function AgentBridgePairing({
       conn.connect();
       if (pending.giveUp) clearTimeout(pending.giveUp);
       pending.giveUp = setTimeout(() => {
-        if (pending.cancelled || serverModeRef.current) return;
+        if (pending.cancelled || serverModeRef.current || forcedServerRef.current) return;
         if (!isCurrentPairingConnection(connRef.current, conn)) return;
         serverAttemptRef.current = false;
         markServerUnreachable();
@@ -501,13 +536,25 @@ export default function AgentBridgePairing({
         return;
       }
       if (triesLeft <= 0) {
+        if (forcedServerRef.current) {
+          pending.timer = setTimeout(() => openWhenReady(20), 250);
+          return;
+        }
         markServerUnreachable();
         return;
       }
       pending.timer = setTimeout(() => openWhenReady(triesLeft - 1), 50);
     };
     if (userStoppedRef.current) return undefined;
-    if (relayTarget === 'server') {
+    if (!shouldProbeLocalRelay({
+      preference,
+      userAgent,
+      platform: navigator.platform,
+      maxTouchPoints: navigator.maxTouchPoints,
+      isMobile: narrow,
+      innerWidth: window.innerWidth,
+      relayTarget,
+    })) {
       openWhenReady(20);
     } else {
       probeRelayWebSocket(wsUrl, { pageSecure }).then((result) => {
@@ -528,7 +575,7 @@ export default function AgentBridgePairing({
       if (pending.timer) clearTimeout(pending.timer);
       if (pending.giveUp) clearTimeout(pending.giveUp);
     };
-  }, [enabled, onConnectionState, pageSecure, relayTarget, stopConnection, stopPolling, wsUrl]);
+  }, [enabled, forcedServer, narrow, onConnectionState, pageSecure, preference, relayTarget, serverKick, stopConnection, stopPolling, userAgent, wsUrl]);
 
   const handleApprove = useCallback(() => {
     setApprovalUi((prev) => approvalPopupReducer(prev, 'allow'));
@@ -541,6 +588,10 @@ export default function AgentBridgePairing({
   }, []);
 
   const handleDialogDismiss = useCallback(() => {
+    if (forcedServerRef.current) {
+      setFlowOpen(false);
+      return;
+    }
     if (state === 'pending') handleReject();
     if (state === 'paired' && link === 'connected') {
       setFlowOpen(false);
@@ -729,6 +780,7 @@ export default function AgentBridgePairing({
     relayTarget,
     usingServer,
     serverUnreachable,
+    forcedServer,
   }) ? (
     <button
       type="button"
@@ -788,9 +840,38 @@ export default function AgentBridgePairing({
     )
     : null;
 
+  const serverPromptText = forcedServer
+    ? serverPairingPrompt(typeof window === 'undefined' ? null : window.location)
+    : '';
+  const serverDialogBody = (
+    <div className="space-y-3" data-agent-bridge-server="">
+      <div className="rounded-md border border-chrome-border/80 px-2 py-2" data-agent-bridge-prompt="">
+        <p className="text-ui-xs text-muted-on-dark mb-2">Send this to your AI agent:</p>
+        <p className="text-ui-xs text-on-dark leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
+          {clipPairingPrompt(serverPromptText)}
+        </p>
+        <button
+          type="button"
+          className={CONNECT_AGENT_BUTTON_CLASS}
+          onClick={copyPairingPrompt}
+          data-ui-action="data-agent-bridge-copy-prompt"
+        >
+          {copied === 'prompt' ? 'Copied' : 'Copy prompt'}
+        </button>
+      </div>
+      <div
+        className="flex items-center justify-center gap-2 text-ui-xs text-muted-on-dark py-1"
+        data-agent-bridge-waiting-server=""
+      >
+        <Loader2 size={14} className="animate-spin shrink-0" aria-hidden />
+        {SERVER_PAIRING_WAITING_COPY}
+      </div>
+    </div>
+  );
+
   const dialog = (
-    <AgentBridgePairingDialog open={flowOpen} onDismiss={handleDialogDismiss} transport={mode}>
-      {dialogBody}
+    <AgentBridgePairingDialog open={flowOpen} onDismiss={handleDialogDismiss} transport={forcedServer ? 'server' : mode}>
+      {forcedServer ? serverDialogBody : dialogBody}
     </AgentBridgePairingDialog>
   );
 

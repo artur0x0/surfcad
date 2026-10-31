@@ -9,18 +9,12 @@
  * packaged `surfcad-mcp` starts.
  *
  * Runs, when the browser is available:
- *   webkit          — Safari stand-in: Connect Agent opens the bridge window
- *                     before the relay runs (35 s of Waiting for the local
- *                     agent, code hidden, no give-up),
- *                     the window detects the relay and the code appears,
- *                     Allow, connected ring on, restart the relay
- *                     on the same port (still one window, pairing recovers),
- *                     create/edit/undo over MCP, close the window →
- *                     Disconnected (dialog re-opens), ring off → Reconnect,
- *                     ring on.
+ *   webkit          — Safari stand-in: Connect Agent opens the server-relay
+ *                     dialog (npx surfcad-mcp login, Waiting for your agent
+ *                     to sign in). No loopback popup and no localhost probe.
  *   chromium        — direct socket, no popup (path unchanged).
- *   chromium-popup  — popup path in Chromium (Safari desktop UA; the
- *                     `?agentBridgeTransport=` override is production-inert).
+ *   chromium-popup  — Safari desktop UA in Chromium. Same server dialog.
+ *                     The loopback popup is no longer the Safari Connect path.
  * Each run also opens the bridge from an evil https origin and checks it
  * never connects.
  *
@@ -32,7 +26,7 @@
  * Needs `npm run build` (production, no playtest auto-approve) and, for
  * WebKit, `npx playwright-core install --with-deps webkit`.
  */
-/* global window, document */
+/* global window, document, localStorage */
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize } from 'node:path';
@@ -236,7 +230,7 @@ async function evilOpenerCheck(context, relayPort) {
   await evil.close();
 }
 
-async function runOne(name, { browserType, launchOptions, expectPopup, forcePopup, userAgent, restartRelay }) {
+async function runOne(name, { browserType, launchOptions, expectPopup, expectServer, forcePopup, userAgent, restartRelay }) {
   console.log(`\n${name}`);
   mkdirSync(SHOT_DIR, { recursive: true });
   const relayPort = await pickFreePort();
@@ -261,6 +255,28 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
     }
     await routeProdOrigin(context, relayPort);
     const page = await context.newPage();
+    if (expectServer) {
+      await page.addInitScript(() => {
+        const urls = [];
+        function Fake(url) {
+          urls.push(String(url));
+          return {
+            readyState: 0,
+            send() {},
+            close() {},
+            addEventListener() {},
+            removeEventListener() {},
+          };
+        }
+        Fake.CONNECTING = 0;
+        Fake.OPEN = 1;
+        Fake.CLOSING = 2;
+        Fake.CLOSED = 3;
+        window.WebSocket = Fake;
+        window.__openedSockets = urls;
+        localStorage.setItem('surfcadAgentRelay', 'local');
+      });
+    }
     await installApiMocks(page);
     await page.goto(`${PROD_ORIGIN}/`, { waitUntil: 'domcontentloaded' });
     await seedAssembly(page, {
@@ -288,6 +304,21 @@ async function runOne(name, { browserType, launchOptions, expectPopup, forcePopu
     const popup = await clickAndMaybePopup(page, CONNECT, expectPopup);
     await page.waitForSelector('[data-agent-bridge-panel]', { state: 'visible', timeout: 15000 });
     const transport = await page.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
+    if (expectServer) {
+      check('server dialog, no loopback popup', popup == null && transport === 'server', transport);
+      const preview = await page.locator('[data-agent-bridge-prompt-preview]').innerText();
+      check('prompt tells the agent to run npx surfcad-mcp login', /npx surfcad-mcp login/.test(preview), preview);
+      check('prompt points at this origin /agent', /https:\/\/surfcad\.com\/agent/.test(preview), preview);
+      check('prompt does not install a local server', !/npx -y|Install and run|local server/i.test(preview), preview);
+      const waiting = await page.locator('[data-agent-bridge-waiting-server]').innerText();
+      check('waiting for the agent to sign in', /Waiting for your agent to sign in/.test(waiting), waiting);
+      check('no Waiting for relay spinner', await page.locator('[data-agent-bridge-waiting-relay]').count() === 0);
+      await page.waitForTimeout(500);
+      const sockets = await page.evaluate(() => window.__openedSockets || []);
+      check('no loopback relay socket', sockets.every((url) => !/127\.0\.0\.1:\d+/.test(url)), JSON.stringify(sockets));
+      await evilOpenerCheck(context, relayPort);
+      return;
+    }
     check(`panel transport is ${expectPopup ? 'popup' : 'direct'}`, transport === (expectPopup ? 'popup' : 'direct'), transport);
     if (expectPopup) {
       check('Connect Agent opens the bridge window', !!popup);
@@ -411,8 +442,8 @@ for (const name of wanted) {
     await runOne('webkit', {
       browserType: webkit,
       launchOptions: process.env.PLAYWRIGHT_WEBKIT_EXECUTABLE_PATH ? { executablePath: webkitPath } : {},
-      expectPopup: true,
-      restartRelay: true,
+      expectPopup: false,
+      expectServer: true,
     });
   } else if (name === 'chromium' || name === 'chromium-popup') {
     if (!chromePath) {
@@ -422,8 +453,9 @@ for (const name of wanted) {
     await runOne(name, {
       browserType: chromium,
       launchOptions: { executablePath: chromePath, args: ['--no-sandbox', '--disable-dev-shm-usage'] },
-      expectPopup: name === 'chromium-popup',
-      forcePopup: name === 'chromium-popup',
+      expectPopup: false,
+      expectServer: name === 'chromium-popup',
+      forcePopup: false,
       userAgent: name === 'chromium-popup' ? SAFARI_DESKTOP_UA : undefined,
     });
   } else {
