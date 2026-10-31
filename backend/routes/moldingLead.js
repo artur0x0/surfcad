@@ -1,9 +1,12 @@
 /**
  * POST /api/molding/leads creates a molding_leads row. It does not call
- * Stripe and does not email the partner. A firm quote reveals that one
- * partner. A human review does not.
+ * Stripe and does not email the partner. It does not reveal the partner.
+ * A name is returned only when this user owns a human-review lead for that
+ * partner and the webhook has marked the fee paid.
  * POST /api/molding/review-checkout opens Stripe Checkout for the review
  * fee. It does not mark the lead paid and does not send email.
+ * GET /api/molding/review-status reads that webhook flag. A return URL
+ * is not a payment.
  */
 
 import { Router } from 'express';
@@ -12,7 +15,7 @@ import { requireAuth } from '../auth/session.js';
 import config from '../config/index.js';
 import MoldingPartner from '../db/models/MoldingPartner.js';
 import MoldingLead from '../db/models/MoldingLead.js';
-import { createMoldingLead, leadView, readLeadRequest } from '../services/moldingLead.js';
+import { createMoldingLead, presentLead, readLeadRequest } from '../services/moldingLead.js';
 import { findHumanReview, startReviewCheckout } from '../services/moldingReviewCheckout.js';
 import { reviewCheckoutKeyAllowed, reviewFeeUsdFromEnv } from '../services/reviewFeeEnv.js';
 import { createRateLimiter, rateLimitMiddleware, userKey } from '../services/rateLimiter.js';
@@ -52,7 +55,7 @@ export function createMoldingLeadRouter(deps = {}) {
       if (input.error) return res.status(400).json(input);
       const result = await createMoldingLead(models, userId, input);
       if (result.error) return res.status(result.status || 400).json({ error: result.error });
-      return res.status(201).json(leadView(result.lead, result.partner));
+      return res.status(201).json(await presentLead(models, userId, result.lead, result.partner));
     },
   );
 
@@ -75,7 +78,7 @@ export function createMoldingLeadRouter(deps = {}) {
         frontendUrl: deps.frontendUrl || config.frontendUrl,
       });
       if (result.error) return res.status(result.status || 400).json({ error: result.error });
-      if (result.paid) return res.status(200).json(leadView(result.lead, result.partner));
+      if (result.paid) return res.status(200).json(await presentLead(models, userId, result.lead, result.partner));
       return res.status(200).json({
         url: result.url,
         reviewFeeUsd: result.reviewFeeUsd,
@@ -98,7 +101,7 @@ export function createMoldingLeadRouter(deps = {}) {
       if (input.error) return res.status(400).json(input);
       const found = await findHumanReview(models, userId, input.anonLabel);
       if (found.error) return res.status(found.status || 400).json({ error: found.error });
-      return res.status(200).json(leadView(found.lead, found.partner));
+      return res.status(200).json(await presentLead(models, userId, found.lead, found.partner));
     },
   );
 

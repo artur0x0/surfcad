@@ -1,5 +1,5 @@
 /**
- * POST /api/molding/leads. Signed in, no charge, reveal only on firm quote.
+ * POST /api/molding/leads. Signed in, no charge, no partner name.
  * Run: cd backend && node --test test/molding-lead-route.test.js
  */
 import assert from 'node:assert/strict';
@@ -78,7 +78,7 @@ async function partner() {
   });
 }
 
-test('a firm quote reveals that partner and a second click does not insert again', async () => {
+test('a firm quote records the lead and does not reveal the partner', async () => {
   await partner();
   const first = await api({
     type: 'firm_quote',
@@ -86,14 +86,18 @@ test('a firm quote reveals that partner and a second click does not insert again
     snapshot: { quantity: 100, aluminumUsd: 1.37, steelUsd: 0.55, range: { lowUsd: 0.55, highUsd: 1.37 } },
   });
   assert.equal(first.status, 201);
-  assert.equal(first.body.revealed, true);
-  assert.equal(first.body.displayName, 'Secret Vendor');
+  assert.equal(first.body.revealed, false);
+  assert.equal(first.body.displayName, undefined);
+  assert.equal(first.body.payForReview, true);
+  assert.equal(first.body.message, 'Pay for review to see the partner.');
   assert.equal(first.body.reviewFeePaid, false);
   assert.equal(first.body.anonLabel, 'Partner A');
-  assert.doesNotMatch(JSON.stringify(first.body), /internal|stripe/);
+  assert.doesNotMatch(JSON.stringify(first.body), /Secret Vendor|internal|stripe/);
   const again = await api({ type: 'firm_quote', anonLabel: 'Partner A' });
   assert.equal(again.status, 201);
   assert.equal(again.body.leadId, first.body.leadId);
+  assert.equal(again.body.revealed, false);
+  assert.equal(again.body.displayName, undefined);
   assert.equal(leads.rows.length, 1);
   assert.equal(leads.rows[0].reviewFeePaid, false);
   assert.equal(leads.rows[0].stripePaymentIntentId, '');
@@ -108,6 +112,8 @@ test('human review stores a lead and does not reveal the name or mark it paid', 
   assert.equal(res.body.revealed, false);
   assert.equal(res.body.reviewFeePaid, false);
   assert.equal(res.body.reviewFeeUsd, null);
+  assert.equal(res.body.payForReview, true);
+  assert.equal(res.body.message, 'Pay for review to see the partner.');
   assert.equal(res.body.displayName, undefined);
   assert.doesNotMatch(JSON.stringify(res.body), /Secret Vendor/);
   assert.equal(leads.rows[0].type, 'human_review');

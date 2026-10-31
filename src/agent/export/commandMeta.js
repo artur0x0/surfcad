@@ -342,19 +342,19 @@ export const COMMAND_META = {
     mutates: false,
   },
   mold_request_firm_quote: {
-    description: 'Ask the selected anonymized vendor for a firm quote. Creates a molding lead for the signed-in user and reveals that one vendor’s display name. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Other vendors stay anonymous. Does not charge a card, does not email the partner, and does not change the part. Ranking stays fit then price.',
+    description: 'Ask the selected anonymized vendor for a firm quote. Creates a molding lead for the signed-in user and does not reveal the vendor. The name stays hidden until that user has a human-review lead for the same vendor whose review fee the Stripe webhook marked paid. Until then the result says to pay for review to see the partner. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not charge a card, does not email the partner, and does not change the part. Ranking stays fit then price.',
     result: { type: 'object', additionalProperties: true },
     errors: ['sign_in', 'unknown_partner', 'bad_args', 'lead_failed', 'rate_limited', 'no_mesh', 'internal'],
     mutates: false,
   },
   mold_request_human_review: {
-    description: 'Record a human-review lead for the selected anonymized vendor. This call does not charge a card and does not reveal the vendor. The name stays hidden until the review fee is paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.',
+    description: 'Record a human-review lead for the selected anonymized vendor. This call does not charge a card and does not reveal the vendor. The name stays hidden until the Stripe webhook marks that lead paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.',
     result: { type: 'object', additionalProperties: true },
     errors: ['sign_in', 'unknown_partner', 'bad_args', 'lead_failed', 'rate_limited', 'no_mesh', 'internal'],
     mutates: false,
   },
   mold_pay_human_review: {
-    description: 'Open Stripe Checkout for the human-review fee on the selected vendor. The fee comes from the server. This call does not mark the review paid, does not reveal the vendor, and does not take a card number. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Cancelled or failed checkout leaves the name hidden. Does not email the partner and does not change the part.',
+    description: 'Open Stripe Checkout for the human-review fee on the selected vendor. The fee comes from the server. If the signed-in user has no human-review lead for that vendor yet, this records one and then opens Checkout. This call does not mark the review paid, does not reveal the vendor, and does not take a card number. The return URL is not payment. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Cancelled or failed checkout leaves the name hidden. Does not email the partner and does not change the part.',
     result: { type: 'object', additionalProperties: true },
     errors: ['sign_in', 'unknown_partner', 'no_lead', 'review_unavailable', 'bad_args', 'rate_limited', 'no_mesh', 'internal'],
     mutates: false,

@@ -1,9 +1,12 @@
 /**
  * A signed-in user asks one anonymized partner for a firm quote or a
- * human review. Firm quote reveals that partner's display name. Human
- * review records the lead and leaves the name hidden until the fee is paid.
- * This module does not call Stripe and does not email the partner.
+ * human review. Neither path returns the partner's name. The name is
+ * included only when this user owns a human-review lead for that same
+ * partner and the Stripe webhook has set reviewFeePaid. This module
+ * does not call Stripe and does not email the partner.
  */
+
+export const PAY_FOR_REVIEW_MESSAGE = 'Pay for review to see the partner.';
 
 import { MOLDING_LEAD_TYPES } from '../db/models/MoldingLead.js';
 import { reviewFeeUsdFromEnv } from './reviewFeeEnv.js';
@@ -92,19 +95,52 @@ export function readLeadRequest(body) {
   return { type: body.type, anonLabel: body.anonLabel.trim(), snapshot };
 }
 
-export function leadView(lead, partner) {
-  const revealed = lead.type === 'firm_quote' || lead.reviewFeePaid === true;
+/**
+ * True only when this user owns a human-review lead for this partner and
+ * reviewFeePaid is the boolean the webhook writes. A firm-quote row, another
+ * user's lead, and a paid lead for a different partner do not qualify.
+ */
+export async function userOwnsPaidPartner(models, userId, partner) {
+  if (!userId || !partner) return false;
+  const partnerId = partner._id ?? partner.id;
+  if (partnerId == null) return false;
+  const paid = await models.MoldingLead.findOne({
+    userId,
+    partnerId,
+    type: 'human_review',
+    reviewFeePaid: true,
+  });
+  if (!paid || paid.reviewFeePaid !== true || paid.type !== 'human_review') return false;
+  if (String(paid.userId) !== String(userId)) return false;
+  if (String(paid.partnerId) !== String(partnerId)) return false;
+  return true;
+}
+
+export function leadView(lead, partner, reveal = false) {
+  const shown = reveal === true;
   const view = {
     leadId: String(lead._id ?? lead.id),
     type: lead.type,
     status: lead.status,
     anonLabel: partner.anonLabel,
-    revealed,
+    revealed: shown,
     reviewFeeUsd: reviewFeeUsdFromEnv(),
-    reviewFeePaid: lead.reviewFeePaid === true,
+    // Public flag: this caller has a paid human review for this partner.
+    // It is not the firm-quote row's own column, and it is not a client field.
+    reviewFeePaid: shown,
   };
-  if (revealed) view.displayName = partner.displayName;
+  if (!shown) {
+    view.payForReview = true;
+    view.message = PAY_FOR_REVIEW_MESSAGE;
+    return view;
+  }
+  view.displayName = partner.displayName;
   return view;
+}
+
+export async function presentLead(models, userId, lead, partner) {
+  const reveal = await userOwnsPaidPartner(models, userId, partner);
+  return leadView(lead, partner, reveal);
 }
 
 export async function createMoldingLead(models, userId, input) {

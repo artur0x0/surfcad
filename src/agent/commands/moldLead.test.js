@@ -2,18 +2,26 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { moldFirmQuoteCommand, moldHumanReviewCommand, moldPayReviewCommand } from './moldLead.js';
 
-test('firm quote forwards the label and returns the revealed name', async () => {
+test('firm quote forwards the label and does not invent a partner name', async () => {
   const seen = [];
   const ctx = {
     moldRequestFirmQuote: (args) => {
       seen.push(args);
-      return Promise.resolve({ revealed: true, anonLabel: args.anonLabel, displayName: 'Acme Molding' });
+      return Promise.resolve({
+        revealed: false,
+        reviewFeePaid: false,
+        payForReview: true,
+        anonLabel: args.anonLabel,
+        message: 'Pay for review to see the partner.',
+      });
     },
   };
   const out = await moldFirmQuoteCommand.run(ctx, { anonLabel: 'Partner A' });
   assert.equal(seen[0].anonLabel, 'Partner A');
-  assert.equal(out.result.displayName, 'Acme Molding');
-  assert.equal(out.result.revealed, true);
+  assert.equal(out.result.revealed, false);
+  assert.equal(out.result.reviewFeePaid, false);
+  assert.equal(out.result.displayName, undefined);
+  assert.equal(out.result.message, 'Pay for review to see the partner.');
 });
 
 test('human review does not require a handler result to include a name', async () => {

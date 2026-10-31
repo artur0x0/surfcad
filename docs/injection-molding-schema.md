@@ -125,8 +125,12 @@ Signed-in admins edit the catalog, the resin library, and the lead board at
 `/admin` (`data-admin-mold-catalog`, `data-admin-mold-library`,
 `data-admin-mold-leads`). `POST /api/molding/quote`
 returns a budgetary quote and does not store it. `POST /api/molding/leads`
-stores a lead for the signed-in user. It does not call Stripe. A firm quote
-reveals that partner. A human review does not. `POST /api/molding/review-checkout`
-opens Stripe Checkout for `MOLDING_REVIEW_FEE_USD` and does not mark the lead
-paid. The Stripe webhook sets `reviewFeePaid` only after a paid event whose
-amount matches. The row stores a payment id string, not a card number.
+stores a lead for the signed-in user. It does not call Stripe and it does not
+return the partner's name. The public response says to pay for review to see
+the partner. `POST /api/molding/review-checkout` opens Stripe Checkout for
+`MOLDING_REVIEW_FEE_USD` and does not mark the lead paid. The Stripe webhook
+sets `reviewFeePaid` only after a paid event whose amount matches, and only
+on that user's human-review lead. `GET /api/molding/review-status` returns
+the partner name only for that paid lead. A return URL does not. The row
+stores a payment id string, not a card number. The admin list still includes
+the partner's real name.

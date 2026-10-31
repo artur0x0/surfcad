@@ -1,7 +1,13 @@
 /**
  * POST /api/molding/leads. The body names a public label, never a price
- * and never the partner's real name. The server decides whether to reveal it.
+ * and never the partner's real name. The server reveals a name only after
+ * the review fee is paid. The return URL is not a payment.
  */
+
+/** Same sentence as PAY_FOR_REVIEW_MESSAGE in backend/services/moldingLead.js. */
+export const PAY_FOR_REVIEW_MESSAGE = 'Pay for review to see the partner.';
+
+export const MOLD_REVIEW_LABEL_KEY = 'surfcad.moldReviewAnonLabel';
 
 export function leadBody(type, vendor, quote = {}) {
   return {
@@ -113,4 +119,76 @@ export function checkoutUrlAllowed(url) {
   } catch {
     return null;
   }
+}
+
+function sessionBin(storage) {
+  if (storage) return storage;
+  try {
+    return globalThis.sessionStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+export function rememberReviewLabel(label, storage) {
+  try {
+    sessionBin(storage)?.setItem(MOLD_REVIEW_LABEL_KEY, label);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function readReviewLabel(storage) {
+  try {
+    return sessionBin(storage)?.getItem(MOLD_REVIEW_LABEL_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function clearReviewLabel(storage) {
+  try {
+    sessionBin(storage)?.removeItem(MOLD_REVIEW_LABEL_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function partnerUnlocked(result) {
+  return !!result
+    && result.reviewFeePaid === true
+    && result.revealed === true
+    && typeof result.displayName === 'string'
+    && result.displayName.trim().length > 0;
+}
+
+function withoutPartnerIdentity(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const copy = { ...body };
+  delete copy.displayName;
+  delete copy.notes;
+  delete copy.email;
+  delete copy.phone;
+  delete copy.contact;
+  delete copy.partnerName;
+  if (copy.reviewFeePaid !== true) copy.revealed = false;
+  return copy;
+}
+
+export async function pollReviewStatus(anonLabel, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const attempts = Number.isInteger(options.attempts) && options.attempts > 0 ? options.attempts : 8;
+  const intervalMs = Number.isFinite(options.intervalMs) ? options.intervalMs : 1500;
+  const sleep = options.sleep || ((ms) => new Promise((resolve) => { setTimeout(resolve, ms); }));
+  let last = null;
+  for (let i = 0; i < attempts; i += 1) {
+    last = await fetchReviewStatus(anonLabel, fetchImpl);
+    if (partnerUnlocked(last)) return last;
+    const code = last?.error?.code;
+    if (code === 'no_lead' || code === 'unknown_partner' || code === 'sign_in' || code === 'bad_args' || code === 'rate_limited') {
+      return withoutPartnerIdentity(last);
+    }
+    if (i + 1 < attempts) await sleep(intervalMs);
+  }
+  return withoutPartnerIdentity(last);
 }
