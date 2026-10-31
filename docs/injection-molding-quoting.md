@@ -108,3 +108,9 @@ A firm quote returns that partner’s `displayName`. A human review does not.
 The review fee shown on the button is $150, a placeholder, and clicking it
 does not take payment. A second request for the same user, partner, and type
 returns the same lead. Ranking is unchanged: fit, then price.
+
+## Admin lead board
+
+Signed-in admins see those leads at `/admin`. They can filter by partner and
+status, and they can set status (`sent`, `quoted`, `won`, `lost`) and the
+commission owed. The page does not pay anyone and does not show who asked.

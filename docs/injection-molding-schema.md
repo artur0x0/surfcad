@@ -80,11 +80,18 @@ non-admins get 404. The per-user limit matches `GET /api/admin/stats`.
 
 Lists include inactive rows. Partner rows include `displayName`. There is no
 public catalog route. Deactivate sets `active` to false and does not change
-child rows. A later `PATCH` with `active: true` turns a row back on. Leads are
-not on this API.
+child rows. A later `PATCH` with `active: true` turns a row back on.
 
-Signed-in admins edit the same rows at `/admin` (`data-admin-mold-catalog`).
-There is no leads board. `POST /api/molding/quote` returns a budgetary quote
-and does not store it. `POST /api/molding/leads` stores a lead for the
-signed-in user. It does not call Stripe. A firm quote reveals that partner.
-A human review does not.
+Leads are `GET /api/admin/molding/leads` and `PATCH /api/admin/molding/leads/:id`
+on that same admin router, so the 404 gate and the stats rate limit apply.
+The list filters by `partnerId` and `status`. The patch changes `status` and
+`commissionOwedUsd` only. The JSON has the partner's real name, the public
+label, type, status, commission, whether the review fee is paid, and the
+time. It does not include the requester, `userId`, email, the quote snapshot,
+or `stripePaymentIntentId`. There is no export and no partner portal.
+
+Signed-in admins edit the catalog and the lead board at `/admin`
+(`data-admin-mold-catalog`, `data-admin-mold-leads`). `POST /api/molding/quote`
+returns a budgetary quote and does not store it. `POST /api/molding/leads`
+stores a lead for the signed-in user. It does not call Stripe. A firm quote
+reveals that partner. A human review does not.
