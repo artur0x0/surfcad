@@ -166,6 +166,13 @@ function pickResin(rows, grade) {
   ))[0] || null;
 }
 
+function resinGrades(rows) {
+  return rows
+    .filter((row) => active(row) && typeof row.grade === 'string' && row.grade && finite(row.usdPerKg) != null)
+    .map((row) => ({ grade: row.grade, usdPerKg: finite(row.usdPerKg) }))
+    .sort((a, b) => a.usdPerKg - b.usdPerKg || a.grade.localeCompare(b.grade));
+}
+
 function asOf(stamps) {
   const times = stamps
     .map((stamp) => (stamp ? new Date(stamp).getTime() : NaN))
@@ -205,7 +212,8 @@ export function rankMoldingQuotes(input = {}) {
 
   for (const partner of partners) {
     const partnerId = idOf(partner);
-    const resin = pickResin(resins.filter((row) => sameId({ id: row.partnerId }, { id: partnerId })), input.grade);
+    const partnerResins = resins.filter((row) => sameId({ id: row.partnerId }, { id: partnerId }));
+    const resin = pickResin(partnerResins, input.grade);
     const card = rates.find((row) => sameId({ id: row.partnerId }, { id: partnerId }) && active(row));
     if (!resin || !card || !partner.anonLabel) continue;
     const presses = machines.filter((row) => sameId({ id: row.partnerId }, { id: partnerId }));
@@ -233,6 +241,7 @@ export function rankMoldingQuotes(input = {}) {
       anonLabel: partner.anonLabel,
       region: partner.region || '',
       grade: resin.grade,
+      grades: resinGrades(partnerResins),
       machineCount: quotes.length,
       range: { lowUsd: low, highUsd: high },
       aluminumUsd: bestAluminum,

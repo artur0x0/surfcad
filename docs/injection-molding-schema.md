@@ -84,4 +84,5 @@ child rows. A later `PATCH` with `active: true` turns a row back on. Leads are
 not on this API.
 
 Signed-in admins edit the same rows at `/admin` (`data-admin-mold-catalog`).
-There is no leads board and no quote API.
+There is no leads board. `POST /api/molding/quote` returns a budgetary quote
+and does not store it.

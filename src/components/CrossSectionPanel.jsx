@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, ClipboardList, SquareSplitHorizontal, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, ClipboardList, Receipt, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -62,6 +62,10 @@ const CrossSectionPanel = forwardRef(({
   showDfm = false,
   dfmActive = false,
   onDfmToggle = null,
+  /** Budgetary quote. Inspection group, immediately after the DFM report. Hidden in game. */
+  showQuote = false,
+  quoteActive = false,
+  onQuoteToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -637,6 +641,25 @@ const handleButtonClick = () => {
             data-ui-action="data-mold-dfm"
           >
             <ClipboardList size={20} />
+          </button>
+        )}
+        {showQuote && (
+          <button
+            type="button"
+            onClick={() => onQuoteToggle?.()}
+            className={`p-2 rounded font-ui ${
+              quoteActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
+            aria-label={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
+            aria-pressed={!!quoteActive}
+            data-mold-quote=""
+            data-mold-quote-state={quoteActive ? 'on' : 'off'}
+            data-ui-action="data-mold-quote"
+          >
+            <Receipt size={20} />
           </button>
         )}
         <button

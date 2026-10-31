@@ -118,6 +118,27 @@ test('vendors rank by fit then price, under public labels only', () => {
   assert.doesNotMatch(JSON.stringify(ranked), /Secret|displayName|Closed/);
 });
 
+test('a vendor lists every active grade, including ones that are not priced', () => {
+  const ranked = rankMoldingQuotes({
+    grade: 'ABS',
+    part: PART,
+    partners: [{ id: 'p', anonLabel: 'Partner A', region: 'south', active: true }],
+    machines: [{ partnerId: 'p', ...press() }],
+    resins: [
+      { partnerId: 'p', grade: 'ABS', usdPerKg: 3, densityGCm3: 1.04, active: true },
+      { partnerId: 'p', grade: 'PP', usdPerKg: 1, densityGCm3: 0.9, active: true },
+      { partnerId: 'p', grade: 'Nylon', usdPerKg: 2, densityGCm3: 1.1, active: false },
+    ],
+    rates: [{ partnerId: 'p', ...RATES }],
+  });
+  assert.equal(ranked.vendors[0].grade, 'ABS');
+  assert.deepEqual(ranked.vendors[0].grades, [
+    { grade: 'PP', usdPerKg: 1 },
+    { grade: 'ABS', usdPerKg: 3 },
+  ]);
+  assert.doesNotMatch(JSON.stringify(ranked), /density|Nylon|displayName/);
+});
+
 test('with no grade, the cheapest active resin is the default', () => {
   const ranked = rankMoldingQuotes({
     part: PART,

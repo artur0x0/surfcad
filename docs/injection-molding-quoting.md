@@ -75,4 +75,22 @@ named, the partner’s cheapest active resin is used. Grades match exactly.
 Partners with no fitting press are left out. The rest sort by the lowest unit
 cost, then the public label. The range is the cheap metal and the expensive
 metal across the presses that fit. Unit cost is the part cost plus tooling
-divided by quantity.
+divided by quantity. Each vendor row also lists that partner’s active grades
+and the dollars per kilogram, so a picker can offer every grade even when one
+grade was named for the price.
+
+## Budgetary quote UI
+
+`POST /api/molding/quote` calls `quoteMolding` and returns that result. It does
+not write `Quote` and it does not add a molding quote collection. A signed-out
+caller can use it. The limit is 30 requests in 10 minutes, keyed by the user
+when a session exists and by IP otherwise. The body is the part measurements,
+`quantity`, `cavityCount`, and an optional `grade`. A price field is rejected.
+`cavityCount` above 64 is rejected. `flowLengthMm` may be null, and the hot
+runner stays out of the total unless a later caller turns it on. This route
+does not turn it on.
+
+The quote button on the right rail opens a glass panel. It says Budgetary, not
+binding. Quantity and cavity count send a new request. The resin menu is the
+selected vendor’s grade list. Opening the quote closes the DFM report, and
+opening the DFM report closes the quote. Neither one clears a mold skin.

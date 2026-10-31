@@ -526,7 +526,8 @@ textarea {
   }
   /* DFM report shares the legend corner. Wider than the w-44 chip, and
      dropped when a legend is already open so the two panels do not stack. */
-  .dfm-report-panel {
+  .dfm-report-panel,
+  .mold-quote-panel {
     width: 18rem;
     max-width: calc(100vw - 6.5rem);
     max-height: min(32rem, 70vh);
@@ -534,9 +535,10 @@ textarea {
   .dfm-report-shifted {
     transform: translateY(12rem);
   }
-  /* Phone rails sit on the pane edges. Keep the report between them. */
+  /* Phone rails sit on the pane edges. Keep the report and the quote between them. */
   @media (max-width: 768px) {
-    .wall-legend-anchor.dfm-report-panel {
+    .wall-legend-anchor.dfm-report-panel,
+    .wall-legend-anchor.mold-quote-panel {
       left: calc(0.75rem + 4rem + var(--feature-strip-rail-gap));
       right: calc(0.75rem + 4rem + var(--feature-strip-rail-gap));
       width: auto;

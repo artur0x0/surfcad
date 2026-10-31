@@ -615,11 +615,13 @@ import { detachSideActionSkin, syncSideActionSkin } from '../molding/sideActionS
 import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { dfmReport } from '../molding/dfmReport.js';
+import { postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import SideActionLegend from './molding/SideActionLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
 import DfmReportPanel from './molding/DfmReportPanel';
+import MoldQuotePanel from './molding/MoldQuotePanel';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1463,6 +1465,15 @@ const Viewport = forwardRef(({
   const clearDfmRef = useRef(() => {});
   const refreshDfmRef = useRef(() => {});
   const [dfmReportState, setDfmReportState] = useState(null);
+  const agentMoldQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const quoteOnRef = useRef(false);
+  const quoteFieldRef = useRef(null);
+  const quoteSeqRef = useRef(0);
+  const clearQuoteRef = useRef(() => {});
+  const refreshQuoteRef = useRef(() => {});
+  const [moldQuote, setMoldQuote] = useState(null);
+  const moldQuoteRef = useRef(null);
+  moldQuoteRef.current = moldQuote;
   useEffect(() => {
     if (mode === 'game') {
       clearWallMapRef.current();
@@ -1470,6 +1481,7 @@ const Viewport = forwardRef(({
       clearSideActionsRef.current();
       clearMoldDraftRef.current();
       clearDfmRef.current();
+      clearQuoteRef.current();
     }
   }, [mode]);
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
@@ -2758,6 +2770,7 @@ const Viewport = forwardRef(({
       moldSideActions: (args) => agentMoldSideActionsRef.current(args),
       moldDraft: (args) => agentMoldDraftRef.current(args),
       moldDfm: (args) => agentMoldDfmRef.current(args),
+      moldQuote: (args) => agentMoldQuoteRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -5414,6 +5427,7 @@ const Viewport = forwardRef(({
     clearSideActionsRef.current();
     clearMoldDraftRef.current();
     clearDfmRef.current();
+    clearQuoteRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -14016,13 +14030,148 @@ const Viewport = forwardRef(({
     }
     const cached = dfmFieldRef.current;
     if (cached && cached.geometry === geometry && cached.report) {
+      clearQuoteRef.current();
       dfmOnRef.current = true;
       setDfmReportState(cached.report);
       return { on: true, ...cached.report };
     }
     const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
     if (analyzed?.error) return analyzed;
+    clearQuoteRef.current();
     return publishDfm(geometry, analyzed);
+  };
+
+  const clearQuote = () => {
+    quoteSeqRef.current += 1;
+    quoteOnRef.current = false;
+    quoteFieldRef.current = null;
+    setMoldQuote(null);
+  };
+  clearQuoteRef.current = clearQuote;
+
+  const publishQuote = async (geometry, analysis, opts) => {
+    const quantity = opts.quantity;
+    const cavityCount = opts.cavityCount;
+    const grade = opts.grade || '';
+    const selected = opts.selected || '';
+    const body = quoteBodyFromAnalysis(geometry, analysis, {
+      quantity,
+      cavityCount,
+      grade: grade || undefined,
+    });
+    if (body.error) {
+      quoteSeqRef.current += 1;
+      quoteOnRef.current = true;
+      quoteFieldRef.current = { geometry, analysis };
+      setMoldQuote({
+        quantity,
+        cavityCount,
+        grade,
+        selected: '',
+        status: 'error',
+        quote: null,
+        error: body.error,
+      });
+      return { error: body.error };
+    }
+    const seq = quoteSeqRef.current + 1;
+    quoteSeqRef.current = seq;
+    quoteOnRef.current = true;
+    quoteFieldRef.current = { geometry, analysis };
+    setMoldQuote((prev) => ({
+      quantity,
+      cavityCount,
+      grade,
+      selected: prev?.selected || selected,
+      status: 'loading',
+      quote: prev?.quote || null,
+      error: null,
+    }));
+    const result = await postMoldingQuote(body);
+    if (seq !== quoteSeqRef.current || !quoteOnRef.current) return { on: false };
+    if (result?.error) {
+      setMoldQuote({
+        quantity,
+        cavityCount,
+        grade,
+        selected: '',
+        status: 'error',
+        quote: null,
+        error: result.error,
+      });
+      return { error: result.error };
+    }
+    const vendors = Array.isArray(result?.vendors) ? result.vendors : [];
+    const keep = vendors.some((row) => row.anonLabel === (selected || moldQuoteRef.current?.selected))
+      ? (selected || moldQuoteRef.current?.selected)
+      : (vendors[0]?.anonLabel || '');
+    setMoldQuote({
+      quantity,
+      cavityCount,
+      grade,
+      selected: keep,
+      status: 'ready',
+      quote: result,
+      error: null,
+    });
+    return {
+      on: true,
+      disclaimer: result?.disclaimer,
+      quantity: result?.quantity,
+      cavityCount: result?.cavityCount,
+      vendors,
+    };
+  };
+
+  refreshQuoteRef.current = (host) => {
+    if (!quoteOnRef.current || !host || host !== resultRef.current) return;
+    const geometry = host.geometry;
+    if (!geometry?.attributes?.position) {
+      clearQuote();
+      return;
+    }
+    const cached = quoteFieldRef.current;
+    if (cached && cached.geometry === geometry) return;
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    if (analyzed?.error) {
+      clearQuote();
+      return;
+    }
+    const prev = moldQuoteRef.current;
+    publishQuote(geometry, analyzed, {
+      quantity: prev?.quantity ?? 1,
+      cavityCount: prev?.cavityCount ?? 1,
+      grade: prev?.grade || '',
+      selected: prev?.selected || '',
+    });
+  };
+
+  agentMoldQuoteRef.current = ({ on, quantity, cavityCount, grade } = {}) => {
+    const next = typeof on === 'boolean' ? on : !quoteOnRef.current;
+    if (!next) {
+      clearQuote();
+      return { on: false };
+    }
+    const geometry = resultRef.current?.geometry;
+    if (!geometry?.attributes?.position) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const prev = moldQuoteRef.current;
+    const nextQuantity = quantity == null ? (prev?.quantity ?? 1) : quantity;
+    const nextCavity = cavityCount == null ? (prev?.cavityCount ?? 1) : cavityCount;
+    const nextGrade = grade == null ? (prev?.grade || '') : grade;
+    let analysis = quoteFieldRef.current?.geometry === geometry ? quoteFieldRef.current.analysis : null;
+    if (!analysis) {
+      analysis = moldFitFromGeometry(geometry, faceIDsRef.current);
+      if (analysis?.error) return analysis;
+    }
+    clearDfm();
+    return publishQuote(geometry, analysis, {
+      quantity: nextQuantity,
+      cavityCount: nextCavity,
+      grade: nextGrade,
+      selected: prev?.selected || '',
+    });
   };
 
   applyFaceSkinRef.current = (host) => {
@@ -14044,6 +14193,7 @@ const Viewport = forwardRef(({
       applySideActionSkinRef.current(host);
       applyMoldDraftSkinRef.current(host);
       refreshDfmRef.current(host);
+      refreshQuoteRef.current(host);
       if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
       return;
     }
@@ -14062,6 +14212,7 @@ const Viewport = forwardRef(({
     applySideActionSkinRef.current(host);
     applyMoldDraftSkinRef.current(host);
     refreshDfmRef.current(host);
+    refreshQuoteRef.current(host);
     if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
   };
 
@@ -16404,6 +16555,16 @@ const Viewport = forwardRef(({
           shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
         />
       )}
+      {mode !== 'game' && (
+        <MoldQuotePanel
+          state={moldQuote}
+          shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
+          onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
+          onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
+          onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
+          onSelect={(selected) => setMoldQuote((prev) => (prev ? { ...prev, selected } : prev))}
+        />
+      )}
 
       {/* Cross-Section Panel */}
         <CrossSectionPanel
@@ -16436,6 +16597,7 @@ const Viewport = forwardRef(({
             clearSideActionsRef.current();
             clearMoldDraftRef.current();
             clearDfmRef.current();
+            clearQuoteRef.current();
             feaToggleRef.current?.();
           }}
           showWall={mode !== 'game'}
@@ -16453,6 +16615,9 @@ const Viewport = forwardRef(({
           showDfm={mode !== 'game'}
           dfmActive={!!dfmReportState}
           onDfmToggle={() => agentMoldDfmRef.current({})}
+          showQuote={mode !== 'game'}
+          quoteActive={!!moldQuote}
+          onQuoteToggle={() => agentMoldQuoteRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();
