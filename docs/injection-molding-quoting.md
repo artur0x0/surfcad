@@ -72,7 +72,7 @@ max wall squared, plus the mechanical seconds. Aluminum uses the uncooled `k`.
 Resin mass is volume (cm³) times density (g/cm³), in kilograms. With no grade
 named, the partner’s cheapest active resin is used. Grades match exactly.
 Prices come from `molding_resin_prices` only. The generic resin library is
-not loaded.
+not loaded by this quote.
 
 Partners with no fitting press are left out. The rest sort by the lowest unit
 cost, then the public label. The range is the cheap metal and the expensive
@@ -96,6 +96,19 @@ The quote button on the right rail opens a glass panel. It says Budgetary, not
 binding. Quantity and cavity count send a new request. The resin menu is the
 selected vendor’s grade list. Opening the quote closes the DFM report, and
 opening the DFM report closes the quote. Neither one clears a mold skin.
+
+## Resin suggestions
+
+The quote panel also shows heuristic fill flags and up to three grades from
+`GET /api/molding/resin-library`. The flags are thin sections from the wall
+check, a high aspect ratio of the outside box, and a long stand-in flow. The
+stand-in is the longest outside edge, not a melt path. A structural study
+that is still in memory can add a stiffness hint from that study's modulus
+and safety factor. Modal, stale, and missing results add nothing. The hint
+does not read a stress field.
+
+The suggestions do not change the partner resin menu or the quote request.
+The panel says they are heuristic and not a mold-flow result.
 
 ## Firm quote and human review
 
