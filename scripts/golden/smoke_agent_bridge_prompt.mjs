@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { chromium } from 'playwright-core';
+import { PAIRING_TOKEN_LENGTH } from '../../src/agent/ws/pairingToken.js';
 import { findChrome, startPreviewServer, waitForServer } from '../playtest/lib/harness.mjs';
 import { pickFreePort } from '../playtest/lib/pickFreePort.mjs';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
@@ -257,7 +258,7 @@ try {
   await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
   const code = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
-  check('pairing code length', code.length === 6, code);
+  check('pairing code length', code.length === PAIRING_TOKEN_LENGTH, code);
 
   await page.waitForFunction(() => typeof window.surfcadAgentPrompt?.createTransport === 'function', { timeout: 10000 });
   await page.evaluate(() => {

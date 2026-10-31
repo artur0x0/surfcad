@@ -16,7 +16,7 @@ Environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Connect Agent** dialog (optional if you use the `pair` tool). When set, the local relay stays selected even if a remote login is saved. |
+| `SURFCAD_PAIRING_CODE` | 8-character code from the SurfCAD **Connect Agent** dialog (optional if you use the `pair` tool). When set, the local relay stays selected even if a remote login is saved. |
 | `SURFCAD_AGENT_BRIDGE_WS_URL` | Loopback relay URL (default `ws://127.0.0.1:17341`). When set, the local relay stays selected even if a remote login is saved. |
 | `SURFCAD_AGENT_BRIDGE_WS_PORT` | Loopback relay port. When set, the local relay stays selected even if a remote login is saved. |
 | `SURFCAD_MCP_START_RELAY` | Set to `0` to skip starting the local relay (tests only). |
@@ -27,7 +27,7 @@ Environment variables:
 
 ## Which relay
 
-The local loopback relay is the default. `npx surfcad-mcp` starts it and pairs with the 6-character code.
+The local loopback relay is the default. `npx surfcad-mcp` starts it and pairs with the 8-character code.
 
 A saved login selects the server relay at `https://surfcad.com/agent`. `--remote` selects it too, and exits with a message to run `login` when no token is saved.
 
@@ -68,8 +68,8 @@ Clear failures:
 ## Pair with SurfCAD
 
 1. Open [https://surfcad.com](https://surfcad.com) (or local dev).
-2. Open the **profile** chip and choose **Connect Agent**. When the relay is found, a six-character pairing code appears. Leave the tab open.
-3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "ABCDEF" }`.
+2. Open the **profile** chip and choose **Connect Agent**. When the relay is found, an eight-character pairing code appears. Leave the tab open.
+3. Add `surfcad-mcp` to your MCP client (`npx surfcad-mcp`), set `SURFCAD_PAIRING_CODE` to that code, or call the MCP **`pair`** tool with `{ "code": "BCDFGHJK" }`.
 4. Click **Allow** (the green check) in SurfCAD when prompted.
 
 The MCP server instructions start with `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` The next sentence tells the agent: when you finish a task started from the SurfCAD in-viewer prompt pane, send a closing reply with `reply_to_user` (`final: true`) summarising what was done, so the user gets confirmation. On failure or partial completion, say what was done, what failed and why, and what is left. The instructions continue with a quick-start (under 2 KB) that points at the `guide` tool. `guide { topic: "start" }` repeats that closing-reply rule.
@@ -91,7 +91,7 @@ Safari on a Mac blocks https pages from opening `ws://127.0.0.1` directly. In Sa
       "command": "npx",
       "args": ["-y", "surfcad-mcp"],
       "env": {
-        "SURFCAD_PAIRING_CODE": "ABCDEF"
+        "SURFCAD_PAIRING_CODE": "BCDFGHJK"
       }
     }
   }

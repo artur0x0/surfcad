@@ -2,10 +2,10 @@
  * Classify Local agent WebSocket failures for UI copy.
  */
 
-import { PAIR_MSG } from './relayMessages.js';
-import { MCP_INSTALL_COMMAND } from './pairingPrompt.js';
-
 import { BRIDGE_CLOSE_REASON } from './bridgeMessages.js';
+import { isLoopbackAddress } from './localAddress.js';
+import { MCP_INSTALL_COMMAND } from './pairingPrompt.js';
+import { PAIR_MSG } from './relayMessages.js';
 
 /** @typedef {'relay_missing' | 'origin_rejected' | 'browser_blocked' | 'relay_error' | 'bridge_closed' | 'popup_blocked' | null} AgentBridgeConnectionIssue */
 
@@ -22,8 +22,9 @@ import { BRIDGE_CLOSE_REASON } from './bridgeMessages.js';
  */
 export function isLocalDevPageHostname(hostname) {
   if (!hostname || typeof hostname !== 'string') return false;
-  const h = hostname.trim().toLowerCase();
-  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' || h.startsWith('127.');
+  // Same rule as the origin allowlist: exact localhost names, or a literal
+  // loopback IP. `127.evil.com` is a hostname, not 127.0.0.0/8.
+  return isLoopbackAddress(hostname.trim().toLowerCase());
 }
 
 /**

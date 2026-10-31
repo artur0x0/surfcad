@@ -6,6 +6,7 @@ import {
   canFallBackToPopupBridge,
   detectBrowserFamily,
   isIOSLikeBrowser,
+  isLocalDevPageHostname,
   isWebKitLoopbackPairingBrowser,
   issueFromCloseEvent,
   issueFromErrorEvent,
@@ -97,6 +98,17 @@ test('shouldPreemptWebKitHttpsPairing only for iOS / iPadOS on https prod', () =
   }), false);
 });
 
+test('isLocalDevPageHostname accepts literal loopback and rejects 127. hostnames', () => {
+  assert.equal(isLocalDevPageHostname('localhost'), true);
+  assert.equal(isLocalDevPageHostname('127.0.0.1'), true);
+  assert.equal(isLocalDevPageHostname('127.0.0.2'), true);
+  assert.equal(isLocalDevPageHostname('[::1]'), true);
+  assert.equal(isLocalDevPageHostname('::1'), true);
+  assert.equal(isLocalDevPageHostname('127.evil.com'), false);
+  assert.equal(isLocalDevPageHostname('127.0.0.1.attacker.com'), false);
+  assert.equal(isLocalDevPageHostname('surfcad.com'), false);
+});
+
 test('agentBridgePairingMode: desktop Safari on https uses the popup bridge', () => {
   const prod = { protocol: 'https:', hostname: 'surfcad.com' };
   assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.macSafari18, maxTouchPoints: 0 }), 'popup');
@@ -109,6 +121,8 @@ test('agentBridgePairingMode: desktop Safari on https uses the popup bridge', ()
   assert.equal(agentBridgePairingMode({ ...prod, userAgent: UA.macSafari18, maxTouchPoints: 5 }), 'unsupported');
   assert.equal(agentBridgePairingMode({ protocol: 'http:', hostname: 'localhost', userAgent: UA.macSafari18 }), 'direct');
   assert.equal(agentBridgePairingMode({ protocol: 'https:', hostname: '127.0.0.1', userAgent: UA.macSafari18 }), 'direct');
+  assert.equal(agentBridgePairingMode({ protocol: 'https:', hostname: '127.0.0.2', userAgent: UA.macSafari18 }), 'direct');
+  assert.equal(agentBridgePairingMode({ protocol: 'https:', hostname: '127.evil.com', userAgent: UA.macSafari18 }), 'popup');
 });
 
 test('agentBridgePairingMode honours an explicit transport override', () => {
