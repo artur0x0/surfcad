@@ -420,8 +420,12 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 | `scripts/vite-agent-bridge-ws.mjs` | Vite plugin: starts the relay on `127.0.0.1` (port `SURFCAD_AGENT_BRIDGE_WS_PORT`, default **17341**) during `vite` dev and `vite preview`. |
 | `src/components/AgentBridgePairing.jsx` | In-app UI: user must **Show pairing code**, then **Allow connection** when a client connects. Paired state and **Disconnect** are visible. |
 | `src/agent/ws/relayHub.js` | Pairing state machine and message routing. |
-| `src/agent/ws/tabConnection.js` | Tab side: forwards `{ id, command, args }` to `window.surfcad.call`. Takes `createSocket` for the transport. |
-| `src/agent/ws/popupTransport.js` | Safari transport: frames go through the loopback bridge window (`http://127.0.0.1:17341/bridge`) with postMessage. |
+| `packages/surfcad-mcp/src/commandProtocol.mjs` | Shared command and response frames (`v`, `id`, `command`, `args` / `ok`, `result` or `error`). The local relay and a future server relay both use this module. |
+| `src/agent/transport/transport.js` | Command transport interface: `connect`, `send`, `onMessage`, `close`, `status`. |
+| `src/agent/transport/localhostRelayTransport.js` | That interface over the localhost WebSocket relay. |
+| `src/agent/transport/commandDispatch.js` | Reads a command frame, calls `window.surfcad.call`, sends the response. |
+| `src/agent/ws/tabConnection.js` | Tab side: pairing and prompts on the localhost transport. Command frames go through `commandDispatch`. `createSocket` is still how the page opens the relay (direct or Safari popup). |
+| `src/agent/ws/popupTransport.js` | Safari socket: frames go through the loopback bridge window (`http://127.0.0.1:17341/bridge`) with postMessage. |
 | `packages/surfcad-mcp/src/bridge/bridgePage.mjs`, `bridgePopup.mjs` | Relay-served bridge page and its script (`/bridge`, `/bridge.js`). |
 | `scripts/agent-bridge-ws-client.mjs` | Tiny Node client: `npm run agent-bridge:client -- --token CODE --command list_faces`. |
 
@@ -433,13 +437,15 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 
 **Bridge traffic (after paired):**
 
+`v` is `AGENT_PROTOCOL_VERSION` in `packages/surfcad-mcp/src/commandProtocol.mjs` (currently `1`). A frame that omits `v` is still version 1.
+
 ```json
-{ "id": "1", "command": "list_faces", "args": {} }
-{ "id": "1", "ok": true, "result": { … } }
-{ "id": "2", "ok": false, "error": { "code": "real_repo_blocked", "message": "…" } }
+{ "v": 1, "id": "1", "command": "list_faces", "args": {} }
+{ "v": 1, "id": "1", "ok": true, "result": { … } }
+{ "v": 1, "id": "2", "ok": false, "error": { "code": "real_repo_blocked", "message": "…" } }
 ```
 
-Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP peers and non-local `Origin` values are dropped.
+Refusals use the same `error` objects as the in-page envelope. Non-loopback TCP peers and non-local `Origin` values are dropped. The command transport (`src/agent/transport/transport.js`) carries these frames. Pairing messages above stay on `type` and are not part of this protocol.
 
 ### MCP stdio server (M2)
 

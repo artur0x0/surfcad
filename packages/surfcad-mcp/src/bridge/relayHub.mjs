@@ -3,6 +3,7 @@
  * Canonical implementation shared by surfcad-mcp and the SurfCAD dev server.
  */
 
+import { AGENT_PROTOCOL_VERSION, commandRequest, commandResponse, readCommandResponse } from '../commandProtocol.mjs';
 import { PAIR_MSG } from '../relayMessages.mjs';
 import { isAllowedHttpOrigin, isLoopbackAddress } from './localAddress.mjs';
 
@@ -426,15 +427,27 @@ export function createAgentBridgeRelayHub(opts = {}) {
           refuse(socket, 'not_paired', 'Pair before sending bridge commands');
           return;
         }
-        if (typeof msg.id !== 'string' && typeof msg.id !== 'number') {
-          sendJson(socket, { id: msg.id, ok: false, error: { code: 'bad_call', message: 'call requires id' } });
+        if (msg.v != null && msg.v !== AGENT_PROTOCOL_VERSION) {
+          sendJson(socket, commandResponse({
+            id: msg.id,
+            ok: false,
+            error: { code: 'bad_call', message: `Unsupported protocol version: ${msg.v}` },
+          }));
           return;
         }
-        sendJson(tab.socket, {
+        if (typeof msg.id !== 'string' && typeof msg.id !== 'number') {
+          sendJson(socket, commandResponse({
+            id: msg.id,
+            ok: false,
+            error: { code: 'bad_call', message: 'call requires id' },
+          }));
+          return;
+        }
+        sendJson(tab.socket, commandRequest({
           id: msg.id,
           command: msg.command,
           args: msg.args == null ? {} : msg.args,
-        });
+        }));
         return;
       }
 
@@ -443,12 +456,21 @@ export function createAgentBridgeRelayHub(opts = {}) {
           refuse(socket, 'not_paired', 'No paired peer for response');
           return;
         }
-        sendJson(tab.pairedPeer, {
-          id: msg.id,
-          ok: msg.ok === true,
-          result: msg.ok === true ? msg.result : undefined,
-          error: msg.ok === true ? undefined : msg.error,
-        });
+        if (msg.v != null && msg.v !== AGENT_PROTOCOL_VERSION) {
+          sendJson(tab.pairedPeer, commandResponse({
+            id: msg.id,
+            ok: false,
+            error: { code: 'bad_call', message: `Unsupported protocol version: ${msg.v}` },
+          }));
+          return;
+        }
+        const response = readCommandResponse(msg);
+        sendJson(tab.pairedPeer, commandResponse({
+          id: response?.id ?? msg.id,
+          ok: response?.ok === true,
+          result: response?.ok === true ? response.result : undefined,
+          error: response?.ok === true ? undefined : response?.error,
+        }));
         return;
       }
 

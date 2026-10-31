@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import { commandRequest, readCommandResponse } from './commandProtocol.mjs';
 import { connectPeer } from './nodeClient.mjs';
 import { PAIR_MSG } from './relayMessages.mjs';
 import { redactToken } from './bridge/relayHub.mjs';
@@ -282,12 +283,14 @@ export class RelaySession {
       const waiter = id ? this.#pending.get(id) : undefined;
       if (waiter) {
         this.#pending.delete(id);
-        if (msg.ok === true) {
-          waiter.resolve(msg.result);
+        const response = readCommandResponse(msg);
+        if (response?.ok === true) {
+          waiter.resolve(response.result);
           return;
         }
-        const error = msg.error && typeof msg.error === 'object'
-          ? msg.error
+        const rawError = response?.error ?? msg.error;
+        const error = rawError && typeof rawError === 'object'
+          ? rawError
           : { code: 'bridge_error', message: 'Command refused' };
         // hint and retryable ride along when the tab sent them (the server
         // fills in a hint from its own table when it did not).
@@ -397,7 +400,7 @@ export class RelaySession {
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
       try {
-        ws.send(JSON.stringify({ id, command, args }));
+        ws.send(JSON.stringify(commandRequest({ id, command, args })));
       } catch {
         this.#lose(ws, 'send_failed');
       }

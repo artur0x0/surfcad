@@ -7,6 +7,7 @@ import {
   DEFAULT_TAB_RESERVATION_TTL_MS,
 } from '../src/bridge/relayHub.mjs';
 import { defaultRelayLog } from '../src/bridge/relayServer.mjs';
+import { AGENT_PROTOCOL_VERSION } from '../src/commandProtocol.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 
 const TOKEN = 'ABC234';
@@ -361,4 +362,34 @@ test('defaultRelayLog writes timestamped warn lines to stderr, info only when ve
     if (prev === undefined) delete process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE;
     else process.env.SURFCAD_AGENT_BRIDGE_WS_VERBOSE = prev;
   }
+});
+
+test('a command without v is forwarded at protocol version 1 and the response keeps that v', () => {
+  const { hub } = setup();
+  const { tab, peer } = pairedTrio(hub);
+  peer.receive({ id: 'c1', command: 'list_faces', args: { part_id: 'p' } });
+  const forwarded = tab.sent.find((msg) => msg.command === 'list_faces');
+  assert.equal(forwarded.v, AGENT_PROTOCOL_VERSION);
+  assert.equal(forwarded.id, 'c1');
+  assert.deepEqual(forwarded.args, { part_id: 'p' });
+  tab.receive({ id: 'c1', ok: true, result: { faces: [] } });
+  const response = peer.sent.find((msg) => msg.id === 'c1' && msg.ok === true);
+  assert.equal(response.v, AGENT_PROTOCOL_VERSION);
+  assert.deepEqual(response.result, { faces: [] });
+  assert.equal('error' in response, false);
+  hub.dispose();
+});
+
+test('an unknown command protocol version is refused and the pairing stays up', () => {
+  const { hub } = setup();
+  const { tab, peer } = pairedTrio(hub);
+  peer.receive({ v: 2, id: 'c2', command: 'status', args: {} });
+  assert.equal(tab.sent.some((msg) => msg.command === 'status'), false);
+  const refused = peer.sent.find((msg) => msg.id === 'c2');
+  assert.equal(refused.v, AGENT_PROTOCOL_VERSION);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'bad_call');
+  assert.equal(peer.closed, false);
+  assert.equal(hub.isPaired(TOKEN), true);
+  hub.dispose();
 });
