@@ -28,6 +28,7 @@ import {
   recordConvertCodeSent,
 } from '../auth/guestConvert.js';
 import { recordRegisterIp, registerIpWait } from '../auth/registerCooldown.js';
+import { persistAfterAgentRevoke } from '../agent/credentialRevoke.js';
 import { closeUserTabSockets, revokeUserAgentAccess } from '../agent/install.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 import { isAdmin } from '../middleware/requireAdmin.js';
@@ -880,8 +881,9 @@ router.post('/change-password', async (req, res) => {
     }
     
     await user.setPassword(newPassword);
-    await user.save();
-    await revokeUserAgentAccess(user._id);
+    // Revoke first. A failed revoke must not leave the new password in
+    // the database with the old agent tokens still valid.
+    await persistAfterAgentRevoke(user, (id) => revokeUserAgentAccess(id));
     
     console.log(`[Auth] Password changed for: ${user.email}`);
     

@@ -545,6 +545,58 @@ describe('agent relay websocket', () => {
     other.ws.close();
   });
 
+  test('a session-store error on the heartbeat closes the tab socket', async () => {
+    let boom = false;
+    const relay = createAgentRelay({ pingIntervalMs: 40 });
+    const port = await listen(relay, async (req) => {
+      if (boom) throw new Error('session store down');
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const tab = openSocket(`ws://127.0.0.1:${port}/agent`, {
+      origin: 'https://surfcad.com',
+      'x-test-user': 'user-a',
+    });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the session-store close')), 2000);
+      tab.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    boom = true;
+    const event = await closed;
+    assert.equal(event.code, 1011);
+    assert.equal(event.reason, 'internal');
+  });
+
+  test('a token-store error on the heartbeat closes the agent socket', async () => {
+    const relay = createAgentRelay({ pingIntervalMs: 40 });
+    const port = await listen(relay, async () => null);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const agent = openSocket(`ws://127.0.0.1:${port}/agent`, {
+      authorization: `Bearer ${issued.token}`,
+    });
+    await agent.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the token-store close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    relay.tokens.status = async () => {
+      throw new Error('token store down');
+    };
+    const event = await closed;
+    assert.equal(event.code, 1011);
+    assert.equal(event.reason, 'internal');
+  });
+
   test('websocket upgrades are rate limited per client IP', async () => {
     const relay = createAgentRelay({ connectLimit: 1 });
     const port = await listen(relay, async () => null);

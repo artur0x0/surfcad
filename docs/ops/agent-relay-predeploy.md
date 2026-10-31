@@ -16,6 +16,8 @@ Leave `AGENT_CITY_LOOKUP` unset. The approval sentence then has no city and the 
 
 `TRUST_PROXY_HOPS` defaults to `1`, which matches one nginx hop in front of Node. Express uses that for `req.ip` on `/agent` HTTP routes (pairing limits and city lookup). WebSocket upgrades are not Express requests, so they use the same hop count separately.
 
+A deployment with no reverse proxy must set `TRUST_PROXY_HOPS=0`. The default `1` trusts one `X-Forwarded-For` entry. With no proxy that entry is the one the client sent, so the client picks its own address. `0` uses the socket address and ignores the header.
+
 With one hop, the client address is the rightmost `X-Forwarded-For` value, the one nginx appended. A prefix the browser sent is ignored. Raising the hop count trusts more of that prefix and lets a client spoof its address. Set the value to the number of proxies that append the header. Do not put it in a tracked env file.
 
 ## One Node process

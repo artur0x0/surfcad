@@ -2,6 +2,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import { persistAfterAgentRevoke } from '../../agent/credentialRevoke.js';
 import { defaultVaultName } from '../vaultNameDefaults.js';
 
 const addressSchema = new mongoose.Schema({
@@ -576,11 +577,14 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
     if (!user.name && displayName) {
       user.name = displayName;
     }
-    await user.save();
     if (credentialsRevoked) {
-      const { revokeUserAgentAccess, closeUserTabSockets } = await import('../../agent/install.js');
-      await revokeUserAgentAccess(user._id);
-      closeUserTabSockets(user._id);
+      await persistAfterAgentRevoke(user, async (id) => {
+        const { revokeUserAgentAccess, closeUserTabSockets } = await import('../../agent/install.js');
+        await revokeUserAgentAccess(id);
+        closeUserTabSockets(id);
+      });
+    } else {
+      await user.save();
     }
     return { user, isNew: false };
   }

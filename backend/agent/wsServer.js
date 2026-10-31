@@ -184,6 +184,9 @@ function sessionProbe(headers) {
  * An agent whose token is revoked or expired is closed with 4001 even
  * when it has sent no further frame. A tab whose session is gone is
  * closed with 1000. That is not a revoked agent token.
+ * A session or token-store error closes the socket with 1011. Leaving
+ * it open would keep a tab or agent connected after the check that
+ * should have dropped it failed.
  * @param {import('ws').WebSocketServer} wss
  * @param {{
  *   tokens: { status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'> },
@@ -203,8 +206,11 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
           }
           continue;
         }
-      } catch {
-        /* a store miss is not a reason to drop a live tab */
+      } catch (err) {
+        // Fail closed. A store error is not proof the session is still valid.
+        console.error('[agent-relay] session recheck failed; closing tab socket', err?.message || err);
+        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
+        continue;
       } finally {
         probe.socket.destroy();
       }
@@ -218,8 +224,11 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
           ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
           continue;
         }
-      } catch {
-        /* a status miss is not a reason to drop a live socket */
+      } catch (err) {
+        // Fail closed. 1011, not 4001: a store error is not a revoked token.
+        console.error('[agent-relay] token status failed; closing agent socket', err?.message || err);
+        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
+        continue;
       }
     }
     if (ws.isAlive === false) {
