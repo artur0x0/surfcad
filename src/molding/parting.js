@@ -17,6 +17,10 @@
  * The parting line is one polyline: the closed core-cavity loop that is
  * not inside another loop and has the largest projected perimeter.
  * Inner loops are dropped. It is not a band of faces.
+ *
+ * Vertices within 0.01 mm are one vertex, so a wall whose diagonal was
+ * stored twice still floods as one face. A long edge is also split where
+ * another mesh edge lies along it, so a T-junction does not open the loop.
  */
 
 import { canonicalEdgeName, vertexPairKey } from '../lib/surfcad/namedEdges.js';
@@ -39,6 +43,11 @@ export const PARTING_ZERO_DRAFT_DEG = 0.5;
 const ZERO_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 const CLUSTER_COS = Math.cos((PARTING_CLUSTER_DEG * Math.PI) / 180);
 const SAMPLE_CAP = 24;
+/** Coincident vertices closer than this are one vertex. */
+const WELD_MM = 0.01;
+const WELD_CELL_MM = 2;
+/** Edges shorter than this are not scanned for T-junctions. */
+const SPLIT_MIN_MM = 2;
 
 /** Discrete skin colours. Not stress, and not a CSS token. */
 export const PARTING_ROLE_RGB = Object.freeze({
@@ -264,11 +273,169 @@ function edgeSpan(tri, u, w) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+/**
+ * Map each vertex index to one representative. Two indices whose positions
+ * are within `WELD_MM` share a representative, including across a bin edge.
+ */
+function weldIndex(tris) {
+  const scale = 1 / WELD_MM;
+  const bins = new Map();
+  const points = [];
+  const seen = new Set();
+  const add = (index, p) => {
+    if (seen.has(index)) return;
+    seen.add(index);
+    const slot = points.length;
+    points.push({ index, p });
+    const key = `${Math.round(p[0] * scale)},${Math.round(p[1] * scale)},${Math.round(p[2] * scale)}`;
+    let list = bins.get(key);
+    if (!list) {
+      list = [];
+      bins.set(key, list);
+    }
+    list.push(slot);
+  };
+  for (const tri of tris) {
+    add(tri.ia, tri.a);
+    add(tri.ib, tri.b);
+    add(tri.ic, tri.c);
+  }
+  const parent = points.map((_, i) => i);
+  const find = (i) => {
+    let x = i;
+    while (parent[x] !== x) x = parent[x];
+    let y = i;
+    while (parent[y] !== y) {
+      const next = parent[y];
+      parent[y] = x;
+      y = next;
+    }
+    return x;
+  };
+  const unite = (a, b) => {
+    const pa = find(a);
+    const pb = find(b);
+    if (pa !== pb) parent[pb] = pa;
+  };
+  const limit = WELD_MM * WELD_MM;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i].p;
+    const ix = Math.round(p[0] * scale);
+    const iy = Math.round(p[1] * scale);
+    const iz = Math.round(p[2] * scale);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = bins.get(`${ix + dx},${iy + dy},${iz + dz}`);
+          if (!list) continue;
+          for (const j of list) {
+            if (j <= i) continue;
+            const q = points[j].p;
+            const ddx = p[0] - q[0];
+            const ddy = p[1] - q[1];
+            const ddz = p[2] - q[2];
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= limit) unite(i, j);
+          }
+        }
+      }
+    }
+  }
+  const canon = new Map();
+  const pos = new Map();
+  for (let i = 0; i < points.length; i++) {
+    const root = points[find(i)];
+    canon.set(points[i].index, root.index);
+    if (!pos.has(root.index)) pos.set(root.index, root.p);
+  }
+  return { canon, pos };
+}
+
+function vertexGrid(pos) {
+  const grid = new Map();
+  for (const [id, p] of pos) {
+    const key = `${Math.floor(p[0] / WELD_CELL_MM)},${Math.floor(p[1] / WELD_CELL_MM)},${Math.floor(p[2] / WELD_CELL_MM)}`;
+    let list = grid.get(key);
+    if (!list) {
+      list = [];
+      grid.set(key, list);
+    }
+    list.push(id);
+  }
+  return grid;
+}
+
+function onSegment(p, a, b) {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const abz = b[2] - a[2];
+  const ab2 = abx * abx + aby * aby + abz * abz;
+  if (ab2 < 1e-18) return null;
+  const t = ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby + (p[2] - a[2]) * abz) / ab2;
+  if (t <= 1e-6 || t >= 1 - 1e-6) return null;
+  const dx = p[0] - (a[0] + abx * t);
+  const dy = p[1] - (a[1] + aby * t);
+  const dz = p[2] - (a[2] + abz * t);
+  if (dx * dx + dy * dy + dz * dz > WELD_MM * WELD_MM) return null;
+  return t;
+}
+
+/** Split `u`–`w` where another mesh edge lies along it. */
+function splitIds(u, w, pos, grid, edgeSet) {
+  const a = pos.get(u);
+  const b = pos.get(w);
+  const min = [
+    Math.min(a[0], b[0]) - WELD_MM,
+    Math.min(a[1], b[1]) - WELD_MM,
+    Math.min(a[2], b[2]) - WELD_MM,
+  ];
+  const max = [
+    Math.max(a[0], b[0]) + WELD_MM,
+    Math.max(a[1], b[1]) + WELD_MM,
+    Math.max(a[2], b[2]) + WELD_MM,
+  ];
+  const hits = [];
+  const seen = new Set();
+  const i0 = Math.floor(min[0] / WELD_CELL_MM);
+  const i1 = Math.floor(max[0] / WELD_CELL_MM);
+  const j0 = Math.floor(min[1] / WELD_CELL_MM);
+  const j1 = Math.floor(max[1] / WELD_CELL_MM);
+  const k0 = Math.floor(min[2] / WELD_CELL_MM);
+  const k1 = Math.floor(max[2] / WELD_CELL_MM);
+  for (let iz = k0; iz <= k1; iz++) {
+    for (let iy = j0; iy <= j1; iy++) {
+      for (let ix = i0; ix <= i1; ix++) {
+        const list = grid.get(`${ix},${iy},${iz}`);
+        if (!list) continue;
+        for (const id of list) {
+          if (id === u || id === w || seen.has(id)) continue;
+          const t = onSegment(pos.get(id), a, b);
+          if (t == null) continue;
+          seen.add(id);
+          hits.push({ id, t });
+        }
+      }
+    }
+  }
+  const keep = hits.filter((hit) => {
+    if (edgeSet.has(vertexPairKey(hit.id, u)) || edgeSet.has(vertexPairKey(hit.id, w))) return true;
+    return hits.some((other) => other.id !== hit.id && edgeSet.has(vertexPairKey(hit.id, other.id)));
+  });
+  keep.sort((p, q) => p.t - q.t);
+  const ids = [u];
+  for (const hit of keep) ids.push(hit.id);
+  ids.push(w);
+  return ids;
+}
+
 function adjacency(tris) {
+  const { canon } = weldIndex(tris);
   const edges = new Map();
   tris.forEach((tri, i) => {
     for (const [u, w] of [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]]) {
-      const key = vertexPairKey(u, w);
+      const cu = canon.get(u);
+      const cw = canon.get(w);
+      if (cu == null || cw == null || cu === cw) continue;
+      const key = vertexPairKey(cu, cw);
       let list = edges.get(key);
       if (!list) {
         list = [];
@@ -494,32 +661,75 @@ function clusterFaces(tris, roleOf, faceInfo) {
 }
 
 function boundarySegments(tris, roleOf, faceInfo) {
-  const edges = new Map();
+  const { canon, pos } = weldIndex(tris);
+  const raw = [];
+  const edgeSet = new Set();
   tris.forEach((tri, i) => {
-    for (const [u, w] of [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]]) {
+    for (const [u0, w0] of [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]]) {
+      const u = canon.get(u0);
+      const w = canon.get(w0);
+      if (u == null || w == null || u === w) continue;
+      raw.push({ u, w, i });
+      edgeSet.add(vertexPairKey(u, w));
+    }
+  });
+  const grid = vertexGrid(pos);
+  const edges = new Map();
+  const splitMin2 = SPLIT_MIN_MM * SPLIT_MIN_MM;
+  for (const edge of raw) {
+    const a = pos.get(edge.u);
+    const b = pos.get(edge.w);
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    const ids = dx * dx + dy * dy + dz * dz < splitMin2
+      ? [edge.u, edge.w]
+      : splitIds(edge.u, edge.w, pos, grid, edgeSet);
+    for (let k = 0; k + 1 < ids.length; k++) {
+      const u = ids[k];
+      const w = ids[k + 1];
+      if (u === w) continue;
       const key = vertexPairKey(u, w);
       let list = edges.get(key);
       if (!list) {
         list = [];
         edges.set(key, list);
       }
-      list.push({ i, u, w });
+      list.push({ i: edge.i, u, w });
     }
-  });
+  }
   const segments = [];
   for (const list of edges.values()) {
-    if (list.length !== 2) continue;
-    const [a, b] = list;
-    if (!roleOf[a.i] || roleOf[a.i] === roleOf[b.i]) continue;
-    const nameA = faceNameAt(tris[a.i].t, faceInfo);
-    const nameB = faceNameAt(tris[b.i].t, faceInfo);
+    if (list.length < 2) continue;
+    let core = null;
+    let cavity = null;
+    for (const entry of list) {
+      const role = roleOf[entry.i];
+      if (role === 'core' && !core) core = entry;
+      else if (role === 'cavity' && !cavity) cavity = entry;
+    }
+    if (!core || !cavity) continue;
+    const nameA = faceNameAt(tris[core.i].t, faceInfo);
+    const nameB = faceNameAt(tris[cavity.i].t, faceInfo);
     segments.push({
-      u: a.u,
-      w: a.w,
+      u: core.u,
+      w: core.w,
       name: nameA && nameB ? canonicalEdgeName(nameA, nameB) : null,
     });
   }
   return segments;
+}
+
+function stepFrom(adj, segments, used, cur, prev) {
+  const options = adj.get(cur) || [];
+  for (const si of options) {
+    if (used.has(si)) continue;
+    const seg = segments[si];
+    const other = seg.u === cur ? seg.w : seg.u;
+    if (other === prev && options.length > 1) continue;
+    return si;
+  }
+  return -1;
 }
 
 function walkChains(segments) {
@@ -539,40 +749,50 @@ function walkChains(segments) {
   for (let s = 0; s < segments.length; s++) {
     if (used.has(s)) continue;
     used.add(s);
-    const start = segments[s].u;
-    const verts = [start];
     const names = [];
     if (segments[s].name) names.push(segments[s].name);
-    let prev = start;
+    const forward = [];
+    let prev = segments[s].u;
     let cur = segments[s].w;
-    verts.push(cur);
-    let closed = false;
+    forward.push(cur);
     let guard = segments.length + 2;
+    let closed = false;
     while (guard > 0) {
       guard -= 1;
-      if (cur === start) {
+      if (cur === segments[s].u) {
         closed = true;
-        verts.pop();
+        forward.pop();
         break;
       }
-      const options = adj.get(cur) || [];
-      let next = -1;
-      for (const si of options) {
-        if (used.has(si)) continue;
-        const seg = segments[si];
-        const other = seg.u === cur ? seg.w : seg.u;
-        if (other === prev && options.length > 1) continue;
-        next = si;
-        break;
-      }
+      const next = stepFrom(adj, segments, used, cur, prev);
       if (next < 0) break;
       used.add(next);
       const seg = segments[next];
       if (seg.name) names.push(seg.name);
       prev = cur;
       cur = seg.u === cur ? seg.w : seg.u;
-      verts.push(cur);
+      forward.push(cur);
     }
+    const backward = [];
+    if (!closed) {
+      prev = segments[s].w;
+      cur = segments[s].u;
+      backward.push(cur);
+      guard = segments.length + 2;
+      while (guard > 0) {
+        guard -= 1;
+        const next = stepFrom(adj, segments, used, cur, prev);
+        if (next < 0) break;
+        used.add(next);
+        const seg = segments[next];
+        if (seg.name) names.push(seg.name);
+        prev = cur;
+        cur = seg.u === cur ? seg.w : seg.u;
+        backward.push(cur);
+      }
+    }
+    const head = closed ? [segments[s].u] : backward.reverse();
+    const verts = head.concat(forward);
     if (verts.length >= 2) chains.push({ verts, closed, names });
   }
   return chains;

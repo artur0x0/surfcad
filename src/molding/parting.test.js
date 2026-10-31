@@ -208,6 +208,39 @@ test('a through hole keeps the outer loop and drops the hole loop', () => {
   assert.ok(line.points.every((point) => Math.abs(point[2] - 12) < 1e-4));
 });
 
+test('a cracked wall with a T-junction rim still draws one outer loop', () => {
+  // +Y face stores the shared diagonal twice. The top edge of that face
+  // is split by a midpoint the wall does not index.
+  const positions = [
+    0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0,
+    0, 0, 10, 10, 0, 10, 10, 10, 10, 0, 10, 10,
+    10, 10, 10,
+    5, 10, 10,
+  ];
+  const indices = [
+    0, 2, 1, 0, 3, 2,
+    4, 5, 6, 4, 6, 9, 4, 9, 7,
+    1, 2, 6, 1, 6, 5,
+    0, 4, 7, 0, 7, 3,
+    3, 7, 6, 3, 8, 2,
+    0, 1, 5, 0, 5, 4,
+  ];
+  const result = analyzePullDirection({ positions, indices, pull: [0, 0, 1] });
+  const line = result.parting.lines[0];
+  const yFace = result.parting.triangles.filter((entry) => {
+    const info = triInfo({ positions, indices }, entry.index);
+    return Math.abs(info.normal[1]) > 0.5 && info.centroid[1] > 5;
+  });
+  assert.ok(yFace.length >= 2);
+  assert.ok(yFace.every((entry) => entry.role === 'cavity'));
+  assert.equal(result.parting.lines.length, 1);
+  assert.equal(line.closed, true);
+  assert.ok(Math.abs(line.length - 40) < 1e-3);
+  assert.ok(Math.abs(line.projectedPerimeter - 40) < 1e-3);
+  assert.ok(line.points.every((point) => Math.abs(point[2] - 10) < 1e-4));
+  assert.ok(line.points.some((point) => Math.abs(point[0] - 5) < 1e-4 && Math.abs(point[1] - 10) < 1e-4));
+});
+
 test('a stamped face that straddles zero draft stays split', () => {
   const tris = [
     tri([0, 0, 4], [2, 0, 4], [1, 0.4, 4], 0, 0, 1, 2, [0, 0, 1]),
