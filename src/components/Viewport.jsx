@@ -11498,6 +11498,7 @@ const Viewport = forwardRef(({
     let orbitControls = null;
     let orbitPointerDom = null;
     let onPointerDownRotateSpeed = null;
+    let axisHelper = null;
 
     const getContainerSize = () => readViewportContainerSize(container);
 
@@ -12130,7 +12131,10 @@ const Viewport = forwardRef(({
             renderer.render(sceneRef.current, c);
             return true;
           },
-          setAxes: (on) => { setAxisHelperEnabled(!!on); return true; },
+          setAxes: (on) => {
+            if (axisHelper) axisHelper.visible = !!on;
+            return true;
+          },
           stageContourSketch: () => {
             const meshes = highlightMeshRef.current;
             return {
@@ -12379,7 +12383,7 @@ const Viewport = forwardRef(({
 
       // The rail triad button is gone. The helper stays a visual AxesHelper
       // (it does not move a body) and stays hidden.
-      const axisHelper = new AxesHelper(50);
+      axisHelper = new AxesHelper(50);
       applyTriadAxisColors(axisHelper);
       axisHelper.visible = false;
       sceneRef.current.add(axisHelper);
