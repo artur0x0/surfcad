@@ -51,3 +51,28 @@ Until part cost exists, the part figures are a stand-in cycle
 (`fill + k × wall² + mechanical seconds`) times a stand-in press rate.
 Resin is the same for both metals, so it would not move that quantity.
 Pass `partCostUsd` to replace the stand-in. An inactive rate card is refused.
+
+## Part cost and ranking
+
+`rankMoldingQuotes` in `src/molding/partQuote.js` is the budgetary part price.
+`quoteMolding` in `backend/services/moldingQuote.js` loads the active catalog
+and calls it. The caller does not send a price. The result uses `anonLabel`
+and `region` only. It does not write `Quote` and it does not add a molding
+quote collection.
+
+Clamp force is projected area times 50 MPa, converted at 9806.65 newtons per
+ton. Projected area is the parting-plane footprint times the cavity count.
+Shot volume is the part volume times the cavities times 1.15. A press fits
+when the clamp is within its tonnage, the shot is 20–80% of the barrel, the
+plate fits the platen and the tie bars in one rotation, and utilization is
+under 100%. Effective rate is the hourly rate divided by `1 − utilization`.
+
+Cycle time is the same stand-in as the tooling estimate: fill, plus `k` times
+max wall squared, plus the mechanical seconds. Aluminum uses the uncooled `k`.
+Resin mass is volume (cm³) times density (g/cm³), in kilograms. With no grade
+named, the partner’s cheapest active resin is used. Grades match exactly.
+
+Partners with no fitting press are left out. The rest sort by the lowest unit
+cost, then the public label. The range is the cheap metal and the expensive
+metal across the presses that fit. Unit cost is the part cost plus tooling
+divided by quantity.
