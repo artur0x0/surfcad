@@ -751,11 +751,11 @@ export default function AgentBridgePairing({
   const bannerPortal = showConnectedBanner && bodyTarget
     ? createPortal(
       <div
-        className="fixed inset-x-0 top-0 z-[145] flex justify-center px-3 py-2"
+        className="pointer-events-none fixed inset-x-0 top-0 z-[145] flex justify-center px-3 py-2"
         data-agent-connected-banner=""
         style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))' }}
       >
-        <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-md px-3 py-2 surface-success font-ui">
+        <div className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-md px-3 py-2 surface-success font-ui">
           <span className="text-ui-sm font-semibold text-on-dark">Agent connected</span>
           <button
             type="button"
