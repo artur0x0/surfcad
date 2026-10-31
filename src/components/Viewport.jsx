@@ -15586,6 +15586,7 @@ const Viewport = forwardRef(({
           onClearLocalCadData={onClearLocalCadData}
           vaultName={profileVaultName}
           agentBridgeLive={agentBridgeLive}
+          stackedTitle={!!(showCadTitle && !hideCadTitle && titleParts.assembly)}
         />
       )}
 

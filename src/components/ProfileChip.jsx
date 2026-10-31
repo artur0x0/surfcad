@@ -29,6 +29,7 @@ export default function ProfileChip({
   vaultName = DEFAULT_VAULT_NAME,
   variant = 'viewport',
   agentBridgeLive = false,
+  stackedTitle = false,
 }) {
   const { user, guest, isGuest, logout, checkAuth } = useAuth();
   const session = useAuthState();
@@ -85,9 +86,11 @@ export default function ProfileChip({
         active:opacity-80 ${tone}`;
 
   const iconSize = inline ? 14 : 16;
+  // Phone, two-line title: the chip sits centred on that stack, level with
+  // the wordmark, instead of pinned to the row's top (`profile-chip-stacked`).
   const wrapClass = inline
     ? 'pointer-events-auto relative z-10 shrink-0 overflow-visible'
-    : 'pointer-events-auto absolute top-4 lg:top-2 right-4 z-50 overflow-visible';
+    : `pointer-events-auto absolute top-4 lg:top-2 right-4 z-50 overflow-visible${stackedTitle ? ' profile-chip-stacked' : ''}`;
 
   const startReconnect = () => {
     if (session.offerReconnect) session.reconnectInteractive();
@@ -163,7 +166,7 @@ export default function ProfileChip({
   }, [agentBridgeLive, registerCloseMenu]);
 
   return (
-    <div className={wrapClass} data-profile-chip-wrap="">
+    <div className={wrapClass} data-profile-chip-wrap="" data-profile-chip-stacked={stackedTitle ? '' : undefined}>
       {agentRing ? (
         <span
           className={`agent-bridge-profile-ring agent-bridge-profile-ring--${agentRing} pointer-events-none`}

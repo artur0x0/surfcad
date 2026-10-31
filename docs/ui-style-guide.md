@@ -177,9 +177,11 @@ pane that mounts the row sets `data-joints-row-open`, which turns
 script drawer add that token to their clearance.
 
 On a phone the ribbon's top is `--feature-strip-offset-mobile`: the header's
-`top-4`, two title pills, and `--viewer-title-stack-gap` twice (once between
-the pills, once under the assembly pill). That is the same gap the stacked
-title uses. Desktop stays `--feature-strip-offset-desktop` (`top-14`).
+`top-4`, two title pills, `--viewer-title-stack-gap` twice (once between
+the pills, once under the assembly pill), plus `--rollback-mark-height`
+(0.5rem, the rollback bar's triangle, `ROLLBACK_MARK` in `FeatureStrip.jsx`)
+so the mark stands in that gap and never touches the assembly pill. Desktop
+stays `--feature-strip-offset-desktop` (`top-14`).
 
 Leave **10px** (`--feature-strip-rail-gap`) between the ribbon bottom (or
 the joints row bottom when that row is mounted) and the
@@ -187,7 +189,10 @@ top of the left helper rail and the right view rail. Desktop full-length
 left rail: class `rail-full-below-strip`. Mobile content-max left rail:
 `rail-max-below-strip`. Right rail: `rail-right-below-strip` (same 10px
 clearance, no 26rem cap). Rails keep a 10px bottom inset so they do not
-overflow the pane.
+overflow the pane. On a phone both rails are bottom-anchored and the left
+rail takes the right rail's height as its minimum (`useLeftRailFit`), so
+the two start on the same line; a left rail with more content than that
+height scrolls inside it.
 
 The Parts-header git branch chip (`data-parts-ribbon-branch`, class
 `parts-branch-chip`) is a 1px `currentColor` outline, `rounded-lg`, on

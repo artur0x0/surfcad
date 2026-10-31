@@ -67,7 +67,9 @@ mkdirSync(SHOT_DIR, { recursive: true });
   check('pill gap and strip offset share --viewer-title-stack-gap',
     /--viewer-title-stack-gap:\s*0\.25rem/.test(css)
     && /gap:\s*var\(--viewer-title-stack-gap\)/.test(css)
-    && /--feature-strip-offset-mobile:\s*calc\([\s\S]*?var\(--viewer-title-stack-gap\)/.test(css)
+    && /--feature-strip-offset-mobile:\s*calc\([\s\S]*?var\(--viewer-title-stack-gap\)[\s\S]*?var\(--rollback-mark-height\)/.test(css)
+    && /--rollback-mark-height:\s*0\.5rem/.test(css)
+    && /const ROLLBACK_MARK = 8;/.test(read('src/components/FeatureStrip.jsx'))
     && /\.cad-feature-strip-mobile\s*\{[^}]*top:\s*var\(--feature-strip-offset-mobile\)/.test(css)
     && /className="cad-feature-strip-mobile absolute inset-x-0 z-20/.test(app)
     && !/top-20 z-20/.test(app));
@@ -199,6 +201,14 @@ async function readLayout(page) {
       canvas: box(document.querySelector('[data-stage-pane="cad"] canvas, [data-agent-viewport] canvas')),
       leftRail: box(document.querySelector('[data-rail-pair="left"]')),
       rightRail: box(document.querySelector('[data-rail-pair="right"]')),
+      mark: box(document.querySelector('[data-rollback-mark]')),
+      markPx: (() => {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--rollback-mark-height').trim();
+        const m = /^([\d.]+)(rem|px)$/.exec(raw);
+        if (!m) return null;
+        const n = parseFloat(m[1]);
+        return m[2] === 'rem' ? n * parseFloat(getComputedStyle(document.documentElement).fontSize) : n;
+      })(),
       stackGapPx: (() => {
         const chips = document.querySelector('[data-viewer-title-chips]');
         if (!chips) return null;
@@ -386,13 +396,29 @@ try {
       check(`${label} title does not overlap the feature strip`,
         layout.strip && layout.part.bottom <= layout.strip.top + 0.5 && layout.assembly.bottom <= layout.strip.top + 0.5,
         JSON.stringify({ part: layout.part, assembly: layout.assembly, strip: layout.strip }));
-      check(`${label} assembly-to-strip gap equals the pill gap`,
+      // The strip sits one stack gap plus the rollback triangle's height
+      // under the assembly pill, so the mark stands in the gap and never
+      // touches the pill.
+      check(`${label} assembly-to-strip gap is the pill gap plus the rollback mark`,
         pillGap != null && stripGap != null
-        && layout.stackGapPx != null
-        && Math.abs(pillGap - stripGap) <= 1
+        && layout.stackGapPx != null && layout.markPx != null
         && Math.abs(pillGap - layout.stackGapPx) <= 1
-        && Math.abs(stripGap - layout.stackGapPx) <= 1,
-        JSON.stringify({ pillGap, stripGap, stackGapPx: layout.stackGapPx }));
+        && Math.abs(stripGap - (layout.stackGapPx + layout.markPx)) <= 1,
+        JSON.stringify({ pillGap, stripGap, stackGapPx: layout.stackGapPx, markPx: layout.markPx }));
+      check(`${label} rollback mark clears the assembly pill`,
+        !layout.mark || !layout.assembly || layout.mark.top >= layout.assembly.bottom - 0.5,
+        JSON.stringify({ mark: layout.mark, assembly: layout.assembly }));
+      // The profile chip centres on the two-line title like the wordmark does.
+      const chipMid = layout.profile ? layout.profile.top + layout.profile.height / 2 : null;
+      const stackMid = layout.part && layout.assembly ? (layout.part.top + layout.assembly.bottom) / 2 : null;
+      const wordMid = layout.word ? layout.word.top + layout.word.height / 2 : null;
+      check(`${label} profile chip is level with the wordmark and the title stack`,
+        chipMid != null && stackMid != null && Math.abs(chipMid - stackMid) <= 1
+        && (wordMid == null || Math.abs(chipMid - wordMid) <= 1),
+        JSON.stringify({ chipMid, stackMid, wordMid, profile: layout.profile }));
+      check(`${label} left and right rails start on the same line`,
+        !layout.leftRail || !layout.rightRail || Math.abs(layout.leftRail.top - layout.rightRail.top) <= 1,
+        JSON.stringify({ left: layout.leftRail, right: layout.rightRail }));
       const fills = (node, host) => !!(node && host
         && Math.abs(node.top - host.top) <= 1
         && Math.abs(node.left - host.left) <= 1
