@@ -6,8 +6,10 @@ import MoldingMachine from '../db/models/MoldingMachine.js';
 import MoldingResinPrice from '../db/models/MoldingResinPrice.js';
 import MoldingToolingRate from '../db/models/MoldingToolingRate.js';
 import MoldingLead from '../db/models/MoldingLead.js';
+import MoldingResin from '../db/models/MoldingResin.js';
 import * as catalog from '../services/moldingCatalog.js';
 import * as leadAdmin from '../services/moldingLeadAdmin.js';
+import * as resinLibrary from '../services/moldingResinLibrary.js';
 
 function defaultModels() {
   return {
@@ -16,6 +18,7 @@ function defaultModels() {
     resins: MoldingResinPrice,
     rates: MoldingToolingRate,
     leads: MoldingLead,
+    library: MoldingResin,
   };
 }
 
@@ -142,6 +145,26 @@ export function createMoldingAdminRouter(models = defaultModels()) {
   router.patch('/leads/:id', wrap(async (req, res) => {
     const lead = await leadAdmin.updateMoldingLead(db, req.params.id, req.body);
     res.json(lead);
+  }));
+
+  router.get('/resin-library', wrap(async (req, res) => {
+    const resins = await resinLibrary.listMoldingResins(db.library, req.query);
+    res.json({ resins });
+  }));
+
+  router.post('/resin-library', wrap(async (req, res) => {
+    const resin = await resinLibrary.createMoldingResin(db.library, req.body);
+    res.status(201).json(resin);
+  }));
+
+  router.patch('/resin-library/:id', wrap(async (req, res) => {
+    const resin = await resinLibrary.updateMoldingResin(db.library, req.params.id, req.body);
+    res.json(resin);
+  }));
+
+  router.post('/resin-library/:id/deactivate', wrap(async (req, res) => {
+    const resin = await catalog.deactivate(db.library, req.params.id);
+    res.json(resin);
   }));
 
   return router;

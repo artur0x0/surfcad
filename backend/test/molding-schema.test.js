@@ -11,6 +11,8 @@ import MoldingMachine from '../db/models/MoldingMachine.js';
 import MoldingResinPrice from '../db/models/MoldingResinPrice.js';
 import MoldingToolingRate from '../db/models/MoldingToolingRate.js';
 import MoldingLead from '../db/models/MoldingLead.js';
+import MoldingResin from '../db/models/MoldingResin.js';
+import Material from '../db/models/Material.js';
 
 const partnerId = new mongoose.Types.ObjectId();
 const userId = new mongoose.Types.ObjectId();
@@ -77,6 +79,22 @@ function rate(overrides = {}) {
   });
 }
 
+function libraryResin(overrides = {}) {
+  return new MoldingResin({
+    grade: 'ABS',
+    tensileModulusMpa: 2300,
+    shrinkLowPct: 0.4,
+    shrinkHighPct: 0.7,
+    wallMinMm: 1.2,
+    wallMaxMm: 3.5,
+    meltTempLowC: 220,
+    meltTempHighC: 260,
+    moldTempLowC: 40,
+    moldTempHighC: 80,
+    ...overrides,
+  });
+}
+
 function lead(overrides = {}) {
   return new MoldingLead({
     userId,
@@ -102,6 +120,7 @@ describe('molding catalog collections', () => {
         collectionName(MoldingResinPrice),
         collectionName(MoldingToolingRate),
         collectionName(MoldingLead),
+        collectionName(MoldingResin),
       ],
       [
         'molding_partners',
@@ -109,9 +128,20 @@ describe('molding catalog collections', () => {
         'molding_resin_prices',
         'molding_tooling_rates',
         'molding_leads',
+        'molding_resins',
       ],
     );
-    const models = [MoldingPartner, MoldingMachine, MoldingResinPrice, MoldingToolingRate, MoldingLead];
+    assert.equal(collectionName(Material), 'materials');
+    assert.equal(Material.schema.path('process').enumValues.includes('FDM'), true);
+    assert.equal(Material.schema.path('process').enumValues.includes('IM'), false);
+    const models = [
+      MoldingPartner,
+      MoldingMachine,
+      MoldingResinPrice,
+      MoldingToolingRate,
+      MoldingLead,
+      MoldingResin,
+    ];
     for (const model of models) {
       assert.notEqual(collectionName(model), 'partners');
       assert.notEqual(model.modelName, 'Partner');
@@ -125,6 +155,9 @@ describe('molding catalog collections', () => {
     assert.equal(hasIndex(MoldingMachine, { partnerId: 1, name: 1 }, { unique: true }), true);
     assert.equal(hasIndex(MoldingMachine, { partnerId: 1, active: 1 }), true);
     assert.equal(hasIndex(MoldingResinPrice, { partnerId: 1, grade: 1 }, { unique: true }), true);
+    assert.equal(hasIndex(MoldingResin, { grade: 1 }, { unique: true }), true);
+    assert.equal(MoldingResin.schema.path('usdPerKg'), undefined);
+    assert.equal(MoldingResin.schema.path('partnerId'), undefined);
     assert.equal(hasIndex(MoldingToolingRate, { partnerId: 1 }, { unique: true }), true);
     assert.equal(hasIndex(MoldingLead, { status: 1, createdAt: -1 }), true);
     assert.equal(hasIndex(MoldingLead, { partnerId: 1, status: 1 }), true);
@@ -144,6 +177,11 @@ describe('molding catalog validation', () => {
     assert.equal(partner.notes, '');
     await machine().validate();
     await resin().validate();
+    const generic = libraryResin();
+    await generic.validate();
+    assert.equal(generic.active, true);
+    assert.equal(generic.notes, '');
+    assert.equal(generic.usdPerKg, undefined);
     const card = rate();
     await card.validate();
     assert.equal(card.hotRunnerSuggestionUsd, 0);
@@ -199,6 +237,15 @@ describe('molding catalog validation', () => {
       budgetaryQuoteSnapshot: { range: [1, 2], qty: 1000 },
       stripePaymentIntentId: 'pi_test_placeholder',
     }).validate();
+  });
+
+  test('library bands reject an inverted range and a zero wall', async () => {
+    await fails(libraryResin({ shrinkLowPct: 2, shrinkHighPct: 0.4 }));
+    await fails(libraryResin({ wallMinMm: 0 }));
+    await fails(libraryResin({ tensileModulusMpa: 0 }));
+    await fails(libraryResin({ meltTempLowC: -1 }));
+    await fails(libraryResin({ moldTempHighC: 10, moldTempLowC: 40 }));
+    await libraryResin({ shrinkLowPct: 0.5, shrinkHighPct: 0.5 }).validate();
   });
 
   test('a blank partner name does not pass', async () => {

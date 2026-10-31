@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import { ADMIN_STATS_DAYS, adminPageAccess } from '../utils/adminAccess.js';
 import NotFoundPage from './NotFoundPage.jsx';
 import MoldingCatalog from './admin/MoldingCatalog.jsx';
+import MoldingResinLibrary from './admin/MoldingResinLibrary.jsx';
 import MoldingLeads from './admin/MoldingLeads.jsx';
 
 const METRICS = [
@@ -171,6 +172,7 @@ export default function AdminPage() {
         </div>
 
         <MoldingCatalog onForbidden={showNotFound} />
+        <MoldingResinLibrary onForbidden={showNotFound} />
         <MoldingLeads onForbidden={showNotFound} />
 
         <SiteFooter variant="light">
