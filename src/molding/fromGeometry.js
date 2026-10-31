@@ -20,7 +20,11 @@ export function moldFitFromGeometry(geometry, faceIDs = null, { pull = null, wal
   const graph = warmFaceGraph(geometry, faceIDs);
   const table = stampedFaceTable(geometry, faceIDs);
   const stamped = table?.triFace && table.faces?.length
-    ? { triFace: table.triFace, normals: table.faces.map((face) => face.normal) }
+    ? {
+      triFace: table.triFace,
+      normals: table.faces.map((face) => face.normal),
+      names: table.faces.map((face) => face.name),
+    }
     : null;
   const input = {
     positions,
