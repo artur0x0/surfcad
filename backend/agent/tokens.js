@@ -78,6 +78,21 @@ export function createMemoryTokenStore() {
       return true;
     },
     /**
+     * Revoke every live token for the account. Already-revoked rows stay as they are.
+     * @param {string} userId
+     * @returns {Promise<string[]>}
+     */
+    async revokeAll(userId) {
+      const ids = [];
+      const when = new Date().toISOString();
+      for (const row of byId.values()) {
+        if (String(row.userId) !== String(userId) || row.revokedAt) continue;
+        row.revokedAt = when;
+        ids.push(String(row.id));
+      }
+      return ids;
+    },
+    /**
      * @param {string} tokenHash
      * @param {string} when
      */
@@ -161,6 +176,17 @@ export function createMongoTokenStore(model) {
         { $set: { revokedAt: new Date() } },
       );
       return result.matchedCount > 0;
+    },
+    /**
+     * @param {string} userId
+     * @returns {Promise<string[]>}
+     */
+    async revokeAll(userId) {
+      const docs = await model.find({ userId, revokedAt: null }).select('_id').lean();
+      const ids = docs.map((doc) => String(doc._id));
+      if (ids.length === 0) return [];
+      await model.updateMany({ userId, revokedAt: null }, { $set: { revokedAt: new Date() } });
+      return ids;
     },
     /**
      * @param {string} tokenHash
@@ -278,6 +304,13 @@ export function createTokenService(opts = {}) {
      */
     async revoke(userId, id) {
       return holder.store.revoke(String(userId), String(id));
+    },
+    /**
+     * @param {string} userId
+     * @returns {Promise<string[]>} ids that were live and are now revoked
+     */
+    async revokeAll(userId) {
+      return holder.store.revokeAll(String(userId));
     },
   };
 }

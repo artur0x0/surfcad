@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
 import { cityFromRequest } from '../agent/approvalCopy.js';
 import { createManualClock } from '../agent/clock.js';
 import {
   MAX_WRONG_TRIES,
   PAIR_ENTRY_WINDOW_MS,
+  PAIR_RETENTION_MS,
   PAIR_TTL_MS,
 } from '../agent/limits.js';
 import {
   createPairingService,
   formatUserCode,
+  hashDeviceSecret,
   USER_CODE_ALPHABET,
 } from '../agent/pairing.js';
 import { createMemoryTokenStore, createTokenService, hashToken } from '../agent/tokens.js';
@@ -30,6 +33,18 @@ function setup(overrides = {}) {
     tokens,
     now: () => clock.now(),
   });
+  const start = pairing.start.bind(pairing);
+  pairing.start = (fields = {}) => {
+    const bytes = randomBytes(32);
+    const deviceSecret = bytes.toString('base64url');
+    const started = start({
+      ...fields,
+      deviceSecretHash: fields.deviceSecretHash
+        || createHash('sha256').update(bytes).digest('hex'),
+    });
+    if (!started.ok) return started;
+    return { ...started, deviceSecret };
+  };
   return { clock, store, tokens, pairing };
 }
 
@@ -41,9 +56,10 @@ describe('device-code pairing', () => {
     const started = pairing.start({ name: 'Cursor', machine: 'laptop', ip: '203.0.113.5' });
     assert.equal(started.ok, true);
     assert.match(started.userCode, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/);
-    assert.equal(Buffer.from(started.deviceSecret, 'base64url').length >= 32, true);
+    assert.equal(Buffer.from(started.deviceSecret, 'base64url').length, 32);
     const saved = pairing.snapshot()[0];
-    assert.equal(saved.deviceSecretHash, hashToken(started.deviceSecret));
+    assert.equal(saved.deviceSecretHash, hashDeviceSecret(started.deviceSecret));
+    assert.equal(Object.prototype.hasOwnProperty.call(started, 'deviceSecret'), true);
     assert.equal(JSON.stringify(pairing.snapshot()).includes(started.deviceSecret), false);
     assert.equal(pairing.plaintextHeld().includes(started.deviceSecret), false);
   });
@@ -59,6 +75,7 @@ describe('device-code pairing', () => {
     });
     const shown = pairing.claim({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
     assert.equal(shown.sentence, 'Allow Cursor on laptop in Berlin to connect?');
+    assert.equal(shown.ip, '203.0.113.8');
     assert.equal(shown.sentence.includes(','), false);
     await pairing.approve({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
     const listed = await tokens.list('user-a');
@@ -283,5 +300,47 @@ describe('device-code pairing', () => {
     assert.equal(pairing.start({ name: 'B', machine: 'b', ip: '203.0.113.1' }).ok, true);
     assert.equal(pairing.start({ name: 'C', machine: 'c', ip: '203.0.113.1' }).error, 'rate_limited');
     assert.equal(pairing.start({ name: 'D', machine: 'd', ip: '203.0.113.2' }).ok, true);
+  });
+
+  test('the server stores the client hash and does not return the secret', () => {
+    const clock = createManualClock(1_700_000_000_000);
+    const tokens = createTokenService({ store: createMemoryTokenStore(), now: () => clock.now() });
+    const pairing = createPairingService({
+      tokens,
+      now: () => clock.now(),
+      startLimit: 100,
+    });
+    const missing = pairing.start({ name: 'Cursor', machine: 'laptop', ip: '203.0.113.5' });
+    assert.equal(missing.error, 'bad_device_secret');
+    const bytes = randomBytes(32);
+    const deviceSecret = bytes.toString('base64url');
+    const deviceSecretHash = createHash('sha256').update(bytes).digest('hex');
+    const started = pairing.start({
+      name: 'Cursor',
+      machine: 'laptop',
+      ip: '203.0.113.5',
+      deviceSecretHash,
+    });
+    assert.equal(started.ok, true);
+    assert.equal(started.deviceSecret, undefined);
+    assert.equal(JSON.stringify(started).includes(deviceSecret), false);
+    assert.equal(pairing.snapshot()[0].deviceSecretHash, deviceSecretHash);
+    assert.equal(pairing.poll({ deviceSecret, ip: '203.0.113.5' }).status, 'pending');
+    assert.equal(pairing.poll({
+      deviceSecret: randomBytes(32).toString('base64url'),
+      userCode: started.userCode,
+      ip: '203.0.113.5',
+    }).error, 'unknown_device');
+  });
+
+  test('pending pairings are capped and terminal records are swept', () => {
+    const { clock, pairing } = setup({ pairing: { maxPendingPairings: 2, retentionMs: PAIR_RETENTION_MS } });
+    const first = pairing.start({ name: 'A', machine: 'a', ip: '203.0.113.20' });
+    assert.equal(pairing.start({ name: 'B', machine: 'b', ip: '203.0.113.21' }).ok, true);
+    assert.equal(pairing.start({ name: 'C', machine: 'c', ip: '203.0.113.22' }).error, 'unavailable');
+    clock.advance(PAIR_TTL_MS + PAIR_RETENTION_MS);
+    assert.equal(pairing.poll({ deviceSecret: first.deviceSecret, ip: '203.0.113.20' }).error, 'unknown_device');
+    assert.equal(pairing.snapshot().length, 0);
+    assert.equal(pairing.start({ name: 'D', machine: 'd', ip: '203.0.113.23' }).ok, true);
   });
 });

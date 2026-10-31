@@ -152,9 +152,12 @@ function fetching(decide) {
       if (typeof parsed.deviceSecret === 'string') secrets.push(parsed.deviceSecret);
     }
     const res = await fetch(url, init);
-    if (init?.method === 'POST' && String(url).endsWith('/agent/pair')) {
+    if (init?.method === 'POST' && String(url).endsWith('/agent/pair') && !String(url).endsWith('/pair/poll')) {
+      const sent = JSON.parse(String(init.body || '{}'));
+      assert.equal(sent.deviceSecret, undefined);
+      assert.match(String(sent.deviceSecretHash), /^[0-9a-f]{64}$/);
       const json = await res.clone().json();
-      if (typeof json.deviceSecret === 'string') secrets.push(json.deviceSecret);
+      assert.equal(json.deviceSecret, undefined);
       if (typeof json.userCode === 'string') await decide(json.userCode);
     }
     return res;
@@ -282,10 +285,14 @@ test('login stores a 0600 token, status and logout omit it, and logs never conta
   const paired = await runCli([], { env: { ...env, SURFCAD_PAIRING_CODE: 'ABCDEF' } });
   assert.equal(paired.mode, 'local');
 
+  const logoutOut = [];
   await runCli(['logout'], {
     env,
-    io: { stdout: () => {}, stderr: () => {} },
+    io: { stdout: (text) => logoutOut.push(text), stderr: () => {} },
   });
+  assert.equal(logoutOut.join(''), 'Logged out.\n');
+  assert.equal(logoutOut.join('').includes(saved.token), false);
+  assert.equal(await relay.tokens.authenticate(saved.token), null);
   assert.equal(await readSavedLogin(env), null);
   const missing = [];
   await runCli(['--remote'], {
@@ -293,6 +300,34 @@ test('login stores a 0600 token, status and logout omit it, and logs never conta
     io: { stdout: () => {}, stderr: (text) => missing.push(text) },
   });
   assert.match(missing.join(''), /npx surfcad-mcp login/);
+});
+
+test('logout still deletes the file when the server cannot be reached', async () => {
+  const env = await tempEnv();
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+  const { saveLogin, readSavedLogin } = await import('../src/remote/tokenStore.mjs');
+  await saveLogin({
+    token: issued.token,
+    server: origin,
+    name: 'Cursor',
+    machine: 'laptop',
+  }, env);
+  const stdout = [];
+  const outcome = await runCli(['logout'], {
+    env,
+    fetch: async () => {
+      throw new Error('down');
+    },
+    io: { stdout: (text) => stdout.push(text), stderr: () => {} },
+  });
+  assert.equal(outcome.code, 0);
+  const printed = stdout.join('');
+  assert.match(printed, /may stay valid until it expires/);
+  assert.equal(printed.includes(issued.token), false);
+  assert.equal(await readSavedLogin(env), null);
+  assert.ok(await relay.tokens.authenticate(issued.token));
 });
 
 test('a denied login does not write a token', async () => {

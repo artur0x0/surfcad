@@ -44,6 +44,42 @@ export const RESULT_RETENTION_MS = 2 * 60 * 1000;
 /** Suggested device-code poll interval, in seconds. */
 export const PAIR_POLL_INTERVAL_SEC = 5;
 
+/** Cookie and approval-page routes per IP per minute. */
+export const BROWSER_ROUTE_LIMIT = 120;
+
+export const BROWSER_ROUTE_WINDOW_MS = 60 * 1000;
+
+/**
+ * Long-poll and SSE reads per token per minute. Separate from
+ * `COMMAND_LIMIT` so a 30-second wait loop is not rejected as a command.
+ */
+export const COMMAND_READ_LIMIT = 120;
+
+export const COMMAND_READ_WINDOW_MS = 60 * 1000;
+
+/** WebSocket upgrades per client IP per minute. */
+export const SOCKET_CONNECT_LIMIT = 30;
+
+export const SOCKET_CONNECT_WINDOW_MS = 60 * 1000;
+
+/** Live browser tabs for one account. A further tab is closed. */
+export const MAX_TABS_PER_USER = 8;
+
+/** Live agent sockets for one account. A further socket is closed. */
+export const MAX_AGENTS_PER_USER = 8;
+
+/** Pending device codes held in this process. */
+export const MAX_PENDING_PAIRINGS = 500;
+
+/**
+ * How long a finished or expired pairing stays after its TTL, so a poll
+ * can still observe `expired` or `consumed` before the record is dropped.
+ */
+export const PAIR_RETENTION_MS = PAIR_TTL_MS;
+
+/** Ping interval. A socket that misses the previous pong is terminated. */
+export const SOCKET_PING_INTERVAL_MS = 30 * 1000;
+
 /**
  * @param {unknown} value
  * @returns {number}

@@ -140,11 +140,46 @@ async function seedAssembly(page) {
   }, { doc: ASSEMBLY, script: SEED_SCRIPT });
 }
 
+// page.evaluate has no Playwright timeout. A call that never settles used to
+// hold this step until the job was cancelled. The deadline is outside the
+// page so a stuck main thread still fails here.
+const CALL_TIMEOUT_MS = 90_000;
+let browser = null;
+
 async function rawAgentCall(page, name, args) {
-  return page.evaluate(async ({ name, argsJson }) => {
-    const env = await window.surfcad.call(name, argsJson);
-    return env;
-  }, { name, argsJson: JSON.stringify(args ?? {}) });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(
+        `agent bridge readers: '${name}' did not return within ${CALL_TIMEOUT_MS / 1000}s`,
+      ));
+    }, CALL_TIMEOUT_MS);
+  });
+  let hung = null;
+  try {
+    return await Promise.race([
+      page.evaluate(async ({ name: command, argsJson }) => {
+        const env = await window.surfcad.call(command, argsJson);
+        return env;
+      }, { name, argsJson: JSON.stringify(args ?? {}) }),
+      timeout,
+    ]);
+  } catch (err) {
+    const message = String(err?.message || err);
+    if (message.includes('did not return')) hung = message;
+    else throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  console.log(`  ❌ ${hung}`);
+  stop();
+  if (browser) {
+    await Promise.race([
+      browser.close().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  }
+  process.exit(1);
 }
 const agentCall = wrapAgentCall(rawAgentCall);
 
@@ -156,7 +191,7 @@ if (!(await waitForServer())) {
   process.exit(1);
 }
 
-const browser = await chromium.launch({
+browser = await chromium.launch({
   executablePath: exe,
   headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'],

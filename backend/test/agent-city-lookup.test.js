@@ -44,6 +44,40 @@ describe('city lookup', () => {
     assert.equal(await miss('203.0.113.9'), null);
   });
 
+  test('the cache is capped and a lookup aborts on timeout', async () => {
+    const seen = [];
+    const lookup = createCityLookup({
+      maxEntries: 2,
+      fetchImpl: async (url) => {
+        seen.push(String(url));
+        return { ok: true, json: async () => ({ city: 'Berlin' }) };
+      },
+    });
+    assert.equal(await lookup('203.0.113.1'), 'Berlin');
+    assert.equal(await lookup('203.0.113.2'), 'Berlin');
+    assert.equal(await lookup('203.0.113.3'), 'Berlin');
+    assert.equal(seen.length, 3);
+    assert.equal(await lookup('203.0.113.2'), 'Berlin');
+    assert.equal(seen.length, 3);
+    assert.equal(await lookup('203.0.113.1'), 'Berlin');
+    assert.equal(seen.length, 4);
+
+    const slow = createCityLookup({
+      timeoutMs: 20,
+      fetchImpl: (_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      }),
+    });
+    // The lookup timer is unref'd so it cannot be the only thing keeping
+    // the process alive. Hold the loop until the abort fires.
+    const keep = setInterval(() => {}, 1000);
+    try {
+      assert.equal(await slow('203.0.113.8'), null);
+    } finally {
+      clearInterval(keep);
+    }
+  });
+
   test('a thrown lookup does not throw', async () => {
     const lookup = createCityLookup({
       fetchImpl: async () => { throw new Error('down'); },

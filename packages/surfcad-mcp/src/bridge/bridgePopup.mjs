@@ -33,6 +33,33 @@ const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const PROD_SURFCAD_HOSTS = new Set(['surfcad.com', 'www.surfcad.com']);
 
 /**
+ * Same loopback rule as the relay allowlist, without `node:net`.
+ * Four decimal octets only. A hostname is never prefix-matched.
+ * @param {string} hostname
+ */
+function isLiteralLoopbackHost(hostname) {
+  if (LOCAL_HOSTNAMES.has(hostname)) return true;
+  const host = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  if (LOCAL_HOSTNAMES.has(host)) return true;
+  const parts = host.split('.');
+  if (parts.length === 4 && parts.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)) {
+    return Number(parts[0]) === 127;
+  }
+  const lower = host.toLowerCase();
+  if (lower === '::1') return true;
+  if (lower.startsWith('::ffff:')) {
+    const v4 = lower.slice('::ffff:'.length);
+    const mapped = v4.split('.');
+    return mapped.length === 4
+      && mapped.every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)
+      && Number(mapped[0]) === 127;
+  }
+  return false;
+}
+
+/**
  * Same rule as the relay's `isAllowedHttpOrigin`, but an opener must always
  * present an origin, and it must be a bare origin (no path, query or `null`).
  *
@@ -52,7 +79,7 @@ export function isAllowedOpenerOrigin(origin, extraOrigins = []) {
     if (extra === origin) return true;
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
-  if (LOCAL_HOSTNAMES.has(url.hostname) || url.hostname.startsWith('127.')) return true;
+  if (isLiteralLoopbackHost(url.hostname)) return true;
   return PROD_SURFCAD_HOSTS.has(url.hostname);
 }
 

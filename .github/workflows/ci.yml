@@ -247,67 +247,86 @@ jobs:
           test -x "$CHROME_PATH"
           test -n "$GOLDEN_SHOT_DIR"
           mkdir -p "$GOLDEN_SHOT_DIR"
-          node scripts/golden/smoke_agent_bridge_readers.mjs | tee "${RUNNER_TEMP}/agent-bridge-readers.log"
+          # A stuck script used to sit in this step until the job was cancelled.
+          # On a green main run each script finishes in well under a minute.
+          # Eight minutes with no exit is a hang: name it and fail.
+          bounded() {
+            local name="$1"
+            shift
+            echo "golden: start ${name} (limit 480s)"
+            local code=0
+            timeout --foreground --signal=TERM --kill-after=20s 480 "$@" || code=$?
+            if [ "$code" -eq 124 ] || [ "$code" -eq 137 ]; then
+              echo "golden: FAILED ${name} — timed out after 480s"
+              exit 1
+            fi
+            if [ "$code" -ne 0 ]; then
+              echo "golden: FAILED ${name} — exit ${code}"
+              exit "$code"
+            fi
+            echo "golden: done ${name}"
+          }
+          bounded "agent bridge readers" node scripts/golden/smoke_agent_bridge_readers.mjs | tee "${RUNNER_TEMP}/agent-bridge-readers.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-readers.log"; then
             echo "agent bridge readers golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h3.mjs | tee "${RUNNER_TEMP}/agent-bridge-h3.log"
+          bounded "agent bridge h3" node scripts/golden/smoke_agent_bridge_h3.mjs | tee "${RUNNER_TEMP}/agent-bridge-h3.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h3.log"; then
             echo "agent bridge h3 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h4.mjs | tee "${RUNNER_TEMP}/agent-bridge-h4.log"
+          bounded "agent bridge h4" node scripts/golden/smoke_agent_bridge_h4.mjs | tee "${RUNNER_TEMP}/agent-bridge-h4.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h4.log"; then
             echo "agent bridge h4 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h5.mjs | tee "${RUNNER_TEMP}/agent-bridge-h5.log"
+          bounded "agent bridge h5" node scripts/golden/smoke_agent_bridge_h5.mjs | tee "${RUNNER_TEMP}/agent-bridge-h5.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h5.log"; then
             echo "agent bridge h5 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_block_edit.mjs | tee "${RUNNER_TEMP}/agent-bridge-block-edit.log"
+          bounded "agent bridge block edit" node scripts/golden/smoke_agent_bridge_block_edit.mjs | tee "${RUNNER_TEMP}/agent-bridge-block-edit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-block-edit.log"; then
             echo "agent bridge block-edit golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h6_h8.mjs | tee "${RUNNER_TEMP}/agent-bridge-h6-h8.log"
+          bounded "agent bridge h6 h8" node scripts/golden/smoke_agent_bridge_h6_h8.mjs | tee "${RUNNER_TEMP}/agent-bridge-h6-h8.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h6-h8.log"; then
             echo "agent bridge h6-h8 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h7.mjs | tee "${RUNNER_TEMP}/agent-bridge-h7.log"
+          bounded "agent bridge h7" node scripts/golden/smoke_agent_bridge_h7.mjs | tee "${RUNNER_TEMP}/agent-bridge-h7.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h7.log"; then
             echo "agent bridge h7 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h9.mjs | tee "${RUNNER_TEMP}/agent-bridge-h9.log"
+          bounded "agent bridge h9" node scripts/golden/smoke_agent_bridge_h9.mjs | tee "${RUNNER_TEMP}/agent-bridge-h9.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h9.log"; then
             echo "agent bridge h9 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h10.mjs | tee "${RUNNER_TEMP}/agent-bridge-h10.log"
+          bounded "agent bridge h10" node scripts/golden/smoke_agent_bridge_h10.mjs | tee "${RUNNER_TEMP}/agent-bridge-h10.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h10.log"; then
             echo "agent bridge h10 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h11.mjs | tee "${RUNNER_TEMP}/agent-bridge-h11.log"
+          bounded "agent bridge h11" node scripts/golden/smoke_agent_bridge_h11.mjs | tee "${RUNNER_TEMP}/agent-bridge-h11.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h11.log"; then
             echo "agent bridge h11 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h12.mjs | tee "${RUNNER_TEMP}/agent-bridge-h12.log"
+          bounded "agent bridge h12" node scripts/golden/smoke_agent_bridge_h12.mjs | tee "${RUNNER_TEMP}/agent-bridge-h12.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h12.log"; then
             echo "agent bridge h12 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h13.mjs | tee "${RUNNER_TEMP}/agent-bridge-h13.log"
+          bounded "agent bridge h13" node scripts/golden/smoke_agent_bridge_h13.mjs | tee "${RUNNER_TEMP}/agent-bridge-h13.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h13.log"; then
             echo "agent bridge h13 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_xsection.mjs | tee "${RUNNER_TEMP}/agent-bridge-xsection.log"
+          bounded "agent bridge xsection" node scripts/golden/smoke_agent_bridge_xsection.mjs | tee "${RUNNER_TEMP}/agent-bridge-xsection.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-xsection.log"; then
             echo "agent bridge xsection golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -316,47 +335,47 @@ jobs:
             echo "agent bridge xsection golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:section-clip | tee "${RUNNER_TEMP}/section-clip.log"
+          bounded "section clip" npm run golden:section-clip | tee "${RUNNER_TEMP}/section-clip.log"
           if ! grep -q 'section clip golden: ok' "${RUNNER_TEMP}/section-clip.log"; then
             echo "section clip golden did not pass (see log above)"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h14.mjs | tee "${RUNNER_TEMP}/agent-bridge-h14.log"
+          bounded "agent bridge h14" node scripts/golden/smoke_agent_bridge_h14.mjs | tee "${RUNNER_TEMP}/agent-bridge-h14.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h14.log"; then
             echo "agent bridge h14 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h15.mjs | tee "${RUNNER_TEMP}/agent-bridge-h15.log"
+          bounded "agent bridge h15" node scripts/golden/smoke_agent_bridge_h15.mjs | tee "${RUNNER_TEMP}/agent-bridge-h15.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h15.log"; then
             echo "agent bridge h15 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_h16.mjs | tee "${RUNNER_TEMP}/agent-bridge-h16.log"
+          bounded "agent bridge h16" node scripts/golden/smoke_agent_bridge_h16.mjs | tee "${RUNNER_TEMP}/agent-bridge-h16.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h16.log"; then
             echo "agent bridge h16 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_git_consent.mjs | tee "${RUNNER_TEMP}/agent-git-consent.log"
+          bounded "agent git consent" node scripts/golden/smoke_agent_git_consent.mjs | tee "${RUNNER_TEMP}/agent-git-consent.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-consent.log"; then
             echo "agent git consent golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_git_save_consent.mjs | tee "${RUNNER_TEMP}/agent-git-save-consent.log"
+          bounded "agent git save consent" node scripts/golden/smoke_agent_git_save_consent.mjs | tee "${RUNNER_TEMP}/agent-git-save-consent.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-save-consent.log"; then
             echo "agent git save consent golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_part_rename_commit.mjs | tee "${RUNNER_TEMP}/agent-part-rename-commit.log"
+          bounded "agent part rename commit" node scripts/golden/smoke_agent_part_rename_commit.mjs | tee "${RUNNER_TEMP}/agent-part-rename-commit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-part-rename-commit.log"; then
             echo "agent part rename commit golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_save_model_v2.mjs | tee "${RUNNER_TEMP}/agent-bridge-save-model-v2.log"
+          bounded "agent bridge save model v2" node scripts/golden/smoke_agent_bridge_save_model_v2.mjs | tee "${RUNNER_TEMP}/agent-bridge-save-model-v2.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-save-model-v2.log"; then
             echo "agent bridge save-model v2 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
-          node scripts/golden/smoke_agent_bridge_prompt.mjs | tee "${RUNNER_TEMP}/agent-bridge-prompt.log"
+          bounded "agent bridge prompt" node scripts/golden/smoke_agent_bridge_prompt.mjs | tee "${RUNNER_TEMP}/agent-bridge-prompt.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-prompt.log"; then
             echo "agent bridge prompt golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -365,7 +384,7 @@ jobs:
             echo "agent bridge prompt golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-state-reporting | tee "${RUNNER_TEMP}/agent-state-reporting.log"
+          bounded "agent state reporting" npm run golden:agent-state-reporting | tee "${RUNNER_TEMP}/agent-state-reporting.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-state-reporting.log"; then
             echo "agent state reporting golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -374,7 +393,7 @@ jobs:
             echo "agent state reporting golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-camera-framing | tee "${RUNNER_TEMP}/agent-camera-framing.log"
+          bounded "agent camera framing" npm run golden:agent-camera-framing | tee "${RUNNER_TEMP}/agent-camera-framing.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-camera-framing.log"; then
             echo "agent camera framing golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -383,7 +402,7 @@ jobs:
             echo "agent camera framing golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-block-edit-leftover | tee "${RUNNER_TEMP}/agent-block-edit-leftover.log"
+          bounded "agent block edit leftover" npm run golden:agent-block-edit-leftover | tee "${RUNNER_TEMP}/agent-block-edit-leftover.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-block-edit-leftover.log"; then
             echo "agent block edit leftover golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -392,7 +411,7 @@ jobs:
             echo "agent block edit leftover golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-move-target | tee "${RUNNER_TEMP}/agent-move-target.log"
+          bounded "agent move target" npm run golden:agent-move-target | tee "${RUNNER_TEMP}/agent-move-target.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-move-target.log"; then
             echo "agent move target golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -401,12 +420,12 @@ jobs:
             echo "agent move target golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-chamfer-face | tee "${RUNNER_TEMP}/agent-chamfer-face.log"
+          bounded "agent chamfer face" npm run golden:agent-chamfer-face | tee "${RUNNER_TEMP}/agent-chamfer-face.log"
           if ! grep -q 'agent chamfer face golden: ok' "${RUNNER_TEMP}/agent-chamfer-face.log"; then
             echo "agent chamfer face golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-bridge-move-edit | tee "${RUNNER_TEMP}/agent-bridge-move-edit.log"
+          bounded "agent bridge move edit" npm run golden:agent-bridge-move-edit | tee "${RUNNER_TEMP}/agent-bridge-move-edit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-move-edit.log"; then
             echo "agent bridge move edit golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -415,7 +434,7 @@ jobs:
             echo "agent bridge move edit golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:position-limit | tee "${RUNNER_TEMP}/position-limit.log"
+          bounded "position limit" npm run golden:position-limit | tee "${RUNNER_TEMP}/position-limit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/position-limit.log"; then
             echo "position limit golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -424,7 +443,7 @@ jobs:
             echo "position limit golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:new-part-empty | tee "${RUNNER_TEMP}/new-part-empty.log"
+          bounded "new part empty" npm run golden:new-part-empty | tee "${RUNNER_TEMP}/new-part-empty.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/new-part-empty.log"; then
             echo "new part empty golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -433,7 +452,7 @@ jobs:
             echo "new part empty golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:paint-open-ready | tee "${RUNNER_TEMP}/paint-open-ready.log"
+          bounded "paint open ready" npm run golden:paint-open-ready | tee "${RUNNER_TEMP}/paint-open-ready.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/paint-open-ready.log"; then
             echo "paint open ready golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -442,7 +461,7 @@ jobs:
             echo "paint open ready golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:joint-fixed-target | tee "${RUNNER_TEMP}/joint-fixed-target.log"
+          bounded "joint fixed target" npm run golden:joint-fixed-target | tee "${RUNNER_TEMP}/joint-fixed-target.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/joint-fixed-target.log"; then
             echo "joint fixed target golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -451,7 +470,7 @@ jobs:
             echo "joint fixed target golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-prompt-chat | tee "${RUNNER_TEMP}/agent-prompt-chat.log"
+          bounded "agent prompt chat" npm run golden:agent-prompt-chat | tee "${RUNNER_TEMP}/agent-prompt-chat.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-prompt-chat.log"; then
             echo "agent prompt chat golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -460,7 +479,7 @@ jobs:
             echo "agent prompt chat golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:geometry-worker-crash | tee "${RUNNER_TEMP}/geometry-worker-crash.log"
+          bounded "geometry worker crash" npm run golden:geometry-worker-crash | tee "${RUNNER_TEMP}/geometry-worker-crash.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/geometry-worker-crash.log"; then
             echo "geometry worker crash golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -469,7 +488,7 @@ jobs:
             echo "geometry worker crash golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-prompt-states | tee "${RUNNER_TEMP}/agent-prompt-states.log"
+          bounded "agent prompt states" npm run golden:agent-prompt-states | tee "${RUNNER_TEMP}/agent-prompt-states.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-prompt-states.log"; then
             echo "agent prompt states golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -478,7 +497,7 @@ jobs:
             echo "agent prompt states golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:feature-memoisation | tee "${RUNNER_TEMP}/feature-memoisation.log"
+          bounded "feature memoisation" npm run golden:feature-memoisation | tee "${RUNNER_TEMP}/feature-memoisation.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/feature-memoisation.log"; then
             echo "feature memoisation golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -487,7 +506,7 @@ jobs:
             echo "feature memoisation golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:gpu-upload-cache | tee "${RUNNER_TEMP}/gpu-upload-cache.log"
+          bounded "gpu upload cache" npm run golden:gpu-upload-cache | tee "${RUNNER_TEMP}/gpu-upload-cache.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/gpu-upload-cache.log"; then
             echo "gpu upload cache golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -496,12 +515,12 @@ jobs:
             echo "gpu upload cache golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:loft-perf | tee "${RUNNER_TEMP}/loft-perf.log"
+          bounded "loft perf" npm run golden:loft-perf | tee "${RUNNER_TEMP}/loft-perf.log"
           if ! grep -q 'loft perf golden: ok' "${RUNNER_TEMP}/loft-perf.log"; then
             echo "loft perf golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:mobile-chrome-shade | tee "${RUNNER_TEMP}/mobile-chrome-shade.log"
+          bounded "mobile chrome shade" npm run golden:mobile-chrome-shade | tee "${RUNNER_TEMP}/mobile-chrome-shade.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mobile-chrome-shade.log"; then
             echo "mobile chrome shade golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -510,7 +529,7 @@ jobs:
             echo "mobile chrome shade golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:part-instances | tee "${RUNNER_TEMP}/part-instances.log"
+          bounded "part instances" npm run golden:part-instances | tee "${RUNNER_TEMP}/part-instances.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-instances.log"; then
             echo "part instances golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -519,7 +538,7 @@ jobs:
             echo "part instances golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
+          bounded "part dirty" npm run golden:part-dirty | tee "${RUNNER_TEMP}/part-dirty.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-dirty.log"; then
             echo "part dirty golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -528,7 +547,7 @@ jobs:
             echo "part dirty golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:contour-strip | tee "${RUNNER_TEMP}/contour-strip.log"
+          bounded "contour strip" npm run golden:contour-strip | tee "${RUNNER_TEMP}/contour-strip.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/contour-strip.log"; then
             echo "contour strip golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -537,7 +556,7 @@ jobs:
             echo "contour strip golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:undo-after-timeout | tee "${RUNNER_TEMP}/undo-after-timeout.log"
+          bounded "undo after timeout" npm run golden:undo-after-timeout | tee "${RUNNER_TEMP}/undo-after-timeout.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/undo-after-timeout.log"; then
             echo "undo after timeout golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -546,7 +565,7 @@ jobs:
             echo "undo after timeout golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:placed-part-previews | tee "${RUNNER_TEMP}/placed-part-previews.log"
+          bounded "placed part previews" npm run golden:placed-part-previews | tee "${RUNNER_TEMP}/placed-part-previews.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/placed-part-previews.log"; then
             echo "placed part previews golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -555,7 +574,7 @@ jobs:
             echo "placed part previews golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:code-snippet | tee "${RUNNER_TEMP}/code-snippet.log"
+          bounded "code snippet" npm run golden:code-snippet | tee "${RUNNER_TEMP}/code-snippet.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/code-snippet.log"; then
             echo "code snippet golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -564,7 +583,7 @@ jobs:
             echo "code snippet golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:pattern-points | tee "${RUNNER_TEMP}/pattern-points.log"
+          bounded "pattern points" npm run golden:pattern-points | tee "${RUNNER_TEMP}/pattern-points.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/pattern-points.log"; then
             echo "pattern points golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -573,7 +592,7 @@ jobs:
             echo "pattern points golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:geometry-pool | tee "${RUNNER_TEMP}/geometry-pool.log"
+          bounded "geometry pool" npm run golden:geometry-pool | tee "${RUNNER_TEMP}/geometry-pool.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/geometry-pool.log"; then
             echo "geometry pool golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -582,7 +601,7 @@ jobs:
             echo "geometry pool golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:assembly-save-child-parts | tee "${RUNNER_TEMP}/assembly-save-child-parts.log"
+          bounded "assembly save child parts" npm run golden:assembly-save-child-parts | tee "${RUNNER_TEMP}/assembly-save-child-parts.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/assembly-save-child-parts.log"; then
             echo "assembly save child parts golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -591,7 +610,7 @@ jobs:
             echo "assembly save child parts golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:contour-edit-feature | tee "${RUNNER_TEMP}/contour-edit-feature.log"
+          bounded "contour edit feature" npm run golden:contour-edit-feature | tee "${RUNNER_TEMP}/contour-edit-feature.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/contour-edit-feature.log"; then
             echo "contour edit feature golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -600,7 +619,7 @@ jobs:
             echo "contour edit feature golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:adjacent-part-visible | tee "${RUNNER_TEMP}/adjacent-part-visible.log"
+          bounded "adjacent part visible" npm run golden:adjacent-part-visible | tee "${RUNNER_TEMP}/adjacent-part-visible.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/adjacent-part-visible.log"; then
             echo "adjacent part visible golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -609,7 +628,7 @@ jobs:
             echo "adjacent part visible golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:rotate-feature | tee "${RUNNER_TEMP}/rotate-feature.log"
+          bounded "rotate feature" npm run golden:rotate-feature | tee "${RUNNER_TEMP}/rotate-feature.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/rotate-feature.log"; then
             echo "rotate feature golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -618,7 +637,7 @@ jobs:
             echo "rotate feature golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:mirror-workplane | tee "${RUNNER_TEMP}/mirror-workplane.log"
+          bounded "mirror workplane" npm run golden:mirror-workplane | tee "${RUNNER_TEMP}/mirror-workplane.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mirror-workplane.log"; then
             echo "mirror workplane golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -627,7 +646,7 @@ jobs:
             echo "mirror workplane golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:feature-timeout | tee "${RUNNER_TEMP}/feature-timeout.log"
+          bounded "feature timeout" npm run golden:feature-timeout | tee "${RUNNER_TEMP}/feature-timeout.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/feature-timeout.log"; then
             echo "feature timeout golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -636,7 +655,7 @@ jobs:
             echo "feature timeout golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:joint-create | tee "${RUNNER_TEMP}/joint-create.log"
+          bounded "joint create" npm run golden:joint-create | tee "${RUNNER_TEMP}/joint-create.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/joint-create.log"; then
             echo "joint create golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -645,7 +664,7 @@ jobs:
             echo "joint create golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:sketch-edit | tee "${RUNNER_TEMP}/sketch-edit.log"
+          bounded "sketch edit" npm run golden:sketch-edit | tee "${RUNNER_TEMP}/sketch-edit.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/sketch-edit.log"; then
             echo "sketch edit golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -654,7 +673,7 @@ jobs:
             echo "sketch edit golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:face-identity-select | tee "${RUNNER_TEMP}/face-identity-select.log"
+          bounded "face identity select" npm run golden:face-identity-select | tee "${RUNNER_TEMP}/face-identity-select.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/face-identity-select.log"; then
             echo "face identity select golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -663,7 +682,7 @@ jobs:
             echo "face identity select golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:edge-identity-accept | tee "${RUNNER_TEMP}/edge-identity-accept.log"
+          bounded "edge identity accept" npm run golden:edge-identity-accept | tee "${RUNNER_TEMP}/edge-identity-accept.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/edge-identity-accept.log"; then
             echo "edge identity accept golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -672,7 +691,7 @@ jobs:
             echo "edge identity accept golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:agent-edges-named | tee "${RUNNER_TEMP}/agent-edges-named.log"
+          bounded "agent edges named" npm run golden:agent-edges-named | tee "${RUNNER_TEMP}/agent-edges-named.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-edges-named.log"; then
             echo "agent edges named golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -681,7 +700,7 @@ jobs:
             echo "agent edges named golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:new-assembly-ghost | tee "${RUNNER_TEMP}/new-assembly-ghost.log"
+          bounded "new assembly ghost" npm run golden:new-assembly-ghost | tee "${RUNNER_TEMP}/new-assembly-ghost.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/new-assembly-ghost.log"; then
             echo "new assembly ghost golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -690,7 +709,7 @@ jobs:
             echo "new assembly ghost golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:list-scroll-gutter | tee "${RUNNER_TEMP}/list-scroll-gutter.log"
+          bounded "list scroll gutter" npm run golden:list-scroll-gutter | tee "${RUNNER_TEMP}/list-scroll-gutter.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/list-scroll-gutter.log"; then
             echo "list scroll gutter golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -699,7 +718,7 @@ jobs:
             echo "list scroll gutter golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:camera-presets | tee "${RUNNER_TEMP}/camera-presets.log"
+          bounded "camera presets" npm run golden:camera-presets | tee "${RUNNER_TEMP}/camera-presets.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/camera-presets.log"; then
             echo "camera presets golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -708,7 +727,7 @@ jobs:
             echo "camera presets golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:face-identity-rebuild | tee "${RUNNER_TEMP}/face-identity-rebuild.log"
+          bounded "face identity rebuild" npm run golden:face-identity-rebuild | tee "${RUNNER_TEMP}/face-identity-rebuild.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/face-identity-rebuild.log"; then
             echo "face identity rebuild golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -717,12 +736,12 @@ jobs:
             echo "face identity rebuild golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:graph-perf | tee "${RUNNER_TEMP}/graph-perf.log"
+          bounded "graph perf" npm run golden:graph-perf | tee "${RUNNER_TEMP}/graph-perf.log"
           if ! grep -q 'graph perf golden: ok' "${RUNNER_TEMP}/graph-perf.log"; then
             echo "graph perf golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:brand-identity | tee "${RUNNER_TEMP}/brand-identity.log"
+          bounded "brand identity" npm run golden:brand-identity | tee "${RUNNER_TEMP}/brand-identity.log"
           if grep -q 'no system Chrome' "${RUNNER_TEMP}/brand-identity.log"; then
             echo "brand identity golden skipped because Chrome was not found; CI must launch it"
             exit 1
@@ -731,7 +750,7 @@ jobs:
             echo "brand identity golden did not pass (see log above)"
             exit 1
           fi
-          npm run golden:viewer-title-narrow | tee "${RUNNER_TEMP}/viewer-title-narrow.log"
+          bounded "viewer title narrow" npm run golden:viewer-title-narrow | tee "${RUNNER_TEMP}/viewer-title-narrow.log"
           if grep -q 'no system Chrome' "${RUNNER_TEMP}/viewer-title-narrow.log"; then
             echo "viewer title narrow golden skipped because Chrome was not found; CI must launch it"
             exit 1

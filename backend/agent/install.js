@@ -1,7 +1,13 @@
+import config from '../config/index.js';
 import AgentToken from '../db/models/AgentToken.js';
+import {
+  AGENT_SOCKET_CLOSE_CODE,
+  TOKEN_REVOKED_REASON,
+} from './agentSockets.js';
 import { authenticateBrowserUpgrade } from './browserAuth.js';
 import { cityLookupEnabled, createCityLookup } from './cityLookup.js';
 import { createAgentRelay } from './createRelay.js';
+import { warnIfAgentRelayIsClustered } from './processMode.js';
 import { createMongoTokenStore } from './tokens.js';
 import { attachAgentWebSocket } from './wsServer.js';
 
@@ -19,6 +25,7 @@ const state = {
  * @param {{ sessionMiddleware: import('express').RequestHandler }} deps
  */
 export function installAgentRelay(app, deps) {
+  warnIfAgentRelayIsClustered();
   const relay = createAgentRelay(
     cityLookupEnabled() ? { lookupCity: createCityLookup() } : {},
   );
@@ -34,6 +41,40 @@ export function useMongoTokenStore() {
 }
 
 /**
+ * Revoke every agent token for the account and close its sockets with 4001.
+ * In-flight long-poll and SSE waits for those tokens end here too.
+ * @param {string | { toString(): string }} userId
+ * @returns {Promise<string[]>}
+ */
+export async function revokeUserAgentAccess(userId) {
+  if (!state.relay || userId == null) return [];
+  return revokeRelayUser(state.relay, userId);
+}
+
+/**
+ * @param {NonNullable<typeof state.relay>} relay
+ * @param {string | { toString(): string }} userId
+ */
+export async function revokeRelayUser(relay, userId) {
+  const ids = await relay.tokens.revokeAll(String(userId));
+  for (const id of ids) {
+    relay.registry.abortToken(id);
+    relay.agentSockets.closeToken(id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+  }
+  return ids;
+}
+
+/**
+ * Close browser tab sockets for a signed-out account. Does not revoke agent tokens.
+ * @param {string | { toString(): string }} userId
+ * @returns {number}
+ */
+export function closeUserTabSockets(userId) {
+  if (!state.relay || userId == null) return 0;
+  return state.relay.tabSockets.closeUser(String(userId));
+}
+
+/**
  * @param {import('node:http').Server} httpServer
  */
 export function attachAgentSockets(httpServer) {
@@ -42,5 +83,6 @@ export function attachAgentSockets(httpServer) {
   const sessionMiddleware = state.sessionMiddleware;
   attachAgentWebSocket(httpServer, state.relay, {
     authenticateUpgrade: (req) => authenticateBrowserUpgrade(req, sessionMiddleware),
+    trustProxyHops: config.trustProxyHops,
   });
 }

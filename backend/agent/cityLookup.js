@@ -23,6 +23,9 @@ export function cityLookupEnabled(env = process.env) {
 const LOOKUP_TIMEOUT_MS = 1500;
 const CACHE_MS = 10 * 60 * 1000;
 
+/** Distinct public IPs remembered. Older entries are dropped past this. */
+export const CITY_CACHE_MAX = 1000;
+
 /**
  * @param {string} value
  * @returns {string | null}
@@ -64,14 +67,34 @@ export function isPublicIp(ip) {
  *   fetchImpl?: typeof fetch,
  *   now?: () => number,
  *   timeoutMs?: number,
+ *   maxEntries?: number,
  * }} [opts]
  */
 export function createCityLookup(opts = {}) {
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
   const now = opts.now || (() => Date.now());
   const timeoutMs = opts.timeoutMs ?? LOOKUP_TIMEOUT_MS;
+  const maxEntries = opts.maxEntries ?? CITY_CACHE_MAX;
   /** @type {Map<string, { city: string | null, at: number }>} */
   const cache = new Map();
+
+  /**
+   * @param {string} key
+   * @param {string | null} city
+   */
+  function remember(key, city) {
+    cache.delete(key);
+    const t = now();
+    for (const [cached, hit] of cache) {
+      if (t - hit.at >= CACHE_MS) cache.delete(cached);
+    }
+    while (cache.size >= maxEntries) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+    cache.set(key, { city, at: t });
+  }
 
   /**
    * @param {string | undefined} ip
@@ -101,7 +124,7 @@ export function createCityLookup(opts = {}) {
     } finally {
       clearTimeout(timer);
     }
-    cache.set(key, { city, at: now() });
+    remember(key, city);
     return city;
   };
 }

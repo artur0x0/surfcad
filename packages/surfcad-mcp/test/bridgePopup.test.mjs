@@ -81,6 +81,10 @@ test('opener allowlist matches the relay: surfcad.com, www, loopback dev', () =>
   assert.equal(isAllowedOpenerOrigin('https://www.surfcad.com'), true);
   assert.equal(isAllowedOpenerOrigin('http://localhost:5173'), true);
   assert.equal(isAllowedOpenerOrigin('http://127.0.0.1:4173'), true);
+  assert.equal(isAllowedOpenerOrigin('http://localhost'), true);
+  assert.equal(isAllowedOpenerOrigin('http://[::1]'), true);
+  assert.equal(isAllowedOpenerOrigin('http://127.evil.com'), false);
+  assert.equal(isAllowedOpenerOrigin('http://127.0.0.1.attacker.com'), false);
   assert.equal(isAllowedOpenerOrigin('https://evil.example'), false);
   assert.equal(isAllowedOpenerOrigin('https://surfcad.com.evil.example'), false);
   assert.equal(isAllowedOpenerOrigin('https://app.surfcad.com'), false);

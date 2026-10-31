@@ -1,6 +1,12 @@
 import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createSystemClock } from './clock.js';
-import { MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from './limits.js';
+import {
+  MAX_AGENTS_PER_USER,
+  MAX_PENDING,
+  MAX_TABS_PER_USER,
+  RESULT_RETENTION_MS,
+  TAB_ASLEEP_MS,
+} from './limits.js';
 
 export const TAB_ASLEEP_ERROR = 'SurfCAD tab is asleep';
 
@@ -37,6 +43,8 @@ function asleepResponse(frame) {
  *   asleepMs?: number,
  *   retentionMs?: number,
  *   maxPending?: number,
+ *   maxTabs?: number,
+ *   maxAgents?: number,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
@@ -44,6 +52,8 @@ export function createMemoryTabRegistry(opts = {}) {
   const asleepMs = opts.asleepMs ?? TAB_ASLEEP_MS;
   const retentionMs = opts.retentionMs ?? RESULT_RETENTION_MS;
   const maxPending = opts.maxPending ?? MAX_PENDING;
+  const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
+  const maxAgents = opts.maxAgents ?? MAX_AGENTS_PER_USER;
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
@@ -55,6 +65,7 @@ export function createMemoryTabRegistry(opts = {}) {
    *   sentTo: string | null,
    *   finished: boolean,
    *   listeners: Array<(response: object) => void>,
+   *   abortWaiters: Array<() => void>,
    *   finish: (response: object) => void,
    * }} PendingCommand
    */
@@ -65,7 +76,7 @@ export function createMemoryTabRegistry(opts = {}) {
   const agents = new Map();
   /** @type {Map<string, PendingCommand>} */
   const pending = new Map();
-  /** @type {Map<string, { userId: string, response: object, at: number }>} */
+  /** @type {Map<string, { userId: string, tokenId: string, response: object, at: number }>} */
   const completed = new Map();
   let seq = 0;
   /** @type {unknown} */
@@ -181,12 +192,28 @@ export function createMemoryTabRegistry(opts = {}) {
     }
   }
 
+  /**
+   * A result belongs to the token that submitted it. Omitting `tokenId`
+   * only matches a command that was queued without one.
+   * @param {string} stored
+   * @param {string | null} requested
+   */
+  function tokenMatches(stored, requested) {
+    const issued = stored == null ? '' : String(stored);
+    if (requested == null) return issued === '';
+    return issued === requested;
+  }
+
   return {
     /**
      * @param {{ userId: string, tabId: string, send: (frame: object) => void }} tab
+     * @returns {boolean} false when this account is already at the tab cap
      */
     registerTab(tab) {
       const userId = String(tab.userId);
+      const existing = users.get(userId);
+      const replacing = existing?.tabs.has(tab.tabId) === true;
+      if (!replacing && (existing?.tabs.size || 0) >= maxTabs) return false;
       const found = bucket(userId);
       seq += 1;
       found.tabs.set(tab.tabId, {
@@ -197,6 +224,7 @@ export function createMemoryTabRegistry(opts = {}) {
         seq,
       });
       deliver(userId);
+      return true;
     },
 
     /**
@@ -323,6 +351,7 @@ export function createMemoryTabRegistry(opts = {}) {
         sentTo: null,
         finished: false,
         listeners: [],
+        abortWaiters: [],
         finish: () => {},
       };
       let resolvePromise = /** @type {(response: object) => void} */ (() => {});
@@ -333,7 +362,7 @@ export function createMemoryTabRegistry(opts = {}) {
         if (item.finished) return;
         item.finished = true;
         pending.delete(key);
-        completed.set(key, { userId, response, at: clock.now() });
+        completed.set(key, { userId, tokenId, response, at: clock.now() });
         for (const listener of item.listeners) listener(response);
         resolvePromise(response);
         arm();
@@ -370,18 +399,24 @@ export function createMemoryTabRegistry(opts = {}) {
      * @param {string} userId
      * @param {string | number} id
      * @param {number} timeoutMs
-     * @returns {Promise<{ status: 'done', response: object } | { status: 'pending' } | null>}
+     * @param {string} [tokenId]
+     * @returns {Promise<{ status: 'done', response: object } | { status: 'pending' } | { status: 'revoked' } | null>}
      */
-    wait(userId, id, timeoutMs) {
+    wait(userId, id, timeoutMs, tokenId) {
       const key = commandKey(userId, id);
+      const requested = tokenId == null ? null : String(tokenId);
       const done = completed.get(key);
       if (done) {
-        if (done.userId !== String(userId)) return Promise.resolve(null);
+        if (done.userId !== String(userId) || !tokenMatches(done.tokenId, requested)) {
+          return Promise.resolve(null);
+        }
         completed.delete(key);
         return Promise.resolve({ status: 'done', response: done.response });
       }
       const item = pending.get(key);
-      if (!item || item.userId !== String(userId)) return Promise.resolve(null);
+      if (!item || item.userId !== String(userId) || !tokenMatches(item.tokenId, requested)) {
+        return Promise.resolve(null);
+      }
       if (timeoutMs <= 0) return Promise.resolve({ status: 'pending' });
       return new Promise((resolve) => {
         let settled = false;
@@ -390,6 +425,12 @@ export function createMemoryTabRegistry(opts = {}) {
           settled = true;
           resolve({ status: 'pending' });
         }, timeoutMs);
+        item.abortWaiters.push(() => {
+          if (settled) return;
+          settled = true;
+          clock.cancel(timeout);
+          resolve({ status: 'revoked' });
+        });
         item.listeners.push((response) => {
           if (settled) return;
           settled = true;
@@ -401,11 +442,34 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
+     * End long-poll and SSE waits for one token, and drop its unread results.
+     * @param {string} tokenId
+     */
+    abortToken(tokenId) {
+      const id = String(tokenId);
+      for (const item of [...pending.values()]) {
+        if (item.tokenId !== id || item.finished) continue;
+        const waiters = item.abortWaiters.splice(0);
+        for (const abort of waiters) abort();
+        item.finish(commandResponse({
+          id: item.frame.id,
+          ok: false,
+          error: { code: 'unauthorized', message: 'Token revoked' },
+        }));
+      }
+      for (const [key, done] of [...completed.entries()]) {
+        if (done.tokenId === id) completed.delete(key);
+      }
+    },
+
+    /**
      * @param {{ userId: string, agentId: string, send: (frame: object) => void }} agent
+     * @returns {boolean} false when this account is already at the agent cap
      */
     registerAgent(agent) {
       const userId = String(agent.userId);
       let found = agents.get(userId);
+      if (found && !found.has(agent.agentId) && found.size >= maxAgents) return false;
       const first = !found || found.size === 0;
       if (!found) {
         found = new Map();
@@ -413,6 +477,7 @@ export function createMemoryTabRegistry(opts = {}) {
       }
       found.set(agent.agentId, { agentId: agent.agentId, userId, send: agent.send });
       if (first) notifyTabs(userId, true);
+      return true;
     },
 
     /**
