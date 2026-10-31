@@ -141,3 +141,52 @@ export async function loginDevice(options) {
     { code: 'expired' },
   );
 }
+
+/**
+ * Redeem a join code shown by SurfCAD. The token is saved and not returned
+ * to the caller for printing. A wrong, expired, or used code is one error.
+ * @param {{
+ *   serverUrl: string,
+ *   code: string,
+ *   name?: string,
+ *   machine?: string,
+ *   env?: NodeJS.ProcessEnv,
+ *   fetch?: typeof fetch,
+ * }} options
+ * @returns {Promise<{ server: string, name: string, machine: string }>}
+ */
+export async function loginWithCode(options) {
+  const urls = agentUrls(options.serverUrl);
+  const fetchImpl = options.fetch || fetch;
+  const name = typeof options.name === 'string' ? options.name.trim() : '';
+  const machine = (options.machine || hostname() || '').trim() || 'an unknown machine';
+  const code = typeof options.code === 'string' ? options.code.trim() : '';
+  if (!code) {
+    throw Object.assign(new Error('--code needs a value.'), { code: 'bad_args' });
+  }
+  const redeemed = await postJson(urls.joinUrl, {
+    code,
+    ...(name ? { name } : {}),
+    machine,
+  }, fetchImpl);
+  if (redeemed.status === 429) {
+    throw Object.assign(
+      new Error('Too many attempts. Wait and run npx surfcad-mcp login --code again.'),
+      { code: 'rate_limited' },
+    );
+  }
+  const token = redeemed.json?.token;
+  if (redeemed.status !== 200 || typeof token !== 'string' || !token) {
+    throw Object.assign(
+      new Error('That code is not valid. In SurfCAD, open Connect Agent and copy a new one.'),
+      { code: 'invalid_code' },
+    );
+  }
+  await saveLogin({
+    token,
+    server: urls.origin,
+    name,
+    machine,
+  }, options.env);
+  return { server: urls.origin, name, machine };
+}

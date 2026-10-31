@@ -16,7 +16,7 @@ export function formatAgentLastUsed(value) {
 
 /**
  * @param {unknown} tokens
- * @returns {Array<{ id: string, label: string, machine: string, city: string | null, lastUsedAt: string | null }>}
+ * @returns {Array<{ id: string, label: string, machine: string, city: string | null, ip: string, lastUsedAt: string | null }>}
  */
 export function visibleAgentTokens(tokens) {
   if (!Array.isArray(tokens)) return [];
@@ -25,6 +25,7 @@ export function visibleAgentTokens(tokens) {
     label: row.label || '',
     machine: row.machine || '',
     city: row.city || null,
+    ip: row.ip || '',
     lastUsedAt: row.lastUsedAt ?? null,
   }));
 }

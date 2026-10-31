@@ -71,6 +71,33 @@ export const MAX_AGENTS_PER_USER = 8;
 /** Pending device codes held in this process. */
 export const MAX_PENDING_PAIRINGS = 500;
 
+/** Join-code lifetime. A new code for the same account replaces the old one. */
+export const JOIN_TTL_MS = PAIR_TTL_MS;
+
+/** Non-issuing presentations of one join code before that code dies. */
+export const JOIN_MAX_TRIES = 5;
+
+/** Join codes one account may create in the entry window. */
+export const JOIN_CREATE_LIMIT = 10;
+
+export const JOIN_CREATE_WINDOW_MS = PAIR_ENTRY_WINDOW_MS;
+
+/** Redeem attempts allowed per IP in the entry window. */
+export const JOIN_REDEEM_IP_LIMIT = 20;
+
+export const JOIN_REDEEM_IP_WINDOW_MS = PAIR_ENTRY_WINDOW_MS;
+
+/**
+ * Redeem attempts allowed across every live code in one minute.
+ * Stops one client from spraying the pending set.
+ */
+export const JOIN_GLOBAL_REDEEM_LIMIT = 300;
+
+export const JOIN_GLOBAL_REDEEM_WINDOW_MS = 60 * 1000;
+
+/** Pending join codes held in this process. */
+export const JOIN_MAX_PENDING = MAX_PENDING_PAIRINGS;
+
 /**
  * How long a finished or expired pairing stays after its TTL, so a poll
  * can still observe `expired` or `consumed` before the record is dropped.

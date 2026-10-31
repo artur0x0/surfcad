@@ -16,6 +16,16 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 
 The loopback relay is the default. A saved login uses the server relay instead (Safari, a phone, or any machine that cannot open `ws://127.0.0.1`).
 
+Safari, iOS, and a phone-width SurfCAD page do not use the device code below. The signed-in user opens **Connect agent**, SurfCAD shows an `ABCD-EFGH` join code, and **Copy** puts this on the clipboard (plus `--server <origin>` when the page is not https://surfcad.com):
+
+```bash
+npx -y surfcad-mcp login --code ABCD-EFGH
+```
+
+Run that command. It redeems the code, saves the token the same way `login` does, and does not print the token. Leave the SurfCAD tab open. If the tab reloads before the agent joins, SurfCAD shows the same code again while it is still valid.
+
+Desktop Chrome and the local bridge keep device-code login:
+
 1. `npx surfcad-mcp login` (optional `--name`). It prints an `ABCD-EFGH` code and `https://surfcad.com/agent`. The client generates a 32-byte device secret, sends only its SHA-256, and polls with the secret.
 2. Sign in on that page and approve the code. The token is saved in the per-user config directory at mode 0600. It is not printed and it is not logged.
 3. Start `npx surfcad-mcp`. A saved login selects the server relay. `--remote` selects it and, with no login, tells you to run `login`. Leave the SurfCAD tab open. The tool list is the same.

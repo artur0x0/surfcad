@@ -254,6 +254,24 @@ async function runOne(name, { browserType, launchOptions, expectPopup, expectSer
       await context.grantPermissions(['local-network-access'], { origin: PROD_ORIGIN });
     }
     await routeProdOrigin(context, relayPort);
+    await context.route(`${PROD_ORIGIN}/agent/join`, (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'ABCD-EFGH',
+            id: 'join-safari',
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'none' }),
+      });
+    });
     const page = await context.newPage();
     if (expectServer) {
       await page.addInitScript(() => {
@@ -274,6 +292,20 @@ async function runOne(name, { browserType, launchOptions, expectPopup, expectSer
         Fake.CLOSED = 3;
         window.WebSocket = Fake;
         window.__openedSockets = urls;
+        const copied = { text: '' };
+        const clipboard = {
+          writeText(value) {
+            copied.text = String(value);
+            return Promise.resolve();
+          },
+          readText() {
+            return Promise.resolve(copied.text);
+          },
+        };
+        try {
+          Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+        } catch { /* the click path falls back to execCommand */ }
+        window.__joinCopied = () => copied.text;
         localStorage.setItem('surfcadAgentRelay', 'local');
       });
     }
@@ -306,12 +338,18 @@ async function runOne(name, { browserType, launchOptions, expectPopup, expectSer
     const transport = await page.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
     if (expectServer) {
       check('server dialog, no loopback popup', popup == null && transport === 'server', transport);
-      const preview = await page.locator('[data-agent-bridge-prompt-preview]').inputValue();
-      check('prompt tells the agent to run npx surfcad-mcp login', /npx surfcad-mcp login/.test(preview), preview);
-      check('prompt points at this origin /agent', /https:\/\/surfcad\.com\/agent/.test(preview), preview);
-      check('prompt does not install a local server', !/npx -y|Install and run|local server/i.test(preview), preview);
+      await page.waitForSelector('[data-agent-join-code]', { timeout: 10000 });
+      const code = (await page.locator('[data-agent-join-code]').innerText()).replace(/\s/g, '');
+      check('server dialog shows the join code', code === 'ABCD-EFGH', code);
+      await page.locator('[data-ui-action="data-agent-bridge-copy-prompt"]').click();
+      const copied = await page.evaluate(() => (
+        typeof window.__joinCopied === 'function' ? window.__joinCopied() : navigator.clipboard.readText()
+      ));
+      check('copy embeds the join code', copied.includes('npx -y surfcad-mcp login --code ABCD-EFGH'), copied);
+      check('surfcad.com omits --server', !/--server/.test(copied), copied);
+      check('copy does not ask for a device code', !/Enter the device code|Install and run|local server/i.test(copied), copied);
       const waiting = await page.locator('[data-agent-bridge-waiting-server]').innerText();
-      check('waiting for the agent to sign in', /Waiting for your agent to sign in/.test(waiting), waiting);
+      check('waiting for the agent', /Waiting for your agent/.test(waiting) && !/sign in/.test(waiting), waiting);
       check('no Waiting for relay spinner', await page.locator('[data-agent-bridge-waiting-relay]').count() === 0);
       await page.waitForTimeout(500);
       const sockets = await page.evaluate(() => window.__openedSockets || []);

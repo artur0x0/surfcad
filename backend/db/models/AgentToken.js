@@ -24,6 +24,10 @@ const agentTokenSchema = new mongoose.Schema({
     type: String,
     default: null,
   },
+  ip: {
+    type: String,
+    default: null,
+  },
   createdAt: {
     type: Date,
     required: true,
