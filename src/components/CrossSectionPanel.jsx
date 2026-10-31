@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -42,6 +42,10 @@ const CrossSectionPanel = forwardRef(({
   showAnalyze = false,
   analyzeActive = false,
   onAnalyzeToggle = null,
+  /** Wall-thickness heatmap. Inspection group, immediately after Analyze. Hidden in game. */
+  showWall = false,
+  wallActive = false,
+  onWallToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -522,6 +526,25 @@ const handleButtonClick = () => {
             data-ui-action="data-analyze-chip"
           >
             <Gauge size={20} />
+          </button>
+        )}
+        {showWall && (
+          <button
+            type="button"
+            onClick={() => onWallToggle?.()}
+            className={`p-2 rounded font-ui ${
+              wallActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
+            aria-label={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
+            aria-pressed={!!wallActive}
+            data-wall-heatmap=""
+            data-wall-heatmap-state={wallActive ? 'on' : 'off'}
+            data-ui-action="data-wall-heatmap"
+          >
+            <AlignHorizontalSpaceAround size={20} />
           </button>
         )}
         <button

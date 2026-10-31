@@ -606,6 +606,9 @@ import {
 } from '../utils/rigidSuffix.js';
 import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { moldFitFromGeometry } from '../molding/fromGeometry.js';
+import { thicknessLegendModel } from '../molding/thicknessColor.js';
+import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
+import WallLegend from './molding/WallLegend';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1419,6 +1422,15 @@ const Viewport = forwardRef(({
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
   const agentMoldFitRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const agentMoldWallMapRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const wallMapOnRef = useRef(false);
+  const wallFieldRef = useRef(null);
+  const clearWallMapRef = useRef(() => {});
+  const applyWallSkinRef = useRef(() => {});
+  const [wallLegend, setWallLegend] = useState(null);
+  useEffect(() => {
+    if (mode === 'game') clearWallMapRef.current();
+  }, [mode]);
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
   const agentResolveMoveAnchorRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh' } }));
   const agentDescribeJointPickRef = useRef(() => ({
@@ -2700,6 +2712,7 @@ const Viewport = forwardRef(({
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
       moldFit: (args) => agentMoldFitRef.current(args),
+      moldWallMap: (args) => agentMoldWallMapRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -5351,6 +5364,7 @@ const Viewport = forwardRef(({
     if (mode === 'game') return;
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
+    clearWallMapRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -13634,6 +13648,70 @@ const Viewport = forwardRef(({
     for (const mesh of assemblyExtrasRef.current.values()) push(mesh);
     return listDroppedFacePaints(parts, map);
   };
+
+  const clearWallMap = () => {
+    wallMapOnRef.current = false;
+    wallFieldRef.current = null;
+    setWallLegend(null);
+    detachThicknessSkin(resultRef.current);
+    for (const mesh of assemblyExtrasRef.current.values()) detachThicknessSkin(mesh);
+  };
+  clearWallMapRef.current = clearWallMap;
+
+  const showWallMap = (wall, geometry) => {
+    wallMapOnRef.current = true;
+    wallFieldRef.current = { geometry, wall };
+    setWallLegend(thicknessLegendModel(wall));
+    syncThicknessSkin(resultRef.current, wall);
+  };
+
+  applyWallSkinRef.current = (host) => {
+    if (!host) return;
+    if (!wallMapOnRef.current || host !== resultRef.current) {
+      detachThicknessSkin(host);
+      return;
+    }
+    const geometry = host.geometry;
+    let cached = wallFieldRef.current;
+    if (!cached || cached.geometry !== geometry) {
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { wallOnly: true });
+      if (analyzed?.error || analyzed?.wall?.nominal == null) {
+        clearWallMap();
+        return;
+      }
+      cached = { geometry, wall: analyzed.wall };
+      wallFieldRef.current = cached;
+      setWallLegend(thicknessLegendModel(analyzed.wall));
+    }
+    syncThicknessSkin(host, cached.wall);
+  };
+
+  agentMoldWallMapRef.current = ({ on } = {}) => {
+    const next = typeof on === 'boolean' ? on : !wallMapOnRef.current;
+    if (!next) {
+      clearWallMap();
+      return { on: false };
+    }
+    const geometry = resultRef.current?.geometry;
+    if (!geometry?.attributes?.position) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { wallOnly: true });
+    if (analyzed?.error) return analyzed;
+    if (analyzed.wall?.nominal == null) {
+      return { error: { code: 'no_mesh', message: 'No wall thickness on that mesh' } };
+    }
+    showWallMap(analyzed.wall, geometry);
+    const legend = thicknessLegendModel(analyzed.wall);
+    return {
+      on: true,
+      nominal: legend?.nominalMm ?? null,
+      max: analyzed.wall.max,
+      thinMm: legend?.thinMm ?? null,
+      thickMm: legend?.thickMm ?? null,
+    };
+  };
+
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
     const painting = paintModeRef.current;
@@ -13648,6 +13726,7 @@ const Viewport = forwardRef(({
     if (!wants) {
       detachFaceColorSkin(host);
       if (host === resultRef.current) applyStressSkinRef.current(host);
+      applyWallSkinRef.current(host);
       if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
       return;
     }
@@ -13661,6 +13740,7 @@ const Viewport = forwardRef(({
       rainbow,
     });
     if (host === resultRef.current) applyStressSkinRef.current(host);
+    applyWallSkinRef.current(host);
     if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
   };
 
@@ -15993,6 +16073,8 @@ const Viewport = forwardRef(({
         />
       )}
 
+      {mode !== 'game' && <WallLegend legend={wallLegend} />}
+
       {/* Cross-Section Panel */}
         <CrossSectionPanel
           ref={crossSectionPanelRef}
@@ -16018,7 +16100,13 @@ const Viewport = forwardRef(({
           onPaintToggle={() => (paintMode ? exitPaintMode() : enterPaintMode())}
           showAnalyze={mode !== 'game'}
           analyzeActive={feaActive}
-          onAnalyzeToggle={() => feaToggleRef.current?.()}
+          onAnalyzeToggle={() => {
+            clearWallMapRef.current();
+            feaToggleRef.current?.();
+          }}
+          showWall={mode !== 'game'}
+          wallActive={!!wallLegend}
+          onWallToggle={() => agentMoldWallMapRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();

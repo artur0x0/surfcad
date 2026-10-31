@@ -311,6 +311,12 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  mold_wall_map: {
+    description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_fit: {
     description: 'Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM.',
     result: { type: 'object', additionalProperties: true },

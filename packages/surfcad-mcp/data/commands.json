@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 201,
+  "count": 202,
   "$defs": {
     "status": {
       "type": "object",
@@ -2575,6 +2575,37 @@
           0,
           1
         ]
+      }
+    },
+    {
+      "name": "mold_wall_map",
+      "description": "Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "true shows the thickness heatmap. false restores paint and the part colour. Omit to toggle."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "measure",
+      "immediate": true,
+      "uiEntry": "data-wall-heatmap",
+      "example": {
+        "on": true
       }
     },
     {
