@@ -15,7 +15,7 @@
  * Chrome is the system binary (CHROME_PATH). Skip line matches the other
  * agent-bridge goldens: "no system Chrome found".
  */
-/* global document, window, indexedDB, localStorage */
+/* global document, window, indexedDB, localStorage, navigator */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import https from 'node:https';
@@ -176,6 +176,83 @@ function startHookServer() {
   });
 }
 
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+
+/**
+ * Phone Safari over plain http, with Local stored. Connect Agent must open
+ * the server-login dialog and must not probe the loopback relay.
+ * 127.0.0.1 is still a secure context; the insecure-context decision is
+ * covered by relayPreference.test.js (isSecureContext is not read).
+ */
+async function checkPhoneServerDialog(browser) {
+  const phone = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: IPHONE_UA,
+  });
+  try {
+    await phone.addInitScript((relayPort) => {
+      localStorage.setItem('surfcadAgentRelay', 'local');
+      const urls = [];
+      const Orig = window.WebSocket;
+      function Wrapped(url, protocols) {
+        urls.push(String(url));
+        return protocols === undefined ? new Orig(url) : new Orig(url, protocols);
+      }
+      Wrapped.prototype = Orig.prototype;
+      Object.setPrototypeOf(Wrapped, Orig);
+      Wrapped.CONNECTING = Orig.CONNECTING;
+      Wrapped.OPEN = Orig.OPEN;
+      Wrapped.CLOSING = Orig.CLOSING;
+      Wrapped.CLOSED = Orig.CLOSED;
+      window.WebSocket = Wrapped;
+      window.__openedSockets = urls;
+      window.__relayPort = relayPort;
+    }, relayPort);
+    await phone.route('**/api/auth/me', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        user: { _id: 'user-agent-prompt', email: 'agent@test.local' },
+      }),
+    }));
+    await phone.route('**/api/config', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({}),
+    }));
+    await phone.goto(`http://127.0.0.1:${previewPort}/`, { waitUntil: 'domcontentloaded' });
+    await seedAssembly(phone);
+    await phone.goto(appUrl, { waitUntil: 'domcontentloaded' });
+    await phone.waitForFunction(
+      () => typeof window.surfcad?.call === 'function' && !document.querySelector('[data-app-loading]'),
+      { timeout: 120000 },
+    );
+    await phone.locator('[data-profile-chip]').first().click();
+    await phone.locator('[data-ui-action="data-agent-bridge-connect"]').click();
+    await phone.waitForSelector('[data-agent-bridge-waiting-server]', { timeout: 10000 });
+    const waiting = await phone.locator('[data-agent-bridge-waiting-server]').innerText();
+    check('phone waits for the agent to sign in', /Waiting for your agent to sign in/.test(waiting), waiting);
+    check('phone does not say Waiting for relay', await phone.locator('[data-agent-bridge-waiting-relay]').count() === 0);
+    const transport = await phone.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
+    check('phone dialog is the server relay', transport === 'server', transport);
+    await phone.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await phone.locator('[data-ui-action="data-agent-bridge-copy-prompt"]').click();
+    const copied = await phone.evaluate(() => navigator.clipboard.readText());
+    check('phone prompt runs npx surfcad-mcp login', copied.includes('npx surfcad-mcp login'), copied);
+    check('phone prompt names this origin /agent', copied.includes(`http://127.0.0.1:${previewPort}/agent`), copied);
+    check('phone prompt does not install a local server', !/npx -y|Install and run|local server/i.test(copied), copied);
+    await phone.waitForTimeout(750);
+    const sockets = await phone.evaluate(() => window.__openedSockets || []);
+    const loopback = sockets.filter((url) => url.includes(`:${relayPort}`) || url.includes(':17341'));
+    check('phone does not probe the loopback relay', loopback.length === 0, JSON.stringify(sockets));
+  } finally {
+    await phone.close();
+  }
+}
+
 console.log('agent bridge prompt golden');
 
 try {
@@ -229,6 +306,7 @@ try {
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   attachConsentPresetToBrowser(browser);
+  await checkPhoneServerDialog(browser);
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.route('**/api/auth/me', (route) => route.fulfill({
     status: 200,

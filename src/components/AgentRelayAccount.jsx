@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { formatAgentLastUsed, visibleAgentTokens } from '../agent/ws/agentSessionList.js';
 import {
   isSafariFamily,
+  readPhoneWidth,
   readRelayPreference,
   resolveRelayTarget,
   writeRelayPreference,
@@ -16,14 +17,19 @@ const CITY_LOOKUP_CREDIT = 'IP geolocation by ipdata';
 const CITY_LOOKUP_URL = 'https://ipdata.co/';
 
 function useNarrowPage() {
-  const [narrow, setNarrow] = useState(false);
+  const [narrow, setNarrow] = useState(() => (
+    typeof window === 'undefined' ? false : readPhoneWidth(window)
+  ));
   useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const mq = window.matchMedia('(max-width: 768px)');
-    const apply = () => setNarrow(mq.matches);
+    const apply = () => setNarrow(readPhoneWidth(window));
     apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+    const mq = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 768px)') : null;
+    mq?.addEventListener('change', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      mq?.removeEventListener('change', apply);
+      window.removeEventListener('resize', apply);
+    };
   }, []);
   return narrow;
 }
@@ -36,7 +42,10 @@ export default function AgentRelayAccount({ open = false }) {
   const forcedServer = resolveRelayTarget({
     preference: 'local',
     userAgent,
+    platform: typeof navigator === 'undefined' ? '' : navigator.platform,
+    maxTouchPoints: typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints,
     isMobile: narrow,
+    innerWidth: typeof window === 'undefined' ? 0 : window.innerWidth,
   }) === 'server';
 
   useEffect(() => {

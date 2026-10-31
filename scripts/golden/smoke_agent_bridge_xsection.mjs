@@ -213,6 +213,10 @@ check('cross_section_state', state.ok === true && state.result?.enabled === true
 
 await shot(page, 'section', 1280);
 await shot(page, 'section', 390);
+// The 390 shot leaves the viewport narrow. A phone-width page stays on the
+// server-relay dialog and never mints a local pairing code, so the Connect
+// check below has to run at desktop width.
+await page.setViewportSize({ width: 1280, height: 800 });
 
 const selectAll = await agentCall(page, 'cad_select_all', {});
 check('cad_select_all', selectAll.ok === true, JSON.stringify(selectAll));
