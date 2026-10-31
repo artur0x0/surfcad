@@ -10,7 +10,8 @@ suppliers into that collection or that model.
 Models live in `backend/db/models/` and register when a route imports them.
 [`backend/db/connection.js`](../backend/db/connection.js) only opens the
 connection. Nothing on the interest-form path imports these models. Empty
-collections are fine. There is no seed.
+partner-catalog collections are fine. The partner catalog has no seed. The
+generic resin library below is a separate collection and has its own seed.
 
 Field names are camelCase. Print-quote models (`Material`, `Quote`) use
 kebab-case. That split stays.
@@ -46,6 +47,26 @@ than 0. `active` defaults to true.
 
 Indexes: unique `partnerId` + `grade`; `partnerId` + `active`.
 
+## molding_resins
+
+Model `MoldingResin`. Generic injection-resin properties. This is not a price
+and it has no `partnerId`. Grades match exactly, including case. `grade` is
+unique.
+
+`tensileModulusMpa` is greater than 0. Shrink percents are 0–100.
+`wallMinMm` and `wallMaxMm` are greater than 0. Melt and mold temperatures
+are 0 or greater, in °C. Each low value is less than or equal to its high
+value. `notes` is optional. `active` defaults to true. There is no
+`usdPerKg`.
+
+The curated seed is typical unfilled grades (ABS, PP, HDPE, PC, PA66, POM,
+PC/ABS). `GET /api/admin/molding/resin-library` inserts a seed grade only
+when that grade is missing. It does not overwrite an edited row and it does
+not turn a deactivated grade back on. It does not write `materials` or
+`molding_resin_prices`. Quotes do not read this collection.
+
+Indexes: unique `grade`; `active` + `grade`.
+
 ## molding_tooling_rates
 
 Model `MoldingToolingRate`. One card per partner (`partnerId` is unique).
@@ -75,6 +96,10 @@ Indexes: `status` + `createdAt`; `partnerId` + `status`; `userId` + `createdAt`.
 
 Catalog edits are `GET` and `POST` `/api/admin/molding/partners`, `/machines`,
 `/resins`, and `/rates`, plus `PATCH /:id` and `POST /:id/deactivate` on each.
+The generic library is `GET` and `POST /api/admin/molding/resin-library`, plus
+`PATCH /:id` and `POST /:id/deactivate`. A library body that includes
+`usdPerKg` or `partnerId` is rejected. `/resins` is still the partner price
+list.
 The router is the one already mounted at `/api/admin`. Signed-out callers and
 non-admins get 404. The per-user limit matches `GET /api/admin/stats`.
 
@@ -90,8 +115,9 @@ label, type, status, commission, whether the review fee is paid, and the
 time. It does not include the requester, `userId`, email, the quote snapshot,
 or `stripePaymentIntentId`. There is no export and no partner portal.
 
-Signed-in admins edit the catalog and the lead board at `/admin`
-(`data-admin-mold-catalog`, `data-admin-mold-leads`). `POST /api/molding/quote`
+Signed-in admins edit the catalog, the resin library, and the lead board at
+`/admin` (`data-admin-mold-catalog`, `data-admin-mold-library`,
+`data-admin-mold-leads`). `POST /api/molding/quote`
 returns a budgetary quote and does not store it. `POST /api/molding/leads`
 stores a lead for the signed-in user. It does not call Stripe. A firm quote
 reveals that partner. A human review does not. `POST /api/molding/review-checkout`

@@ -71,6 +71,8 @@ Cycle time is the same stand-in as the tooling estimate: fill, plus `k` times
 max wall squared, plus the mechanical seconds. Aluminum uses the uncooled `k`.
 Resin mass is volume (cm³) times density (g/cm³), in kilograms. With no grade
 named, the partner’s cheapest active resin is used. Grades match exactly.
+Prices come from `molding_resin_prices` only. The generic resin library is
+not loaded.
 
 Partners with no fitting press are left out. The rest sort by the lowest unit
 cost, then the public label. The range is the cheap metal and the expensive
