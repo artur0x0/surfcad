@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { cityLabel, createCityLookup, isPublicIp } from '../agent/cityLookup.js';
+import { cityLabel, cityLookupEnabled, createCityLookup, isPublicIp } from '../agent/cityLookup.js';
 
 describe('city lookup', () => {
+  test('AGENT_CITY_LOOKUP defaults off', () => {
+    assert.equal(cityLookupEnabled({}), false);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: '' }), false);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: '0' }), false);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: 'false' }), false);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: '1' }), true);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: 'TRUE' }), true);
+    assert.equal(cityLookupEnabled({ AGENT_CITY_LOOKUP: 'on' }), true);
+  });
+
   test('private and loopback addresses are not looked up', async () => {
     assert.equal(isPublicIp('127.0.0.1'), false);
     assert.equal(isPublicIp('10.1.2.3'), false);

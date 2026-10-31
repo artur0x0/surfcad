@@ -34,6 +34,8 @@ import {
   shouldClosePairingDialogOnConnect,
   shouldPollRelay,
   shouldShowAgentBridgeDisconnect,
+  shouldShowLocalAgentConnect,
+  serverBlocksLocalPairing,
   shouldShowPairingApproval,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
@@ -75,6 +77,7 @@ export default function AgentBridgePairing({
   const [toastOpen, setToastOpen] = useState(false);
   const [popupFallback, setPopupFallback] = useState(false);
   const [usingServer, setUsingServer] = useState(false);
+  const [serverUnreachable, setServerUnreachable] = useState(false);
   const [preference, setPreference] = useState(() => (
     typeof localStorage === 'undefined' ? 'auto' : readRelayPreference(localStorage)
   ));
@@ -85,6 +88,8 @@ export default function AgentBridgePairing({
   ));
   const connRef = useRef(null);
   const serverModeRef = useRef(false);
+  const serverUnreachableRef = useRef(false);
+  const serverAttemptRef = useRef(false);
   const userStoppedRef = useRef(false);
   const pollerRef = useRef(null);
   const transportRef = useRef(null);
@@ -151,6 +156,7 @@ export default function AgentBridgePairing({
   const disconnectFromUser = useCallback(() => {
     userStoppedRef.current = true;
     serverModeRef.current = false;
+    serverAttemptRef.current = false;
     setUsingServer(false);
     disconnectPairing();
   }, [disconnectPairing]);
@@ -159,7 +165,10 @@ export default function AgentBridgePairing({
     if (!enabled) {
       userStoppedRef.current = false;
       serverModeRef.current = false;
+      serverAttemptRef.current = false;
+      serverUnreachableRef.current = false;
       setUsingServer(false);
+      setServerUnreachable(false);
       disconnectPairing();
     }
   }, [enabled, disconnectPairing]);
@@ -323,7 +332,12 @@ export default function AgentBridgePairing({
 
   const beginConnectFlow = useCallback(() => {
     onBeginFlow?.();
-    if (relayTarget === 'server' || serverModeRef.current) return;
+    if (serverBlocksLocalPairing({
+      relayTarget,
+      usingServer: serverModeRef.current,
+      serverUnreachable: serverUnreachableRef.current,
+    })) return;
+    serverAttemptRef.current = false;
     if (webkitHttpsBlocked) {
       setFlowOpen(true);
       return;
@@ -358,7 +372,11 @@ export default function AgentBridgePairing({
   }, [flowOpen, startPairing, state, token]);
 
   useEffect(() => {
-    if (!flowOpen || webkitHttpsBlocked || popupMode || relayTarget === 'server' || usingServer) {
+    if (!flowOpen || webkitHttpsBlocked || popupMode || serverBlocksLocalPairing({
+      relayTarget,
+      usingServer,
+      serverUnreachable,
+    })) {
       stopPolling();
       return undefined;
     }
@@ -387,7 +405,7 @@ export default function AgentBridgePairing({
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, serverUnreachable, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
     if (popupMode) return;
@@ -399,26 +417,67 @@ export default function AgentBridgePairing({
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return undefined;
     if (relayTarget === 'local') {
-      if (serverModeRef.current) {
+      serverUnreachableRef.current = false;
+      setServerUnreachable(false);
+      if (serverModeRef.current || serverAttemptRef.current) {
         serverModeRef.current = false;
+        serverAttemptRef.current = false;
         setUsingServer(false);
         stopConnection();
       }
       return undefined;
     }
-    const pending = { cancelled: false, timer: /** @type {ReturnType<typeof setTimeout> | null} */ (null) };
+    const pending = {
+      cancelled: false,
+      timer: /** @type {ReturnType<typeof setTimeout> | null} */ (null),
+      giveUp: /** @type {ReturnType<typeof setTimeout> | null} */ (null),
+    };
+    const markServerUnreachable = () => {
+      serverUnreachableRef.current = true;
+      setServerUnreachable(true);
+    };
     const openServer = () => {
       if (pending.cancelled || userStoppedRef.current) return;
       if (!window.surfcad?.call) return;
+      if (flowOpenRef.current && connRef.current && !serverModeRef.current) return;
       if (serverModeRef.current && connRef.current) return;
       stopPolling();
+      serverAttemptRef.current = false;
       stopConnection();
-      serverModeRef.current = true;
-      setUsingServer(true);
+      serverAttemptRef.current = true;
+      // usingServer stays false until the socket opens. A preview or golden
+      // with no /agent relay must keep Connect agent on screen.
       const conn = createServerTabConnection({
         url: serverAgentWsUrl(window.location),
         call: (name, args) => window.surfcad.call(name, args),
-        onState: (next) => onConnectionState(next, conn),
+        onState: (next) => {
+          if (pending.cancelled || !isCurrentPairingConnection(connRef.current, conn)) return;
+          if (next === 'advertising' || next === 'paired') {
+            if (flowOpenRef.current || userStoppedRef.current) {
+              if (pending.giveUp) clearTimeout(pending.giveUp);
+              serverAttemptRef.current = false;
+              conn.disconnect();
+              return;
+            }
+            if (pending.giveUp) clearTimeout(pending.giveUp);
+            serverUnreachableRef.current = false;
+            setServerUnreachable(false);
+            serverAttemptRef.current = false;
+            serverModeRef.current = true;
+            setUsingServer(true);
+            onConnectionState(next, conn);
+            return;
+          }
+          if (!serverModeRef.current && next === 'reconnecting') {
+            if (pending.giveUp) clearTimeout(pending.giveUp);
+            serverAttemptRef.current = false;
+            markServerUnreachable();
+            conn.disconnect();
+            return;
+          }
+          if (!serverModeRef.current) return;
+          onConnectionState(next, conn);
+        },
         onLink: (next) => {
           if (!serverModeRef.current || !isCurrentPairingConnection(connRef.current, conn)) return;
           setLink(next);
@@ -426,6 +485,14 @@ export default function AgentBridgePairing({
       });
       connRef.current = conn;
       conn.connect();
+      if (pending.giveUp) clearTimeout(pending.giveUp);
+      pending.giveUp = setTimeout(() => {
+        if (pending.cancelled || serverModeRef.current) return;
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        serverAttemptRef.current = false;
+        markServerUnreachable();
+        conn.disconnect();
+      }, 8000);
     };
     const openWhenReady = (triesLeft) => {
       if (pending.cancelled || userStoppedRef.current) return;
@@ -433,7 +500,10 @@ export default function AgentBridgePairing({
         openServer();
         return;
       }
-      if (triesLeft <= 0) return;
+      if (triesLeft <= 0) {
+        markServerUnreachable();
+        return;
+      }
       pending.timer = setTimeout(() => openWhenReady(triesLeft - 1), 50);
     };
     if (userStoppedRef.current) return undefined;
@@ -442,7 +512,11 @@ export default function AgentBridgePairing({
     } else {
       probeRelayWebSocket(wsUrl, { pageSecure }).then((result) => {
         if (pending.cancelled || userStoppedRef.current) return;
-        if (result?.ok) return;
+        if (result?.ok) {
+          serverUnreachableRef.current = false;
+          setServerUnreachable(false);
+          return;
+        }
         if (flowOpenRef.current && connRef.current && !serverModeRef.current) return;
         openWhenReady(20);
       }).catch(() => {
@@ -452,6 +526,7 @@ export default function AgentBridgePairing({
     return () => {
       pending.cancelled = true;
       if (pending.timer) clearTimeout(pending.timer);
+      if (pending.giveUp) clearTimeout(pending.giveUp);
     };
   }, [enabled, onConnectionState, pageSecure, relayTarget, stopConnection, stopPolling, wsUrl]);
 
@@ -648,7 +723,13 @@ export default function AgentBridgePairing({
     </>
   );
 
-  const connectAgentButton = !flowOpen && !paired && relayTarget !== 'server' && !usingServer ? (
+  const connectAgentButton = shouldShowLocalAgentConnect({
+    flowOpen,
+    paired,
+    relayTarget,
+    usingServer,
+    serverUnreachable,
+  }) ? (
     <button
       type="button"
       className={PROFILE_MENU_ITEM_CLASS}

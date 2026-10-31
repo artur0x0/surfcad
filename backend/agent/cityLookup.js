@@ -2,10 +2,24 @@
  * City from the requester IP. ipdata.free is keyless and allows commercial
  * use with attribution (https://ipdata.co/free). A miss, a private address,
  * or a timeout leaves the city unset.
+ *
+ * The server installs this only when `AGENT_CITY_LOOKUP` is `1`, `true`,
+ * or `on` (`cityLookupEnabled`). The default is off: no request, and the
+ * approval sentence omits the city.
  */
 
 export const CITY_LOOKUP_CREDIT = 'IP geolocation by ipdata';
 export const CITY_LOOKUP_URL = 'https://ipdata.co/';
+
+/**
+ * City lookup is off unless the server process sets `AGENT_CITY_LOOKUP`
+ * to `1`, `true`, or `on`. Unset, empty, and any other value do not fetch.
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function cityLookupEnabled(env = process.env) {
+  const raw = String(env?.AGENT_CITY_LOOKUP ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'on';
+}
 const LOOKUP_TIMEOUT_MS = 1500;
 const CACHE_MS = 10 * 60 * 1000;
 

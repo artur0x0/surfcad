@@ -5,6 +5,8 @@ Runbooks for the Hostinger production box. The Cloud Agent ships files under `do
 | Topic | Doc |
 | --- | --- |
 | nginx site + security headers (CSP, HSTS, local agent relay) | [nginx-headers.md](./nginx-headers.md) |
+| Agent relay `/agent` WebSocket location (not installed) | [agent-relay-nginx.md](./agent-relay-nginx.md) |
+| Agent approval city lookup (`AGENT_CITY_LOOKUP`, default off) | [agent-city-lookup.md](./agent-city-lookup.md) |
 | Upload folder prune timer + `User.dob` migration | [upload-prune.md](./upload-prune.md) |
 | PostHog, Sentry, consent, admin stats | [../monitoring.md](../monitoring.md) |
 | Staging host layout | [../staging.md](../staging.md) |

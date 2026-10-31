@@ -33,3 +33,5 @@ location /agent {
 ```
 
 `proxy_read_timeout` is one hour, which is the minimum for a tab socket that stays open. `proxy_buffering off` is what lets SSE flush. The app also sends `X-Accel-Buffering: no` on the event stream.
+
+The approval page can name a city. That lookup is off unless `AGENT_CITY_LOOKUP` is set on the server. See [agent-city-lookup.md](./agent-city-lookup.md).

@@ -35,5 +35,5 @@ test('profile Disconnect renders the unplug icon and still disconnects', async (
   assert.match(html, />Disconnect</);
   assert.match(html, /gap-2/);
 
-  assert.match(pairing, /<AgentBridgeDisconnectMenuItem onDisconnect=\{disconnectPairing\} \/>/);
+  assert.match(pairing, /<AgentBridgeDisconnectMenuItem onDisconnect=\{disconnectFromUser\} \/>/);
 });

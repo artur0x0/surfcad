@@ -1,6 +1,6 @@
 import AgentToken from '../db/models/AgentToken.js';
 import { authenticateBrowserUpgrade } from './browserAuth.js';
-import { createCityLookup } from './cityLookup.js';
+import { cityLookupEnabled, createCityLookup } from './cityLookup.js';
 import { createAgentRelay } from './createRelay.js';
 import { createMongoTokenStore } from './tokens.js';
 import { attachAgentWebSocket } from './wsServer.js';
@@ -19,7 +19,9 @@ const state = {
  * @param {{ sessionMiddleware: import('express').RequestHandler }} deps
  */
 export function installAgentRelay(app, deps) {
-  const relay = createAgentRelay({ lookupCity: createCityLookup() });
+  const relay = createAgentRelay(
+    cityLookupEnabled() ? { lookupCity: createCityLookup() } : {},
+  );
   state.relay = relay;
   state.sessionMiddleware = deps.sessionMiddleware;
   app.use('/agent', relay.router);
