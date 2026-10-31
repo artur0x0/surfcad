@@ -56,17 +56,17 @@ function withPart(shell, part) {
 }
 
 /**
- * 4×8×4 boss in the cavity. The 4 mm faces read the cross-section. The 8 mm
- * faces terminate that span, so they read 8 mm and stay thick. The shell's
- * inward rays hit the shell, not the boss.
+ * 4×8×4 boss in the cavity. The inscribed sphere is the 4 mm cross-section.
+ * The 8 mm ray is a corridor, so those faces stay thick and are not 8 mm.
+ * The shell's inward rays hit the shell, not the boss.
  */
 function thickBoss() {
   return withPart(uniformShell(), boxMesh([8, 8, 8], [12, 16, 12]));
 }
 
 /**
- * 0.8×2.5×2.5 rib in the cavity. The broad faces are the 0.8 mm wall.
- * Each end terminates the 2.5 mm wall opposite it.
+ * 0.8×2.5×2.5 rib in the cavity. Every face is the 0.8 mm wall. The end
+ * faces sit between the two skins, so the sphere keeps them thin.
  */
 function thinRib() {
   return withPart(uniformShell(), boxMesh([10, 9, 9], [10.8, 11.5, 11.5]));
@@ -152,7 +152,7 @@ test('a thick boss stays off the nominal and is flagged thick', () => {
   const wall = result.wall;
   assert.equal(wall.nominalMethod, 'mode');
   near(wall.nominal, 2);
-  near(wall.max, 8);
+  near(wall.max, 4);
   near(wall.min, 2);
   assert.equal(wall.thinCount, 0);
   assert.ok(wall.thickCount >= 1);
@@ -164,15 +164,15 @@ test('a thick boss stays off the nominal and is flagged thick', () => {
     assert.equal(sample.flag, 'nominal');
     near(sample.thickness, 2);
   }
-  const yFaces = new Set([24 + 8, 24 + 9, 24 + 10, 24 + 11]);
   for (const sample of boss) {
     assert.equal(sample.flag, 'thick');
     assert.ok(sample.thickness > wall.nominal * wall.thresholds.thickRatio);
-    if (yFaces.has(sample.index)) near(sample.thickness, 8);
-    else assert.ok(sample.thickness < 5, sample.thickness);
+    assert.ok(sample.thickness < 5, sample.thickness);
   }
+  const yFaces = [24 + 8, 24 + 9, 24 + 10, 24 + 11];
   for (const index of yFaces) {
-    assert.equal(wall.field[index].source, 'ray');
+    assert.equal(wall.field[index].source, 'sphere');
+    assert.ok(wall.field[index].thickness > 3.5 && wall.field[index].thickness < 4.2);
   }
 });
 
@@ -183,7 +183,7 @@ test('a thin rib is flagged thin and does not move nominal', () => {
   near(wall.nominal, 2);
   assert.ok(wall.min > 0.7 && wall.min < 0.85, wall.min);
   assert.equal(wall.thickCount, 0);
-  assert.equal(wall.thinCount, 2);
+  assert.equal(wall.thinCount, 1);
   for (const region of wall.thin) assert.ok(region.thickness > 0.7 && region.thickness < 0.85);
   const thinFaces = [24 + 4, 24 + 5, 24 + 6, 24 + 7];
   for (const index of thinFaces) {
@@ -194,11 +194,9 @@ test('a thin rib is flagged thin and does not move nominal', () => {
   const ribEnds = [24, 25, 26, 27, 32, 33, 34, 35];
   for (const index of ribEnds) {
     const sample = wall.field[index];
-    assert.notEqual(sample.flag, 'thin', `${index} ${sample.thickness}`);
-    assert.ok(
-      Math.abs(sample.thickness - 2.5) <= 2.5 * 0.15,
-      `${index} ${sample.thickness}`,
-    );
+    assert.equal(sample.flag, 'thin', `${index} ${sample.thickness}`);
+    assert.equal(sample.source, 'sphere');
+    assert.ok(Math.abs(sample.thickness - 0.8) <= 0.8 * 0.15, `${index} ${sample.thickness}`);
   }
   for (const sample of wall.field.slice(0, 24)) {
     assert.equal(sample.flag, 'nominal');
@@ -209,7 +207,7 @@ test('a thin rib is flagged thin and does not move nominal', () => {
 test('raising a threshold clears the boss and the rib', () => {
   const boss = score(thickBoss(), { thickRatio: 10 }).wall;
   near(boss.nominal, 2);
-  near(boss.max, 8);
+  near(boss.max, 4);
   assert.equal(boss.thickCount, 0);
   assert.equal(boss.thresholds.thickRatio, 10);
   assert.equal(boss.field.slice(24).every((sample) => sample.flag === 'nominal'), true);
