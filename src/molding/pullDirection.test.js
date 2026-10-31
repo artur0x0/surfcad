@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyzePullDirection, analyzeWallOnly, moldFitScore, MOLD_DIRECTION_DEDUP_DEG } from './pullDirection.js';
+import {
+  analyzePullDirection,
+  analyzeWallOnly,
+  moldFitScore,
+  MOLD_DIRECTION_DEDUP_DEG,
+  MOLD_UNDERCUT_TIE_FLOOR_MM2,
+} from './pullDirection.js';
 
 function boxMesh(min, max) {
   const [x0, y0, z0] = min;
@@ -238,6 +244,61 @@ function throughHole() {
   return { positions, indices };
 }
 
+/**
+ * Axis-aligned block plus an uncapped square tunnel along an icosphere
+ * vertex (0, 1, φ). The tunnel axis is not a box axis and not a large
+ * face normal. X, Y, and Z each leave a few hundred mm² of undercut.
+ */
+function obliqueTunnel() {
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const length = Math.hypot(0, 1, phi);
+  const d = [0, 1 / length, phi / length];
+  const helper = [1, 0, 0];
+  const u = unit(cross(helper, d));
+  const v = unit(cross(d, u));
+  const positions = [];
+  const indices = [];
+  appendMesh(positions, indices, boxMesh([0, 0, 0], [30, 30, 30]), false);
+  const center = [15, 15, 15];
+  const rect = (t) => {
+    const c = [
+      center[0] + d[0] * t,
+      center[1] + d[1] * t,
+      center[2] + d[2] * t,
+    ];
+    return [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([su, sv]) => [
+      c[0] + su * 3 * u[0] + sv * 2.5 * v[0],
+      c[1] + su * 3 * u[1] + sv * 2.5 * v[1],
+      c[2] + su * 3 * u[2] + sv * 2.5 * v[2],
+    ]);
+  };
+  const push = (loop) => {
+    const base = positions.length / 3;
+    for (const p of loop) positions.push(p[0], p[1], p[2]);
+    return base;
+  };
+  const start = push(rect(-12));
+  const end = push(rect(12));
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    indices.push(start + i, end + j, start + j, start + i, end + i, end + j);
+  }
+  return { positions, indices };
+}
+
+function cross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function unit(v) {
+  const length = Math.hypot(v[0], v[1], v[2]);
+  return [v[0] / length, v[1] / length, v[2] / length];
+}
+
 /** Plate with a barb that hooks downward. */
 function snapHook() {
   const positions = [];
@@ -294,13 +355,36 @@ test('a through hole along Z pulls cleanly out the hole', () => {
   assert.deepEqual(result.pull, [0, 0, 1]);
 });
 
-test('search undercut area is no worse than the Z axis on a snap hook', () => {
+test('a snap hook keeps a principal pull and reports the lip undercut', () => {
   const mesh = snapHook();
-  const searched = analyzePullDirection(mesh);
-  const alongZ = analyzePullDirection({ ...mesh, pull: [0, 0, 1] });
-  assert.equal(searched.error, undefined);
-  assert.ok(alongZ.undercutArea > 0);
-  assert.ok(searched.undercutArea <= alongZ.undercutArea + 1e-4);
+  const result = analyzePullDirection(mesh);
+  assert.deepEqual(result.pull, [0, 0, 1]);
+  assert.equal(result.undercutCount, 1);
+  assert.equal(result.undercutArea, 12);
+  assert.ok(result.undercutArea <= MOLD_UNDERCUT_TIE_FLOOR_MM2);
+  const chosen = result.candidates.find((row) => row.pull[0] === 0 && row.pull[1] === 0 && row.pull[2] === 1);
+  assert.equal(chosen.principal, true);
+});
+
+test('a diagonal tunnel stays oblique when every axis still undercuts', () => {
+  const mesh = obliqueTunnel();
+  const result = analyzePullDirection(mesh);
+  const axisPulls = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  assert.equal(result.undercutArea, 0);
+  assert.equal(result.undercutCount, 0);
+  assert.ok(axisPulls.every((axis) => axis.some((value, i) => value !== result.pull[i])));
+  const chosen = result.candidates.find((row) => row.pull.every((value, i) => value === result.pull[i]));
+  assert.equal(chosen.principal, false);
+  for (const pull of axisPulls) {
+    const scored = analyzePullDirection({ ...mesh, pull });
+    assert.ok(scored.undercutArea > MOLD_UNDERCUT_TIE_FLOOR_MM2);
+    assert.ok(scored.undercutArea > result.undercutArea + MOLD_UNDERCUT_TIE_FLOOR_MM2);
+  }
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const length = Math.hypot(0, 1, phi);
+  const axis = [0, 1 / length, phi / length];
+  const aligned = Math.abs(result.pull[0] * axis[0] + result.pull[1] * axis[1] + result.pull[2] * axis[2]);
+  assert.ok(aligned > Math.cos((5 * Math.PI) / 180));
 });
 
 test('a zero pull is bad_args and an empty mesh is no_mesh', () => {
