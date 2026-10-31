@@ -30,6 +30,28 @@ import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
 
 export const MOLD_ANALYSIS_VERSION = 1;
 
+/**
+ * Wall field only. The heatmap uses this so opening the map does not search
+ * pull directions again. The mesh and the normals are the same ones
+ * `analyzePullDirection` scores.
+ */
+export function analyzeWallOnly(input) {
+  const positions = input?.positions;
+  const indices = input?.indices;
+  if (!positions || !indices || indices.length < 3 || positions.length < 9) {
+    return { error: { code: 'no_mesh', message: 'No mesh to score' } };
+  }
+  const wallOpts = resolveWallOptions(input.wall);
+  if (wallOpts.error) return wallOpts;
+  const prepared = prepareTriangles(positions, indices, input.stamped || null);
+  if (!prepared.tris.length) return { error: { code: 'no_mesh', message: 'No mesh to score' } };
+  return {
+    version: MOLD_ANALYSIS_VERSION,
+    kind: 'mold-analysis',
+    wall: measureWallThickness(prepared.tris, Math.floor(indices.length / 3), wallOpts),
+  };
+}
+
 /** |n · d| at or under this is parallel to the pull (draft, not an undercut). */
 export const MOLD_NEUTRAL_DEG = 10;
 /** A face this close to the cell's outer height is skin, not an undercut. */

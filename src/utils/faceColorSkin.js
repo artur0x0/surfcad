@@ -39,7 +39,7 @@ const HEADLIGHT_KEY = 'face-color-skin-lit-v1';
 export const FACE_SKIN_METALNESS = 0;
 export const FACE_SKIN_ROUGHNESS = 1;
 
-function makeFaceSkinMaterial(side) {
+export function makeFaceSkinMaterial(side) {
   const material = new MeshStandardMaterial({
     vertexColors: true,
     flatShading: true,

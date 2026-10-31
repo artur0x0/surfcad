@@ -498,6 +498,32 @@ textarea {
     min-height: 2rem;
     box-sizing: border-box;
   }
+  /* Wall-thickness legend: under the feature ribbon, clear of a left rail. */
+  .wall-legend-anchor {
+    top: calc(
+      var(--feature-strip-offset-desktop)
+      + var(--feature-strip-height)
+      + var(--joint-row-height)
+      + var(--feature-strip-rail-gap)
+    );
+    left: calc(0.5rem + 4rem + var(--feature-strip-rail-gap));
+  }
+  @media (min-width: 1024px) {
+    .wall-legend-anchor {
+      left: calc(1rem + 4rem + var(--feature-strip-rail-gap));
+    }
+  }
+  @media (max-width: 768px) {
+    .wall-legend-anchor {
+      top: calc(
+        var(--feature-strip-offset-mobile)
+        + var(--feature-strip-height)
+        + var(--joint-row-height)
+        + var(--feature-strip-rail-gap)
+      );
+      left: 0.75rem;
+    }
+  }
   /* Desktop CAD: pin the left helper rail 10px under the ribbon. */
   .rail-full-below-strip {
     top: calc(

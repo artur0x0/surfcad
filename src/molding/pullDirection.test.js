@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyzePullDirection, moldFitScore } from './pullDirection.js';
+import { analyzePullDirection, analyzeWallOnly, moldFitScore } from './pullDirection.js';
 
 function boxMesh(min, max) {
   const [x0, y0, z0] = min;
@@ -59,6 +59,18 @@ test('moldFitScore bands are good, fixable, and not_a_fit', () => {
   assert.equal(moldFitScore(1), 'fixable');
   assert.equal(moldFitScore(4), 'fixable');
   assert.equal(moldFitScore(5), 'not_a_fit');
+});
+
+test('wall-only analysis returns thickness and does not score a pull', () => {
+  const mesh = boxMesh([0, 0, 0], [10, 10, 10]);
+  const result = analyzeWallOnly(mesh);
+  assert.equal(result.kind, 'mold-analysis');
+  assert.equal(result.version, 1);
+  assert.equal(result.fit, undefined);
+  assert.equal(result.pull, undefined);
+  assert.equal(result.wall.nominal, 10);
+  assert.equal(result.wall.max, 10);
+  assert.equal(result.wall.field.length, 12);
 });
 
 test('a box searches to a good fit along +Z', () => {
