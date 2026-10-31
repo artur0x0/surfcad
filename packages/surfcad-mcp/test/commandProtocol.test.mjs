@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AGENT_HANDSHAKE_UPDATE_MESSAGE,
   AGENT_PROTOCOL_VERSION,
+  checkAgentHandshakeVersion,
   commandRequest,
   commandResponse,
   isSupportedProtocolVersion,
@@ -59,4 +61,17 @@ test('a missing v is version 1, and any other v is not this protocol', () => {
   assert.equal(readCommandResponse({ v: 2, id: 'c', ok: true, result: 1 }), null);
   assert.equal(readCommandResponse({ type: 'pair', ok: true }), null);
   assert.equal(readCommandResponse({ id: 'c', command: 'status' }), null);
+});
+
+test('server handshake requires an explicit current version', () => {
+  assert.equal(AGENT_HANDSHAKE_UPDATE_MESSAGE, 'please update surfcad-mcp');
+  assert.deepEqual(checkAgentHandshakeVersion(undefined), {
+    ok: false,
+    error: 'please update surfcad-mcp',
+  });
+  assert.equal(checkAgentHandshakeVersion(0).error, 'please update surfcad-mcp');
+  assert.equal(checkAgentHandshakeVersion(1).ok, true);
+  assert.equal(checkAgentHandshakeVersion(2).ok, false);
+  assert.match(checkAgentHandshakeVersion(2).error, /Unsupported protocol version: 2/);
+  assert.equal(readCommandRequest({ id: 'c', command: 'status' }).v, 1);
 });

@@ -66,6 +66,10 @@ curl -sI https://surfcad.com/api/config | grep -iE '^(strict-transport-security|
 
 You should see helmet’s headers once (from Node), not doubled.
 
+## Agent relay `/agent` (not installed)
+
+The site file in this repo does not proxy `/agent`. The location block Artur can paste by hand, including the WebSocket upgrade headers, a `proxy_read_timeout` of at least an hour, and buffering off for SSE, is in [agent-relay-nginx.md](./agent-relay-nginx.md). The install commands above do not apply it. Do not add `Cross-Origin-Opener-Policy: same-origin` on that location.
+
 ## Rollback
 
 ```bash

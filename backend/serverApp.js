@@ -14,6 +14,8 @@ import { connectDB } from './db/connection.js';
 import { initializePassport } from './auth/passport.js';
 import { createSessionMiddleware, enforceCredentialRevocation, requireAuth } from './auth/session.js';
 import passport from 'passport';
+import { attachAgentSockets, installAgentRelay, useMongoTokenStore } from './agent/install.js';
+import { MAX_AGENT_MESSAGE_BYTES } from './agent/limits.js';
 
 // Routes
 import authRoutes from './routes/auth.js';
@@ -34,6 +36,20 @@ import adminRoutes from './routes/admin.js';
 // CAD and AI
 import { createGenerateHandler } from './services/generateProxy.js';
 import { createRateLimiter, rateLimitMiddleware, userKey } from './services/rateLimiter.js';
+
+/**
+ * The relay frame cap is enforced here so a large /agent body never reaches
+ * the 10mb parser. Other parse errors keep the normal error handler.
+ * @param {any} err
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ */
+function rejectOversizedAgentBody(err, res, next) {
+  if (err && (err.status === 413 || err.type === 'entity.too.large')) {
+    return res.status(413).json({ error: 'Message exceeds the size cap' });
+  }
+  return next(err);
+}
 
 let SYSTEM_PROMPT = 'You are a CAD assistant.';
 try {
@@ -67,11 +83,25 @@ app.use(cors({
 app.use('/api/webhooks', webhookRoutes);
 
 // ============ Body Parsing ============
+// /agent is capped at the relay frame size before the global 10mb parser.
+// A parsed body marks the request finished, so the global parser skips it.
+const agentJsonLimit = express.json({ limit: MAX_AGENT_MESSAGE_BYTES });
+const agentFormLimit = express.urlencoded({ extended: false, limit: MAX_AGENT_MESSAGE_BYTES });
+app.use('/agent', (req, res, next) => {
+  agentJsonLimit(req, res, (err) => {
+    if (err) return rejectOversizedAgentBody(err, res, next);
+    agentFormLimit(req, res, (errForm) => {
+      if (errForm) return rejectOversizedAgentBody(errForm, res, next);
+      return next();
+    });
+  });
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ============ Sessions ============
-app.use(createSessionMiddleware());
+const sessionMiddleware = createSessionMiddleware();
+app.use(sessionMiddleware);
 
 // ============ Passport Auth ============
 initializePassport();
@@ -122,6 +152,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Agent relay (WebSocket upgrade is attached in startServer).
+installAgentRelay(app, { sessionMiddleware });
+
 // ============ Error Handler ============
 if (sentryEnabled) {
   installSentryErrorHandler(app);
@@ -145,12 +178,15 @@ export async function startServer() {
   try {
     // Connect to MongoDB
     await connectDB();
-    
-    app.listen(PORT, () => {
+    useMongoTokenStore();
+
+    const server = app.listen(PORT, () => {
       console.log(`[Server] Running on port ${PORT}`);
       console.log(`[Server] Environment: ${config.env}`);
       console.log(`[Server] Frontend URL: ${config.frontendUrl}`);
     });
+    attachAgentSockets(server);
+    return server;
   } catch (error) {
     console.error('[Server] Failed to start:', error);
     process.exit(1);
