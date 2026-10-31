@@ -79,4 +79,7 @@ non-admins get 404. The per-user limit matches `GET /api/admin/stats`.
 Lists include inactive rows. Partner rows include `displayName`. There is no
 public catalog route. Deactivate sets `active` to false and does not change
 child rows. A later `PATCH` with `active: true` turns a row back on. Leads are
-not on this API. There is no admin UI and no quote API.
+not on this API.
+
+Signed-in admins edit the same rows at `/admin` (`data-admin-mold-catalog`).
+There is no leads board and no quote API.
