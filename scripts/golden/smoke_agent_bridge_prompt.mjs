@@ -261,7 +261,11 @@ async function checkPhoneServerDialog(browser) {
     await phone.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await phone.locator('[data-ui-action="data-agent-bridge-copy-prompt"]').click();
     const copied = await phone.evaluate(() => navigator.clipboard.readText());
-    check('phone copy embeds the join code', copied.includes('npx -y surfcad-mcp login --code ABCD-EFGH'), copied);
+    check(
+      'phone copy embeds the join code',
+      copied.includes(`npx -y surfcad-mcp login --server http://127.0.0.1:${previewPort} --code ABCD-EFGH`),
+      copied,
+    );
     check('phone copy passes this loopback origin', copied.includes(`--server http://127.0.0.1:${previewPort}`), copied);
     check('phone copy does not ask for a device code', !/Enter the device code|Install and run|local server/i.test(copied), copied);
     await phone.waitForTimeout(750);

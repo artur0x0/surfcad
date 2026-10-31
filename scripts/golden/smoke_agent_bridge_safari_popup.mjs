@@ -10,8 +10,9 @@
  *
  * Runs, when the browser is available:
  *   webkit          — Safari stand-in: Connect Agent opens the server-relay
- *                     dialog (npx surfcad-mcp login, Waiting for your agent
- *                     to sign in). No loopback popup and no localhost probe.
+ *                     join-code dialog (npx -y surfcad-mcp login --code,
+ *                     Waiting for your agent). No loopback popup and no
+ *                     localhost probe.
  *   chromium        — direct socket, no popup (path unchanged).
  *   chromium-popup  — Safari desktop UA in Chromium. Same server dialog.
  *                     The loopback popup is no longer the Safari Connect path.
@@ -26,7 +27,7 @@
  * Needs `npm run build` (production, no playtest auto-approve) and, for
  * WebKit, `npx playwright-core install --with-deps webkit`.
  */
-/* global window, document, localStorage */
+/* global window, document, localStorage, navigator */
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join, normalize } from 'node:path';
