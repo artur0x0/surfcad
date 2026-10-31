@@ -329,6 +329,25 @@ distance `r/sin(θ/2)` from the edge (1 mm overshoot each end).
   alongside the real edge; filing one off adds noise, and one bad sliver must
   not kill the whole part. But if *every* edge was skipped, throw loud with the
   example `t`/`L` and the "pass `convexEdges(part)` unfiltered" hint.
+- **Cutter corners sit outside the faces** (`_C6_FACE_PUSH_RATIO`, 0.02·r).
+  Manifold keeps a solid's planes in doubles but hands JS a float32 mesh: a
+  box 68.7 wide has its face at 34.35 while its vertices read 34.349998. A
+  cutter face laid exactly in the part's face from those vertices sat two
+  microns inside it and the subtract left the strip between the edge and the
+  tangency as a two-micron skin of the old face over the fillet (genus +1 per
+  edge, inward-facing wall of triangles, a shell that offset the skin the
+  wrong way). Every corner point (the edge point of a prism, a pocket's apex,
+  the rim point of a closed-run quad, the v1 corner box's on-face corners)
+  moves 0.02·r out of each face it lies on; the tangency rings stay exact, so
+  the face-lying side runs from air to the tangency and crosses the face
+  plane like the sweep kernel's legs. A **free** edge end (a face of the part
+  caps it: some face at the vertex has normal along the edge) is overrun by
+  the same amount; an end that runs into other material (a boss edge on a
+  plate) stays flush (`freeA/freeB` in `_c6EdgeGeom`). Expected cutter
+  volumes carry the push: prism section `r²(1−π/4) + push·r`, pocket
+  `r³(1−π/6) + 2·push·r²`. Measured at r = 4: 0.01 mm still left a 0.6 µm fin
+  along the tangency, 0.03 mm and up none, 0.3 mm broke the pocket check.
+  Test: `src/lib/surfcad/filletFacePush.test.js`.
 - **Union then subtract once**, so shared-corner overlaps are counted once
   (matches analytic inclusion–exclusion).
 - **Zero cutters with a non-empty edge list is a loud failure.** An empty edge

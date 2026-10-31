@@ -19,7 +19,11 @@ const EXPECTED = {
   // the named flats it is tangent to (stamped-face wall in the curved pass),
   // and again the same day: the corner balls are their own stamped faces
   // (`.corner[k]`), so the ball/sail junctions are walls too.
-  fillet: 'cf08805ebfb8c0c08fe13dbc8066e9f66f1bdf7cce3d27b0afe450abbb00b253',
+  // Re-pinned 2026-10-31: the planar kernel's cutter corners sit 0.02·r
+  // outside the faces (_C6_FACE_PUSH_RATIO); the graph is unchanged (26
+  // patches, 6 planar + 20 blend, same areas, 12044 tris) but the boolean's
+  // vertex order and float-level positions moved.
+  fillet: 'b39dc8c4caefe8ab03d56313add1292fc7b9242c4c5e3a282bbf435380b45c7d',
   two: '1153cc70086e9c52eb9da22710ce67d2a56a3f59fee5bcbb26f7b60d9f25beb1',
   sphere450: '412d496a2c5f01fe0624f6f29d9a230070046401f22fa0ed1dff17635b212ae3',
 };
