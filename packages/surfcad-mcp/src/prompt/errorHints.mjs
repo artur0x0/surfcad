@@ -49,6 +49,8 @@ export const ERROR_HINTS = Object.freeze({
   lead_failed: { hint: 'The molding request did not go through: retry mold_request_firm_quote or mold_request_human_review once. Nothing was charged.' },
   sign_in: { hint: 'Sign in, then retry mold_request_firm_quote or mold_request_human_review. Nothing was saved.' },
   unknown_partner: { hint: 'That public label is not an active molding partner: mold_quote, then pass an anonLabel from vendors.' },
+  no_lead: { hint: 'Request a human review with mold_request_human_review before mold_pay_human_review. Nothing was charged.' },
+  review_unavailable: { hint: 'Human review checkout is not configured. Do not retry in a loop, and do not invent a card charge.' },
   rate_limited: { hint: 'Too many requests in a short window: wait, then retry the same call once. Do not loop.' },
   not_picked: { hint: 'pick_next { remove: true } named keys that are not picked: pick_next with no remove to see the live picks, or pick_clear {}.' },
   empty_pick: { hint: 'The card needs at least one pick: pick_next { keys } before pick_done, or pick_cancel {}.' },

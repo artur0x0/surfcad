@@ -348,9 +348,15 @@ export const COMMAND_META = {
     mutates: false,
   },
   mold_request_human_review: {
-    description: 'Record a human-review lead for the selected anonymized vendor. The button shows the placeholder review fee. This call does not charge a card and does not reveal the vendor. The name stays hidden until that fee is paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.',
+    description: 'Record a human-review lead for the selected anonymized vendor. This call does not charge a card and does not reveal the vendor. The name stays hidden until the review fee is paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.',
     result: { type: 'object', additionalProperties: true },
     errors: ['sign_in', 'unknown_partner', 'bad_args', 'lead_failed', 'rate_limited', 'no_mesh', 'internal'],
+    mutates: false,
+  },
+  mold_pay_human_review: {
+    description: 'Open Stripe Checkout for the human-review fee on the selected vendor. The fee comes from the server. This call does not mark the review paid, does not reveal the vendor, and does not take a card number. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Cancelled or failed checkout leaves the name hidden. Does not email the partner and does not change the part.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['sign_in', 'unknown_partner', 'no_lead', 'review_unavailable', 'bad_args', 'rate_limited', 'no_mesh', 'internal'],
     mutates: false,
   },
   mold_wall_map: {

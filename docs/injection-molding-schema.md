@@ -94,4 +94,7 @@ Signed-in admins edit the catalog and the lead board at `/admin`
 (`data-admin-mold-catalog`, `data-admin-mold-leads`). `POST /api/molding/quote`
 returns a budgetary quote and does not store it. `POST /api/molding/leads`
 stores a lead for the signed-in user. It does not call Stripe. A firm quote
-reveals that partner. A human review does not.
+reveals that partner. A human review does not. `POST /api/molding/review-checkout`
+opens Stripe Checkout for `MOLDING_REVIEW_FEE_USD` and does not mark the lead
+paid. The Stripe webhook sets `reviewFeePaid` only after a paid event whose
+amount matches. The row stores a payment id string, not a card number.

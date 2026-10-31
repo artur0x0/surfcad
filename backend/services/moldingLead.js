@@ -5,8 +5,8 @@
  * This module does not call Stripe and does not email the partner.
  */
 
-import { HUMAN_REVIEW_FEE_USD } from '../../src/molding/reviewFee.js';
 import { MOLDING_LEAD_TYPES } from '../db/models/MoldingLead.js';
+import { reviewFeeUsdFromEnv } from './reviewFeeEnv.js';
 
 const TOP_KEYS = new Set(['type', 'anonLabel', 'snapshot']);
 const SNAPSHOT_KEYS = new Set([
@@ -100,7 +100,7 @@ export function leadView(lead, partner) {
     status: lead.status,
     anonLabel: partner.anonLabel,
     revealed,
-    reviewFeeUsd: HUMAN_REVIEW_FEE_USD,
+    reviewFeeUsd: reviewFeeUsdFromEnv(),
     reviewFeePaid: lead.reviewFeePaid === true,
   };
   if (revealed) view.displayName = partner.displayName;

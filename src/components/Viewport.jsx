@@ -616,7 +616,7 @@ import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { dfmReport } from '../molding/dfmReport.js';
 import { postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
-import { leadBody, postMoldingLead } from '../utils/moldingLeadClient.js';
+import { checkoutUrlAllowed, fetchReviewStatus, leadBody, postMoldingLead, postReviewCheckout } from '../utils/moldingLeadClient.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import SideActionLegend from './molding/SideActionLegend';
@@ -1469,6 +1469,9 @@ const Viewport = forwardRef(({
   const agentMoldQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const agentMoldFirmQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
   const agentMoldHumanReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
+  const agentMoldPayReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
+  const reviewReturnSeenRef = useRef(new Set());
+  const confirmReviewRef = useRef(async () => {});
   const quoteOnRef = useRef(false);
   const quoteFieldRef = useRef(null);
   const quoteSeqRef = useRef(0);
@@ -2776,6 +2779,7 @@ const Viewport = forwardRef(({
       moldQuote: (args) => agentMoldQuoteRef.current(args),
       moldRequestFirmQuote: (args) => agentMoldFirmQuoteRef.current(args),
       moldRequestHumanReview: (args) => agentMoldHumanReviewRef.current(args),
+      moldPayHumanReview: (args) => agentMoldPayReviewRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -14054,6 +14058,27 @@ const Viewport = forwardRef(({
   };
   clearQuoteRef.current = clearQuote;
 
+  function keptReview(source) {
+    return {
+      reviewFeeUsd: Number.isFinite(source?.reviewFeeUsd) ? source.reviewFeeUsd : null,
+      reviewPayable: source?.reviewPayable === true,
+    };
+  }
+
+  function noteReviewReturn(label) {
+    if (!label) return;
+    let flag = '';
+    try {
+      flag = new URLSearchParams(window.location.search).get('moldReview') || '';
+    } catch {
+      flag = '';
+    }
+    if (flag !== 'return') return;
+    if (reviewReturnSeenRef.current.has(label)) return;
+    reviewReturnSeenRef.current.add(label);
+    void confirmReviewRef.current(label);
+  }
+
   const publishQuote = async (geometry, analysis, opts) => {
     const quantity = opts.quantity;
     const cavityCount = opts.cavityCount;
@@ -14077,6 +14102,7 @@ const Viewport = forwardRef(({
         quote: null,
         error: body.error,
         revealed: moldQuoteRef.current?.revealed || {},
+        ...keptReview(moldQuoteRef.current),
       });
       return { error: body.error };
     }
@@ -14095,6 +14121,7 @@ const Viewport = forwardRef(({
       revealed: prev?.revealed || {},
       leadMessage: prev?.leadMessage || null,
       leadError: null,
+      ...keptReview(prev),
     }));
     const result = await postMoldingQuote(body);
     if (seq !== quoteSeqRef.current || !quoteOnRef.current) return { on: false };
@@ -14108,6 +14135,7 @@ const Viewport = forwardRef(({
         quote: null,
         error: result.error,
         revealed: moldQuoteRef.current?.revealed || {},
+        ...keptReview(moldQuoteRef.current),
       });
       return { error: result.error };
     }
@@ -14125,7 +14153,9 @@ const Viewport = forwardRef(({
       error: null,
       revealed: moldQuoteRef.current?.revealed || {},
       leadMessage: moldQuoteRef.current?.leadMessage || null,
+      ...keptReview(moldQuoteRef.current),
     });
+    noteReviewReturn(keep);
     return {
       on: true,
       disclaimer: result?.disclaimer,
@@ -14212,12 +14242,19 @@ const Viewport = forwardRef(({
     const leadMessage = result.revealed
       ? null
       : 'Review requested. The name stays hidden until the review is paid.';
+    const reviewPatch = type === 'human_review'
+      ? {
+        reviewFeeUsd: Number.isFinite(result.reviewFeeUsd) ? result.reviewFeeUsd : null,
+        reviewPayable: result.revealed !== true && Number.isFinite(result.reviewFeeUsd),
+      }
+      : {};
     setMoldQuote((prev) => (prev ? {
       ...prev,
       leadBusy: false,
       leadError: null,
       leadMessage,
       revealed,
+      ...reviewPatch,
     } : prev));
     return {
       type,
@@ -14228,8 +14265,71 @@ const Viewport = forwardRef(({
       ...(result.revealed && result.displayName ? { displayName: result.displayName } : {}),
     };
   };
+
+  const applyReviewResult = (label, result) => {
+    if (!moldQuoteRef.current || result?.error) {
+      if (result?.error) {
+        setMoldQuote((prev) => (prev ? {
+          ...prev,
+          leadBusy: false,
+          leadError: result.error.message,
+        } : prev));
+      }
+      return result?.error ? { error: result.error } : { on: false };
+    }
+    const revealed = { ...(moldQuoteRef.current.revealed || {}) };
+    if (result.revealed && result.displayName) revealed[label] = result.displayName;
+    const paid = result.reviewFeePaid === true || result.revealed === true;
+    setMoldQuote((prev) => (prev ? {
+      ...prev,
+      leadBusy: false,
+      leadError: null,
+      revealed,
+      reviewFeeUsd: Number.isFinite(result.reviewFeeUsd) ? result.reviewFeeUsd : prev.reviewFeeUsd,
+      reviewPayable: paid ? false : (Number.isFinite(result.reviewFeeUsd) || prev.reviewPayable === true),
+      leadMessage: paid ? null : (prev.leadMessage || 'Payment sent. The name appears when Stripe confirms it.'),
+    } : prev));
+    return {
+      anonLabel: label,
+      revealed: result.revealed === true,
+      reviewFeePaid: result.reviewFeePaid === true,
+      reviewFeeUsd: result.reviewFeeUsd,
+      ...(result.url ? { url: result.url } : {}),
+      ...(result.revealed && result.displayName ? { displayName: result.displayName } : {}),
+    };
+  };
+
+  const confirmReview = async (anonLabel) => {
+    const current = moldQuoteRef.current;
+    const label = anonLabel || current?.selected;
+    if (!current?.quote || !label) return { error: { code: 'no_mesh', message: 'Open the budgetary quote first' } };
+    const result = await fetchReviewStatus(label);
+    if (result?.error?.code === 'no_lead' || result?.error?.code === 'unknown_partner') return result;
+    return applyReviewResult(label, result);
+  };
+  confirmReviewRef.current = confirmReview;
+
+  const payReview = async (anonLabel) => {
+    const current = moldQuoteRef.current;
+    if (!current?.quote) {
+      return { error: { code: 'no_mesh', message: 'Open the budgetary quote first' } };
+    }
+    const label = anonLabel || current.selected;
+    const vendor = (current.quote.vendors || []).find((row) => row.anonLabel === label);
+    if (!vendor) {
+      return { error: { code: 'bad_args', message: 'Pick a vendor from the quote' } };
+    }
+    setMoldQuote((prev) => (prev ? { ...prev, leadBusy: true, leadError: null } : prev));
+    const result = await postReviewCheckout(label);
+    if (!moldQuoteRef.current) return { on: false };
+    const packed = applyReviewResult(label, result);
+    const url = checkoutUrlAllowed(result?.url);
+    if (url) window.location.assign(url);
+    return packed;
+  };
   agentMoldFirmQuoteRef.current = ({ anonLabel } = {}) => requestLead('firm_quote', anonLabel);
   agentMoldHumanReviewRef.current = ({ anonLabel } = {}) => requestLead('human_review', anonLabel);
+  agentMoldPayReviewRef.current = ({ anonLabel } = {}) => payReview(anonLabel);
 
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
@@ -16619,9 +16719,13 @@ const Viewport = forwardRef(({
           onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
           onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
           onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
-          onSelect={(selected) => setMoldQuote((prev) => (prev ? { ...prev, selected } : prev))}
+          onSelect={(selected) => {
+            setMoldQuote((prev) => (prev ? { ...prev, selected } : prev));
+            noteReviewReturn(selected);
+          }}
           onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
           onHumanReview={() => agentMoldHumanReviewRef.current({})}
+          onPayReview={() => agentMoldPayReviewRef.current({})}
         />
       )}
 

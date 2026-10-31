@@ -2,8 +2,10 @@
 import { Router } from 'express';
 import express from 'express';
 import Order from '../db/models/Order.js';
+import MoldingLead from '../db/models/MoldingLead.js';
 import stripe from '../services/stripe.js';
 import email from '../services/email.js';
+import { applyReviewCheckoutSession, applyReviewPaymentIntent } from '../services/moldingReviewCheckout.js';
 
 const router = Router();
 
@@ -36,11 +38,25 @@ router.post('/stripe',
     try {
       switch (event.type) {
         case 'payment_intent.succeeded':
+          if (event.data.object?.metadata?.purpose === 'molding_review') {
+            await applyReviewPaymentIntent({ MoldingLead }, event.data.object);
+            break;
+          }
           await handlePaymentSucceeded(event.data.object);
           break;
           
         case 'payment_intent.payment_failed':
+          if (event.data.object?.metadata?.purpose === 'molding_review') break;
           await handlePaymentFailed(event.data.object);
+          break;
+
+        case 'checkout.session.completed':
+        case 'checkout.session.async_payment_succeeded':
+          await applyReviewCheckoutSession({ MoldingLead }, event.data.object);
+          break;
+
+        case 'checkout.session.async_payment_failed':
+        case 'checkout.session.expired':
           break;
           
         case 'charge.refunded':

@@ -55,3 +55,62 @@ export async function postMoldingLead(body, fetchImpl = fetch) {
   }
   return parsed;
 }
+
+async function readJson(res) {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function reviewError(res, parsed) {
+  if (res.status === 401) {
+    return { error: { code: 'sign_in', message: 'Sign in to request this.' } };
+  }
+  if (res.status === 429) {
+    const message = typeof parsed?.error === 'string'
+      ? parsed.error
+      : 'Too many molding requests. Try again in a few minutes.';
+    return { error: { code: 'rate_limited', message } };
+  }
+  if (!res.ok) {
+    if (parsed?.error?.code) return parsed;
+    return { error: { code: 'review_unavailable', message: 'Human review checkout is not available.' } };
+  }
+  return parsed;
+}
+
+export async function postReviewCheckout(anonLabel, fetchImpl = fetch) {
+  let res;
+  try {
+    res = await fetchImpl('/api/molding/review-checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ anonLabel }),
+    });
+  } catch {
+    return { error: { code: 'review_unavailable', message: 'Human review checkout is not available.' } };
+  }
+  return reviewError(res, await readJson(res));
+}
+
+export async function fetchReviewStatus(anonLabel, fetchImpl = fetch) {
+  const query = new URLSearchParams({ anonLabel });
+  let res;
+  try {
+    res = await fetchImpl(`/api/molding/review-status?${query}`, { credentials: 'same-origin' });
+  } catch {
+    return { error: { code: 'review_unavailable', message: 'Human review checkout is not available.' } };
+  }
+  return reviewError(res, await readJson(res));
+}
+
+export function checkoutUrlAllowed(url) {
+  try {
+    return new URL(url).protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
