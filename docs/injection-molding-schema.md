@@ -54,7 +54,9 @@ Required and 0 or greater: `aluminumUsdPerKg`, `steelUsdPerKg`,
 `aluminumMachiningUsdPerHour`, `steelMachiningUsdPerHour`, `baseHoursSimple`,
 `coolingLineHoursFactor`, `slideAdderUsd`, `lifterAdderUsd`, `ejectorPinUsd`,
 `sleeveUsd`, `hotRunnerSuggestionUsd`. `active` defaults to true so a card can
-be turned off without deleting it.
+be turned off without deleting it. The budgetary tooling estimate reads this
+card ([injection-molding-quoting.md](injection-molding-quoting.md)). It does
+not write the card.
 
 ## molding_leads
 
