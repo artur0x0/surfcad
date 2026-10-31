@@ -55,8 +55,14 @@
      (1rem) + py-1.5 (0.75rem) + a 2px border. The header is top-4. */
   --viewer-title-stack-gap: 0.25rem;
   --viewer-title-pill-block: calc(1.75rem + 2px);
+  /* The rollback bar's triangle stands this far above the strip's top
+     edge (ROLLBACK_MARK in FeatureStrip.jsx, 8px). The phone strip leaves
+     room for it under the assembly pill, so the mark never touches the
+     pill. */
+  --rollback-mark-height: 0.5rem;
   --feature-strip-offset-mobile: calc(
     1rem + (2 * var(--viewer-title-pill-block)) + (2 * var(--viewer-title-stack-gap))
+    + var(--rollback-mark-height)
   );
   /* Floating agent prompt (PR 1). Dark values today; a future light theme
      swaps these aliases without restructuring the card. */

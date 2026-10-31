@@ -61,6 +61,14 @@ export const RAIL_PAIR_HEIGHT_ATTR = 'content-max';
 /**
  * Measure whether a left rail's buttons fit inside its max-height box.
  * When they fit (no scroll), return the narrower FIT width class.
+ *
+ * A content-max left rail (phone) also takes the right rail's height as its
+ * minimum, so the two bottom-anchored rails start at the same line. Without
+ * it the shorter palette hung lower than the view rail; with its 26rem cap
+ * it scrolled while the view rail stood taller. The minimum wins over the
+ * cap on purpose: the right rail already fits under the ribbon, so a left
+ * rail of the same height does too. Desktop full-length rails are pinned
+ * at the top and skip this.
  */
 export function useLeftRailFit() {
   const railRef = useRef(null);
@@ -69,7 +77,16 @@ export function useLeftRailFit() {
   useLayoutEffect(() => {
     const el = railRef.current;
     if (!el) return undefined;
+    const rightRail = () => {
+      if (!el.classList.contains(RAIL_PAIR_HEIGHT_CLASS)) return null;
+      const pane = el.parentElement;
+      return pane ? pane.querySelector('[data-rail-pair="right"]') : null;
+    };
     const sync = () => {
+      const right = rightRail();
+      const h = right ? right.getBoundingClientRect().height : 0;
+      const next = h > 0 ? `${Math.round(h)}px` : '';
+      if (el.style.minHeight !== next) el.style.minHeight = next;
       setFits(el.scrollHeight <= el.clientHeight + 1);
     };
     sync();
@@ -79,6 +96,8 @@ export function useLeftRailFit() {
     }
     const ro = new ResizeObserver(sync);
     ro.observe(el);
+    const right = rightRail();
+    if (right) ro.observe(right);
     return () => ro.disconnect();
   }, []);
 
