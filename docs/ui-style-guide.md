@@ -258,7 +258,12 @@ Each tool calls `toolToggleClass(on)`. The trigger calls it while the
 flyout is open or any of those tools is on. The flyout is the view-snap
 pattern: one horizontal row, `w-max flex-nowrap`, to the left of the trigger.
 The row uses `gap-1`. View snap uses `gap-2`; six icons at that gap cross
-the left rail on a 390px phone.
+the left rail on a 390px phone. A press on one of those tools closes the
+flyout, then opens or toggles its pane. At 768px and under that pane is
+`mold-analysis-pane`: a vertical scroller capped to the visible viewport
+(`100dvh` or `visualViewport`), clear of the safe areas and the
+home-indicator pill. The scroll stays in the pane. Desktop keeps the
+legend chips and the `min(32rem, 70vh)` report and quote height.
 
 ## Popups
 

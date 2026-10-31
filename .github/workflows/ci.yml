@@ -529,6 +529,15 @@ jobs:
             echo "mobile chrome shade golden did not pass (see log above)"
             exit 1
           fi
+          bounded "mold pane scroll" npm run golden:mold-pane-scroll | tee "${RUNNER_TEMP}/mold-pane-scroll.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/mold-pane-scroll.log"; then
+            echo "mold pane scroll golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'mold pane scroll golden: ok' "${RUNNER_TEMP}/mold-pane-scroll.log"; then
+            echo "mold pane scroll golden did not pass (see log above)"
+            exit 1
+          fi
           bounded "part instances" npm run golden:part-instances | tee "${RUNNER_TEMP}/part-instances.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/part-instances.log"; then
             echo "part instances golden skipped because Chrome was not found; CI must launch it"

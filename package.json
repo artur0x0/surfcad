@@ -199,6 +199,7 @@
         "golden:mobile-c4-strip-z-rounded-edge-pick": "node scripts/golden/smoke_mobile_c4_strip_z_rounded_edge_pick.mjs",
         "golden:mobile-feature-bar": "node scripts/golden/smoke_mobile_feature_bar_layout.mjs",
         "golden:mobile-modal-fit": "node scripts/golden/smoke_mobile_modal_fit.mjs",
+        "golden:mold-pane-scroll": "node scripts/golden/smoke_mold_pane_scroll.mjs",
         "golden:desktop-feature-strip": "node scripts/golden/smoke_desktop_feature_strip_between_panes.mjs",
         "golden:feature-edit-roundtrip": "node scripts/golden/smoke_feature_edit_roundtrip.mjs",
         "golden:feature-edit-delete": "node scripts/golden/smoke_feature_edit_delete.mjs",

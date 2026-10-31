@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 
 function mm(value) {
   const n = Number(value);
@@ -15,7 +16,7 @@ function mm(value) {
 export default function WallLegend({ legend }) {
   if (!legend) return null;
   return (
-    <div
+    <MoldAnalysisPane
       data-wall-legend=""
       className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
     >
@@ -33,11 +34,11 @@ export default function WallLegend({ legend }) {
         <span>Nominal</span>
         <span>Thick</span>
       </div>
-      <div className="flex justify-between gap-1 text-ui-sm tabular-nums text-on-dark">
+      <div className="flex justify-between gap-1 text-ui-sm tabular-nums text-on-dark" data-mold-pane-end="">
         <span>{mm(legend.thinMm)}</span>
         <span>{mm(legend.nominalMm)}</span>
         <span>{mm(legend.thickMm)}</span>
       </div>
-    </div>
+    </MoldAnalysisPane>
   );
 }

@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
 import { formatStudyHint } from '../../molding/resinSuggest.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
@@ -69,7 +70,7 @@ export default function MoldQuotePanel({
   const selectedName = selected ? (revealed[selected.anonLabel] || '') : '';
 
   return (
-    <div
+    <MoldAnalysisPane
       data-mold-quote-panel=""
       className={`pointer-events-auto absolute wall-legend-anchor z-30 mold-quote-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}`}
     >
@@ -239,6 +240,7 @@ export default function MoldQuotePanel({
           )}
         </div>
       )}
-    </div>
+      <div data-mold-pane-end="" className="h-px" aria-hidden="true" />
+    </MoldAnalysisPane>
   );
 }

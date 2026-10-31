@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import MoldAnalysisPane from './MoldAnalysisPane';
 
 export default function MoldDraftLegend({ legend }) {
   if (!legend) return null;
@@ -14,7 +15,7 @@ export default function MoldDraftLegend({ legend }) {
     { key: 'sleeves', label: 'Sleeve', count: legend.sleeves, swatch: false },
   ];
   return (
-    <div
+    <MoldAnalysisPane
       data-mold-draft-legend=""
       className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
     >
@@ -36,9 +37,9 @@ export default function MoldDraftLegend({ legend }) {
           </li>
         ))}
       </ul>
-      <div className="mt-1 text-ui-sm text-muted-on-dark" data-mold-draft-heuristic="">
+      <div className="mt-1 text-ui-sm text-muted-on-dark" data-mold-draft-heuristic="" data-mold-pane-end="">
         Heuristic
       </div>
-    </div>
+    </MoldAnalysisPane>
   );
 }
