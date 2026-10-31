@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
 import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, ClipboardList, Receipt, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
+import { toolToggleClass } from './toolToggle';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
 import { RAIL_NO_CLIP_CLASS, RAIL_PAIR_HEIGHT_ATTR, RAIL_RIGHT_MAX_CLASS } from '../utils/railPair';
@@ -552,11 +553,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onWallToggle?.()}
-            className={`p-2 rounded font-ui ${
-              wallActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(wallActive)}
             title={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
             aria-label={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
             aria-pressed={!!wallActive}
@@ -571,11 +568,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onPartingToggle?.()}
-            className={`p-2 rounded font-ui ${
-              partingActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(partingActive)}
             title={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
             aria-label={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
             aria-pressed={!!partingActive}
@@ -590,11 +583,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onSideActionsToggle?.()}
-            className={`p-2 rounded font-ui ${
-              sideActionsActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(sideActionsActive)}
             title={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
             aria-label={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
             aria-pressed={!!sideActionsActive}
@@ -609,11 +598,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onMoldDraftToggle?.()}
-            className={`p-2 rounded font-ui ${
-              moldDraftActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(moldDraftActive)}
             title={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
             aria-label={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
             aria-pressed={!!moldDraftActive}
@@ -628,11 +613,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onDfmToggle?.()}
-            className={`p-2 rounded font-ui ${
-              dfmActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(dfmActive)}
             title={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
             aria-label={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
             aria-pressed={!!dfmActive}
@@ -647,11 +628,7 @@ const handleButtonClick = () => {
           <button
             type="button"
             onClick={() => onQuoteToggle?.()}
-            className={`p-2 rounded font-ui ${
-              quoteActive
-                ? 'surface-success text-on-dark'
-                : 'text-on-light'
-            }`}
+            className={toolToggleClass(quoteActive)}
             title={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
             aria-label={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
             aria-pressed={!!quoteActive}
@@ -686,7 +663,7 @@ const handleButtonClick = () => {
         </button>
         <button
           onClick={handleButtonClick}
-          className={`p-2 rounded ${enabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100 active:bg-blue-100`}
+          className={toolToggleClass(enabled)}
           title={enabled ? 'Disable Cross Section' : 'Enable Cross Section'}
           aria-pressed={!!enabled}
           data-ui-action="data-cross-section-toggle"
