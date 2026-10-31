@@ -616,6 +616,7 @@ import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { dfmReport } from '../molding/dfmReport.js';
 import { postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
+import { leadBody, postMoldingLead } from '../utils/moldingLeadClient.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import SideActionLegend from './molding/SideActionLegend';
@@ -1466,6 +1467,8 @@ const Viewport = forwardRef(({
   const refreshDfmRef = useRef(() => {});
   const [dfmReportState, setDfmReportState] = useState(null);
   const agentMoldQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const agentMoldFirmQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
+  const agentMoldHumanReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
   const quoteOnRef = useRef(false);
   const quoteFieldRef = useRef(null);
   const quoteSeqRef = useRef(0);
@@ -2771,6 +2774,8 @@ const Viewport = forwardRef(({
       moldDraft: (args) => agentMoldDraftRef.current(args),
       moldDfm: (args) => agentMoldDfmRef.current(args),
       moldQuote: (args) => agentMoldQuoteRef.current(args),
+      moldRequestFirmQuote: (args) => agentMoldFirmQuoteRef.current(args),
+      moldRequestHumanReview: (args) => agentMoldHumanReviewRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -14071,6 +14076,7 @@ const Viewport = forwardRef(({
         status: 'error',
         quote: null,
         error: body.error,
+        revealed: moldQuoteRef.current?.revealed || {},
       });
       return { error: body.error };
     }
@@ -14086,6 +14092,9 @@ const Viewport = forwardRef(({
       status: 'loading',
       quote: prev?.quote || null,
       error: null,
+      revealed: prev?.revealed || {},
+      leadMessage: prev?.leadMessage || null,
+      leadError: null,
     }));
     const result = await postMoldingQuote(body);
     if (seq !== quoteSeqRef.current || !quoteOnRef.current) return { on: false };
@@ -14098,6 +14107,7 @@ const Viewport = forwardRef(({
         status: 'error',
         quote: null,
         error: result.error,
+        revealed: moldQuoteRef.current?.revealed || {},
       });
       return { error: result.error };
     }
@@ -14113,6 +14123,8 @@ const Viewport = forwardRef(({
       status: 'ready',
       quote: result,
       error: null,
+      revealed: moldQuoteRef.current?.revealed || {},
+      leadMessage: moldQuoteRef.current?.leadMessage || null,
     });
     return {
       on: true,
@@ -14173,6 +14185,51 @@ const Viewport = forwardRef(({
       selected: prev?.selected || '',
     });
   };
+
+  const requestLead = async (type, anonLabel) => {
+    const current = moldQuoteRef.current;
+    if (!current?.quote) {
+      return { error: { code: 'no_mesh', message: 'Open the budgetary quote first' } };
+    }
+    const label = anonLabel || current.selected;
+    const vendor = (current.quote.vendors || []).find((row) => row.anonLabel === label);
+    if (!vendor) {
+      return { error: { code: 'bad_args', message: 'Pick a vendor from the quote' } };
+    }
+    setMoldQuote((prev) => (prev ? { ...prev, leadBusy: true, leadError: null } : prev));
+    const result = await postMoldingLead(leadBody(type, vendor, current.quote));
+    if (!moldQuoteRef.current) return { on: false };
+    if (result?.error) {
+      setMoldQuote((prev) => (prev ? {
+        ...prev,
+        leadBusy: false,
+        leadError: result.error.message,
+      } : prev));
+      return { error: result.error };
+    }
+    const revealed = { ...(moldQuoteRef.current.revealed || {}) };
+    if (result.revealed && result.displayName) revealed[label] = result.displayName;
+    const leadMessage = result.revealed
+      ? null
+      : 'Review requested. The name stays hidden until the review is paid.';
+    setMoldQuote((prev) => (prev ? {
+      ...prev,
+      leadBusy: false,
+      leadError: null,
+      leadMessage,
+      revealed,
+    } : prev));
+    return {
+      type,
+      anonLabel: label,
+      revealed: result.revealed === true,
+      reviewFeePaid: result.reviewFeePaid === true,
+      reviewFeeUsd: result.reviewFeeUsd,
+      ...(result.revealed && result.displayName ? { displayName: result.displayName } : {}),
+    };
+  };
+  agentMoldFirmQuoteRef.current = ({ anonLabel } = {}) => requestLead('firm_quote', anonLabel);
+  agentMoldHumanReviewRef.current = ({ anonLabel } = {}) => requestLead('human_review', anonLabel);
 
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
@@ -16563,6 +16620,8 @@ const Viewport = forwardRef(({
           onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
           onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
           onSelect={(selected) => setMoldQuote((prev) => (prev ? { ...prev, selected } : prev))}
+          onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
+          onHumanReview={() => agentMoldHumanReviewRef.current({})}
         />
       )}
 
