@@ -167,14 +167,17 @@ describe('join code service', () => {
       });
       assert.equal(failed.error, 'invalid_code');
     }
-    const burned = await join.redeem({
+    const row = join.snapshot().find((entry) => entry.id === live.id);
+    assert.equal(row.status, 'pending');
+    assert.equal(row.failedTries, 0);
+    const still = await join.redeem({
       code: live.code,
       name: 'Cursor',
       machine: 'laptop',
       ip: '198.51.100.20',
     });
-    assert.deepEqual(burned, { ok: false, error: 'invalid_code' });
-    assert.equal(join.snapshot().find((row) => row.id === live.id).status, 'dead');
+    assert.equal(still.ok, true);
+    assert.equal(still.userId, 'user-b');
   });
 
   test('redeem is limited per IP and globally, separate from the per-code tries', async () => {
@@ -360,6 +363,21 @@ describe('join code HTTP', () => {
       assert.equal(cooked.status, 400);
       assert.deepEqual(cooked.body, { error: 'invalid_code' });
       assert.equal((await relay.tokens.list('user-a')).length, 0);
+      const named = await send(port, '/agent/join/redeem', {
+        method: 'POST',
+        body: {
+          code: 'BBBB-BBBB',
+          id: created.body.id,
+          name: 'Cursor',
+          machine: 'laptop',
+        },
+        ip: '203.0.113.79',
+      });
+      assert.equal(named.status, 400);
+      assert.equal(named.body.error, 'invalid_code');
+      const pending = relay.joinCodes.snapshot().find((row) => row.id === created.body.id);
+      assert.equal(pending.status, 'pending');
+      assert.equal(pending.failedTries, 0);
       const unknown = await send(port, '/agent/join/redeem', {
         method: 'POST',
         body: { code: 'WXYZ-2345', name: 'Cursor', machine: 'laptop', userId: 'user-b' },

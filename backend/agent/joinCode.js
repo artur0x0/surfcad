@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createRateLimiter } from '../services/rateLimiter.js';
 import {
   JOIN_CREATE_LIMIT,
@@ -18,7 +18,14 @@ import { hashesMatch } from './tokens.js';
 const LABEL_MAX = 80;
 /** 256 % 31 === 8, so bytes at or above this limit would bias the alphabet. */
 const UNBIASED_BYTE_LIMIT = 256 - (256 % USER_CODE_ALPHABET.length);
-const DUMMY_CODE_HASH = createHash('sha256').update('surfcad-join-code-dummy').digest('hex');
+/**
+ * HMAC key for join codes, drawn once when this module loads.
+ * Codes live only in this process. The key is not logged and not exported.
+ */
+const JOIN_CODE_KEY = randomBytes(32);
+const DUMMY_CODE_HASH = createHmac('sha256', JOIN_CODE_KEY)
+  .update('surfcad-join-code-dummy')
+  .digest('hex');
 
 /**
  * Eight characters from the no-lookalike alphabet. Bytes at or above the
@@ -97,7 +104,7 @@ function canonicalCode(input) {
  * @param {string} normalized
  */
 function hashCode(normalized) {
-  return createHash('sha256').update(`join:${normalized}`).digest('hex');
+  return createHmac('sha256', JOIN_CODE_KEY).update(`join:${normalized}`).digest('hex');
 }
 
 /**
@@ -108,9 +115,9 @@ function hashCode(normalized) {
  * A wrong guess cannot be pinned to a live code (the code is the lookup
  * key). Those attempts hit the per-IP limiter and the global attempt
  * limiter. Five non-issuing presentations of a code that does match
- * (expired, used, or superseded) kill that code. Five wrong codes that
- * name the code's non-secret id do the same, so a live code dies before
- * it can be redeemed.
+ * (expired, used, or superseded) kill that code. A body field that
+ * names the code id does not: the id is not a secret, and the CLI
+ * does not send it.
  *
  * @param {{
  *   tokens: { issue: (fields: { userId: string, label: string, machine?: string, city?: string | null, ip?: string | null }) => Promise<{ token: string, id: string }> },
@@ -286,16 +293,15 @@ export function createJoinCodeService(opts) {
     },
 
     /**
-     * Account comes only from the stored record. `userId` and `account` on
-     * `fields` are ignored. A `cookie` request is refused before lookup so
-     * a browser cookie cannot redeem or burn the code.
+     * Account comes only from the stored record. `userId`, `account`, and
+     * `id` on `fields` are ignored. A `cookie` request is refused before
+     * lookup so a browser cookie cannot redeem or burn the code.
      * @param {{
      *   code?: unknown,
      *   name?: unknown,
      *   machine?: unknown,
      *   city?: unknown,
      *   ip?: unknown,
-     *   id?: unknown,
      *   cookie?: boolean,
      * }} fields
      */
@@ -316,10 +322,7 @@ export function createJoinCodeService(opts) {
       const codeHash = normalized ? hashCode(normalized) : DUMMY_CODE_HASH;
       const record = normalized ? byHash.get(codeHash) : null;
       const compared = hashesMatch(record ? String(record.codeHash) : DUMMY_CODE_HASH, codeHash);
-      const namedId = typeof fields.id === 'string' ? fields.id : '';
-      const named = namedId ? byId.get(namedId) : null;
       if (!record || !compared) {
-        if (named) noteFailure(named);
         return { ok: false, error: 'invalid_code' };
       }
       expireIfNeeded(record);
@@ -344,6 +347,22 @@ export function createJoinCodeService(opts) {
         tokenId: issued.id,
         userId: record.userId,
       };
+    },
+
+    /**
+     * Password change, account delete, and OAuth credential revoke.
+     * Drops every code for the account, including a superseded one.
+     * @param {string} userId
+     */
+    clearUser(userId) {
+      const id = String(userId || '');
+      if (!id) return;
+      byUser.delete(id);
+      for (const [codeHash, record] of byHash) {
+        if (String(record.userId) !== id) continue;
+        byHash.delete(codeHash);
+        byId.delete(record.id);
+      }
     },
 
     /** Records for tests. The raw code is not here. */

@@ -41,8 +41,9 @@ export function useMongoTokenStore() {
 }
 
 /**
- * Revoke every agent token for the account and close its sockets with 4001.
- * In-flight long-poll and SSE waits for those tokens end here too.
+ * Revoke every agent token for the account, close its sockets with 4001,
+ * and drop its pending join codes. In-flight long-poll and SSE waits for
+ * those tokens end here too.
  * @param {string | { toString(): string }} userId
  * @returns {Promise<string[]>}
  */
@@ -52,15 +53,19 @@ export async function revokeUserAgentAccess(userId) {
 }
 
 /**
+ * Revoke every agent token for the account, close its sockets with 4001,
+ * and drop its join codes.
  * @param {NonNullable<typeof state.relay>} relay
  * @param {string | { toString(): string }} userId
  */
 export async function revokeRelayUser(relay, userId) {
-  const ids = await relay.tokens.revokeAll(String(userId));
-  for (const id of ids) {
-    relay.registry.abortToken(id);
-    relay.agentSockets.closeToken(id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+  const id = String(userId);
+  const ids = await relay.tokens.revokeAll(id);
+  for (const tokenId of ids) {
+    relay.registry.abortToken(tokenId);
+    relay.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
   }
+  relay.joinCodes.clearUser(id);
   return ids;
 }
 

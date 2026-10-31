@@ -290,7 +290,6 @@ export function createAgentRouter(deps) {
         machine: req.body?.machine,
         city,
         ip: req.ip,
-        id: req.body?.id,
         cookie: carriesBrowserCookie(req),
       });
       if (!result.ok) {
