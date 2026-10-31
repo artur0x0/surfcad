@@ -16,4 +16,7 @@ test('a stamped cube through the viewport mesh is a good fit along +Z', { timeou
   assert.deepEqual(result.pull, [0, 0, 1]);
   assert.ok(result.normals.stamped > 0, 'cube faces are stamped');
   assert.equal(result.normals.triangle, 0);
+  assert.equal(result.wall.nominalMethod, 'mode');
+  assert.ok(Math.abs(result.wall.nominal - 5) < 1e-3, `nominal ${result.wall.nominal}`);
+  assert.ok(Math.abs(result.wall.max - 20) < 1e-3, `max ${result.wall.max}`);
 });

@@ -11,7 +11,7 @@ import { warmFaceGraph } from '../utils/selectFace.js';
 import { stampedFaceTable } from '../utils/faceIdentity.js';
 import { analyzePullDirection } from './pullDirection.js';
 
-export function moldFitFromGeometry(geometry, faceIDs = null, { pull = null } = {}) {
+export function moldFitFromGeometry(geometry, faceIDs = null, { pull = null, wall = null } = {}) {
   const positions = geometry?.attributes?.position?.array;
   const indices = geometry?.index?.array;
   if (!positions || !indices || indices.length < 3) {
@@ -28,5 +28,6 @@ export function moldFitFromGeometry(geometry, faceIDs = null, { pull = null } = 
     patches: graph?.patches || null,
     stamped,
     pull,
+    wall,
   });
 }
