@@ -11,7 +11,10 @@ import {
   AGENT_SOCKET_CLOSE_CODE,
   TOKEN_EXPIRED_REASON,
   TOKEN_REVOKED_REASON,
+  TOO_MANY_CONNECTIONS_CODE,
+  TOO_MANY_CONNECTIONS_REASON,
 } from './agentSockets.js';
+import { clientAddress } from './clientIp.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
@@ -26,6 +29,7 @@ function rejectUpgrade(socket, status, message) {
   let reason = 'Bad Request';
   if (status === 401) reason = 'Unauthorized';
   else if (status === 403) reason = 'Forbidden';
+  else if (status === 429) reason = 'Too Many Requests';
   const body = JSON.stringify({ error: message });
   const raw = `HTTP/1.1 ${status} ${reason}\r\n`
     + 'Content-Type: application/json\r\n'
@@ -52,9 +56,14 @@ function sendJson(ws, payload) {
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
- *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket) => void },
+ *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket, userId: string) => boolean },
+ *   connectLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
+ *   pingIntervalMs: number,
  * }} relay
- * @param {{ authenticateUpgrade: (req: import('node:http').IncomingMessage) => Promise<{ id: string } | null> }} options
+ * @param {{
+ *   authenticateUpgrade: (req: import('node:http').IncomingMessage) => Promise<{ id: string } | null>,
+ *   trustProxyHops?: number,
+ * }} options
  */
 export function attachAgentWebSocket(httpServer, relay, options) {
   const wss = new WebSocketServer({
@@ -81,6 +90,13 @@ export function attachAgentWebSocket(httpServer, relay, options) {
       return;
     }
     if (pathname !== '/agent') return;
+
+    const ip = clientAddress(req, options.trustProxyHops ?? 1);
+    const connect = relay.connectLimiter.check(`ip:${ip}`);
+    if (!connect.allowed) {
+      rejectUpgrade(socket, 429, 'rate_limited');
+      return;
+    }
 
     upgraded.add(socket);
     socket.on('close', () => upgraded.delete(socket));
@@ -124,11 +140,62 @@ export function attachAgentWebSocket(httpServer, relay, options) {
     });
   });
 
+  wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+  });
+
+  const pingMs = relay.pingIntervalMs > 0 ? relay.pingIntervalMs : 30_000;
+  const heartbeat = setInterval(() => {
+    sweepSockets(wss, relay).catch(() => {});
+  }, pingMs);
+  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
   httpServer.on('close', () => {
+    clearInterval(heartbeat);
     wss.close();
   });
 
   return wss;
+}
+
+/**
+ * Ping every socket. Terminate one that missed the previous pong.
+ * An agent whose token is revoked or expired is closed with 4001 even
+ * when it has sent no further frame.
+ * @param {import('ws').WebSocketServer} wss
+ * @param {{
+ *   tokens: { status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'> },
+ * }} relay
+ */
+async function sweepSockets(wss, relay) {
+  for (const ws of wss.clients) {
+    const auth = /** @type {{ tokenHash?: string } | undefined} */ (ws.agentAuth);
+    if (auth?.tokenHash) {
+      try {
+        const live = await relay.tokens.status(auth.tokenHash);
+        if (live !== 'ok' && ws.readyState === WebSocket.OPEN) {
+          const expired = live === 'expired';
+          ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
+          continue;
+        }
+      } catch {
+        /* a status miss is not a reason to drop a live socket */
+      }
+    }
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {
+      ws.terminate();
+    }
+  }
 }
 
 /**
@@ -146,7 +213,11 @@ export function attachAgentWebSocket(httpServer, relay, options) {
  * }} relay
  */
 function bindAgent(ws, auth, relay) {
-  relay.agentSockets.add(auth.id, ws);
+  if (!relay.agentSockets.add(auth.id, ws, auth.userId)) {
+    ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+    return;
+  }
+  ws.agentAuth = auth;
   let ready = false;
   /** @type {string | null} */
   let agentId = null;
@@ -161,14 +232,19 @@ function bindAgent(ws, auth, relay) {
       isReady: () => ready,
       markReady() {
         ready = true;
-        agentId = randomUUID();
-        relay.registry.registerAgent({
+        const id = randomUUID();
+        const accepted = relay.registry.registerAgent({
           userId: auth.userId,
-          agentId,
+          agentId: id,
           send(frame) {
             sendJson(ws, frame);
           },
         });
+        if (!accepted) {
+          ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+          return;
+        }
+        agentId = id;
       },
     }).catch(() => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
@@ -316,13 +392,17 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
 function bindTab(ws, user, relay) {
   const tabId = randomUUID();
   ws.on('error', () => {});
-  relay.registry.registerTab({
+  const accepted = relay.registry.registerTab({
     userId: user.id,
     tabId,
     send(frame) {
       sendJson(ws, frame);
     },
   });
+  if (!accepted) {
+    ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+    return;
+  }
   sendJson(ws, {
     type: 'registered',
     v: 1,

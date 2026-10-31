@@ -16,10 +16,10 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 
 The loopback relay is the default. A saved login uses the server relay instead (Safari, a phone, or any machine that cannot open `ws://127.0.0.1`).
 
-1. `npx surfcad-mcp login` (optional `--name`). It prints an `ABCD-EFGH` code and `https://surfcad.com/agent`.
+1. `npx surfcad-mcp login` (optional `--name`). It prints an `ABCD-EFGH` code and `https://surfcad.com/agent`. The client generates a 32-byte device secret, sends only its SHA-256, and polls with the secret.
 2. Sign in on that page and approve the code. The token is saved in the per-user config directory at mode 0600. It is not printed and it is not logged.
 3. Start `npx surfcad-mcp`. A saved login selects the server relay. `--remote` selects it and, with no login, tells you to run `login`. Leave the SurfCAD tab open. The tool list is the same.
-4. `npx surfcad-mcp status` shows the server and the name, not the token. `npx surfcad-mcp logout` deletes the saved login.
+4. `npx surfcad-mcp status` shows the server and the name, not the token. `npx surfcad-mcp logout` revokes that token on the server, then deletes the saved file. If the server cannot be reached, the file is still deleted and the command says the login may stay valid until it expires.
 
 `--local` forces the loopback relay after a login. So does `SURFCAD_MCP_TRANSPORT=local`, `SURFCAD_AGENT_BRIDGE_WS_URL`, `SURFCAD_AGENT_BRIDGE_WS_PORT`, or a non-empty `SURFCAD_PAIRING_CODE`. `--server` or `SURFCAD_AGENT_SERVER` points login and the client at a dev or staging origin.
 

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
 import http from 'node:http';
 import { afterEach, describe, test } from 'node:test';
 import express from 'express';
@@ -112,17 +113,35 @@ function csrfFrom(html) {
   return match[1];
 }
 
+/**
+ * The client generates the secret. Only the hash is posted.
+ * @param {Record<string, unknown>} [extra]
+ */
+function deviceLogin(extra = {}) {
+  const bytes = randomBytes(32);
+  return {
+    deviceSecret: bytes.toString('base64url'),
+    body: {
+      ...extra,
+      deviceSecretHash: createHash('sha256').update(bytes).digest('hex'),
+    },
+  };
+}
+
 describe('agent relay HTTP', () => {
   test('approval ignores a client-supplied city and does not return the token', async () => {
     const relay = createAgentRelay({ clock: createManualClock(1_700_000_000_000) });
     const port = await listen(relay);
+    const login = deviceLogin({ name: 'Cursor', machine: 'laptop', city: 'Berlin' });
     const started = await send(port, '/agent/pair', {
       method: 'POST',
       ip: '203.0.113.10',
-      body: { name: 'Cursor', machine: 'laptop', city: 'Berlin' },
+      body: login.body,
     });
     assert.equal(started.status, 201);
     assert.match(started.body.userCode, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    assert.equal(started.body.deviceSecret, undefined);
+    assert.equal(JSON.stringify(started.body).includes(login.deviceSecret), false);
     const claim = await send(port, '/agent/pair/claim', {
       method: 'POST',
       user: 'user-a',
@@ -146,7 +165,7 @@ describe('agent relay HTTP', () => {
     assert.equal(approved.status, 200);
     assert.equal(approved.body.ok, true);
     assert.equal(approved.body.token, undefined);
-    assert.equal(JSON.stringify(approved.body).includes(started.body.deviceSecret), false);
+    assert.equal(JSON.stringify(approved.body).includes(login.deviceSecret), false);
 
     const again = await send(port, '/agent/pair/approve', {
       method: 'POST',
@@ -161,14 +180,14 @@ describe('agent relay HTTP', () => {
     const polled = await send(port, '/agent/pair/poll', {
       method: 'POST',
       ip: '203.0.113.10',
-      body: { deviceSecret: started.body.deviceSecret },
+      body: { deviceSecret: login.deviceSecret },
     });
     assert.equal(polled.body.status, 'approved');
     const token = polled.body.token;
     const second = await send(port, '/agent/pair/poll', {
       method: 'POST',
       ip: '203.0.113.10',
-      body: { deviceSecret: started.body.deviceSecret },
+      body: { deviceSecret: login.deviceSecret },
     });
     assert.equal(second.body.status, 'consumed');
     assert.equal(second.body.token, undefined);
@@ -206,7 +225,7 @@ describe('agent relay HTTP', () => {
     assert.match(anonymous.text, /Sign in to SurfCAD to approve an agent/);
     const started = await send(port, '/agent/pair', {
       method: 'POST',
-      body: { name: '<Cursor>', machine: 'laptop' },
+      body: deviceLogin({ name: '<Cursor>', machine: 'laptop' }).body,
     });
     const form = await send(port, '/agent', { user: 'user-a', session: 'html-1' });
     const csrf = csrfFrom(form.text);
@@ -231,9 +250,10 @@ describe('agent relay HTTP', () => {
   test('approval posts reject a missing or wrong CSRF token and a cross-origin request', async () => {
     const relay = createAgentRelay();
     const port = await listen(relay);
+    const login = deviceLogin({ name: 'Cursor', machine: 'laptop' });
     const started = await send(port, '/agent/pair', {
       method: 'POST',
-      body: { name: 'Cursor', machine: 'laptop' },
+      body: login.body,
     });
     const form = await send(port, '/agent', { user: 'user-a', session: 'csrf-1' });
     const csrf = csrfFrom(form.text);
@@ -262,7 +282,7 @@ describe('agent relay HTTP', () => {
     assert.equal(wrong.status, 403);
     assert.match(wrong.text, /Reload the page and try again/);
     assert.equal(relay.pairing.poll({
-      deviceSecret: started.body.deviceSecret,
+      deviceSecret: login.deviceSecret,
       ip: '198.51.100.20',
     }).status, 'pending');
 
@@ -325,7 +345,7 @@ describe('agent relay HTTP', () => {
     const port = await listen(relay);
     const started = await send(port, '/agent/pair', {
       method: 'POST',
-      body: { name: 'Cursor', machine: 'laptop' },
+      body: deviceLogin({ name: 'Cursor', machine: 'laptop' }).body,
     });
     const claim = await send(port, '/agent/pair/claim', {
       method: 'POST',
@@ -385,7 +405,7 @@ describe('agent relay HTTP', () => {
     const port = await listen(relay);
     const started = await send(port, '/agent/pair', {
       method: 'POST',
-      body: { name: 'Cursor', machine: 'laptop', city: 'Ignored' },
+      body: deviceLogin({ name: 'Cursor', machine: 'laptop', city: 'Ignored' }).body,
     });
     const form = await send(port, '/agent', { user: 'user-a', session: 'city-1' });
     const csrf = csrfFrom(form.text);
@@ -593,5 +613,68 @@ describe('agent relay HTTP', () => {
     } finally {
       console.info = original;
     }
+  });
+
+  test('DELETE /agent/tokens/self revokes only the calling token', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const other = await relay.tokens.issue({ userId: 'user-b', label: 'other' });
+    const missing = await send(port, '/agent/tokens/self', { method: 'DELETE' });
+    assert.equal(missing.status, 401);
+    const revoked = await send(port, '/agent/tokens/self', {
+      method: 'DELETE',
+      token: first.token,
+    });
+    assert.equal(revoked.status, 200);
+    assert.equal(revoked.body.ok, true);
+    assert.equal(JSON.stringify(revoked.body).includes(first.token), false);
+    assert.equal(await relay.tokens.authenticate(first.token), null);
+    assert.ok(await relay.tokens.authenticate(second.token));
+    assert.ok(await relay.tokens.authenticate(other.token));
+    const again = await send(port, '/agent/tokens/self', {
+      method: 'DELETE',
+      token: first.token,
+    });
+    assert.equal(again.status, 401);
+  });
+
+  test('cookie routes reject a foreign Origin and are rate limited per IP', async () => {
+    const relay = createAgentRelay({ browserLimit: 1 });
+    const port = await listen(relay);
+    const foreign = await send(port, '/agent/tokens', {
+      user: 'user-a',
+      accept: 'application/json',
+      origin: 'https://evil.example',
+      ip: '203.0.113.50',
+    });
+    assert.equal(foreign.status, 403);
+    assert.equal(foreign.body.error, 'cross_origin');
+    const page = await send(port, '/agent', {
+      user: 'user-a',
+      origin: 'https://evil.example',
+      ip: '203.0.113.51',
+    });
+    assert.equal(page.status, 403);
+    assert.match(page.text, /did not come from SurfCAD/);
+    const ok = await send(port, '/agent/tokens', { user: 'user-a', ip: '203.0.113.40' });
+    assert.equal(ok.status, 200);
+    const limited = await send(port, '/agent/tabs', { user: 'user-a', ip: '203.0.113.40' });
+    assert.equal(limited.status, 429);
+    assert.equal(limited.body.error, 'rate_limited');
+    const otherIp = await send(port, '/agent/tabs', { user: 'user-a', ip: '203.0.113.41' });
+    assert.equal(otherIp.status, 200);
+  });
+
+  test('SSE and long-poll connects are rate limited per token', async () => {
+    const relay = createAgentRelay({ readLimit: 1 });
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const first = await send(port, '/agent/commands/missing/events', { token: issued.token });
+    assert.equal(first.status, 200);
+    const second = await send(port, '/agent/commands/missing', { token: issued.token });
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error, 'rate_limited');
   });
 });

@@ -1,7 +1,18 @@
 import { createRateLimiter } from '../services/rateLimiter.js';
 import { createAgentSocketRegistry } from './agentSockets.js';
 import { createSystemClock } from './clock.js';
-import { COMMAND_LIMIT, COMMAND_WINDOW_MS, MAX_AGENT_MESSAGE_BYTES } from './limits.js';
+import {
+  BROWSER_ROUTE_LIMIT,
+  BROWSER_ROUTE_WINDOW_MS,
+  COMMAND_LIMIT,
+  COMMAND_READ_LIMIT,
+  COMMAND_READ_WINDOW_MS,
+  COMMAND_WINDOW_MS,
+  MAX_AGENT_MESSAGE_BYTES,
+  SOCKET_CONNECT_LIMIT,
+  SOCKET_CONNECT_WINDOW_MS,
+  SOCKET_PING_INTERVAL_MS,
+} from './limits.js';
 import { createPairingService } from './pairing.js';
 import { createMemoryTabRegistry } from './registry.js';
 import { createAgentRouter } from './router.js';
@@ -21,6 +32,15 @@ import { createTokenService } from './tokens.js';
  *   commandWindowMs?: number,
  *   maxMessageBytes?: number,
  *   maxPending?: number,
+ *   maxTabs?: number,
+ *   maxAgents?: number,
+ *   browserLimit?: number,
+ *   browserWindowMs?: number,
+ *   readLimit?: number,
+ *   readWindowMs?: number,
+ *   connectLimit?: number,
+ *   connectWindowMs?: number,
+ *   pingIntervalMs?: number,
  *   lookupCity?: (ip: string | undefined) => Promise<string | null>,
  * }} [overrides]
  */
@@ -42,19 +62,41 @@ export function createAgentRelay(overrides = {}) {
     asleepMs: overrides.asleepMs,
     retentionMs: overrides.retentionMs,
     maxPending: overrides.maxPending,
+    maxTabs: overrides.maxTabs,
+    maxAgents: overrides.maxAgents,
   });
-  const agentSockets = createAgentSocketRegistry();
+  const agentSockets = createAgentSocketRegistry({
+    maxPerUser: overrides.maxAgents,
+  });
   const commandLimiter = createRateLimiter({
     limit: overrides.commandLimit ?? COMMAND_LIMIT,
     windowMs: overrides.commandWindowMs ?? COMMAND_WINDOW_MS,
     now,
   });
+  const browserLimiter = createRateLimiter({
+    limit: overrides.browserLimit ?? BROWSER_ROUTE_LIMIT,
+    windowMs: overrides.browserWindowMs ?? BROWSER_ROUTE_WINDOW_MS,
+    now,
+  });
+  const readLimiter = createRateLimiter({
+    limit: overrides.readLimit ?? COMMAND_READ_LIMIT,
+    windowMs: overrides.readWindowMs ?? COMMAND_READ_WINDOW_MS,
+    now,
+  });
+  const connectLimiter = createRateLimiter({
+    limit: overrides.connectLimit ?? SOCKET_CONNECT_LIMIT,
+    windowMs: overrides.connectWindowMs ?? SOCKET_CONNECT_WINDOW_MS,
+    now,
+  });
   const maxMessageBytes = overrides.maxMessageBytes ?? MAX_AGENT_MESSAGE_BYTES;
+  const pingIntervalMs = overrides.pingIntervalMs ?? SOCKET_PING_INTERVAL_MS;
   const router = createAgentRouter({
     pairing,
     tokens,
     registry,
     commandLimiter,
+    browserLimiter,
+    readLimiter,
     maxMessageBytes,
     agentSockets,
     lookupCity: overrides.lookupCity,
@@ -66,7 +108,11 @@ export function createAgentRelay(overrides = {}) {
     registry,
     agentSockets,
     commandLimiter,
+    browserLimiter,
+    readLimiter,
+    connectLimiter,
     router,
     maxMessageBytes,
+    pingIntervalMs,
   };
 }

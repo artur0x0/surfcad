@@ -3,6 +3,7 @@
  * the session cookie path; this file only checks that wiring stays up.
  */
 import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
 import http from 'node:http';
 import { after, describe, test } from 'node:test';
 import { WebSocket } from 'ws';
@@ -48,15 +49,22 @@ describe('serverApp /agent mount', () => {
   });
 
   test('pair start works and the browser socket checks Origin', async () => {
+    const bytes = randomBytes(32);
+    const deviceSecret = bytes.toString('base64url');
     const started = await fetch(`http://127.0.0.1:${port}/agent/pair`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Cursor', machine: 'laptop' }),
+      body: JSON.stringify({
+        name: 'Cursor',
+        machine: 'laptop',
+        deviceSecretHash: createHash('sha256').update(bytes).digest('hex'),
+      }),
     });
     assert.equal(started.status, 201);
     const body = await started.json();
     assert.match(body.userCode, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
-    assert.equal(body.deviceSecret.length > 40, true);
+    assert.equal(body.deviceSecret, undefined);
+    assert.equal(JSON.stringify(body).includes(deviceSecret), false);
     const url = `ws://127.0.0.1:${port}/agent`;
     assert.equal(await unexpectedStatus(url, { origin: 'https://evil.example' }), 403);
     assert.equal(await unexpectedStatus(url, { origin: 'https://surfcad.com' }), 401);

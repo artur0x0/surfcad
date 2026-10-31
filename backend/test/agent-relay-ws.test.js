@@ -5,7 +5,11 @@ import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
 import { WebSocket } from 'ws';
-import { AGENT_SOCKET_CLOSE_CODE } from '../agent/agentSockets.js';
+import {
+  AGENT_SOCKET_CLOSE_CODE,
+  TOO_MANY_CONNECTIONS_CODE,
+  TOO_MANY_CONNECTIONS_REASON,
+} from '../agent/agentSockets.js';
 import { createManualClock } from '../agent/clock.js';
 import { createAgentRelay } from '../agent/createRelay.js';
 import { authenticateBrowserUpgrade } from '../agent/browserAuth.js';
@@ -360,5 +364,114 @@ describe('agent relay websocket', () => {
     assert.equal(registered.type, 'registered');
     assert.deepEqual(relay.registry.listTabs('user-a').map((item) => item.id), [registered.tabId]);
     tab.ws.close();
+  });
+
+  test('DELETE /agent/tokens/self closes that token and leaves another open', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay, async () => null);
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const agent = openSocket(url, { authorization: `Bearer ${first.token}` });
+    const other = openSocket(url, { authorization: `Bearer ${second.token}` });
+    await agent.opened;
+    await other.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    other.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    assert.equal((await other.nextMessage()).type, 'hello');
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for self-revoke close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    const revoked = await fetch(`http://127.0.0.1:${port}/agent/tokens/self`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${first.token}` },
+    });
+    assert.equal(revoked.status, 200);
+    const event = await closed;
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token revoked');
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    other.ws.close();
+  });
+
+  test('a further agent or tab past the per-user cap is closed', async () => {
+    const relay = createAgentRelay({ maxAgents: 1, maxTabs: 1 });
+    const port = await listen(relay, async () => ({ id: 'user-a' }));
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const agent = openSocket(url, { authorization: `Bearer ${first.token}` });
+    await agent.opened;
+    const extra = openSocket(url, { authorization: `Bearer ${second.token}` });
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the agent cap')), 2000);
+      extra.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    await extra.opened;
+    const closedEvent = await closed;
+    assert.equal(closedEvent.code, TOO_MANY_CONNECTIONS_CODE);
+    assert.equal(closedEvent.reason, TOO_MANY_CONNECTIONS_REASON);
+    assert.equal(agent.ws.readyState, WebSocket.OPEN);
+
+    const tab = openSocket(url, { origin: 'https://surfcad.com' });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const extraTab = openSocket(url, { origin: 'https://surfcad.com' });
+    const tabClosed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the tab cap')), 2000);
+      extraTab.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    await extraTab.opened;
+    assert.equal((await tabClosed).code, TOO_MANY_CONNECTIONS_CODE);
+    agent.ws.close();
+    tab.ws.close();
+  });
+
+  test('an idle expired token is closed by the ping sweep', async () => {
+    const clock = createManualClock(1_000_000);
+    const relay = createAgentRelay({ clock, tokenTtlMs: 1000, pingIntervalMs: 100 });
+    const port = await listen(relay, async () => null);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const agent = openSocket(`ws://127.0.0.1:${port}/agent`, {
+      authorization: `Bearer ${issued.token}`,
+    });
+    await agent.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    clock.advance(1000);
+    const event = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the idle expiry close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token expired');
+  });
+
+  test('websocket upgrades are rate limited per client IP', async () => {
+    const relay = createAgentRelay({ connectLimit: 1 });
+    const port = await listen(relay, async () => null);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    await assert.rejects(
+      openSocket(url, { authorization: `Bearer ${issued.token}` }).opened,
+      (error) => error.statusCode === 429,
+    );
+    agent.ws.close();
   });
 });

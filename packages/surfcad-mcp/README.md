@@ -48,7 +48,7 @@ npx surfcad-mcp status
 npx surfcad-mcp logout
 ```
 
-`login` runs device-code pairing against `https://surfcad.com/agent`. It prints an `ABCD-EFGH` code and the approval URL (`https://surfcad.com/agent`), then polls with a high-entropy device secret until you approve, deny, or the code expires. The token is written to the config directory at mode 0600 (the directory is 0700). It is not printed and it is not logged. `status` shows the server, name, machine, and saved time, never the token. `logout` deletes the file.
+`login` runs device-code pairing against `https://surfcad.com/agent`. It generates 32 random bytes, sends only their SHA-256, prints an `ABCD-EFGH` code and the approval URL (`https://surfcad.com/agent`), then polls with the secret until you approve, deny, or the code expires. The token is written to the config directory at mode 0600 (the directory is 0700). It is not printed and it is not logged. `status` shows the server, name, machine, and saved time, never the token. `logout` calls `DELETE /agent/tokens/self` with that token, then deletes the file. If the server cannot be reached, the file is still deleted and the command says the login may stay valid until it expires.
 
 Sign in on the approval page and enter the code. Leave the SurfCAD tab open. The client connects out over WebSocket (`wss://surfcad.com/agent`) with `Authorization: Bearer`. The first frame is `{ "type": "hello", "v": 1 }`. If WebSocket is blocked, commands fall back to `POST /agent/commands` and then Server-Sent Events, or a long-poll `GET` if the event stream fails. In-viewer prompts travel on the WebSocket.
 

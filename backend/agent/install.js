@@ -1,3 +1,4 @@
+import config from '../config/index.js';
 import AgentToken from '../db/models/AgentToken.js';
 import { authenticateBrowserUpgrade } from './browserAuth.js';
 import { cityLookupEnabled, createCityLookup } from './cityLookup.js';
@@ -42,5 +43,6 @@ export function attachAgentSockets(httpServer) {
   const sessionMiddleware = state.sessionMiddleware;
   attachAgentWebSocket(httpServer, state.relay, {
     authenticateUpgrade: (req) => authenticateBrowserUpgrade(req, sessionMiddleware),
+    trustProxyHops: config.trustProxyHops,
   });
 }

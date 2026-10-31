@@ -3,9 +3,22 @@
  * The device secret and the token are never logged or printed.
  */
 
+import { createHash, randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { agentUrls } from './config.mjs';
 import { saveLogin } from './tokenStore.mjs';
+
+/**
+ * 32 random bytes. Pairing start sends only the SHA-256. Poll sends the
+ * secret itself. Neither value is logged.
+ */
+function createDeviceSecret() {
+  const bytes = randomBytes(32);
+  return {
+    deviceSecret: bytes.toString('base64url'),
+    deviceSecretHash: createHash('sha256').update(bytes).digest('hex'),
+  };
+}
 
 /**
  * @param {string} status
@@ -71,11 +84,13 @@ export async function loginDevice(options) {
   const now = options.now || Date.now;
   const name = typeof options.name === 'string' ? options.name.trim() : '';
   const machine = (options.machine || hostname() || '').trim() || 'an unknown machine';
+  const { deviceSecret, deviceSecretHash } = createDeviceSecret();
   const started = await postJson(urls.pairUrl, {
     ...(name ? { name } : {}),
     machine,
+    deviceSecretHash,
   }, fetchImpl);
-  if (started.status !== 201 || !started.json?.userCode || !started.json?.deviceSecret) {
+  if (started.status !== 201 || !started.json?.userCode) {
     const code = started.json?.error === 'rate_limited' ? 'rate_limited' : 'pair_failed';
     const message = code === 'rate_limited'
       ? 'Too many login attempts. Wait and run npx surfcad-mcp login again.'
@@ -83,7 +98,6 @@ export async function loginDevice(options) {
     throw Object.assign(new Error(message), { code });
   }
   const userCode = String(started.json.userCode);
-  const deviceSecret = String(started.json.deviceSecret);
   const intervalSec = Number(started.json.interval);
   const pollMs = Number.isFinite(intervalSec) && intervalSec > 0 ? intervalSec * 1000 : 5000;
   if (options.onCode) {

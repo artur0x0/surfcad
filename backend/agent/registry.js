@@ -1,6 +1,12 @@
 import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createSystemClock } from './clock.js';
-import { MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from './limits.js';
+import {
+  MAX_AGENTS_PER_USER,
+  MAX_PENDING,
+  MAX_TABS_PER_USER,
+  RESULT_RETENTION_MS,
+  TAB_ASLEEP_MS,
+} from './limits.js';
 
 export const TAB_ASLEEP_ERROR = 'SurfCAD tab is asleep';
 
@@ -37,6 +43,8 @@ function asleepResponse(frame) {
  *   asleepMs?: number,
  *   retentionMs?: number,
  *   maxPending?: number,
+ *   maxTabs?: number,
+ *   maxAgents?: number,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
@@ -44,6 +52,8 @@ export function createMemoryTabRegistry(opts = {}) {
   const asleepMs = opts.asleepMs ?? TAB_ASLEEP_MS;
   const retentionMs = opts.retentionMs ?? RESULT_RETENTION_MS;
   const maxPending = opts.maxPending ?? MAX_PENDING;
+  const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
+  const maxAgents = opts.maxAgents ?? MAX_AGENTS_PER_USER;
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
@@ -184,9 +194,13 @@ export function createMemoryTabRegistry(opts = {}) {
   return {
     /**
      * @param {{ userId: string, tabId: string, send: (frame: object) => void }} tab
+     * @returns {boolean} false when this account is already at the tab cap
      */
     registerTab(tab) {
       const userId = String(tab.userId);
+      const existing = users.get(userId);
+      const replacing = existing?.tabs.has(tab.tabId) === true;
+      if (!replacing && (existing?.tabs.size || 0) >= maxTabs) return false;
       const found = bucket(userId);
       seq += 1;
       found.tabs.set(tab.tabId, {
@@ -197,6 +211,7 @@ export function createMemoryTabRegistry(opts = {}) {
         seq,
       });
       deliver(userId);
+      return true;
     },
 
     /**
@@ -402,10 +417,12 @@ export function createMemoryTabRegistry(opts = {}) {
 
     /**
      * @param {{ userId: string, agentId: string, send: (frame: object) => void }} agent
+     * @returns {boolean} false when this account is already at the agent cap
      */
     registerAgent(agent) {
       const userId = String(agent.userId);
       let found = agents.get(userId);
+      if (found && !found.has(agent.agentId) && found.size >= maxAgents) return false;
       const first = !found || found.size === 0;
       if (!found) {
         found = new Map();
@@ -413,6 +430,7 @@ export function createMemoryTabRegistry(opts = {}) {
       }
       found.set(agent.agentId, { agentId: agent.agentId, userId, send: agent.send });
       if (first) notifyTabs(userId, true);
+      return true;
     },
 
     /**
