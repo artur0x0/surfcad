@@ -21,6 +21,9 @@ import {
   stopAgentBridgeRelay,
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
+import { resolveAgentName, resolveServerUrl } from './remote/config.mjs';
+import { RemoteSession } from './remote/session.mjs';
+import { readSavedLogin } from './remote/tokenStore.mjs';
 import { waitForPairing } from './pairWait.mjs';
 import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
 import {
@@ -345,9 +348,11 @@ export async function createSurfcadMcpServer(options = {}) {
 }
 
 /**
- * @param {{ autoPairFromEnv?: boolean }} [options]
+ * @param {{ autoPairFromEnv?: boolean, startRelay?: boolean, mode?: 'local' | 'remote', server?: string, name?: string, env?: NodeJS.ProcessEnv }} [options]
  */
 export async function runSurfcadMcpServer(options = {}) {
+  if (options.mode === 'remote') return runRemoteMcpServer(options);
+
   /** @type {Awaited<ReturnType<typeof ensureAgentBridgeRelay>> | null} */
   let ownedRelay = null;
   const startRelay = options.startRelay !== false && process.env.SURFCAD_MCP_START_RELAY !== '0';
@@ -404,5 +409,48 @@ export async function runSurfcadMcpServer(options = {}) {
     });
   }
 
+  return { server, session, transport };
+}
+
+/**
+ * Logged-in (or `--remote`) stdio server. Does not start the loopback relay.
+ * The bearer token is never logged.
+ * @param {{ server?: string, name?: string, env?: NodeJS.ProcessEnv }} options
+ */
+async function runRemoteMcpServer(options) {
+  const env = options.env || process.env;
+  const saved = await readSavedLogin(env);
+  if (!saved?.token) {
+    throw Object.assign(new Error('No saved login. Run npx surfcad-mcp login.'), { code: 'not_logged_in' });
+  }
+  const serverUrl = resolveServerUrl({ flag: options.server, env, saved });
+  const pinned = resolveAgentName({ name: options.name, savedName: saved.name, env });
+  const remote = new RemoteSession({
+    serverUrl,
+    token: saved.token,
+    name: pinned,
+    fillNameFromClient: !pinned,
+  });
+  const { server, session } = await createSurfcadMcpServer({ session: remote });
+  server.oninitialized = () => {
+    remote.applyClientInfo(server.getClientVersion());
+    void remote.connect().catch((err) => {
+      console.error(`${new Date().toISOString()} [surfcad-mcp] ${err?.message || 'remote connect failed'}`);
+    });
+  };
+  if (!remote.needsClientName()) {
+    void remote.connect().catch((err) => {
+      console.error(`${new Date().toISOString()} [surfcad-mcp] ${err?.message || 'remote connect failed'}`);
+    });
+  }
+
+  const onStdinClosed = () => {
+    remote.disconnect();
+    setTimeout(() => process.exit(0), 0).unref();
+  };
+  process.stdin.once('end', onStdinClosed);
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
   return { server, session, transport };
 }

@@ -796,6 +796,8 @@ export function createPromptSession(options) {
     queuedCount() {
       return promptQueueLength();
     },
+    /** Stall window. Local and remote sessions leave this at AGENT_PROMPT_STALL_MS. */
+    idleMs,
   };
 }
 

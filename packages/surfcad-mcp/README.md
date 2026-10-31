@@ -1,6 +1,6 @@
 # surfcad-mcp
 
-Stdio [Model Context Protocol](https://modelcontextprotocol.io/) server for the SurfCAD browser agent bridge. Each tool maps to one `window.surfcad` command from the shipped command catalog (`data/commands.json`). The server pairs to your open SurfCAD tab through the **M1** loopback WebSocket relay (`ws://127.0.0.1:17341` by default).
+Stdio [Model Context Protocol](https://modelcontextprotocol.io/) server for the SurfCAD browser agent bridge. Each tool maps to one `window.surfcad` command from the shipped command catalog (`data/commands.json`). The server pairs to your open SurfCAD tab through the **M1** loopback WebSocket relay (`ws://127.0.0.1:17341` by default). A saved login uses the server relay instead; the tool list does not change.
 
 ## Install and run
 
@@ -16,9 +16,54 @@ Environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Connect Agent** dialog (optional if you use the `pair` tool). |
-| `SURFCAD_AGENT_BRIDGE_WS_URL` | Relay URL (default `ws://127.0.0.1:17341`). |
-| `SURFCAD_MCP_START_RELAY` | Set to `0` to skip starting the relay (tests only). |
+| `SURFCAD_PAIRING_CODE` | 6-character code from the SurfCAD **Connect Agent** dialog (optional if you use the `pair` tool). When set, the local relay stays selected even if a remote login is saved. |
+| `SURFCAD_AGENT_BRIDGE_WS_URL` | Loopback relay URL (default `ws://127.0.0.1:17341`). When set, the local relay stays selected even if a remote login is saved. |
+| `SURFCAD_AGENT_BRIDGE_WS_PORT` | Loopback relay port. When set, the local relay stays selected even if a remote login is saved. |
+| `SURFCAD_MCP_START_RELAY` | Set to `0` to skip starting the local relay (tests only). |
+| `SURFCAD_AGENT_SERVER` | Origin for remote login and the remote client (default `https://surfcad.com`). Dev and staging only. `--server` wins. |
+| `SURFCAD_AGENT_NAME` | Agent name when `--name` is omitted. The MCP client name is used after that, when the stdio server is connected. |
+| `SURFCAD_MCP_TRANSPORT` | `local` or `remote`. Same as `--local` / `--remote`. |
+| `SURFCAD_MCP_CONFIG_DIR` | Directory for the saved remote token. Default `$XDG_CONFIG_HOME/surfcad-mcp` or `~/.config/surfcad-mcp`. |
+
+## Which relay
+
+The local loopback relay is the default. `npx surfcad-mcp` starts it and pairs with the 6-character code.
+
+A saved login selects the server relay at `https://surfcad.com/agent`. `--remote` selects it too, and exits with a message to run `login` when no token is saved.
+
+These keep the local relay even when a login is saved, so an existing local MCP config and the in-repo goldens stay on the loopback relay:
+
+- `--local` or `SURFCAD_MCP_TRANSPORT=local`
+- `SURFCAD_AGENT_BRIDGE_WS_URL` or `SURFCAD_AGENT_BRIDGE_WS_PORT`
+- a non-empty `SURFCAD_PAIRING_CODE`
+
+`--remote` and `SURFCAD_MCP_TRANSPORT=remote` win over that list.
+
+## Remote login
+
+```bash
+npx surfcad-mcp login
+npx surfcad-mcp login --name "Cursor"
+npx surfcad-mcp status
+npx surfcad-mcp logout
+```
+
+`login` runs device-code pairing against `https://surfcad.com/agent`. It prints an `ABCD-EFGH` code and the approval URL (`https://surfcad.com/agent`), then polls with a high-entropy device secret until you approve, deny, or the code expires. The token is written to the config directory at mode 0600 (the directory is 0700). It is not printed and it is not logged. `status` shows the server, name, machine, and saved time, never the token. `logout` deletes the file.
+
+Sign in on the approval page and enter the code. Leave the SurfCAD tab open. The client connects out over WebSocket (`wss://surfcad.com/agent`) with `Authorization: Bearer`. The first frame is `{ "type": "hello", "v": 1 }`. If WebSocket is blocked, commands fall back to `POST /agent/commands` and then Server-Sent Events, or a long-poll `GET` if the event stream fails. In-viewer prompts travel on the WebSocket.
+
+`--server https://staging.example` or `SURFCAD_AGENT_SERVER` overrides the origin for dev and staging. https becomes `wss://`. `http://` and `ws://` are accepted only for localhost, 127.0.0.1, and ::1.
+
+The approval name is `--name`, then `SURFCAD_AGENT_NAME`, then the name stored at login. `login` runs before any MCP client exists, so it cannot see `clientInfo`. When none of those is set, the stdio server sends the MCP client name (`clientInfo.name`) on hello. With no name the server says "an agent".
+
+Clear failures:
+
+| What happened | What you see |
+| --- | --- |
+| No SurfCAD tab for about 30 seconds | `SurfCAD tab is asleep` |
+| Token revoked or expired (socket close 4001) | Run `npx surfcad-mcp login` again |
+| Too many commands already waiting | `Too many commands are waiting` |
+| This package is older than the server | `please update surfcad-mcp` |
 
 ## Pair with SurfCAD
 
