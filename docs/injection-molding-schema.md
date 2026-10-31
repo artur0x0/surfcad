@@ -67,6 +67,12 @@ not turn a deactivated grade back on. It does not write `materials` or
 
 Indexes: unique `grade`; `active` + `grade`.
 
+`GET /api/molding/resin-library` is public and read-only. It returns modulus,
+shrink, wall, and temperature bands. It does not return a price or a partner.
+An empty collection answers with the curated seed and does not insert it.
+Stored rows win, including a library with no active grades. The quote route
+does not call this.
+
 ## molding_tooling_rates
 
 Model `MoldingToolingRate`. One card per partner (`partnerId` is unique).

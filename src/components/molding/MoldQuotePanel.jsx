@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
+import { formatStudyHint } from '../../molding/resinSuggest.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
 
 function money(value) {
@@ -146,6 +147,47 @@ export default function MoldQuotePanel({
             ))}
           </select>
         </label>
+      )}
+      {state.suggestion?.fill && (
+        <section className="mt-2" data-mold-resin-suggest="">
+          <p className="text-ui-sm text-on-dark" data-mold-resin-suggest-label="">
+            {state.suggestion.fill.disclaimer}
+          </p>
+          {state.suggestion.fill.flags.map((flag) => (
+            <p
+              key={flag.code}
+              className="text-ui-sm text-muted-on-dark"
+              data-mold-resin-flag={flag.code}
+            >
+              {flag.text}
+            </p>
+          ))}
+          {state.suggestion.study && (
+            <p className="text-ui-sm text-muted-on-dark" data-mold-resin-study="">
+              {formatStudyHint(state.suggestion.study)}
+            </p>
+          )}
+          {state.suggestion.status === 'loading' && (
+            <p className="text-ui-sm text-muted-on-dark">Looking up generic resins…</p>
+          )}
+          {state.suggestion.status === 'unavailable' && (
+            <p className="text-ui-sm text-muted-on-dark">Generic resin suggestions are unavailable.</p>
+          )}
+          {Array.isArray(state.suggestion.suggestions) && state.suggestion.suggestions.length > 0 && (
+            <ul className="mt-1" data-mold-resin-suggestions="">
+              {state.suggestion.suggestions.map((row) => (
+                <li
+                  key={row.grade}
+                  className="text-ui-sm text-on-dark"
+                  data-mold-resin-suggest-grade={row.grade}
+                >
+                  {`${row.grade} · ${row.reason}`}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-ui-sm text-muted-on-dark">You can still pick any partner resin above.</p>
+        </section>
       )}
       {selected && state.status === 'ready' && (
         <div className="mt-2 flex flex-col gap-2">

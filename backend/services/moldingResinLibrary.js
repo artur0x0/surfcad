@@ -40,6 +40,44 @@ async function assertGradeFree(Model, grade, exceptId) {
   }
 }
 
+const PUBLIC_KEYS = [
+  'grade',
+  'tensileModulusMpa',
+  'shrinkLowPct',
+  'shrinkHighPct',
+  'wallMinMm',
+  'wallMaxMm',
+  'meltTempLowC',
+  'meltTempHighC',
+  'moldTempLowC',
+  'moldTempHighC',
+];
+
+export function publicResinView(row) {
+  const view = {};
+  for (const key of PUBLIC_KEYS) view[key] = row[key];
+  return view;
+}
+
+/**
+ * Active generic resins for suggestion. Does not insert and does not return
+ * a price. An empty collection answers with the curated seed in memory.
+ * Stored rows win, including a library whose grades are all inactive.
+ */
+export async function listPublicMoldingResins(Model) {
+  const stored = await Model.find({}).sort({ grade: 1 });
+  if (stored.length) {
+    return {
+      source: 'library',
+      resins: stored.filter((row) => row.active !== false).map(publicResinView),
+    };
+  }
+  return {
+    source: 'seed',
+    resins: MOLDING_RESIN_SEED.map((row) => publicResinView(row)),
+  };
+}
+
 export async function ensureMoldingResinSeed(Model) {
   for (const row of MOLDING_RESIN_SEED) {
     const existing = await Model.findOne({ grade: row.grade });

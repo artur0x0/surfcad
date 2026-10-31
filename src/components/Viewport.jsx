@@ -615,7 +615,9 @@ import { detachSideActionSkin, syncSideActionSkin } from '../molding/sideActionS
 import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { dfmReport } from '../molding/dfmReport.js';
-import { postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
+import { heuristicFillFlags, studyStiffnessHint, suggestResins } from '../molding/resinSuggest.js';
+import { fetchMoldingResinLibrary } from '../utils/moldingResinLibraryClient.js';
+import { boundsFromPositions, postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
 import { checkoutUrlAllowed, fetchReviewStatus, leadBody, postMoldingLead, postReviewCheckout } from '../utils/moldingLeadClient.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
@@ -14079,11 +14081,32 @@ const Viewport = forwardRef(({
     void confirmReviewRef.current(label);
   }
 
+  const resinHintFromPart = (geometry, analysis) => {
+    const bounds = boundsFromPositions(geometry?.attributes?.position);
+    return {
+      fill: heuristicFillFlags({ bounds, wall: analysis?.wall }),
+      study: studyStiffnessHint(feaPanelRef.current),
+      wall: analysis?.wall || null,
+    };
+  };
+
+  const resinSuggestion = (hint, library) => {
+    if (!library || library.error) {
+      return { status: 'unavailable', ...hint, suggestions: [] };
+    }
+    return {
+      status: 'ready',
+      ...hint,
+      suggestions: suggestResins(library.resins, hint),
+    };
+  };
+
   const publishQuote = async (geometry, analysis, opts) => {
     const quantity = opts.quantity;
     const cavityCount = opts.cavityCount;
     const grade = opts.grade || '';
     const selected = opts.selected || '';
+    const hint = resinHintFromPart(geometry, analysis);
     const body = quoteBodyFromAnalysis(geometry, analysis, {
       quantity,
       cavityCount,
@@ -14102,6 +14125,7 @@ const Viewport = forwardRef(({
         quote: null,
         error: body.error,
         revealed: moldQuoteRef.current?.revealed || {},
+        suggestion: { status: 'unavailable', ...hint, suggestions: [] },
         ...keptReview(moldQuoteRef.current),
       });
       return { error: body.error };
@@ -14121,10 +14145,14 @@ const Viewport = forwardRef(({
       revealed: prev?.revealed || {},
       leadMessage: prev?.leadMessage || null,
       leadError: null,
+      suggestion: { status: 'loading', ...hint, suggestions: [] },
       ...keptReview(prev),
     }));
+    const libraryPromise = fetchMoldingResinLibrary();
     const result = await postMoldingQuote(body);
+    const library = await libraryPromise;
     if (seq !== quoteSeqRef.current || !quoteOnRef.current) return { on: false };
+    const suggestion = resinSuggestion(hint, library);
     if (result?.error) {
       setMoldQuote({
         quantity,
@@ -14135,6 +14163,7 @@ const Viewport = forwardRef(({
         quote: null,
         error: result.error,
         revealed: moldQuoteRef.current?.revealed || {},
+        suggestion,
         ...keptReview(moldQuoteRef.current),
       });
       return { error: result.error };
@@ -14153,6 +14182,7 @@ const Viewport = forwardRef(({
       error: null,
       revealed: moldQuoteRef.current?.revealed || {},
       leadMessage: moldQuoteRef.current?.leadMessage || null,
+      suggestion,
       ...keptReview(moldQuoteRef.current),
     });
     noteReviewReturn(keep);
