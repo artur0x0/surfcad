@@ -19,9 +19,14 @@
  *
  * Fit: 0 regions is good, 1–4 is fixable, 5 or more is not_a_fit.
  * d and −d are the same searched axis. An override keeps the caller's sign.
+ *
+ * The same result carries wall thickness (`src/molding/wallThickness.js`):
+ * a local field, the nominal wall, max wall, and thin or thick regions.
+ * `wall: { thinRatio, thickRatio }` overrides the 0.6× and 1.5× defaults.
  */
 
 import { meshBodyComponents } from '../utils/meshBodyComponents.js';
+import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
 
 export const MOLD_ANALYSIS_VERSION = 1;
 
@@ -467,7 +472,7 @@ function publicRegions(regions) {
   }));
 }
 
-function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm }) {
+function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall }) {
   const undercutCount = regions.length;
   return {
     version: MOLD_ANALYSIS_VERSION,
@@ -485,6 +490,7 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
     })),
     undercuts: publicRegions(regions),
     bodies: bodyReport(positions, indices, regions),
+    wall,
   };
 }
 
@@ -497,6 +503,7 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
  *   patches?: Array<{ kind?: string, area?: number, normal?: number[] }>|null,
  *   stamped?: { triFace: ArrayLike<number>, normals: ArrayLike<ArrayLike<number>> }|null,
  *   pull?: number[]|null,
+ *   wall?: { thinRatio?: number, thickRatio?: number }|null,
  * }} input
  */
 export function analyzePullDirection(input) {
@@ -507,11 +514,14 @@ export function analyzePullDirection(input) {
   }
   const override = asOverride(input.pull);
   if (override.error) return override;
+  const wallOpts = resolveWallOptions(input.wall);
+  if (wallOpts.error) return wallOpts;
   const prepared = prepareTriangles(positions, indices, input.stamped || null);
   if (!prepared.tris.length) return { error: { code: 'no_mesh', message: 'No mesh to score' } };
   const diag = len(sub(prepared.max, prepared.min));
   const skinMm = Math.max(MOLD_SKIN_MM, MOLD_SKIN_DIAG_FRAC * diag);
   const normals = { stamped: prepared.stampedCount, triangle: prepared.triangleCount };
+  const wall = measureWallThickness(prepared.tris, Math.floor(indices.length / 3), wallOpts);
   if (override.pull) {
     const regions = undercutsAlong(override.pull, prepared.tris, skinMm);
     return resultOf({
@@ -523,6 +533,7 @@ export function analyzePullDirection(input) {
       positions,
       indices,
       skinMm,
+      wall,
     });
   }
   const { dirs, primary } = candidateDirections(prepared.tris, input.patches);
@@ -543,5 +554,6 @@ export function analyzePullDirection(input) {
     positions,
     indices,
     skinMm,
+    wall,
   });
 }
