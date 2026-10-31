@@ -259,7 +259,7 @@ describe('agent relay websocket', () => {
     });
     const revoked = await fetch(`http://127.0.0.1:${port}/agent/tokens/${issued.id}`, {
       method: 'DELETE',
-      headers: { 'x-test-user': 'user-a' },
+      headers: { 'x-test-user': 'user-a', origin: 'https://surfcad.com' },
     });
     assert.equal(revoked.status, 200);
     const event = await closed;

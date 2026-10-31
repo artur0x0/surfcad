@@ -148,6 +148,7 @@ describe('agent relay HTTP', () => {
       user: 'user-a',
       ip: '203.0.113.11',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(claim.status, 200);
@@ -162,6 +163,7 @@ describe('agent relay HTTP', () => {
       user: 'user-a',
       ip: '203.0.113.11',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(approved.status, 200);
@@ -174,6 +176,7 @@ describe('agent relay HTTP', () => {
       user: 'user-a',
       ip: '203.0.113.12',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(again.status, 400);
@@ -204,11 +207,13 @@ describe('agent relay HTTP', () => {
     const stolen = await send(port, `/agent/tokens/${listed.body.tokens[0].id}`, {
       method: 'DELETE',
       user: 'user-b',
+      origin: 'https://surfcad.com',
     });
     assert.equal(stolen.status, 404);
     const revoked = await send(port, `/agent/tokens/${listed.body.tokens[0].id}`, {
       method: 'DELETE',
       user: 'user-a',
+      origin: 'https://surfcad.com',
     });
     assert.equal(revoked.status, 200);
     const after = await send(port, '/agent/commands', {
@@ -406,6 +411,113 @@ describe('agent relay HTTP', () => {
     assert.match(approved.text, /Connected\. You can close this page/);
   });
 
+  test('cookie state changes reject a missing fetch signal and a cross-site request', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const login = deviceLogin({ name: 'Cursor', machine: 'laptop' });
+    const started = await send(port, '/agent/pair', {
+      method: 'POST',
+      body: login.body,
+    });
+    const code = started.body.userCode;
+    const pending = () => relay.pairing.poll({
+      deviceSecret: login.deviceSecret,
+      ip: '198.51.100.20',
+    }).status;
+
+    const missing = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      body: { userCode: code },
+    });
+    assert.equal(missing.status, 403);
+    assert.equal(missing.body.error, 'cross_origin');
+    assert.equal(pending(), 'pending');
+
+    const crossSite = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'cross-site',
+      body: { userCode: code },
+    });
+    assert.equal(crossSite.status, 403);
+    assert.equal(crossSite.body.error, 'cross_origin');
+    assert.equal(pending(), 'pending');
+
+    const sameOrigin = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      secFetchSite: 'same-origin',
+      body: { userCode: code },
+    });
+    assert.equal(sameOrigin.status, 200);
+    assert.equal(sameOrigin.body.sentence, 'Allow Cursor on laptop to connect?');
+
+    const approveMissing = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      body: { userCode: code },
+    });
+    assert.equal(approveMissing.status, 403);
+    assert.equal(approveMissing.body.error, 'cross_origin');
+    assert.equal(pending(), 'pending');
+
+    const approved = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      origin: 'https://www.surfcad.com',
+      body: { userCode: code },
+    });
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.ok, true);
+
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const revokeMissing = await send(port, `/agent/tokens/${issued.id}`, {
+      method: 'DELETE',
+      user: 'user-a',
+      accept: 'application/json',
+    });
+    assert.equal(revokeMissing.status, 403);
+    assert.equal(revokeMissing.body.error, 'cross_origin');
+    assert.equal((await relay.tokens.authenticate(issued.token)).userId, 'user-a');
+    const revoked = await send(port, `/agent/tokens/${issued.id}`, {
+      method: 'DELETE',
+      user: 'user-a',
+      secFetchSite: 'same-origin',
+    });
+    assert.equal(revoked.status, 200);
+
+    relay.registry.registerTab({ userId: 'user-a', tabId: 't1', send() {} });
+    relay.registry.registerTab({ userId: 'user-a', tabId: 't2', send() {} });
+    const selectMissing = await send(port, '/agent/tabs/select', {
+      method: 'POST',
+      user: 'user-a',
+      body: { tabId: 't1' },
+    });
+    assert.equal(selectMissing.status, 403);
+    const selected = await send(port, '/agent/tabs/select', {
+      method: 'POST',
+      user: 'user-a',
+      origin: 'http://127.0.0.1:5173',
+      body: { tabId: 't1' },
+    });
+    assert.equal(selected.status, 200);
+    assert.equal(selected.body.tabs.find((tab) => tab.id === 't1').selected, true);
+
+    const bearer = await relay.tokens.issue({ userId: 'user-a', label: 'agent' });
+    const self = await send(port, '/agent/tokens/self', {
+      method: 'DELETE',
+      token: bearer.token,
+    });
+    assert.equal(self.status, 200);
+  });
+
   test('a second account cannot approve a code the first account opened', async () => {
     const relay = createAgentRelay();
     const port = await listen(relay);
@@ -417,6 +529,7 @@ describe('agent relay HTTP', () => {
       method: 'POST',
       user: 'user-a',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(claim.status, 200);
@@ -424,6 +537,7 @@ describe('agent relay HTTP', () => {
       method: 'POST',
       user: 'user-b',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(raced.status, 403);
@@ -432,6 +546,7 @@ describe('agent relay HTTP', () => {
       method: 'POST',
       user: 'user-a',
       accept: 'application/json',
+      origin: 'https://surfcad.com',
       body: { userCode: started.body.userCode },
     });
     assert.equal(approved.status, 200);
@@ -645,6 +760,7 @@ describe('agent relay HTTP', () => {
     const picked = await send(port, '/agent/tabs/select', {
       method: 'POST',
       user: 'user-a',
+      secFetchSite: 'same-origin',
       body: { tabId: 't1' },
     });
     assert.equal(picked.status, 200);
@@ -754,6 +870,7 @@ describe('agent relay HTTP', () => {
     const revoked = await send(port, `/agent/tokens/${issued.id}`, {
       method: 'DELETE',
       user: 'user-a',
+      secFetchSite: 'same-origin',
     });
     assert.equal(revoked.status, 200);
     const result = await waiting;

@@ -469,6 +469,24 @@ textarea {
     outline: 2px solid rgb(var(--chrome-text));
     outline-offset: 2px;
   }
+  /* Right-rail tool toggle. Cross section is the reference: blue icon when
+     idle, green icon on a light green wash when on. These are the utilities
+     that button already used (blue-600, green-600, green-100, gray-100,
+     blue-100). No new colour token. Hover and press stay after the "on"
+     rule so they still replace the wash, the same way the utilities did.
+     The wash is a light surface — do not pair it with text-on-dark. */
+  .tool-toggle {
+    @apply p-2 rounded text-blue-600;
+  }
+  .tool-toggle.tool-toggle-on {
+    @apply text-green-600 bg-green-100;
+  }
+  .tool-toggle:hover {
+    @apply bg-gray-100;
+  }
+  .tool-toggle:active {
+    @apply bg-blue-100;
+  }
   /* Phone CAD ribbon. Same offset the rails use, so a stack-gap change
      moves the strip and the rail clearance together. Desktop keeps top-14. */
   .cad-feature-strip-mobile {

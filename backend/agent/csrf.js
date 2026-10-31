@@ -42,19 +42,44 @@ export function isApprovalFormPost(req) {
 }
 
 /**
- * A browser approval POST must come from the relay's origin allowlist.
- * `Sec-Fetch-Site: cross-site` is rejected even when Origin is missing.
- * Non-browser clients omit both headers; the form token still covers those posts.
+ * @param {import('express').Request} req
+ * @returns {string}
+ */
+function fetchSite(req) {
+  const site = req.get('sec-fetch-site');
+  return typeof site === 'string' ? site.trim().toLowerCase() : '';
+}
+
+/**
+ * Cookie reads may omit both headers. A foreign Origin or a cross-site
+ * `Sec-Fetch-Site` is still refused.
+ * @param {import('express').Request} req
+ * @returns {boolean}
+ */
+export function browserReadAllowed(req) {
+  const origin = req.get('origin');
+  if (origin && !isAllowedBrowserOrigin(origin)) return false;
+  const site = fetchSite(req);
+  if (!site) return true;
+  return site === 'same-origin' || site === 'same-site' || site === 'none';
+}
+
+/**
+ * A cookie-authenticated state change needs a browser signal: `Sec-Fetch-Site:
+ * same-origin`, or an Origin the allowlist accepts exactly. A request that
+ * sends neither is refused. `cross-site` is refused even when Origin is on
+ * the allowlist. Form posts still check the session CSRF token separately.
  * @param {import('express').Request} req
  * @returns {boolean}
  */
 export function approvalFetchAllowed(req) {
   const origin = req.get('origin');
+  const site = fetchSite(req);
+  if (site === 'cross-site') return false;
   if (origin && !isAllowedBrowserOrigin(origin)) return false;
-  const site = req.get('sec-fetch-site');
-  if (!site) return true;
-  const value = site.trim().toLowerCase();
-  return value === 'same-origin' || value === 'same-site' || value === 'none';
+  if (site === 'same-origin') return true;
+  if (origin && isAllowedBrowserOrigin(origin)) return true;
+  return false;
 }
 
 /**

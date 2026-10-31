@@ -99,6 +99,8 @@ Defined in `src/index.css`. Keep the set small.
 | `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons |
 | `text-success` | `--chrome-success` (hover `--chrome-success-hover`) | outline Send / camera-on on a dark glass card |
 | `surface-quiet` | `--chrome-border` (hover `--chrome-background`) | `text-on-dark`; Deny / secondary icon buttons |
+| `tool-toggle` | idle rail toggle: Tailwind `text-blue-600`, hover `bg-gray-100`, active `bg-blue-100` | light right rail. Blue icon. Not a dark surface |
+| `tool-toggle-on` | enabled rail toggle: Tailwind `text-green-600` on `bg-green-100` | add with `tool-toggle`. Light green wash, green icon |
 
 Existing frosted overlays (do not replace these with a flat slab):
 
@@ -227,7 +229,27 @@ header icons (`STRIP_ICON_BLUE`).
 Everything over the viewport is translucent glass (see classes above).
 Rails may still use the light frost `bg-white/60 backdrop-blur-sm` —
 that is a light surface; pair it with dark text (`text-on-light`).
-Do not copy that idiom onto dark chrome.
+Icon toggles on that rail do not use `text-on-light`. They use
+`tool-toggle` (see below). Do not copy the frost idiom onto dark chrome.
+
+## Right-rail tool toggles
+
+A toggle tool button on the light right rail is blue when idle and green
+when enabled. Cross section (`data-cross-section-toggle`, the
+`FlipHorizontal` button) is the reference. It must keep this look.
+
+Use `toolToggleClass(on)` from `src/components/toolToggle.js`. That sets
+`tool-toggle`, and adds `tool-toggle-on` while the tool is on. Idle is a
+blue icon with no fill. Enabled is a green icon on a light green wash.
+Hover and press match Cross section: gray wash on hover, blue wash when
+pressed, in both states.
+
+Those classes name the utilities Cross section already used
+(`text-blue-600`, `text-green-600`, `bg-green-100`, `hover:bg-gray-100`,
+`active:bg-blue-100`). Do not add a colour token for this, and do not put
+those utilities on the button yourself. `surface-success` is the solid
+dark green Allow control. It is not a rail toggle. The wash is a light
+surface, so the button does not take `text-on-dark` or `text-on-light`.
 
 ## Popups
 
