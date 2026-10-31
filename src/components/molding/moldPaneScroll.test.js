@@ -140,7 +140,8 @@ test('each molding pane renders the scroll container and its last control', asyn
   }));
   assert.match(parting, /data-parting-legend/);
   assert.match(parting, /data-mold-pane-end/);
-  assert.match(parting, /Parting line · 3/);
+  assert.match(parting, /Core/);
+  assert.doesNotMatch(parting, /Parting line ·/);
 
   const sides = renderToStaticMarkup(React.createElement(SideActionLegend, {
     legend: {

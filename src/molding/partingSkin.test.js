@@ -37,6 +37,23 @@ test('the parting skin paints the triangle and hides face paint', () => {
   assert.ok(Math.abs(colors[0] - PARTING_ROLE_RGB.cavity[0]) < 1e-6);
   assert.ok(Math.abs(colors[1] - PARTING_ROLE_RGB.cavity[1]) < 1e-6);
   assert.ok(Math.abs(colors[2] - PARTING_ROLE_RGB.cavity[2]) < 1e-6);
+  assert.equal(skin.children.some((child) => child.name === 'mold-parting-line'), false);
+});
+
+test('the parting skin draws the outer loop as a polyline', () => {
+  const host = hostWithPaint();
+  const withLine = {
+    ...parting,
+    lines: [{
+      closed: true,
+      length: 3,
+      points: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+    }],
+  };
+  const skin = syncPartingSkin(host, withLine);
+  const line = skin.children.find((child) => child.name === 'mold-parting-line');
+  assert.ok(line);
+  assert.equal(line.geometry.getAttribute('position').count, 4);
 });
 
 test('turning the parting skin off restores face paint', () => {

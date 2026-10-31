@@ -35,10 +35,18 @@ function namingOf(parting) {
   const names = [];
   const seen = new Set();
   for (const line of lines) {
-    const name = typeof line?.name === 'string' ? line.name.trim() : '';
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
+    const listed = [];
+    if (typeof line?.name === 'string' && line.name.trim()) listed.push(line.name.trim());
+    if (Array.isArray(line?.edgeNames)) {
+      for (const edgeName of line.edgeNames) {
+        if (typeof edgeName === 'string' && edgeName.trim()) listed.push(edgeName.trim());
+      }
+    }
+    for (const name of listed) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
   }
   if (!names.length) {
     return {

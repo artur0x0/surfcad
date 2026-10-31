@@ -10,7 +10,7 @@ const SCHEMA = Object.freeze({
   properties: {
     on: {
       type: 'boolean',
-      description: 'true shows core, cavity, and parting colours. false restores paint and the part colour. Omit to toggle.',
+      description: 'true shows core and cavity colours and the outer parting line. false restores paint and the part colour. Omit to toggle.',
     },
   },
 });

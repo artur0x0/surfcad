@@ -21,10 +21,12 @@ test('a stamped cube through the viewport mesh is a good fit along +Z', { timeou
   assert.ok(Math.abs(result.wall.max - 5) < 1e-3, `max ${result.wall.max}`);
   const byRole = Object.fromEntries(result.parting.faces.map((face) => [face.name, face.role]));
   const roleOf = (suffix) => byRole[Object.keys(byRole).find((name) => name.endsWith(`.${suffix}`))];
-  assert.equal(roleOf('top'), 'cavity');
-  assert.equal(roleOf('bottom'), 'core');
-  for (const side of ['left', 'right', 'front', 'back']) assert.equal(roleOf(side), 'parting');
-  assert.ok(result.parting.lines.length >= 8);
-  assert.ok(result.parting.lines.every((line) => line.name && /(\.top~|\.bottom~|~[^.]*\.top|~[^.]*\.bottom)/.test(line.name)));
-  assert.ok(result.parting.lines.every((line) => !/\.(left|right|front|back)~.*\.(left|right|front|back)/.test(line.name)));
+  assert.equal(roleOf('top'), 'core');
+  assert.equal(roleOf('bottom'), 'cavity');
+  for (const side of ['left', 'right', 'front', 'back']) assert.equal(roleOf(side), 'cavity');
+  assert.equal(result.parting.lines.length, 1);
+  const names = result.parting.lines[0].edgeNames;
+  assert.ok(names.length >= 4);
+  assert.ok(names.every((name) => /(\.top~|\.bottom~|~[^.]*\.top|~[^.]*\.bottom)/.test(name)));
+  assert.ok(names.every((name) => !/\.(left|right|front|back)~.*\.(left|right|front|back)/.test(name)));
 });
