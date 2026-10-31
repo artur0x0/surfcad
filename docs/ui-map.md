@@ -300,7 +300,10 @@ Desktop specifics:
   between editor and viewer is gone. Hidden in game mode. SplitDivider sits
   directly between editor and viewer.
 - **Profile chip:** desktop (above the 768px mobile breakpoint) shows only
-  the CAD viewport chip, top-right. Mobile shows that chip plus one on the
+  the CAD viewport chip, top-right. With the two-line phone title the chip
+  is centred on that stack, level with the wordmark
+  (`data-profile-chip-stacked`, class `profile-chip-stacked`;
+  `golden:viewer-title-narrow`). Mobile shows that chip plus one on the
   Parts ribbon and one on the Script toolbar (same `ProfileChip`). Signed-out
   = grey User icon; signed-in and GitHub-connected = green initials. Signed in
   without a GitHub token = grey initials plus an exclamation badge

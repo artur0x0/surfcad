@@ -408,6 +408,14 @@ try {
       check(`${label} rollback mark clears the assembly pill`,
         !layout.mark || !layout.assembly || layout.mark.top >= layout.assembly.bottom - 0.5,
         JSON.stringify({ mark: layout.mark, assembly: layout.assembly }));
+      // The profile chip centres on the two-line title like the wordmark does.
+      const chipMid = layout.profile ? layout.profile.top + layout.profile.height / 2 : null;
+      const stackMid = layout.part && layout.assembly ? (layout.part.top + layout.assembly.bottom) / 2 : null;
+      const wordMid = layout.word ? layout.word.top + layout.word.height / 2 : null;
+      check(`${label} profile chip is level with the wordmark and the title stack`,
+        chipMid != null && stackMid != null && Math.abs(chipMid - stackMid) <= 1
+        && (wordMid == null || Math.abs(chipMid - wordMid) <= 1),
+        JSON.stringify({ chipMid, stackMid, wordMid, profile: layout.profile }));
       check(`${label} left and right rails start on the same line`,
         !layout.leftRail || !layout.rightRail || Math.abs(layout.leftRail.top - layout.rightRail.top) <= 1,
         JSON.stringify({ left: layout.leftRail, right: layout.rightRail }));
