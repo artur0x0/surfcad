@@ -27,6 +27,7 @@
     "passport-apple": "^2.0.2",
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
-    "stripe": "^20.1.2"
+    "stripe": "^20.1.2",
+    "ws": "^8.22.0"
   }
 }

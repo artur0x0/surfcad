@@ -14,6 +14,7 @@ import { connectDB } from './db/connection.js';
 import { initializePassport } from './auth/passport.js';
 import { createSessionMiddleware, enforceCredentialRevocation, requireAuth } from './auth/session.js';
 import passport from 'passport';
+import { attachAgentSockets, installAgentRelay, useMongoTokenStore } from './agent/install.js';
 
 // Routes
 import authRoutes from './routes/auth.js';
@@ -71,7 +72,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ============ Sessions ============
-app.use(createSessionMiddleware());
+const sessionMiddleware = createSessionMiddleware();
+app.use(sessionMiddleware);
 
 // ============ Passport Auth ============
 initializePassport();
@@ -122,6 +124,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Agent relay (WebSocket upgrade is attached in startServer).
+installAgentRelay(app, { sessionMiddleware });
+
 // ============ Error Handler ============
 if (sentryEnabled) {
   installSentryErrorHandler(app);
@@ -145,12 +150,15 @@ export async function startServer() {
   try {
     // Connect to MongoDB
     await connectDB();
-    
-    app.listen(PORT, () => {
+    useMongoTokenStore();
+
+    const server = app.listen(PORT, () => {
       console.log(`[Server] Running on port ${PORT}`);
       console.log(`[Server] Environment: ${config.env}`);
       console.log(`[Server] Frontend URL: ${config.frontendUrl}`);
     });
+    attachAgentSockets(server);
+    return server;
   } catch (error) {
     console.error('[Server] Failed to start:', error);
     process.exit(1);

@@ -420,7 +420,7 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 | `scripts/vite-agent-bridge-ws.mjs` | Vite plugin: starts the relay on `127.0.0.1` (port `SURFCAD_AGENT_BRIDGE_WS_PORT`, default **17341**) during `vite` dev and `vite preview`. |
 | `src/components/AgentBridgePairing.jsx` | In-app UI: user must **Show pairing code**, then **Allow connection** when a client connects. Paired state and **Disconnect** are visible. |
 | `src/agent/ws/relayHub.js` | Pairing state machine and message routing. |
-| `packages/surfcad-mcp/src/commandProtocol.mjs` | Shared command and response frames (`v`, `id`, `command`, `args` / `ok`, `result` or `error`). The local relay and a future server relay both use this module. |
+| `packages/surfcad-mcp/src/commandProtocol.mjs` | Shared command and response frames (`v`, `id`, `command`, `args` / `ok`, `result` or `error`). The localhost relay and the server relay (`/agent`) both use this module. The server handshake requires an explicit `v`; a missing `v` on localhost still means version 1. |
 | `src/agent/transport/transport.js` | Command transport interface: `connect`, `send`, `onMessage`, `close`, `status`. |
 | `src/agent/transport/localhostRelayTransport.js` | That interface over the localhost WebSocket relay. |
 | `src/agent/transport/commandDispatch.js` | Reads a command frame, calls `window.surfcad.call`, sends the response. |

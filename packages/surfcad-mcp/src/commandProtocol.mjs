@@ -1,13 +1,17 @@
 /**
- * Command protocol shared by the localhost agent relay and a future server relay.
+ * Command protocol shared by the localhost agent relay and the server relay.
  *
  * This is the frame around one bridge call. It is not `window.surfcad.version`
  * (the in-page envelope) and not the `v` on prompt messages. Pairing and
  * prompt frames stay on their own `type` names in `relayMessages.mjs`.
  *
  * A frame we write always carries `v`. A frame we read may omit `v`; that
- * means version 1, so a peer from before this field still works. Any other
- * `v` is not this protocol.
+ * means version 1, so a peer from before this field still works on the
+ * localhost relay. Any other `v` is not this protocol.
+ *
+ * The server relay's handshake is stricter: `checkAgentHandshakeVersion`
+ * requires an explicit `v`. A missing or older `v` is too old for that
+ * handshake. Local reads are unchanged.
  */
 
 export const AGENT_PROTOCOL_VERSION = 1;
@@ -100,4 +104,23 @@ export function readCommandResponse(msg) {
   const failure = { v: version, id: frame.id, ok: false };
   if (frame.error !== undefined) failure.error = frame.error;
   return failure;
+}
+
+/** Shown when a server-relay client speaks a protocol older than this one. */
+export const AGENT_HANDSHAKE_UPDATE_MESSAGE = 'please update surfcad-mcp';
+
+/**
+ * Server handshake version. Unlike `readCommandRequest`, a missing `v` is
+ * too old. `v` above {@link AGENT_PROTOCOL_VERSION} is a different protocol.
+ * @param {unknown} version
+ * @returns {{ ok: true, v: number } | { ok: false, error: string }}
+ */
+export function checkAgentHandshakeVersion(version) {
+  if (typeof version !== 'number' || !Number.isFinite(version) || version < AGENT_PROTOCOL_VERSION) {
+    return { ok: false, error: AGENT_HANDSHAKE_UPDATE_MESSAGE };
+  }
+  if (version !== AGENT_PROTOCOL_VERSION) {
+    return { ok: false, error: `Unsupported protocol version: ${version}` };
+  }
+  return { ok: true, v: version };
 }
