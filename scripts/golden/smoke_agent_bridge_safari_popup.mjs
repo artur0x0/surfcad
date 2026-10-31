@@ -306,7 +306,7 @@ async function runOne(name, { browserType, launchOptions, expectPopup, expectSer
     const transport = await page.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
     if (expectServer) {
       check('server dialog, no loopback popup', popup == null && transport === 'server', transport);
-      const preview = await page.locator('[data-agent-bridge-prompt-preview]').innerText();
+      const preview = await page.locator('[data-agent-bridge-prompt-preview]').inputValue();
       check('prompt tells the agent to run npx surfcad-mcp login', /npx surfcad-mcp login/.test(preview), preview);
       check('prompt points at this origin /agent', /https:\/\/surfcad\.com\/agent/.test(preview), preview);
       check('prompt does not install a local server', !/npx -y|Install and run|local server/i.test(preview), preview);

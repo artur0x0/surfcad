@@ -16,10 +16,9 @@ import {
 import AgentBridgePopupStatus from './AgentBridgePopupStatus.jsx';
 import {
   AGENT_PAIRING_PROMPT,
-  clipPairingPrompt,
-  pairingPromptPreview,
   serverPairingPrompt,
 } from '../agent/ws/pairingPrompt.js';
+import { copyTextWithFallback } from '../agent/ws/copyText.js';
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
@@ -67,6 +66,23 @@ import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/age
  * localhost. Desktop Safari's loopback bridge window is only for a
  * non-forced popup transport.
  */
+
+const AGENT_PROMPT_BOX_CLASS = 'w-full resize-none rounded-md border border-chrome-border/80 bg-transparent px-2 py-1 text-ui-xs text-on-dark leading-snug mb-2 select-text';
+
+function AgentPromptBox({ text }) {
+  return (
+    <textarea
+      readOnly
+      rows={6}
+      value={text}
+      aria-label="Prompt for your AI agent"
+      data-agent-bridge-prompt-preview=""
+      onFocus={(event) => event.currentTarget.select()}
+      className={AGENT_PROMPT_BOX_CLASS}
+    />
+  );
+}
+
 export default function AgentBridgePairing({
   enabled,
   embedded = false,
@@ -270,13 +286,13 @@ export default function AgentBridgePairing({
   }, [toastOpen]);
 
   const copyText = useCallback(async (text, key) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(key);
-      setTimeout(() => setCopied(null), 2000);
-    } catch {
+    const ok = await copyTextWithFallback(text);
+    if (!ok) {
       setCopied(null);
+      return;
     }
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
   }, []);
 
   const copyPairingPrompt = useCallback(() => {
@@ -292,13 +308,13 @@ export default function AgentBridgePairing({
 
   const copyPageLink = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopied('link');
-      setTimeout(() => setCopied(null), 2000);
-    } catch {
+    const ok = await copyTextWithFallback(window.location.href);
+    if (!ok) {
       setCopied(null);
+      return;
     }
+    setCopied('link');
+    setTimeout(() => setCopied(null), 2000);
   }, []);
 
   const copyPairingCode = useCallback(() => {
@@ -631,7 +647,6 @@ export default function AgentBridgePairing({
     && issue !== 'origin_rejected' && issue !== 'browser_blocked'
     && issue !== 'bridge_closed' && issue !== 'popup_blocked';
   const waitingCopy = popupMode ? 'Waiting for the local agent…' : pairingProbeUserCopy(null);
-  const promptPreview = pairingPromptPreview();
   const showRelayMissingBanner = issue === 'relay_missing' && !waitingForRelay && flowOpen;
 
   const issueBlock = showRelayMissingBanner ? (
@@ -700,9 +715,7 @@ export default function AgentBridgePairing({
           {showPrompt ? (
             <div className="rounded-md border border-chrome-border/80 px-2 py-2" data-agent-bridge-prompt="">
               <p className="text-ui-xs text-muted-on-dark mb-2">Send this to your AI agent:</p>
-              <p className="text-ui-xs text-on-dark leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
-                {promptPreview}
-              </p>
+              <AgentPromptBox text={AGENT_PAIRING_PROMPT} />
               <button
                 type="button"
                 className={CONNECT_AGENT_BUTTON_CLASS}
@@ -847,9 +860,7 @@ export default function AgentBridgePairing({
     <div className="space-y-3" data-agent-bridge-server="">
       <div className="rounded-md border border-chrome-border/80 px-2 py-2" data-agent-bridge-prompt="">
         <p className="text-ui-xs text-muted-on-dark mb-2">Send this to your AI agent:</p>
-        <p className="text-ui-xs text-on-dark leading-snug mb-2 line-clamp-3" data-agent-bridge-prompt-preview="">
-          {clipPairingPrompt(serverPromptText)}
-        </p>
+        <AgentPromptBox text={serverPromptText} />
         <button
           type="button"
           className={CONNECT_AGENT_BUTTON_CLASS}

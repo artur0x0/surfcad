@@ -38,6 +38,17 @@ test('Safari and phone width open the server dialog and do not probe localhost',
   assert.match(SRC, /if \(forcedServerRef\.current\)/);
   assert.doesNotMatch(SRC, /isSecureContext/);
   assert.match(SRC, /readPhoneWidth/);
+  assert.match(SRC, /copyTextWithFallback/);
+  assert.match(SRC, /function AgentPromptBox/);
+  assert.match(SRC, /readOnly/);
+  assert.match(SRC, /rows=\{6\}/);
+  assert.match(SRC, /aria-label="Prompt for your AI agent"/);
+  assert.match(SRC, /text=\{serverPromptText\}/);
+  assert.match(SRC, /text=\{AGENT_PAIRING_PROMPT\}/);
+  assert.match(SRC, /value=\{text\}/);
+  assert.match(SRC, /event\.currentTarget\.select\(\)/);
+  assert.doesNotMatch(SRC, /clipPairingPrompt/);
+  assert.doesNotMatch(SRC, /line-clamp-3/);
   const forced = SRC.slice(SRC.indexOf('if (forcedServerRef.current)'));
   assert.match(forced, /setFlowOpen\(true\)/);
   const beforePopup = forced.slice(0, forced.indexOf("startPairing('popup')"));

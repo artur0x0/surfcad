@@ -34,4 +34,6 @@ location /agent {
 
 `proxy_read_timeout` is one hour, which is the minimum for a tab socket that stays open. `proxy_buffering off` is what lets SSE flush. The app also sends `X-Accel-Buffering: no` on the event stream.
 
+Vite dev (`vite.config.js` `server.proxy`) proxies the same path to `http://localhost:3000` with `ws: true`. The key is the regex `^/agent(/|\?|$)`, so `/agent`, `/agent/`, and `/agent?…` reach the backend and `/agentx` stays on the SPA. Without that proxy the tab socket and the approval page hit `index.html`. `preview.proxy` is only `/api`. Preview would otherwise inherit the dev proxy, and a playtest page opening `ws://127.0.0.1:<port>/agent` with no backend would fail the handshake.
+
 The approval page can name a city. That lookup is off unless `AGENT_CITY_LOOKUP` is set on the server. See [agent-city-lookup.md](./agent-city-lookup.md).
