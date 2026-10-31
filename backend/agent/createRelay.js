@@ -1,5 +1,6 @@
 import { createRateLimiter } from '../services/rateLimiter.js';
 import { createAgentSocketRegistry } from './agentSockets.js';
+import { createTabSocketRegistry } from './tabSockets.js';
 import { createSystemClock } from './clock.js';
 import {
   BROWSER_ROUTE_LIMIT,
@@ -68,6 +69,7 @@ export function createAgentRelay(overrides = {}) {
   const agentSockets = createAgentSocketRegistry({
     maxPerUser: overrides.maxAgents,
   });
+  const tabSockets = createTabSocketRegistry();
   const commandLimiter = createRateLimiter({
     limit: overrides.commandLimit ?? COMMAND_LIMIT,
     windowMs: overrides.commandWindowMs ?? COMMAND_WINDOW_MS,
@@ -107,6 +109,7 @@ export function createAgentRelay(overrides = {}) {
     pairing,
     registry,
     agentSockets,
+    tabSockets,
     commandLimiter,
     browserLimiter,
     readLimiter,

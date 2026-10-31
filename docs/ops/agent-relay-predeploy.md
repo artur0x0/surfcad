@@ -18,6 +18,10 @@ Leave `AGENT_CITY_LOOKUP` unset. The approval sentence then has no city and the 
 
 With one hop, the client address is the rightmost `X-Forwarded-For` value, the one nginx appended. A prefix the browser sent is ignored. Raising the hop count trusts more of that prefix and lets a client spoof its address. Set the value to the number of proxies that append the header. Do not put it in a tracked env file.
 
+## One Node process
+
+Pairing codes, in-flight commands, tab presence, and live sockets live in memory in the Node process that serves `/agent`. Run that process alone. Cluster mode, a pm2 cluster, and `WEB_CONCURRENCY` above 1 split that state, so a command accepted on one worker never reaches the tab on another. Startup logs a warning when it detects a worker, `NODE_APP_INSTANCE`, or `WEB_CONCURRENCY` greater than 1. The process still boots. This does not change nginx or any env file. Leave the process count at one.
+
 ## `ws` install
 
 The relay's WebSocket server is the `ws` package declared in `backend/package.json`. Production runs the backend process, so install it with `npm ci --prefix backend` (the repo root `npm ci` installs the root copy used by the local relay). An install that skips that step fails when a browser or an agent upgrades `/agent`.

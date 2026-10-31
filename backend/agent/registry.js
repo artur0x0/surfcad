@@ -65,6 +65,7 @@ export function createMemoryTabRegistry(opts = {}) {
    *   sentTo: string | null,
    *   finished: boolean,
    *   listeners: Array<(response: object) => void>,
+   *   abortWaiters: Array<() => void>,
    *   finish: (response: object) => void,
    * }} PendingCommand
    */
@@ -75,7 +76,7 @@ export function createMemoryTabRegistry(opts = {}) {
   const agents = new Map();
   /** @type {Map<string, PendingCommand>} */
   const pending = new Map();
-  /** @type {Map<string, { userId: string, response: object, at: number }>} */
+  /** @type {Map<string, { userId: string, tokenId: string, response: object, at: number }>} */
   const completed = new Map();
   let seq = 0;
   /** @type {unknown} */
@@ -189,6 +190,18 @@ export function createMemoryTabRegistry(opts = {}) {
         item.sentTo = null;
       }
     }
+  }
+
+  /**
+   * A result belongs to the token that submitted it. Omitting `tokenId`
+   * only matches a command that was queued without one.
+   * @param {string} stored
+   * @param {string | null} requested
+   */
+  function tokenMatches(stored, requested) {
+    const issued = stored == null ? '' : String(stored);
+    if (requested == null) return issued === '';
+    return issued === requested;
   }
 
   return {
@@ -338,6 +351,7 @@ export function createMemoryTabRegistry(opts = {}) {
         sentTo: null,
         finished: false,
         listeners: [],
+        abortWaiters: [],
         finish: () => {},
       };
       let resolvePromise = /** @type {(response: object) => void} */ (() => {});
@@ -348,7 +362,7 @@ export function createMemoryTabRegistry(opts = {}) {
         if (item.finished) return;
         item.finished = true;
         pending.delete(key);
-        completed.set(key, { userId, response, at: clock.now() });
+        completed.set(key, { userId, tokenId, response, at: clock.now() });
         for (const listener of item.listeners) listener(response);
         resolvePromise(response);
         arm();
@@ -385,18 +399,24 @@ export function createMemoryTabRegistry(opts = {}) {
      * @param {string} userId
      * @param {string | number} id
      * @param {number} timeoutMs
-     * @returns {Promise<{ status: 'done', response: object } | { status: 'pending' } | null>}
+     * @param {string} [tokenId]
+     * @returns {Promise<{ status: 'done', response: object } | { status: 'pending' } | { status: 'revoked' } | null>}
      */
-    wait(userId, id, timeoutMs) {
+    wait(userId, id, timeoutMs, tokenId) {
       const key = commandKey(userId, id);
+      const requested = tokenId == null ? null : String(tokenId);
       const done = completed.get(key);
       if (done) {
-        if (done.userId !== String(userId)) return Promise.resolve(null);
+        if (done.userId !== String(userId) || !tokenMatches(done.tokenId, requested)) {
+          return Promise.resolve(null);
+        }
         completed.delete(key);
         return Promise.resolve({ status: 'done', response: done.response });
       }
       const item = pending.get(key);
-      if (!item || item.userId !== String(userId)) return Promise.resolve(null);
+      if (!item || item.userId !== String(userId) || !tokenMatches(item.tokenId, requested)) {
+        return Promise.resolve(null);
+      }
       if (timeoutMs <= 0) return Promise.resolve({ status: 'pending' });
       return new Promise((resolve) => {
         let settled = false;
@@ -405,6 +425,12 @@ export function createMemoryTabRegistry(opts = {}) {
           settled = true;
           resolve({ status: 'pending' });
         }, timeoutMs);
+        item.abortWaiters.push(() => {
+          if (settled) return;
+          settled = true;
+          clock.cancel(timeout);
+          resolve({ status: 'revoked' });
+        });
         item.listeners.push((response) => {
           if (settled) return;
           settled = true;
@@ -413,6 +439,27 @@ export function createMemoryTabRegistry(opts = {}) {
           resolve({ status: 'done', response });
         });
       });
+    },
+
+    /**
+     * End long-poll and SSE waits for one token, and drop its unread results.
+     * @param {string} tokenId
+     */
+    abortToken(tokenId) {
+      const id = String(tokenId);
+      for (const item of [...pending.values()]) {
+        if (item.tokenId !== id || item.finished) continue;
+        const waiters = item.abortWaiters.splice(0);
+        for (const abort of waiters) abort();
+        item.finish(commandResponse({
+          id: item.frame.id,
+          ok: false,
+          error: { code: 'unauthorized', message: 'Token revoked' },
+        }));
+      }
+      for (const [key, done] of [...completed.entries()]) {
+        if (done.tokenId === id) completed.delete(key);
+      }
     },
 
     /**

@@ -6,6 +6,7 @@ import express from 'express';
 import { commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createManualClock } from '../agent/clock.js';
 import { createAgentRelay } from '../agent/createRelay.js';
+import { revokeRelayUser } from '../agent/install.js';
 import { logRelay } from '../agent/log.js';
 import { MAX_AGENT_MESSAGE_BYTES, TAB_ASLEEP_MS } from '../agent/limits.js';
 
@@ -152,6 +153,7 @@ describe('agent relay HTTP', () => {
     assert.equal(claim.status, 200);
     assert.equal(claim.body.sentence, 'Allow Cursor on laptop to connect?');
     assert.equal(claim.body.city, null);
+    assert.equal(claim.body.ip, '203.0.113.10');
     assert.equal(String(claim.body.sentence).includes(','), false);
     assert.equal(String(claim.body.sentence).includes('Berlin'), false);
 
@@ -242,9 +244,73 @@ describe('agent relay HTTP', () => {
     assert.match(page.text, /surface-light/);
     assert.match(page.text, /text-on-light/);
     assert.match(page.text, /data-ui-action="data-agent-approve-allow"/);
+    assert.match(page.text, /self-reported by the agent/);
+    assert.match(page.text, /Requesting IP:/);
+    assert.equal(page.text.includes(started.body.userCode), false);
+    assert.equal(page.text.includes('name="userCode"'), false);
     assert.equal(page.text.includes('<Cursor>'), false);
     assert.equal(page.text.includes(' in '), false);
     assert.match(page.text, /name="csrf"/);
+  });
+
+  test('a link that carries the code does not prefill or approve', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const login = deviceLogin({ name: 'Cursor', machine: 'laptop' });
+    const started = await send(port, '/agent/pair', {
+      method: 'POST',
+      ip: '203.0.113.50',
+      body: login.body,
+    });
+    const code = started.body.userCode;
+    const linked = await send(port, `/agent?userCode=${encodeURIComponent(code)}`, {
+      user: 'user-a',
+      session: 'link-1',
+    });
+    assert.equal(linked.status, 200);
+    assert.equal(linked.text.includes(code), false);
+    assert.match(linked.text, /A link does not fill this in or approve it/);
+    const csrf = csrfFrom(linked.text);
+    const skipped = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'link-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${encodeURIComponent(code)}&csrf=${encodeURIComponent(csrf)}`,
+    });
+    assert.equal(skipped.status, 400);
+    assert.match(skipped.text, /Enter the code shown by the agent/);
+    assert.equal(relay.pairing.poll({
+      deviceSecret: login.deviceSecret,
+      ip: '203.0.113.50',
+    }).status, 'pending');
+
+    const claimed = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'link-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${encodeURIComponent(code)}&csrf=${encodeURIComponent(csrf)}`,
+    });
+    assert.equal(claimed.status, 200);
+    assert.match(claimed.text, /Allow Cursor on laptop to connect\?/);
+    assert.match(claimed.text, /self-reported by the agent/);
+    assert.match(claimed.text, /Lisbon|Requesting IP: 203\.0\.113\.50/);
+    assert.match(claimed.text, /203\.0\.113\.50/);
+    assert.equal(claimed.text.includes(code), false);
+    const allowCsrf = csrfFrom(claimed.text);
+    const approved = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'link-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `csrf=${encodeURIComponent(allowCsrf)}`,
+    });
+    assert.equal(approved.status, 200);
+    assert.match(approved.text, /Connected\. You can close this page/);
   });
 
   test('approval posts reject a missing or wrong CSRF token and a cross-origin request', async () => {
@@ -418,6 +484,8 @@ describe('agent relay HTTP', () => {
       raw: `userCode=${encodeURIComponent(started.body.userCode)}&csrf=${encodeURIComponent(csrf)}`,
     });
     assert.match(page.text, /Allow Cursor on laptop in Lisbon Portugal to connect\?/);
+    assert.match(page.text, /Lisbon Portugal\. Requesting IP:/);
+    assert.match(page.text, /self-reported by the agent/);
     assert.equal(page.text.includes('Lisbon,'), false);
     assert.equal(page.text.includes('Ignored'), false);
     assert.match(page.text, /IP geolocation by ipdata/);
@@ -638,6 +706,71 @@ describe('agent relay HTTP', () => {
       token: first.token,
     });
     assert.equal(again.status, 401);
+  });
+
+  test('a command result is only readable by the token that submitted it', async () => {
+    const relay = createAgentRelay();
+    relay.registry.registerTab({
+      userId: 'user-a',
+      tabId: 't1',
+      send(frame) {
+        relay.registry.complete('user-a', frame.id, commandResponse({
+          id: frame.id,
+          ok: true,
+          result: { n: 1 },
+        }));
+      },
+    });
+    const port = await listen(relay);
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const posted = await send(port, '/agent/commands', {
+      method: 'POST',
+      token: first.token,
+      body: { v: 1, id: 'c1', command: 'status', args: {} },
+    });
+    assert.equal(posted.status, 202);
+    const stolen = await send(port, '/agent/commands/c1?timeout=0', { token: second.token });
+    assert.equal(stolen.status, 404);
+    const own = await send(port, '/agent/commands/c1?timeout=0', { token: first.token });
+    assert.equal(own.status, 200);
+    assert.equal(own.body.status, 'done');
+    assert.equal(own.body.response.result.n, 1);
+  });
+
+  test('revoke aborts an in-flight long poll', async () => {
+    const relay = createAgentRelay();
+    relay.registry.registerTab({ userId: 'user-a', tabId: 't1', send() {} });
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const posted = await send(port, '/agent/commands', {
+      method: 'POST',
+      token: issued.token,
+      body: { v: 1, id: 'c1', command: 'status', args: {} },
+    });
+    assert.equal(posted.status, 202);
+    const waiting = send(port, '/agent/commands/c1?timeout=5000', { token: issued.token });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const revoked = await send(port, `/agent/tokens/${issued.id}`, {
+      method: 'DELETE',
+      user: 'user-a',
+    });
+    assert.equal(revoked.status, 200);
+    const result = await waiting;
+    assert.equal(result.status, 401);
+    assert.equal(result.body.error, 'Authentication required');
+  });
+
+  test('revokeRelayUser revokes every token for the account', async () => {
+    const relay = createAgentRelay();
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const other = await relay.tokens.issue({ userId: 'user-b', label: 'other' });
+    const ids = await revokeRelayUser(relay, 'user-a');
+    assert.equal(ids.length, 2);
+    assert.equal(await relay.tokens.authenticate(first.token), null);
+    assert.equal(await relay.tokens.authenticate(second.token), null);
+    assert.equal((await relay.tokens.authenticate(other.token)).userId, 'user-b');
   });
 
   test('cookie routes reject a foreign Origin and are rate limited per IP', async () => {

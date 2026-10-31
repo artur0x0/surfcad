@@ -31,12 +31,26 @@ function fakeModel() {
       };
     },
     find(query) {
-      return {
-        sort() {
-          return this;
-        },
-        lean: async () => docs.filter((doc) => String(doc.userId) === String(query.userId)),
+      const matched = () => docs.filter((doc) => {
+        if (query.userId && String(doc.userId) !== String(query.userId)) return false;
+        if (query.revokedAt === null && doc.revokedAt) return false;
+        return true;
+      });
+      const chain = {
+        sort() { return chain; },
+        select() { return chain; },
+        lean: async () => matched(),
       };
+      return chain;
+    },
+    async updateMany(filter, update) {
+      const hits = docs.filter((doc) => {
+        if (filter.userId && String(doc.userId) !== String(filter.userId)) return false;
+        if (filter.revokedAt === null && doc.revokedAt) return false;
+        return true;
+      });
+      for (const doc of hits) Object.assign(doc, update.$set);
+      return { matchedCount: hits.length, modifiedCount: hits.length };
     },
     async updateOne(filter, update) {
       const doc = docs.find((item) => {
@@ -90,6 +104,19 @@ describe('agent token hashes', () => {
     assert.ok((await tokens.list('user-a'))[0].revokedAt);
   });
 
+  test('revokeAll drops every live token for that account only', async () => {
+    const { tokens } = memoryService();
+    const first = await tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await tokens.issue({ userId: 'user-a', label: 'phone' });
+    const other = await tokens.issue({ userId: 'user-b', label: 'other' });
+    const ids = await tokens.revokeAll('user-a');
+    assert.deepEqual(ids.sort(), [first.id, second.id].sort());
+    assert.equal(await tokens.authenticate(first.token), null);
+    assert.equal(await tokens.authenticate(second.token), null);
+    assert.equal((await tokens.authenticate(other.token)).userId, 'user-b');
+    assert.deepEqual(await tokens.revokeAll('user-a'), []);
+  });
+
   test('an expired token is rejected', async () => {
     const { clock, tokens } = memoryService(1000);
     const issued = await tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });
@@ -124,5 +151,11 @@ describe('agent token hashes', () => {
     assert.equal((await tokens.authenticate(issued.token)).userId, USER_A);
     assert.equal(await tokens.revoke(USER_A, 'mongo-1'), true);
     assert.equal(await tokens.authenticate(issued.token), null);
+    const again = await tokens.issue({ userId: USER_A, label: 'phone' });
+    const spare = await tokens.issue({ userId: USER_B, label: 'other' });
+    const ids = await tokens.revokeAll(USER_A);
+    assert.deepEqual(ids, [again.id]);
+    assert.equal(await tokens.authenticate(again.token), null);
+    assert.equal((await tokens.authenticate(spare.token)).userId, USER_B);
   });
 });

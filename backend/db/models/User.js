@@ -555,8 +555,10 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
       err.statusCode = 409;
       throw err;
     }
+    let credentialsRevoked = false;
     if (!user.emailVerified) {
       user.neutralizeUnverifiedForOAuth();
+      credentialsRevoked = true;
     }
     user.authProvider = provider;
     user.providerId = id;
@@ -575,6 +577,11 @@ userSchema.statics.findOrCreateOAuth = async function(profile, provider) {
       user.name = displayName;
     }
     await user.save();
+    if (credentialsRevoked) {
+      const { revokeUserAgentAccess, closeUserTabSockets } = await import('../../agent/install.js');
+      await revokeUserAgentAccess(user._id);
+      closeUserTabSockets(user._id);
+    }
     return { user, isNew: false };
   }
   

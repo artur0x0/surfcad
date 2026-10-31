@@ -75,6 +75,7 @@ describe('device-code pairing', () => {
     });
     const shown = pairing.claim({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
     assert.equal(shown.sentence, 'Allow Cursor on laptop in Berlin to connect?');
+    assert.equal(shown.ip, '203.0.113.8');
     assert.equal(shown.sentence.includes(','), false);
     await pairing.approve({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
     const listed = await tokens.list('user-a');

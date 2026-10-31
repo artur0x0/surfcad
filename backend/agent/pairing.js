@@ -312,6 +312,7 @@ export function createPairingService(opts) {
       name: record.name,
       machine: record.machine,
       city: record.city,
+      ip: record.ip || null,
       sentence: approvalSentence(record),
       userCode: formatUserCode(record.userCode),
     };
@@ -350,6 +351,7 @@ export function createPairingService(opts) {
         name: cleanLabel(fields.name, 'an agent'),
         machine: cleanLabel(fields.machine, 'an unknown machine'),
         city: cleanCity(fields.city),
+        ip: typeof fields.ip === 'string' && fields.ip ? fields.ip : null,
         createdAt: now(),
         wrongTries: 0,
         status: 'pending',

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { IncomingMessage } from 'node:http';
+import { Socket } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   AGENT_HANDSHAKE_UPDATE_MESSAGE,
@@ -18,6 +20,7 @@ import { clientAddress } from './clientIp.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
+import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
 /**
  * @param {import('node:net').Socket} socket
@@ -131,7 +134,7 @@ export function attachAgentWebSocket(httpServer, relay, options) {
       }
       if (socket.destroyed) return;
       try {
-        wss.handleUpgrade(req, socket, head, (ws) => bindTab(ws, user, relay));
+        wss.handleUpgrade(req, socket, head, (ws) => bindTab(ws, user, relay, req));
       } catch {
         rejectUpgrade(socket, 401, 'Authentication required');
       }
@@ -149,7 +152,7 @@ export function attachAgentWebSocket(httpServer, relay, options) {
 
   const pingMs = relay.pingIntervalMs > 0 ? relay.pingIntervalMs : 30_000;
   const heartbeat = setInterval(() => {
-    sweepSockets(wss, relay).catch(() => {});
+    sweepSockets(wss, relay, options.authenticateUpgrade).catch(() => {});
   }, pingMs);
   if (typeof heartbeat.unref === 'function') heartbeat.unref();
 
@@ -162,16 +165,50 @@ export function attachAgentWebSocket(httpServer, relay, options) {
 }
 
 /**
+ * A fresh upgrade request with the cookie captured when the tab connected.
+ * Session middleware reads that cookie. It does not reuse the live socket.
+ * @param {Record<string, string>} headers
+ */
+function sessionProbe(headers) {
+  const socket = new Socket();
+  const req = new IncomingMessage(socket);
+  req.headers = headers;
+  req.method = 'GET';
+  req.url = '/agent';
+  req.httpVersion = '1.1';
+  return req;
+}
+
+/**
  * Ping every socket. Terminate one that missed the previous pong.
  * An agent whose token is revoked or expired is closed with 4001 even
- * when it has sent no further frame.
+ * when it has sent no further frame. A tab whose session is gone is
+ * closed with 1000. That is not a revoked agent token.
  * @param {import('ws').WebSocketServer} wss
  * @param {{
  *   tokens: { status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'> },
  * }} relay
+ * @param {(req: import('node:http').IncomingMessage) => Promise<{ id: string } | null>} [authenticateUpgrade]
  */
-async function sweepSockets(wss, relay) {
+async function sweepSockets(wss, relay, authenticateUpgrade) {
   for (const ws of wss.clients) {
+    const tab = /** @type {{ userId: string, headers: Record<string, string> } | undefined} */ (ws.tabSession);
+    if (tab && authenticateUpgrade) {
+      const probe = sessionProbe(tab.headers);
+      try {
+        const again = await authenticateUpgrade(probe);
+        if (!again || again.id !== tab.userId) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close(TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON);
+          }
+          continue;
+        }
+      } catch {
+        /* a store miss is not a reason to drop a live tab */
+      } finally {
+        probe.socket.destroy();
+      }
+    }
     const auth = /** @type {{ tokenHash?: string } | undefined} */ (ws.agentAuth);
     if (auth?.tokenHash) {
       try {
@@ -389,7 +426,22 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   });
 }
 
-function bindTab(ws, user, relay) {
+/**
+ * @param {import('ws').WebSocket & { tabSession?: { userId: string, headers: Record<string, string> } }} ws
+ * @param {{ id: string }} user
+ * @param {{
+ *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
+ *   tabSockets?: { add: (userId: string, ws: import('ws').WebSocket) => void },
+ * }} relay
+ * @param {import('node:http').IncomingMessage} req
+ */
+function bindTab(ws, user, relay, req) {
+  const headers = {};
+  if (typeof req.headers.cookie === 'string') headers.cookie = req.headers.cookie;
+  const testUser = req.headers['x-test-user'];
+  if (typeof testUser === 'string') headers['x-test-user'] = testUser;
+  ws.tabSession = { userId: String(user.id), headers };
+  relay.tabSockets?.add(user.id, ws);
   const tabId = randomUUID();
   ws.on('error', () => {});
   const accepted = relay.registry.registerTab({

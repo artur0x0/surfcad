@@ -6,10 +6,17 @@ test('loopback addresses are accepted', () => {
   assert.equal(isLoopbackAddress('127.0.0.1'), true);
   assert.equal(isLoopbackAddress('::1'), true);
   assert.equal(isLoopbackAddress('192.168.1.1'), false);
+  assert.equal(isLoopbackAddress('127.evil.com'), false);
+  assert.equal(isLoopbackAddress('127.0.0.1.attacker.com'), false);
 });
 
 test('only local http origins are allowed', () => {
   assert.equal(isAllowedHttpOrigin('http://127.0.0.1:5173'), true);
+  assert.equal(isAllowedHttpOrigin('http://127.0.0.1'), true);
   assert.equal(isAllowedHttpOrigin('http://localhost:4173'), true);
+  assert.equal(isAllowedHttpOrigin('http://localhost'), true);
+  assert.equal(isAllowedHttpOrigin('http://[::1]'), true);
   assert.equal(isAllowedHttpOrigin('https://evil.example'), false);
+  assert.equal(isAllowedHttpOrigin('http://127.evil.com'), false);
+  assert.equal(isAllowedHttpOrigin('http://127.0.0.1.attacker.com'), false);
 });

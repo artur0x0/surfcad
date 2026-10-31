@@ -14,6 +14,8 @@ import { createManualClock } from '../agent/clock.js';
 import { createAgentRelay } from '../agent/createRelay.js';
 import { authenticateBrowserUpgrade } from '../agent/browserAuth.js';
 import { attachAgentWebSocket } from '../agent/wsServer.js';
+import { revokeRelayUser } from '../agent/install.js';
+import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from '../agent/tabSockets.js';
 
 /** @type {import('node:http').Server[]} */
 const servers = [];
@@ -459,6 +461,88 @@ describe('agent relay websocket', () => {
     });
     assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
     assert.equal(event.reason, 'token expired');
+  });
+
+  test('a tab socket closes when the session check fails on the heartbeat', async () => {
+    let signedIn = true;
+    const relay = createAgentRelay({ pingIntervalMs: 40 });
+    const port = await listen(relay, async (req) => {
+      if (!signedIn) return null;
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const tab = openSocket(`ws://127.0.0.1:${port}/agent`, {
+      origin: 'https://surfcad.com',
+      'x-test-user': 'user-a',
+    });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the session close')), 2000);
+      tab.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    signedIn = false;
+    const event = await closed;
+    assert.equal(event.code, TAB_SESSION_ENDED_CODE);
+    assert.equal(event.reason, TAB_SESSION_ENDED_REASON);
+  });
+
+  test('closing one account\'s tabs leaves another account and its agent token', async () => {
+    const relay = createAgentRelay({ pingIntervalMs: 60_000 });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const tab = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-a' });
+    const other = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-b' });
+    await tab.opened;
+    await other.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    assert.equal((await other.nextMessage()).type, 'registered');
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the tab close')), 2000);
+      tab.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    assert.equal(relay.tabSockets.closeUser('user-a'), 1);
+    const event = await closed;
+    assert.equal(event.code, TAB_SESSION_ENDED_CODE);
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    assert.equal((await relay.tokens.authenticate(issued.token)).userId, 'user-a');
+    other.ws.close();
+  });
+
+  test('revokeRelayUser closes that account\'s agent sockets with 4001', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay, async () => null);
+    const first = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const second = await relay.tokens.issue({ userId: 'user-b', label: 'other' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const agent = openSocket(url, { authorization: `Bearer ${first.token}` });
+    const other = openSocket(url, { authorization: `Bearer ${second.token}` });
+    await agent.opened;
+    await other.opened;
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the revoke close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    const ids = await revokeRelayUser(relay, 'user-a');
+    assert.deepEqual(ids, [first.id]);
+    const event = await closed;
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token revoked');
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    other.ws.close();
   });
 
   test('websocket upgrades are rate limited per client IP', async () => {
