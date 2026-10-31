@@ -115,7 +115,7 @@ test('a thin rib yields pins and a thick boss yields one sleeve', () => {
     ...withPart(shell, boxMesh([10, 9, 9], [10.8, 11.5, 11.5])),
     pull: [0, 0, 1],
   });
-  assert.equal(rib.moldDraft.ejectors.pinCount, 4);
+  assert.equal(rib.moldDraft.ejectors.pinCount, 2);
   assert.equal(rib.moldDraft.ejectors.sleeveCount, 0);
   for (const pin of rib.moldDraft.ejectors.pins) {
     assert.ok(pin.center[0] > 9.5 && pin.center[0] < 11.2);

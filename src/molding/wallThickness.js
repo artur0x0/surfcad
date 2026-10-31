@@ -18,10 +18,15 @@
  * fillet does not collapse the ball. Perpendicular skins stay in the query,
  * which is what bounds a rim, a plate edge, and a hole wall.
  *
- * The ray is kept only when it is stable and within 15% of the sphere
- * diameter. Otherwise the diameter is the thickness. A sample with no sphere
- * is unknown: it is not painted thick from the ray. Fillets and junctions
- * are not dropped; a larger sphere paints thick.
+ * The ray is kept when it stays inside the material, meets the opposite
+ * wall head-on, and either agrees with the sphere within 15% or is shorter
+ * than 4× the sphere. That shorter hit is the wall this face terminates:
+ * a near-perpendicular skin beside a short end must not pinch it. A longer
+ * head-on ray is a corridor along the skins (a plate edge, a rim, a long
+ * beam), so the diameter is the thickness. A ray that leaves the solid,
+ * such as a hole wall shot across the opening, is not used. A sample with
+ * no sphere is unknown: it is not painted thick from the ray. Fillets and
+ * junctions are not dropped; a larger sphere paints thick.
  *
  * One triangle is one skin color. If any probe on it has a stable ray, the
  * color is the smallest of those rays: a corner sample that misses the near
@@ -56,6 +61,11 @@ export const MOLD_WALL_HIT_EPS_MM = 1e-4;
 export const MOLD_WALL_GRAZE_COS = 0.5;
 /** A stable ray within this fraction of the sphere diameter is kept. */
 export const MOLD_WALL_AGREE_FRACTION = 0.15;
+/**
+ * A head-on ray shorter than this multiple of the sphere is the opposite
+ * wall. A longer one runs along the skins and the sphere is the thickness.
+ */
+export const MOLD_WALL_CORRIDOR = 4;
 /** Edge neighbors at least this aligned are the same surface (fillet tessellation). */
 export const MOLD_WALL_TANGENT_COS = 0.5;
 /** Probe spacing is at most this, and at most half the coarse nominal. */
@@ -70,6 +80,12 @@ const MOLD_WALL_MAX_STEPS = 48;
 const BARY_EPS = 1e-8;
 const DET_EPS = 1e-12;
 const BACKFACE_EPS = 1e-8;
+/** Odd direction so an inside-test ray does not ride along a box face. */
+const INSIDE_DIR = (() => {
+  const raw = [0.962, 0.166, 0.218];
+  const len = Math.hypot(raw[0], raw[1], raw[2]);
+  return [raw[0] / len, raw[1] / len, raw[2] / len];
+})();
 
 function sub(a, b) {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -342,6 +358,60 @@ function cellIndex(grid, p, axis) {
   return i;
 }
 
+function countCrossings(origin, grid, seen, stamp) {
+  const dir = INSIDE_DIR;
+  const { cells, size, min, buckets, span } = grid;
+  let ix = cellIndex(grid, origin, 0);
+  let iy = cellIndex(grid, origin, 1);
+  let iz = cellIndex(grid, origin, 2);
+  const axes = [0, 1, 2].map((axis) => {
+    const component = dir[axis];
+    const step = component > 0 ? 1 : -1;
+    const index = cellIndex(grid, origin, axis);
+    const boundary = min[axis] + (step > 0 ? (index + 1) * size[axis] : index * size[axis]);
+    let tMax = (boundary - origin[axis]) / component;
+    if (!(tMax > 0)) tMax = 0;
+    return { step, tMax, tDelta: Math.abs(size[axis] / component) };
+  });
+  let count = 0;
+  const maxSteps = cells * 3 + 3;
+  for (let step = 0; step < maxSteps; step++) {
+    const bucket = buckets[ix + cells * iy + span * iz];
+    if (bucket) {
+      for (const tri of bucket) {
+        if (seen[tri.t] === stamp) continue;
+        seen[tri.t] = stamp;
+        const t = rayTriangle(origin, dir, tri);
+        if (t == null || t <= 1e-5) continue;
+        count += 1;
+      }
+    }
+    const tx = axes[0].tMax;
+    const ty = axes[1].tMax;
+    const tz = axes[2].tMax;
+    const tNext = tx < ty ? (tx < tz ? tx : tz) : (ty < tz ? ty : tz);
+    if (!(tNext < grid.diag * 2)) break;
+    if (tx <= ty && tx <= tz) {
+      ix += axes[0].step;
+      if (ix < 0 || ix >= cells) break;
+      axes[0].tMax += axes[0].tDelta;
+    } else if (ty <= tz) {
+      iy += axes[1].step;
+      if (iy < 0 || iy >= cells) break;
+      axes[1].tMax += axes[1].tDelta;
+    } else {
+      iz += axes[2].step;
+      if (iz < 0 || iz >= cells) break;
+      axes[2].tMax += axes[2].tDelta;
+    }
+  }
+  return count;
+}
+
+function pointInside(point, grid, seen, stamp) {
+  return countCrossings(point, grid, seen, stamp) % 2 === 1;
+}
+
 function nearestHit(origin, dir, grid, skip, seen, stamp) {
   const { cells, size, min, buckets, span } = grid;
   let ix = cellIndex(grid, origin, 0);
@@ -560,7 +630,7 @@ function closestContact(node, center, excluded, origin, dir, best, scratch) {
   }
 }
 
-function probeRay(tri, point, dir, grid, skip, seen, stamp) {
+function probeRay(tri, point, dir, grid, skip, seen, stamp, insideSeen, insideStamp) {
   const inset = Math.max(MOLD_WALL_HIT_EPS_MM, grid.diag * 1e-6);
   const origin = [
     point[0] + dir[0] * inset,
@@ -569,7 +639,16 @@ function probeRay(tri, point, dir, grid, skip, seen, stamp) {
   ];
   const hit = nearestHit(origin, dir, grid, skip, seen, stamp);
   if (!hit) return null;
-  return { dist: hit.dist + inset, nd: hit.nd };
+  const mid = hit.dist * 0.5;
+  return {
+    dist: hit.dist + inset,
+    nd: hit.nd,
+    inside: pointInside([
+      origin[0] + dir[0] * mid,
+      origin[1] + dir[1] * mid,
+      origin[2] + dir[2] * mid,
+    ], grid, insideSeen, insideStamp),
+  };
 }
 
 function probeSphere(point, dir, ray, diag, bvh, excluded) {
@@ -611,9 +690,12 @@ function probeSphere(point, dir, ray, diag, bvh, excluded) {
 
 function combineProbe(ray, diameter) {
   if (!(diameter > 0)) return { thickness: null, source: 'unknown' };
-  const stable = !!(ray && ray.nd >= MOLD_WALL_GRAZE_COS);
-  const agree = !!(ray && Math.abs(ray.dist - diameter) <= MOLD_WALL_AGREE_FRACTION * diameter);
-  if (stable && agree) return { thickness: ray.dist, source: 'ray' };
+  const stable = !!(ray && ray.inside && ray.nd >= MOLD_WALL_GRAZE_COS);
+  if (!stable) return { thickness: diameter, source: 'sphere' };
+  const agree = Math.abs(ray.dist - diameter) <= MOLD_WALL_AGREE_FRACTION * diameter;
+  if (agree || ray.dist < diameter * MOLD_WALL_CORRIDOR) {
+    return { thickness: ray.dist, source: 'ray' };
+  }
   return { thickness: diameter, source: 'sphere' };
 }
 
@@ -791,15 +873,24 @@ export function measureWallThickness(tris, nTri, options) {
   const grid = buildGrid(tris);
   const bvh = buildBvh(tris);
   const seen = new Uint32Array(maxIndex);
+  const insideSeen = new Uint32Array(maxIndex);
   let stamp = 1;
+  let insideStamp = 1;
   const probe = (tri, point) => {
     stamp += 1;
+    insideStamp += 1;
     if (stamp >= 0xfffffffe) {
       seen.fill(0);
       stamp = 1;
     }
+    if (insideStamp >= 0xfffffffe) {
+      insideSeen.fill(0);
+      insideStamp = 1;
+    }
     const dir = [-tri.n[0], -tri.n[1], -tri.n[2]];
-    const ray = probeRay(tri, point, dir, grid, raySkip.get(tri.t), seen, stamp);
+    const ray = probeRay(
+      tri, point, dir, grid, raySkip.get(tri.t), seen, stamp, insideSeen, insideStamp,
+    );
     const diameter = probeSphere(point, dir, ray, grid.diag, bvh, sphereSkip.get(tri.t));
     return combineProbe(ray, diameter);
   };
