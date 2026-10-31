@@ -14,7 +14,7 @@ import {
   entryErrorMessage,
   signInPage,
 } from './approvalPage.js';
-import { approvalFetchAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
+import { approvalFetchAllowed, browserReadAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
 
@@ -107,8 +107,8 @@ export function createAgentRouter(deps) {
   }
 
   /**
-   * Form posts need the session token. Every approval POST is refused when
-   * Origin or Sec-Fetch-Site says the request is cross-site.
+   * Form posts need the session token. Claim, approve, and deny also need
+   * `Sec-Fetch-Site: same-origin` or an allowed Origin. Missing both is 403.
    * @param {import('express').Request} req
    * @param {import('express').Response} res
    * @returns {boolean}
@@ -125,14 +125,16 @@ export function createAgentRouter(deps) {
   }
 
   /**
-   * Cookie routes. A missing Origin is allowed so same-origin fetches and
-   * the tests that omit it keep working. A foreign Origin or a cross-site
-   * `Sec-Fetch-Site` is refused.
+   * Cookie routes. Reads may omit Origin. A state change (revoke, tab select)
+   * needs `Sec-Fetch-Site: same-origin` or an allowed Origin. A foreign Origin
+   * or a cross-site `Sec-Fetch-Site` is refused either way.
    * @param {import('express').Request} req
    * @param {import('express').Response} res
+   * @param {boolean} [stateChange]
    */
-  function rejectBrowser(req, res) {
-    if (approvalFetchAllowed(req)) return false;
+  function rejectBrowser(req, res, stateChange = false) {
+    const allowed = stateChange ? approvalFetchAllowed(req) : browserReadAllowed(req);
+    if (allowed) return false;
     if (wantsHtml(req)) {
       res.status(403).type('html').send('That request did not come from SurfCAD.');
     } else {
@@ -359,7 +361,7 @@ export function createAgentRouter(deps) {
   router.delete('/tokens/:id', async (req, res, next) => {
     try {
       if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
-      if (rejectBrowser(req, res)) return undefined;
+      if (rejectBrowser(req, res, true)) return undefined;
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const tokenId = String(req.params.id);
@@ -384,7 +386,7 @@ export function createAgentRouter(deps) {
 
   router.post('/tabs/select', (req, res) => {
     if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
-    if (rejectBrowser(req, res)) return undefined;
+    if (rejectBrowser(req, res, true)) return undefined;
     const user = userFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'tabId')) {
