@@ -14,7 +14,7 @@ function kindLabel(kind) {
   return kind === 'lifter' ? 'Lifter' : 'Slide';
 }
 
-export default function DfmReportPanel({ report, shifted = false }) {
+export default function DfmReportPanel({ report, shifted = false, belowPull = false }) {
   if (!report) return null;
   const wall = report.wall || {};
   const draft = report.draft || {};
@@ -34,7 +34,7 @@ export default function DfmReportPanel({ report, shifted = false }) {
   return (
     <div
       data-mold-dfm-report=""
-      className={`pointer-events-auto absolute wall-legend-anchor z-30 dfm-report-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}`}
+      className={`pointer-events-auto absolute wall-legend-anchor z-30 dfm-report-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}${belowPull ? ' dfm-report-below-pull' : ''}`}
     >
       <div className="text-ui-sm" data-mold-dfm-framing="">{report.framing}</div>
       <p className="mt-0.5 text-ui-sm text-muted-on-dark" data-mold-dfm-disclaimer="">

@@ -28,6 +28,7 @@ import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
 import { moldFitCommand } from './moldFit.js';
+import { moldPullCommand } from './moldPull.js';
 import { moldWallMapCommand } from './moldWallMap.js';
 import { moldPartingCommand } from './moldParting.js';
 import { moldSideActionsCommand } from './moldSideActions.js';
@@ -233,6 +234,7 @@ const V1_COMMAND_LIST = [
   cameraCommand,
   listFacesCommand,
   moldFitCommand,
+  moldPullCommand,
   moldWallMapCommand,
   moldPartingCommand,
   moldSideActionsCommand,
