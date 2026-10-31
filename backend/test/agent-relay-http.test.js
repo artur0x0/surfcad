@@ -23,6 +23,8 @@ afterEach(async () => {
  * @param {ReturnType<typeof createAgentRelay>} relay
  */
 async function listen(relay) {
+  /** @type {Map<string, { agentCsrf?: string }>} */
+  const sessions = new Map();
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '2mb' }));
@@ -31,6 +33,15 @@ async function listen(relay) {
     const id = req.header('x-test-user');
     req.isAuthenticated = () => Boolean(id);
     if (id) req.user = { id };
+    const sid = req.header('x-test-session');
+    if (sid) {
+      let bag = sessions.get(sid);
+      if (!bag) {
+        bag = {};
+        sessions.set(sid, bag);
+      }
+      req.session = bag;
+    }
     next();
   });
   app.use('/agent', relay.router);
@@ -54,6 +65,9 @@ async function listen(relay) {
  *   ip?: string,
  *   accept?: string,
  *   contentType?: string,
+ *   session?: string,
+ *   origin?: string,
+ *   secFetchSite?: string,
  * }} [opts]
  */
 async function send(port, path, opts = {}) {
@@ -71,6 +85,9 @@ async function send(port, path, opts = {}) {
   if (opts.user) headers['x-test-user'] = opts.user;
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
   if (opts.ip) headers['x-forwarded-for'] = opts.ip;
+  if (opts.session) headers['x-test-session'] = opts.session;
+  if (opts.origin) headers.origin = opts.origin;
+  if (opts.secFetchSite) headers['sec-fetch-site'] = opts.secFetchSite;
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: opts.method || 'GET',
     headers,
@@ -84,6 +101,15 @@ async function send(port, path, opts = {}) {
     body = text;
   }
   return { status: res.status, body, text };
+}
+
+/**
+ * @param {string} html
+ */
+function csrfFrom(html) {
+  const match = /name="csrf" value="([^"]+)"/.exec(html);
+  assert.ok(match, 'approval form includes a csrf token');
+  return match[1];
 }
 
 describe('agent relay HTTP', () => {
@@ -182,15 +208,171 @@ describe('agent relay HTTP', () => {
       method: 'POST',
       body: { name: '<Cursor>', machine: 'laptop' },
     });
+    const form = await send(port, '/agent', { user: 'user-a', session: 'html-1' });
+    const csrf = csrfFrom(form.text);
     const page = await send(port, '/agent/pair/claim', {
       method: 'POST',
       user: 'user-a',
-      raw: `userCode=${encodeURIComponent(started.body.userCode)}`,
+      session: 'html-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${encodeURIComponent(started.body.userCode)}&csrf=${encodeURIComponent(csrf)}`,
     });
     assert.equal(page.status, 200);
     assert.match(page.text, /<p>Allow &lt;Cursor&gt; on laptop to connect\?<\/p>/);
     assert.equal(page.text.includes('<Cursor>'), false);
     assert.equal(page.text.includes(' in '), false);
+    assert.match(page.text, /name="csrf"/);
+  });
+
+  test('approval posts reject a missing or wrong CSRF token and a cross-origin request', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const started = await send(port, '/agent/pair', {
+      method: 'POST',
+      body: { name: 'Cursor', machine: 'laptop' },
+    });
+    const form = await send(port, '/agent', { user: 'user-a', session: 'csrf-1' });
+    const csrf = csrfFrom(form.text);
+    const code = encodeURIComponent(started.body.userCode);
+
+    const missing = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'csrf-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${code}`,
+    });
+    assert.equal(missing.status, 403);
+    assert.match(missing.text, /Reload the page and try again/);
+    assert.equal(missing.text.includes('Allow Cursor'), false);
+
+    const wrong = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'csrf-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${code}&csrf=not-the-token`,
+    });
+    assert.equal(wrong.status, 403);
+    assert.match(wrong.text, /Reload the page and try again/);
+    assert.equal(relay.pairing.poll({
+      deviceSecret: started.body.deviceSecret,
+      ip: '198.51.100.20',
+    }).status, 'pending');
+
+    const cross = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'csrf-1',
+      origin: 'https://evil.example',
+      secFetchSite: 'cross-site',
+      raw: `userCode=${code}&csrf=${encodeURIComponent(csrf)}`,
+    });
+    assert.equal(cross.status, 403);
+    assert.match(cross.text, /That request did not come from SurfCAD/);
+
+    const crossJson = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      origin: 'https://evil.example',
+      body: { userCode: started.body.userCode },
+    });
+    assert.equal(crossJson.status, 403);
+    assert.equal(crossJson.body.error, 'cross_origin');
+
+    const crossSite = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      secFetchSite: 'cross-site',
+      body: { userCode: started.body.userCode },
+    });
+    assert.equal(crossSite.status, 403);
+    assert.equal(crossSite.body.error, 'cross_origin');
+
+    const claim = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'csrf-1',
+      origin: 'http://localhost:5173',
+      secFetchSite: 'same-site',
+      raw: `userCode=${code}&csrf=${encodeURIComponent(csrf)}`,
+    });
+    assert.equal(claim.status, 200);
+    assert.match(claim.text, /Allow Cursor on laptop to connect\?/);
+    const approveCsrf = csrfFrom(claim.text);
+    const approved = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'csrf-1',
+      origin: 'https://www.surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${code}&csrf=${encodeURIComponent(approveCsrf)}`,
+    });
+    assert.equal(approved.status, 200);
+    assert.match(approved.text, /Connected\. You can close this page/);
+  });
+
+  test('a second account cannot approve a code the first account opened', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const started = await send(port, '/agent/pair', {
+      method: 'POST',
+      body: { name: 'Cursor', machine: 'laptop' },
+    });
+    const claim = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      body: { userCode: started.body.userCode },
+    });
+    assert.equal(claim.status, 200);
+    const raced = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-b',
+      accept: 'application/json',
+      body: { userCode: started.body.userCode },
+    });
+    assert.equal(raced.status, 403);
+    assert.equal(raced.body.error, 'claimed');
+    const approved = await send(port, '/agent/pair/approve', {
+      method: 'POST',
+      user: 'user-a',
+      accept: 'application/json',
+      body: { userCode: started.body.userCode },
+    });
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.ok, true);
+  });
+
+  test('a full pending queue rejects the next command', async () => {
+    const relay = createAgentRelay({ maxPending: 1 });
+    relay.registry.registerTab({
+      userId: 'user-a',
+      tabId: 'tab-a',
+      send: () => {},
+    });
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });
+    const first = await send(port, '/agent/commands', {
+      method: 'POST',
+      token: issued.token,
+      body: { v: 1, id: 'c1', command: 'status', args: {} },
+    });
+    assert.equal(first.status, 202);
+    const second = await send(port, '/agent/commands', {
+      method: 'POST',
+      token: issued.token,
+      body: { v: 1, id: 'c2', command: 'status', args: {} },
+    });
+    assert.equal(second.status, 429);
+    assert.equal(second.body.error, 'too_many_pending');
+    assert.equal(second.body.message, 'Too many commands are waiting');
+    assert.equal(relay.registry.pendingCount(issued.id), 1);
   });
 
   test('old clients are told to update, and an oversized command is not forwarded', async () => {

@@ -1,4 +1,5 @@
 import { createRateLimiter } from '../services/rateLimiter.js';
+import { createAgentSocketRegistry } from './agentSockets.js';
 import { createSystemClock } from './clock.js';
 import { COMMAND_LIMIT, COMMAND_WINDOW_MS, MAX_AGENT_MESSAGE_BYTES } from './limits.js';
 import { createPairingService } from './pairing.js';
@@ -19,6 +20,7 @@ import { createTokenService } from './tokens.js';
  *   commandLimit?: number,
  *   commandWindowMs?: number,
  *   maxMessageBytes?: number,
+ *   maxPending?: number,
  * }} [overrides]
  */
 export function createAgentRelay(overrides = {}) {
@@ -38,7 +40,9 @@ export function createAgentRelay(overrides = {}) {
     clock,
     asleepMs: overrides.asleepMs,
     retentionMs: overrides.retentionMs,
+    maxPending: overrides.maxPending,
   });
+  const agentSockets = createAgentSocketRegistry();
   const commandLimiter = createRateLimiter({
     limit: overrides.commandLimit ?? COMMAND_LIMIT,
     windowMs: overrides.commandWindowMs ?? COMMAND_WINDOW_MS,
@@ -51,12 +55,14 @@ export function createAgentRelay(overrides = {}) {
     registry,
     commandLimiter,
     maxMessageBytes,
+    agentSockets,
   });
   return {
     clock,
     tokens,
     pairing,
     registry,
+    agentSockets,
     commandLimiter,
     router,
     maxMessageBytes,

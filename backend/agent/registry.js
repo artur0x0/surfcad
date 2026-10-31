@@ -1,6 +1,6 @@
 import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createSystemClock } from './clock.js';
-import { RESULT_RETENTION_MS, TAB_ASLEEP_MS } from './limits.js';
+import { MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from './limits.js';
 
 export const TAB_ASLEEP_ERROR = 'SurfCAD tab is asleep';
 
@@ -36,17 +36,20 @@ function asleepResponse(frame) {
  *   clock?: ReturnType<typeof createSystemClock>,
  *   asleepMs?: number,
  *   retentionMs?: number,
+ *   maxPending?: number,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
   const clock = opts.clock || createSystemClock();
   const asleepMs = opts.asleepMs ?? TAB_ASLEEP_MS;
   const retentionMs = opts.retentionMs ?? RESULT_RETENTION_MS;
+  const maxPending = opts.maxPending ?? MAX_PENDING;
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
    * @typedef {{
    *   userId: string,
+   *   tokenId: string,
    *   frame: { id?: string | number, command: string, args: unknown },
    *   deadline: number,
    *   sentTo: string | null,
@@ -226,22 +229,53 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
-     * @param {{ userId: string, frame: { id?: string | number, command: string, args?: unknown } }} input
-     * @returns {Promise<object>}
+     * Held commands for one agent token. Commands submitted without a token
+     * id are not counted.
+     * @param {string} tokenId
      */
-    submit(input) {
+    pendingCount(tokenId) {
+      const id = String(tokenId);
+      let held = 0;
+      for (const item of pending.values()) {
+        if (item.tokenId === id) held += 1;
+      }
+      return held;
+    },
+
+    /**
+     * Queue a command, or refuse it, before yielding. HTTP uses this so a
+     * full queue is a 429 and not an accepted command.
+     * @param {{ userId: string, tokenId?: string, frame: { id?: string | number, command: string, args?: unknown } }} input
+     * @returns {{ accepted: true, done: Promise<object> } | { accepted: false, response: object }}
+     */
+    trySubmit(input) {
       const userId = String(input.userId);
+      const tokenId = input.tokenId == null ? '' : String(input.tokenId);
       const key = commandKey(userId, input.frame.id);
       if (pending.has(key)) {
-        return Promise.resolve(commandResponse({
-          id: input.frame.id,
-          ok: false,
-          error: { code: 'duplicate_id', message: 'A command with this id is still in flight' },
-        }));
+        return {
+          accepted: false,
+          response: commandResponse({
+            id: input.frame.id,
+            ok: false,
+            error: { code: 'duplicate_id', message: 'A command with this id is still in flight' },
+          }),
+        };
+      }
+      if (tokenId && this.pendingCount(tokenId) >= maxPending) {
+        return {
+          accepted: false,
+          response: commandResponse({
+            id: input.frame.id,
+            ok: false,
+            error: { code: 'too_many_pending', message: 'Too many commands are waiting' },
+          }),
+        };
       }
       /** @type {PendingCommand} */
       const item = {
         userId,
+        tokenId,
         frame: {
           id: input.frame.id,
           command: input.frame.command,
@@ -269,7 +303,17 @@ export function createMemoryTabRegistry(opts = {}) {
       pending.set(key, item);
       deliver(userId);
       arm();
-      return promise;
+      return { accepted: true, done: promise };
+    },
+
+    /**
+     * @param {{ userId: string, tokenId?: string, frame: { id?: string | number, command: string, args?: unknown } }} input
+     * @returns {Promise<object>}
+     */
+    submit(input) {
+      const attempt = this.trySubmit(input);
+      if (!attempt.accepted) return Promise.resolve(attempt.response);
+      return attempt.done;
     },
 
     /**

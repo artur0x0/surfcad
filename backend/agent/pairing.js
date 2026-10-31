@@ -232,6 +232,22 @@ export function createPairingService(opts) {
     return { ok: false, error: record.status === 'dead' ? 'dead' : 'already_used' };
   }
 
+  /**
+   * The first signed-in account to claim or approve a still-pending code owns it.
+   * @param {any} record
+   * @param {string} userId
+   * @returns {{ ok: false, error: 'claimed' } | null}
+   */
+  function lockToUser(record, userId) {
+    const id = String(userId);
+    if (!record.userId) {
+      record.userId = id;
+      return null;
+    }
+    if (record.userId !== id) return { ok: false, error: 'claimed' };
+    return null;
+  }
+
   /** @param {any} record */
   function describe(record) {
     return {
@@ -330,6 +346,8 @@ export function createPairingService(opts) {
       if (!record) return miss(gate.accountKey, gate.ipKey);
       const blocked = statusError(record);
       if (blocked) return blocked;
+      const locked = lockToUser(record, fields.userId);
+      if (locked) return locked;
       return describe(record);
     },
 
@@ -343,6 +361,8 @@ export function createPairingService(opts) {
       if (!record) return miss(gate.accountKey, gate.ipKey);
       const blocked = statusError(record);
       if (blocked) return blocked;
+      const locked = lockToUser(record, fields.userId);
+      if (locked) return locked;
       const label = `${record.name} on ${record.machine}`.slice(0, 160);
       const issued = await opts.tokens.issue({ userId: String(fields.userId), label });
       record.status = 'approved';
@@ -361,6 +381,8 @@ export function createPairingService(opts) {
       if (!record) return miss(gate.accountKey, gate.ipKey);
       const blocked = statusError(record);
       if (blocked) return blocked;
+      const locked = lockToUser(record, fields.userId);
+      if (locked) return locked;
       record.status = 'denied';
       record.tokenPlain = null;
       return { ok: true };

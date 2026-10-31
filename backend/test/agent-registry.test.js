@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createManualClock } from '../agent/clock.js';
-import { RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
+import { MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
 import { TAB_ASLEEP_ERROR, createMemoryTabRegistry } from '../agent/registry.js';
 
 function setup() {
@@ -141,5 +141,50 @@ describe('tab registry', () => {
     clock.advance(RESULT_RETENTION_MS);
     assert.equal(registry.debugPayloads().includes('payload-secret'), false);
     assert.equal(await registry.wait('user-a', 'c1', 0), null);
+  });
+
+  test('a token cannot hold more than MAX_PENDING commands', async () => {
+    const clock = createManualClock(5_000);
+    const registry = createMemoryTabRegistry({ clock, maxPending: 2 });
+    assert.equal(MAX_PENDING, 32);
+    const first = registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c1', command: 'status', args: {} },
+    });
+    const second = registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c2', command: 'status', args: {} },
+    });
+    const third = await registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c3', command: 'status', args: {} },
+    });
+    assert.equal(third.ok, false);
+    assert.equal(third.error.code, 'too_many_pending');
+    assert.equal(third.error.message, 'Too many commands are waiting');
+    assert.equal(registry.pendingCount('tok-a'), 2);
+    const other = registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-b',
+      frame: { id: 'c4', command: 'status', args: {} },
+    });
+    assert.equal(registry.pendingCount('tok-b'), 1);
+    registry.complete('user-a', 'c1', commandResponse({ id: 'c1', ok: true, result: {} }));
+    registry.complete('user-a', 'c2', commandResponse({ id: 'c2', ok: true, result: {} }));
+    registry.complete('user-a', 'c4', commandResponse({ id: 'c4', ok: true, result: {} }));
+    assert.equal((await first).ok, true);
+    assert.equal((await second).ok, true);
+    assert.equal((await other).ok, true);
+    const again = registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c5', command: 'status', args: {} },
+    });
+    assert.equal(registry.pendingCount('tok-a'), 1);
+    registry.complete('user-a', 'c5', commandResponse({ id: 'c5', ok: true, result: {} }));
+    assert.equal((await again).ok, true);
   });
 });

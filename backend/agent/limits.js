@@ -24,6 +24,12 @@ export const PAIR_POLL_LIMIT = 60;
 
 export const PAIR_POLL_WINDOW_MS = 60 * 1000;
 
+/**
+ * Held commands waiting on a tab, per agent token. A further command is
+ * rejected instead of queued.
+ */
+export const MAX_PENDING = 32;
+
 /** Commands accepted per token per minute. */
 export const COMMAND_LIMIT = 60;
 

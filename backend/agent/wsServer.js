@@ -7,6 +7,11 @@ import {
   readCommandRequest,
   readCommandResponse,
 } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
+import {
+  AGENT_SOCKET_CLOSE_CODE,
+  TOKEN_EXPIRED_REASON,
+  TOKEN_REVOKED_REASON,
+} from './agentSockets.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
@@ -47,6 +52,7 @@ function sendJson(ws, payload) {
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
+ *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket) => void },
  * }} relay
  * @param {{ authenticateUpgrade: (req: import('node:http').IncomingMessage) => Promise<{ id: string } | null> }} options
  */
@@ -129,88 +135,160 @@ export function attachAgentWebSocket(httpServer, relay, options) {
  * @param {import('ws').WebSocket} ws
  * @param {{ userId: string, id: string, tokenHash: string }} auth
  * @param {{
- *   tokens: { markUsed: (auth: { tokenHash: string }) => Promise<unknown> },
+ *   tokens: {
+ *     markUsed: (auth: { tokenHash: string }) => Promise<unknown>,
+ *     status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'>,
+ *   },
+ *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
+ *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
+ *   maxMessageBytes: number,
+ *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket) => void },
+ * }} relay
+ */
+function bindAgent(ws, auth, relay) {
+  relay.agentSockets.add(auth.id, ws);
+  let ready = false;
+  ws.on('error', () => {});
+  ws.on('message', (data, isBinary) => {
+    handleAgentMessage(ws, auth, relay, data, isBinary, {
+      isReady: () => ready,
+      markReady: () => { ready = true; },
+    }).catch(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
+    });
+  });
+}
+
+/**
+ * @param {import('ws').WebSocket} ws
+ * @param {string} live
+ * @param {string | number | undefined} id
+ */
+function refuseDeadToken(ws, live, id) {
+  const expired = live === 'expired';
+  sendJson(ws, commandResponse({
+    id,
+    ok: false,
+    error: {
+      code: 'unauthorized',
+      message: expired ? 'Token expired' : 'Token revoked',
+    },
+  }));
+  ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
+}
+
+/**
+ * Upgrade checks the token once. Every later frame checks it again, so a
+ * revoke or expiry on an open socket cannot run a command.
+ * @param {import('ws').WebSocket} ws
+ * @param {{ userId: string, id: string, tokenHash: string }} auth
+ * @param {{
+ *   tokens: {
+ *     markUsed: (auth: { tokenHash: string }) => Promise<unknown>,
+ *     status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'>,
+ *   },
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
  * }} relay
+ * @param {import('ws').RawData} data
+ * @param {boolean} isBinary
+ * @param {{ isReady: () => boolean, markReady: () => void }} ready
  */
-function bindAgent(ws, auth, relay) {
-  let ready = false;
-  ws.on('error', () => {});
-  ws.on('message', (data, isBinary) => {
-    if (isBinary) {
-      ws.close(1003, 'text only');
+async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
+  if (isBinary) {
+    ws.close(1003, 'text only');
+    return;
+  }
+  const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
+  if (Buffer.byteLength(text) > relay.maxMessageBytes) {
+    sendJson(ws, { type: 'error', error: 'Message exceeds the size cap' });
+    ws.close(1009, 'Message exceeds the size cap');
+    return;
+  }
+  /** @type {any} */
+  let msg;
+  try {
+    msg = JSON.parse(text);
+  } catch {
+    msg = null;
+  }
+  const live = await relay.tokens.status(auth.tokenHash);
+  if (live !== 'ok') {
+    refuseDeadToken(ws, live, msg?.id);
+    return;
+  }
+  if (msg == null) {
+    sendJson(ws, { type: 'error', error: 'bad_call' });
+    return;
+  }
+  if (!ready.isReady()) {
+    const version = checkAgentHandshakeVersion(msg?.v);
+    if (msg?.type !== 'hello' || !version.ok) {
+      const error = version.ok ? AGENT_HANDSHAKE_UPDATE_MESSAGE : version.error;
+      sendJson(ws, { type: 'error', error });
+      ws.close(1008, error);
       return;
     }
-    const text = Buffer.isBuffer(data) ? data.toString('utf8') : String(data);
-    if (Buffer.byteLength(text) > relay.maxMessageBytes) {
-      sendJson(ws, { type: 'error', error: 'Message exceeds the size cap' });
-      ws.close(1009, 'Message exceeds the size cap');
-      return;
-    }
-    /** @type {any} */
-    let msg;
-    try {
-      msg = JSON.parse(text);
-    } catch {
-      sendJson(ws, { type: 'error', error: 'bad_call' });
-      return;
-    }
-    if (!ready) {
-      const version = checkAgentHandshakeVersion(msg?.v);
-      if (msg?.type !== 'hello' || !version.ok) {
-        const error = version.ok ? AGENT_HANDSHAKE_UPDATE_MESSAGE : version.error;
-        sendJson(ws, { type: 'error', error });
-        ws.close(1008, error);
-        return;
-      }
-      ready = true;
-      sendJson(ws, { type: 'hello', v: version.v });
-      return;
-    }
-    const frame = readCommandRequest(msg);
-    if (!frame || frame.id == null || frame.id === '') {
-      sendJson(ws, commandResponse({
-        id: msg?.id,
-        ok: false,
-        error: { code: 'bad_call', message: 'call requires id and command' },
-      }));
-      return;
-    }
-    const limited = relay.commandLimiter.check(auth.id);
-    if (!limited.allowed) {
-      sendJson(ws, commandResponse({
-        id: frame.id,
-        ok: false,
-        error: { code: 'rate_limited', message: 'Too many commands' },
-      }));
-      return;
-    }
-    if (relay.registry.hasInFlight(auth.userId, frame.id)) {
-      sendJson(ws, commandResponse({
-        id: frame.id,
-        ok: false,
-        error: { code: 'duplicate_id', message: 'A command with this id is still in flight' },
-      }));
-      return;
-    }
-    logRelay({
-      event: 'command',
-      userId: auth.userId,
-      command: frame.command,
-      bytes: Buffer.byteLength(text),
-    });
-    relay.tokens.markUsed(auth).catch(() => {});
-    relay.registry.submit({ userId: auth.userId, frame }).then((response) => {
-      sendJson(ws, response);
-    }).catch(() => {
-      sendJson(ws, commandResponse({
-        id: frame.id,
-        ok: false,
-        error: { code: 'internal', message: 'Relay failed' },
-      }));
-    });
+    ready.markReady();
+    sendJson(ws, { type: 'hello', v: version.v });
+    return;
+  }
+  const frame = readCommandRequest(msg);
+  if (!frame || frame.id == null || frame.id === '') {
+    sendJson(ws, commandResponse({
+      id: msg?.id,
+      ok: false,
+      error: { code: 'bad_call', message: 'call requires id and command' },
+    }));
+    return;
+  }
+  const again = await relay.tokens.status(auth.tokenHash);
+  if (again !== 'ok') {
+    refuseDeadToken(ws, again, frame.id);
+    return;
+  }
+  const limited = relay.commandLimiter.check(auth.id);
+  if (!limited.allowed) {
+    sendJson(ws, commandResponse({
+      id: frame.id,
+      ok: false,
+      error: { code: 'rate_limited', message: 'Too many commands' },
+    }));
+    return;
+  }
+  if (relay.registry.hasInFlight(auth.userId, frame.id)) {
+    sendJson(ws, commandResponse({
+      id: frame.id,
+      ok: false,
+      error: { code: 'duplicate_id', message: 'A command with this id is still in flight' },
+    }));
+    return;
+  }
+  const attempt = relay.registry.trySubmit({
+    userId: auth.userId,
+    tokenId: auth.id,
+    frame,
+  });
+  if (!attempt.accepted) {
+    sendJson(ws, attempt.response);
+    return;
+  }
+  logRelay({
+    event: 'command',
+    userId: auth.userId,
+    command: frame.command,
+    bytes: Buffer.byteLength(text),
+  });
+  relay.tokens.markUsed(auth).catch(() => {});
+  attempt.done.then((response) => {
+    sendJson(ws, response);
+  }).catch(() => {
+    sendJson(ws, commandResponse({
+      id: frame.id,
+      ok: false,
+      error: { code: 'internal', message: 'Relay failed' },
+    }));
   });
 }
 

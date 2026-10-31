@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, describe, test } from 'node:test';
 import { WebSocket } from 'ws';
+import { MAX_AGENT_MESSAGE_BYTES } from '../agent/limits.js';
 
 process.env.SESSION_SECRET ||= 'agent-relay-mount-test';
 delete process.env.MONGODB_URI;
@@ -59,5 +60,20 @@ describe('serverApp /agent mount', () => {
     const url = `ws://127.0.0.1:${port}/agent`;
     assert.equal(await unexpectedStatus(url, { origin: 'https://evil.example' }), 403);
     assert.equal(await unexpectedStatus(url, { origin: 'https://surfcad.com' }), 401);
+  });
+
+  test('an /agent JSON body over 256 KiB is rejected before the 10mb parser', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/agent/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Cursor',
+        machine: 'laptop',
+        blob: 'x'.repeat(MAX_AGENT_MESSAGE_BYTES),
+      }),
+    });
+    assert.equal(res.status, 413);
+    const body = await res.json();
+    assert.equal(body.error, 'Message exceeds the size cap');
   });
 });

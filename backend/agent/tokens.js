@@ -179,6 +179,26 @@ export function createTokenService(opts = {}) {
   const ttlMs = opts.ttlMs ?? TOKEN_TTL_MS;
   const bytes = opts.randomBytes || randomBytes;
 
+  /**
+   * @param {string} tokenHash
+   */
+  async function rowByHash(tokenHash) {
+    const row = await holder.store.findByHash(tokenHash);
+    if (!row || !hashesMatch(String(row.tokenHash), tokenHash)) return null;
+    return row;
+  }
+
+  /**
+   * @param {Record<string, unknown> | null} row
+   * @returns {'ok' | 'revoked' | 'expired' | 'missing'}
+   */
+  function liveness(row) {
+    if (!row) return 'missing';
+    if (row.revokedAt) return 'revoked';
+    if (new Date(String(row.expiresAt)).getTime() <= now()) return 'expired';
+    return 'ok';
+  }
+
   return {
     /** @param {ReturnType<typeof createMemoryTokenStore>} store */
     setStore(store) {
@@ -214,16 +234,24 @@ export function createTokenService(opts = {}) {
     async authenticate(raw) {
       if (typeof raw !== 'string' || raw.length < 32) return null;
       const tokenHash = hashToken(raw);
-      const row = await holder.store.findByHash(tokenHash);
-      if (!row || !hashesMatch(String(row.tokenHash), tokenHash)) return null;
-      if (row.revokedAt) return null;
-      if (new Date(String(row.expiresAt)).getTime() <= now()) return null;
+      const row = await rowByHash(tokenHash);
+      if (!row || liveness(row) !== 'ok') return null;
       return {
         userId: String(row.userId),
         id: String(row.id),
         tokenHash,
         label: String(row.label || ''),
       };
+    },
+    /**
+     * Re-check a socket that already authenticated. `ok` is the only state
+     * that may run another command.
+     * @param {string} tokenHash
+     * @returns {Promise<'ok' | 'revoked' | 'expired' | 'missing'>}
+     */
+    async status(tokenHash) {
+      if (typeof tokenHash !== 'string' || tokenHash.length === 0) return 'missing';
+      return liveness(await rowByHash(tokenHash));
     },
     /** @param {{ tokenHash: string }} auth */
     async markUsed(auth) {

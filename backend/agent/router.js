@@ -3,6 +3,10 @@ import {
   checkAgentHandshakeVersion,
   readCommandRequest,
 } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
+import {
+  AGENT_SOCKET_CLOSE_CODE,
+  TOKEN_REVOKED_REASON,
+} from './agentSockets.js';
 import { cityFromRequest } from './approvalCopy.js';
 import {
   approvePage,
@@ -11,6 +15,7 @@ import {
   entryErrorMessage,
   signInPage,
 } from './approvalPage.js';
+import { checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
 
@@ -50,6 +55,7 @@ function wantsHtml(req) {
  */
 function entryStatus(error) {
   if (error === 'rate_limited' || error === 'too_many_wrong_tries') return 429;
+  if (error === 'claimed' || error === 'csrf' || error === 'cross_origin') return 403;
   if (error === 'unknown_device') return 404;
   if (error === 'unavailable') return 503;
   return 400;
@@ -62,6 +68,7 @@ function entryStatus(error) {
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
+ *   agentSockets: { closeToken: (tokenId: string, code: number, reason: string) => number },
  * }} deps
  */
 export function createAgentRouter(deps) {
@@ -71,11 +78,37 @@ export function createAgentRouter(deps) {
     next();
   });
 
+  /**
+   * @param {import('express').Request} req
+   * @param {string} [message]
+   */
+  function codePage(req, message) {
+    return codeFormPage(message, ensureCsrfToken(req));
+  }
+
+  /**
+   * Form posts need the session token. Every approval POST is refused when
+   * Origin or Sec-Fetch-Site says the request is cross-site.
+   * @param {import('express').Request} req
+   * @param {import('express').Response} res
+   * @returns {boolean}
+   */
+  function rejectApproval(req, res) {
+    const problem = checkApprovalPost(req);
+    if (problem === 'ok') return false;
+    const message = problem === 'cross_origin'
+      ? 'That request did not come from SurfCAD.'
+      : 'Reload the page and try again.';
+    if (wantsHtml(req)) res.status(403).type('html').send(codePage(req, message));
+    else res.status(403).json({ error: problem });
+    return true;
+  }
+
   router.get('/', (req, res) => {
     if (!userFromRequest(req)) {
       return res.status(401).type('html').send(signInPage());
     }
-    return res.type('html').send(codeFormPage());
+    return res.type('html').send(codePage(req));
   });
 
   router.post('/pair', (req, res) => {
@@ -127,6 +160,7 @@ export function createAgentRouter(deps) {
       if (wantsHtml(req)) return res.status(401).type('html').send(signInPage());
       return res.status(401).json({ error: 'Authentication required' });
     }
+    if (rejectApproval(req, res)) return undefined;
     const result = deps.pairing.claim({
       userCode: req.body?.userCode,
       userId: user.id,
@@ -135,14 +169,16 @@ export function createAgentRouter(deps) {
     if (!result.ok) {
       if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
       if (wantsHtml(req)) {
-        return res.status(entryStatus(result.error)).type('html').send(codeFormPage(entryErrorMessage(result.error)));
+        return res.status(entryStatus(result.error)).type('html').send(codePage(req, entryErrorMessage(result.error)));
       }
       return res.status(entryStatus(result.error)).json({
         error: result.error,
         ...(result.retryAfterSec ? { retryAfterSec: result.retryAfterSec } : {}),
       });
     }
-    if (wantsHtml(req)) return res.type('html').send(approvePage(result));
+    if (wantsHtml(req)) {
+      return res.type('html').send(approvePage({ ...result, csrf: ensureCsrfToken(req) }));
+    }
     return res.json({
       sentence: result.sentence,
       name: result.name,
@@ -159,6 +195,7 @@ export function createAgentRouter(deps) {
         if (wantsHtml(req)) return res.status(401).type('html').send(signInPage());
         return res.status(401).json({ error: 'Authentication required' });
       }
+      if (rejectApproval(req, res)) return undefined;
       const result = await deps.pairing.approve({
         userCode: req.body?.userCode,
         userId: user.id,
@@ -167,7 +204,7 @@ export function createAgentRouter(deps) {
       if (!result.ok) {
         if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
         if (wantsHtml(req)) {
-          return res.status(entryStatus(result.error)).type('html').send(codeFormPage(entryErrorMessage(result.error)));
+          return res.status(entryStatus(result.error)).type('html').send(codePage(req, entryErrorMessage(result.error)));
         }
         return res.status(entryStatus(result.error)).json({ error: result.error });
       }
@@ -185,6 +222,7 @@ export function createAgentRouter(deps) {
       if (wantsHtml(req)) return res.status(401).type('html').send(signInPage());
       return res.status(401).json({ error: 'Authentication required' });
     }
+    if (rejectApproval(req, res)) return undefined;
     const result = deps.pairing.deny({
       userCode: req.body?.userCode,
       userId: user.id,
@@ -192,7 +230,7 @@ export function createAgentRouter(deps) {
     });
     if (!result.ok) {
       if (wantsHtml(req)) {
-        return res.status(entryStatus(result.error)).type('html').send(codeFormPage(entryErrorMessage(result.error)));
+        return res.status(entryStatus(result.error)).type('html').send(codePage(req, entryErrorMessage(result.error)));
       }
       return res.status(entryStatus(result.error)).json({ error: result.error });
     }
@@ -216,8 +254,10 @@ export function createAgentRouter(deps) {
     try {
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      const revoked = await deps.tokens.revoke(user.id, String(req.params.id));
+      const tokenId = String(req.params.id);
+      const revoked = await deps.tokens.revoke(user.id, tokenId);
       if (!revoked) return res.status(404).json({ error: 'not_found' });
+      deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });
     } catch (error) {
@@ -265,9 +305,21 @@ export function createAgentRouter(deps) {
       if (deps.registry.hasInFlight(auth.userId, frame.id)) {
         return res.status(409).json({ error: 'duplicate_id' });
       }
+      const attempt = deps.registry.trySubmit({
+        userId: auth.userId,
+        tokenId: auth.id,
+        frame,
+      });
+      if (!attempt.accepted) {
+        const code = attempt.response.error?.code || 'too_many_pending';
+        const status = code === 'duplicate_id' ? 409 : 429;
+        return res.status(status).json({
+          error: code,
+          message: attempt.response.error?.message,
+        });
+      }
       await deps.tokens.markUsed(auth);
       logRelay({ event: 'command', userId: auth.userId, command: frame.command, bytes });
-      deps.registry.submit({ userId: auth.userId, frame });
       return res.status(202).json({ id: frame.id, status: 'accepted' });
     } catch (error) {
       return next(error);

@@ -5,6 +5,8 @@ import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
 import { WebSocket } from 'ws';
+import { AGENT_SOCKET_CLOSE_CODE } from '../agent/agentSockets.js';
+import { createManualClock } from '../agent/clock.js';
 import { createAgentRelay } from '../agent/createRelay.js';
 import { authenticateBrowserUpgrade } from '../agent/browserAuth.js';
 import { attachAgentWebSocket } from '../agent/wsServer.js';
@@ -27,6 +29,13 @@ afterEach(async () => {
 async function listen(relay, authenticateUpgrade) {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    const id = req.header('x-test-user');
+    req.isAuthenticated = () => Boolean(id);
+    if (id) req.user = { id };
+    next();
+  });
+  app.use('/agent', relay.router);
   const server = http.createServer(app);
   attachAgentWebSocket(server, relay, { authenticateUpgrade });
   servers.push(server);
@@ -185,6 +194,116 @@ describe('agent relay websocket', () => {
     assert.equal(tabMessages.length, 1);
     agent.ws.close();
     old.ws.close();
+  });
+
+  test('revoking a token closes its live socket and a further command is rejected', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay, async () => null);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    const hello = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await hello).type, 'hello');
+
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the socket to close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    const revoked = await fetch(`http://127.0.0.1:${port}/agent/tokens/${issued.id}`, {
+      method: 'DELETE',
+      headers: { 'x-test-user': 'user-a' },
+    });
+    assert.equal(revoked.status, 200);
+    const event = await closed;
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token revoked');
+    assert.equal(agent.ws.readyState, WebSocket.CLOSED);
+
+    const later = [];
+    agent.ws.on('message', (data) => later.push(JSON.parse(data.toString())));
+    try {
+      agent.ws.send(JSON.stringify({ v: 1, id: 'after', command: 'status', args: {} }));
+    } catch {
+      later.push({ ok: false, error: { message: 'socket closed' } });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(later.some((msg) => msg.ok === true), false);
+
+    await assert.rejects(
+      openSocket(url, { authorization: `Bearer ${issued.token}` }).opened,
+      (error) => error.statusCode === 401,
+    );
+    const command = await fetch(`http://127.0.0.1:${port}/agent/commands`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${issued.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ v: 1, id: 'c-after', command: 'status', args: {} }),
+    });
+    assert.equal(command.status, 401);
+  });
+
+  test('an open socket rejects the next command when the token is revoked or expired', async () => {
+    const clock = createManualClock(1_000_000);
+    const relay = createAgentRelay({ clock, tokenTtlMs: 60_000 });
+    const port = await listen(relay, async () => null);
+    const url = `ws://127.0.0.1:${port}/agent`;
+
+    const revoked = await relay.tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });
+    const agent = openSocket(url, { authorization: `Bearer ${revoked.token}` });
+    await agent.opened;
+    const hello = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await hello).type, 'hello');
+    assert.equal(await relay.tokens.revoke('user-a', revoked.id), true);
+    const closed = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the revoked socket to close')), 2000);
+      agent.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    const failed = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ v: 1, id: 'c-revoked', command: 'status', args: {} }));
+    const msg = await failed;
+    assert.equal(msg.ok, false);
+    assert.equal(msg.id, 'c-revoked');
+    assert.equal(msg.error.code, 'unauthorized');
+    assert.equal(msg.error.message, 'Token revoked');
+    const event = await closed;
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token revoked');
+    assert.equal(relay.registry.pendingCount(revoked.id), 0);
+
+    const expiring = await relay.tokens.issue({ userId: 'user-a', label: 'Cursor on desk' });
+    const aged = openSocket(url, { authorization: `Bearer ${expiring.token}` });
+    await aged.opened;
+    const agedHello = aged.nextMessage();
+    aged.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agedHello).type, 'hello');
+    clock.advance(60_000);
+    const expiredClose = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('timed out waiting for the expired socket to close')), 2000);
+      aged.ws.once('close', (code, reason) => {
+        clearTimeout(timer);
+        resolve({ code, reason: reason.toString() });
+      });
+    });
+    const expiredMsg = aged.nextMessage();
+    aged.ws.send(JSON.stringify({ v: 1, id: 'c-expired', command: 'status', args: {} }));
+    const expired = await expiredMsg;
+    assert.equal(expired.ok, false);
+    assert.equal(expired.id, 'c-expired');
+    assert.equal(expired.error.message, 'Token expired');
+    const expiredEvent = await expiredClose;
+    assert.equal(expiredEvent.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(expiredEvent.reason, 'token expired');
   });
 
   test('a browser tab registers with the session cookie', async () => {

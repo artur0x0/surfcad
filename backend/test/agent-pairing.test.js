@@ -222,7 +222,54 @@ describe('device-code pairing', () => {
     assert.equal(claim('acct-a', '203.0.113.1').error, 'rate_limited');
     assert.equal(claim('acct-a', '203.0.113.2').error, 'rate_limited');
     assert.equal(claim('acct-b', '203.0.113.1').error, 'rate_limited');
-    assert.equal(claim('acct-b', '203.0.113.2').ok, true);
+    const other = pairing.start({ name: 'Other', machine: 'phone', ip: '203.0.113.50' });
+    assert.equal(pairing.claim({
+      userCode: other.userCode,
+      userId: 'acct-b',
+      ip: '203.0.113.2',
+    }).ok, true);
+  });
+
+  test('the first signed-in account owns the device code', async () => {
+    const { pairing } = setup();
+    const started = pairing.start({ name: 'Cursor', machine: 'laptop', ip: '203.0.113.5' });
+    const opened = pairing.claim({
+      userCode: started.userCode,
+      userId: 'user-a',
+      ip: '198.51.100.1',
+    });
+    assert.equal(opened.ok, true);
+    assert.equal(pairing.claim({
+      userCode: started.userCode,
+      userId: 'user-b',
+      ip: '198.51.100.2',
+    }).error, 'claimed');
+    const raced = await pairing.approve({
+      userCode: started.userCode,
+      userId: 'user-b',
+      ip: '198.51.100.2',
+    });
+    assert.equal(raced.ok, false);
+    assert.equal(raced.error, 'claimed');
+    assert.equal(pairing.deny({
+      userCode: started.userCode,
+      userId: 'user-b',
+      ip: '198.51.100.3',
+    }).error, 'claimed');
+    assert.equal(pairing.poll({
+      deviceSecret: started.deviceSecret,
+      ip: '203.0.113.5',
+    }).status, 'pending');
+    const approved = await pairing.approve({
+      userCode: started.userCode,
+      userId: 'user-a',
+      ip: '198.51.100.1',
+    });
+    assert.equal(approved.ok, true);
+    assert.equal(pairing.poll({
+      deviceSecret: started.deviceSecret,
+      ip: '203.0.113.6',
+    }).status, 'approved');
   });
 
   test('starting a pairing is rate limited per IP', () => {
