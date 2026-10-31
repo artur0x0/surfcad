@@ -52,7 +52,7 @@ npx surfcad-mcp logout
 
 Sign in on the approval page and enter the code. Leave the SurfCAD tab open. The client connects out over WebSocket (`wss://surfcad.com/agent`) with `Authorization: Bearer`. The first frame is `{ "type": "hello", "v": 1 }`. If WebSocket is blocked, commands fall back to `POST /agent/commands` and then Server-Sent Events, or a long-poll `GET` if the event stream fails. In-viewer prompts travel on the WebSocket.
 
-`--server https://staging.example` or `SURFCAD_AGENT_SERVER` overrides the origin for dev and staging (http becomes `ws://`, https becomes `wss://`).
+`--server https://staging.example` or `SURFCAD_AGENT_SERVER` overrides the origin for dev and staging. https becomes `wss://`. `http://` and `ws://` are accepted only for localhost, 127.0.0.1, and ::1.
 
 The approval name is `--name`, then `SURFCAD_AGENT_NAME`, then the name stored at login. `login` runs before any MCP client exists, so it cannot see `clientInfo`. When none of those is set, the stdio server sends the MCP client name (`clientInfo.name`) on hello. With no name the server says "an agent".
 

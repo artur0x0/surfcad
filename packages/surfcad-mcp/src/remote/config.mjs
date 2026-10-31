@@ -31,8 +31,18 @@ export function tokenPath(env = process.env) {
 }
 
 /**
+ * Cleartext is only for a loopback dev server. Every other host must be https.
+ * @param {string} hostname URL.hostname (IPv6 has no brackets)
+ */
+function isCleartextLoopback(hostname) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+/**
  * Accept https, http, wss, or ws. Return the origin only (`https://host`).
  * A path such as `/agent` is dropped; callers add it.
+ * `http://` and `ws://` are accepted only for localhost, 127.0.0.1, and ::1.
  * @param {unknown} input
  */
 export function normalizeServer(input) {
@@ -54,6 +64,12 @@ export function normalizeServer(input) {
   }
   if (!url.host) {
     throw Object.assign(new Error('Server URL is missing a host.'), { code: 'bad_server' });
+  }
+  if (url.protocol === 'http:' && !isCleartextLoopback(url.hostname)) {
+    throw Object.assign(
+      new Error(`Cleartext is only allowed for localhost, 127.0.0.1, and ::1. Use https for ${url.host}.`),
+      { code: 'bad_server' },
+    );
   }
   return `${url.protocol}//${url.host}`;
 }

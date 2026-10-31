@@ -19,7 +19,7 @@ import {
 import { PAIR_MSG } from '../relayMessages.mjs';
 import { createPromptSession } from '../prompt/promptSession.mjs';
 import { agentUrls, resolveAgentName } from './config.mjs';
-import { callOverHttp, resultFromCommandResponse } from './httpFallback.mjs';
+import { callOverHttp, COMMAND_WAIT_MS, commandWaitTimeout, resultFromCommandResponse } from './httpFallback.mjs';
 
 /** Server relay closes a revoked or expired token with this code. */
 const TOKEN_CLOSE_CODE = 4001;
@@ -106,6 +106,7 @@ export class RemoteSession {
   #pending = new Map();
   #log;
   #fetch;
+  #commandTimeoutMs;
   #prompts;
 
   /**
@@ -119,6 +120,7 @@ export class RemoteSession {
    *   fetch?: typeof fetch,
    *   env?: NodeJS.ProcessEnv,
    *   promptSession?: ReturnType<typeof createPromptSession>,
+   *   commandTimeoutMs?: number,
    * }} options
    */
   constructor(options) {
@@ -131,6 +133,9 @@ export class RemoteSession {
       : AGENT_PROTOCOL_VERSION;
     this.#log = options.onLog || defaultLog;
     this.#fetch = options.fetch || fetch;
+    this.#commandTimeoutMs = Number.isFinite(options.commandTimeoutMs) && options.commandTimeoutMs > 0
+      ? options.commandTimeoutMs
+      : COMMAND_WAIT_MS;
     this.#prompts = options.promptSession || createPromptSession({
       send: (payload) => this.#sendToTab(payload),
     });
@@ -233,30 +238,34 @@ export class RemoteSession {
   async #connect() {
     this.#state = 'pairing';
     try {
-      await this.#openWebSocket();
-      this.#transport = 'ws';
-      this.#state = 'paired';
-      this.#log('remote agent connected via websocket');
-      return;
-    } catch (err) {
-      this.#dropSocket();
-      const code = err && typeof err === 'object' ? err.code : '';
-      if (code === 'token_revoked' || code === 'client_update_required') {
-        // Stay 'pairing' so a later tool call reaches `call()` and surfaces this error.
-        this.#state = 'pairing';
-        this.#connecting = null;
-        throw err;
-      }
       try {
-        await this.#probeHttp();
-      } catch (probeErr) {
-        this.#state = 'pairing';
-        this.#connecting = null;
-        throw probeErr;
+        await this.#openWebSocket();
+        this.#transport = 'ws';
+        this.#state = 'paired';
+        this.#log('remote agent connected via websocket');
+        return;
+      } catch (err) {
+        this.#dropSocket();
+        const code = err && typeof err === 'object' ? err.code : '';
+        if (code === 'token_revoked' || code === 'client_update_required') {
+          // Stay 'pairing' so a later tool call reaches `call()` and surfaces this error.
+          this.#state = 'pairing';
+          throw err;
+        }
+        try {
+          await this.#probeHttp();
+        } catch (probeErr) {
+          this.#state = 'pairing';
+          throw probeErr;
+        }
+        this.#transport = 'http';
+        this.#state = 'paired';
+        this.#log('remote agent connected via https fallback');
       }
-      this.#transport = 'http';
-      this.#state = 'paired';
-      this.#log('remote agent connected via https fallback');
+    } finally {
+      // Success used to leave the settled promise here, so a later connect()
+      // that was no longer paired reused it and never opened a new socket.
+      this.#connecting = null;
     }
   }
 
@@ -450,12 +459,25 @@ export class RemoteSession {
     const frame = commandRequest({ id, command, args });
     if (this.#transport === 'ws' && this.#ws && this.#ws.readyState === WebSocket.OPEN) {
       return new Promise((resolve, reject) => {
-        this.#pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+          if (!this.#pending.has(id)) return;
+          this.#pending.delete(id);
+          reject(commandWaitTimeout());
+        }, this.#commandTimeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+        const finish = (fn, value) => {
+          clearTimeout(timer);
+          fn(value);
+        };
+        this.#pending.set(id, {
+          resolve: (value) => finish(resolve, value),
+          reject: (err) => finish(reject, err),
+        });
         try {
           this.#ws.send(JSON.stringify(frame));
         } catch {
           this.#pending.delete(id);
-          reject(pairingLostError('send failed'));
+          finish(reject, pairingLostError('send failed'));
         }
       });
     }

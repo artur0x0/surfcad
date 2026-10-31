@@ -7,8 +7,17 @@
 import { readCommandResponse } from '../commandProtocol.mjs';
 import { asRemoteError, tokenRevokedError } from '../errors.mjs';
 
-const WAIT_BUDGET_MS = 10 * 60 * 1000;
+/** How long a command may sit unanswered, on the WebSocket and on HTTPS. */
+export const COMMAND_WAIT_MS = 10 * 60 * 1000;
 const STEP_TIMEOUT_MS = 30_000;
+
+/** Same error for a WebSocket command and for the HTTPS wait. */
+export function commandWaitTimeout() {
+  return Object.assign(new Error('Timed out waiting for the SurfCAD tab.'), {
+    code: 'bridge_error',
+    retryable: true,
+  });
+}
 
 /**
  * @param {number} status
@@ -183,7 +192,7 @@ export async function callOverHttp(options) {
   if (post.status === 401) throw tokenRevokedError();
   if (post.status !== 202) throw httpFailure(post.status, posted);
 
-  const deadline = now() + WAIT_BUDGET_MS;
+  const deadline = now() + COMMAND_WAIT_MS;
   let sseFailed = false;
   while (now() < deadline) {
     const signal = AbortSignal.timeout(STEP_TIMEOUT_MS + 5000);
@@ -203,10 +212,7 @@ export async function callOverHttp(options) {
     if (!polled.ok) throw polled.error;
     return polled.result;
   }
-  throw Object.assign(new Error('Timed out waiting for the SurfCAD tab.'), {
-    code: 'bridge_error',
-    retryable: true,
-  });
+  throw commandWaitTimeout();
 }
 
 /**

@@ -13,7 +13,7 @@ import { afterEach, test } from 'node:test';
 import express from 'express';
 import { commandResponse } from '../src/commandProtocol.mjs';
 import { runCli } from '../src/cli.mjs';
-import { configDir, resolveAgentName, selectRelayMode, tokenPath } from '../src/remote/config.mjs';
+import { configDir, normalizeServer, resolveAgentName, selectRelayMode, tokenPath } from '../src/remote/config.mjs';
 import { loginStatusError } from '../src/remote/login.mjs';
 import { agentHelloFrame, RemoteSession } from '../src/remote/session.mjs';
 import { createAgentRelay } from '../../../backend/agent/createRelay.js';
@@ -52,15 +52,42 @@ async function tempEnv() {
  */
 async function listen(relay, options = {}) {
   const hits = { events: 0, poll: 0, post: 0 };
+  /** @type {Array<() => void>} */
+  const followUpWaiters = [];
+  const noteFollowUp = () => {
+    if (hits.events < 1 || hits.poll < 1) return;
+    for (const wake of followUpWaiters.splice(0)) wake();
+  };
+  /**
+   * Resolves when the SSE GET and the long-poll GET have both reached this
+   * server. The POST can deliver the command before either GET is registered,
+   * so tests wait on this instead of sampling the counters.
+   */
+  function followUps() {
+    if (hits.events >= 1 && hits.poll >= 1) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(
+          `SSE and long-poll were not both registered (events=${hits.events}, poll=${hits.poll})`,
+        ));
+      }, 2000);
+      followUpWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
     const path = req.originalUrl || req.url || '';
     if (req.method === 'GET' && path.includes('/events')) {
       hits.events += 1;
+      noteFollowUp();
       if (options.failSse) return res.status(500).end();
     } else if (req.method === 'GET' && path.startsWith('/agent/commands/')) {
       hits.poll += 1;
+      noteFollowUp();
     } else if (req.method === 'POST' && path.startsWith('/agent/commands')) {
       hits.post += 1;
     }
@@ -84,7 +111,7 @@ async function listen(relay, options = {}) {
   servers.push(server);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
-  return { origin: `http://127.0.0.1:${port}`, hits };
+  return { origin: `http://127.0.0.1:${port}`, hits, followUps };
 }
 
 /**
@@ -164,6 +191,23 @@ test('name, address, and relay selection', () => {
   assert.equal(selectRelayMode({ remote: true, local: true, env: {} }).ok, false);
   assert.match(loginStatusError('denied'), /denied/);
   assert.match(loginStatusError('expired'), /login again/);
+});
+
+test('cleartext server URLs are only allowed on loopback', () => {
+  assert.equal(normalizeServer('http://127.0.0.1:9'), 'http://127.0.0.1:9');
+  assert.equal(normalizeServer('ws://localhost:9/agent'), 'http://localhost:9');
+  assert.equal(normalizeServer('http://[::1]:9'), 'http://[::1]:9');
+  assert.equal(normalizeServer('ws://[::1]/agent'), 'http://[::1]');
+  assert.equal(normalizeServer('https://staging.example/agent'), 'https://staging.example');
+  assert.equal(normalizeServer('wss://surfcad.com'), 'https://surfcad.com');
+  for (const input of ['http://staging.example', 'ws://example.com/agent', 'http://127.0.0.2:9']) {
+    assert.throws(() => normalizeServer(input), (err) => {
+      assert.equal(err.code, 'bad_server');
+      assert.match(err.message, /Cleartext is only allowed for localhost, 127\.0\.0\.1, and ::1/);
+      assert.match(err.message, /https/);
+      return true;
+    });
+  }
 });
 
 test('login stores a 0600 token, status and logout omit it, and logs never contain it', async () => {
@@ -358,7 +402,7 @@ test('blocked websocket falls back to HTTPS POST and SSE', async () => {
 
 test('SSE failure uses long-poll, and asleep and too_many_pending stay clear', async () => {
   const relay = createAgentRelay({ asleepMs: 200, maxPending: 1 });
-  const { origin, hits } = await listen(relay, { upgrade: 'reject', failSse: true });
+  const { origin, hits, followUps } = await listen(relay, { upgrade: 'reject', failSse: true });
   const issued = await relay.tokens.issue({ userId: 'user-a', label: 'poll' });
   let release = () => {};
   const gate = new Promise((resolve) => { release = resolve; });
@@ -370,10 +414,9 @@ test('SSE failure uses long-poll, and asleep and too_many_pending stay clear', a
   const session = new RemoteSession({ serverUrl: origin, token: issued.token, onLog: () => {} });
   sessions.push(session);
   const first = session.call('status', {});
-  const started = Date.now();
-  while (!saw && Date.now() - started < 2000) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+  // The POST delivers the command before the client opens SSE, then long-poll.
+  // Wait until both GETs have reached the server, then assert.
+  await followUps();
   assert.equal(saw, true);
   assert.ok(hits.events >= 1);
   assert.ok(hits.poll >= 1);
@@ -400,4 +443,26 @@ test('SSE failure uses long-poll, and asleep and too_many_pending stay clear', a
     assert.equal(err.message, 'SurfCAD tab is asleep');
     return true;
   });
+});
+
+test('a websocket command times out the same way as the https wait', async () => {
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'ws-timeout' });
+  answerTab(relay, 'user-a', () => {});
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    commandTimeoutMs: 40,
+    onLog: () => {},
+  });
+  sessions.push(session);
+  const started = Date.now();
+  await assert.rejects(session.call('status', {}), (err) => {
+    assert.equal(err.code, 'bridge_error');
+    assert.equal(err.message, 'Timed out waiting for the SurfCAD tab.');
+    assert.equal(err.retryable, true);
+    return true;
+  });
+  assert.ok(Date.now() - started < 2000);
 });
