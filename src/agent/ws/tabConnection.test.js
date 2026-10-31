@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AGENT_PROTOCOL_VERSION } from '../../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createAgentBridgeTabConnection } from './tabConnection.js';
 import { PAIR_MSG } from './relayMessages.js';
 
@@ -358,7 +359,9 @@ test('a bridge command is prompt activity until the call returns', async () => {
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(seen.at(-1).hold, false);
-  assert.equal(ws.sent.some((msg) => msg.id === 7 && msg.ok === true), true);
+  const reply = ws.sent.find((msg) => msg.id === 7 && msg.ok === true);
+  assert.equal(reply.v, AGENT_PROTOCOL_VERSION);
+  assert.deepEqual(reply.result, { ok: true });
 });
 
 test('relay event marks the popup bridge as reachable', () => {

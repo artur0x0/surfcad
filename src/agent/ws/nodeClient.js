@@ -3,6 +3,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { commandRequest, readCommandResponse } from '../../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { PAIR_MSG } from './relayHub.js';
 
 /**
@@ -57,12 +58,16 @@ export function bridgeCall(ws, command, args = {}, id = '1') {
       } catch {
         return;
       }
-      if (msg?.id !== id) return;
+      const response = readCommandResponse(msg);
+      if (!response || response.id !== id) return;
       ws.off('message', onMessage);
-      if (msg.ok === true) resolve(msg.result);
-      else reject(Object.assign(new Error(msg.error?.message || 'Bridge call failed'), { code: msg.error?.code }));
+      if (response.ok === true) resolve(response.result);
+      else {
+        const error = response.error && typeof response.error === 'object' ? response.error : {};
+        reject(Object.assign(new Error(error.message || 'Bridge call failed'), { code: error.code }));
+      }
     };
     ws.on('message', onMessage);
-    ws.send(JSON.stringify({ id, command, args }));
+    ws.send(JSON.stringify(commandRequest({ id, command, args })));
   });
 }
