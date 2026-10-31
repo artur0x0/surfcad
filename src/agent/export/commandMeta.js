@@ -329,6 +329,12 @@ export const COMMAND_META = {
     errors: ['no_mesh', 'internal'],
     mutates: false,
   },
+  mold_dfm: {
+    description: 'Show or hide the budgetary DFM report for the active part, in the part local frame. on true reads the mold-analysis result and lists fit, pull, wall nominal, thin and thick counts, draft violations, side-action counts, and ejector-pin and sleeve counts. The report says Budgetary analysis and is not a binding supplier DFM. It does not paint a skin and it does not include a price. Stamped meshes list a few parting-line names. An imported mesh says face names are not available. Draft, side actions, and ejectors stay labeled heuristic. on false closes the panel. Omit on to toggle. Read-only.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_wall_map: {
     description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
     result: { type: 'object', additionalProperties: true },

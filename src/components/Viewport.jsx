@@ -614,10 +614,12 @@ import { sideActionLegendModel } from '../molding/sideActions.js';
 import { detachSideActionSkin, syncSideActionSkin } from '../molding/sideActionSkin.js';
 import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
+import { dfmReport } from '../molding/dfmReport.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import SideActionLegend from './molding/SideActionLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
+import DfmReportPanel from './molding/DfmReportPanel';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1455,12 +1457,19 @@ const Viewport = forwardRef(({
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
+  const agentMoldDfmRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const dfmOnRef = useRef(false);
+  const dfmFieldRef = useRef(null);
+  const clearDfmRef = useRef(() => {});
+  const refreshDfmRef = useRef(() => {});
+  const [dfmReportState, setDfmReportState] = useState(null);
   useEffect(() => {
     if (mode === 'game') {
       clearWallMapRef.current();
       clearPartingRef.current();
       clearSideActionsRef.current();
       clearMoldDraftRef.current();
+      clearDfmRef.current();
     }
   }, [mode]);
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
@@ -2748,6 +2757,7 @@ const Viewport = forwardRef(({
       moldParting: (args) => agentMoldPartingRef.current(args),
       moldSideActions: (args) => agentMoldSideActionsRef.current(args),
       moldDraft: (args) => agentMoldDraftRef.current(args),
+      moldDfm: (args) => agentMoldDfmRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -5403,6 +5413,7 @@ const Viewport = forwardRef(({
     clearPartingRef.current();
     clearSideActionsRef.current();
     clearMoldDraftRef.current();
+    clearDfmRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -13957,6 +13968,63 @@ const Viewport = forwardRef(({
     };
   };
 
+  const clearDfm = () => {
+    dfmOnRef.current = false;
+    dfmFieldRef.current = null;
+    setDfmReportState(null);
+  };
+  clearDfmRef.current = clearDfm;
+
+  const publishDfm = (geometry, analyzed) => {
+    const report = dfmReport(analyzed);
+    if (!report) {
+      clearDfm();
+      return { error: { code: 'no_mesh', message: 'No DFM report on that mesh' } };
+    }
+    dfmOnRef.current = true;
+    dfmFieldRef.current = { geometry, report };
+    setDfmReportState(report);
+    return { on: true, ...report };
+  };
+
+  refreshDfmRef.current = (host) => {
+    if (!dfmOnRef.current || !host || host !== resultRef.current) return;
+    const geometry = host.geometry;
+    if (!geometry?.attributes?.position) {
+      clearDfm();
+      return;
+    }
+    const cached = dfmFieldRef.current;
+    if (cached && cached.geometry === geometry) return;
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    if (analyzed?.error) {
+      clearDfm();
+      return;
+    }
+    publishDfm(geometry, analyzed);
+  };
+
+  agentMoldDfmRef.current = ({ on } = {}) => {
+    const next = typeof on === 'boolean' ? on : !dfmOnRef.current;
+    if (!next) {
+      clearDfm();
+      return { on: false };
+    }
+    const geometry = resultRef.current?.geometry;
+    if (!geometry?.attributes?.position) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const cached = dfmFieldRef.current;
+    if (cached && cached.geometry === geometry && cached.report) {
+      dfmOnRef.current = true;
+      setDfmReportState(cached.report);
+      return { on: true, ...cached.report };
+    }
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    if (analyzed?.error) return analyzed;
+    return publishDfm(geometry, analyzed);
+  };
+
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
     const painting = paintModeRef.current;
@@ -13975,6 +14043,7 @@ const Viewport = forwardRef(({
       applyPartingSkinRef.current(host);
       applySideActionSkinRef.current(host);
       applyMoldDraftSkinRef.current(host);
+      refreshDfmRef.current(host);
       if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
       return;
     }
@@ -13992,6 +14061,7 @@ const Viewport = forwardRef(({
     applyPartingSkinRef.current(host);
     applySideActionSkinRef.current(host);
     applyMoldDraftSkinRef.current(host);
+    refreshDfmRef.current(host);
     if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
   };
 
@@ -16328,6 +16398,12 @@ const Viewport = forwardRef(({
       {mode !== 'game' && <PartingLegend legend={partingLegend} />}
       {mode !== 'game' && <SideActionLegend legend={sideActionLegend} />}
       {mode !== 'game' && <MoldDraftLegend legend={moldDraftLegend} />}
+      {mode !== 'game' && (
+        <DfmReportPanel
+          report={dfmReportState}
+          shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
+        />
+      )}
 
       {/* Cross-Section Panel */}
         <CrossSectionPanel
@@ -16359,6 +16435,7 @@ const Viewport = forwardRef(({
             clearPartingRef.current();
             clearSideActionsRef.current();
             clearMoldDraftRef.current();
+            clearDfmRef.current();
             feaToggleRef.current?.();
           }}
           showWall={mode !== 'game'}
@@ -16373,6 +16450,9 @@ const Viewport = forwardRef(({
           showMoldDraft={mode !== 'game'}
           moldDraftActive={!!moldDraftLegend}
           onMoldDraftToggle={() => agentMoldDraftRef.current({})}
+          showDfm={mode !== 'game'}
+          dfmActive={!!dfmReportState}
+          onDfmToggle={() => agentMoldDfmRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();
