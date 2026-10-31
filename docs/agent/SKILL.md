@@ -12,6 +12,21 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 4. **Read the `pair` result text.** With no webhook registered it carries an onboarding note (a plain `type: "text"` block). Relay this to the user exactly: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the pair text says **Webhook is active.**, do not ask again. See [In-viewer prompts](#in-viewer-prompts-webhook-or-polling).
 5. **Call `guide { topic: "start" }`** before the first model call. The MCP server's own `guide` tool returns plain-text topics (`start`, `dialect`, `features`, `selection`, `paint`, `limits`, `camera`, `assembly`; `guide {}` lists them). `dialect` is every script helper by signature, rendered from the helper registry; `list_helpers { names }` returns a helper's full doc and examples. `start` is the build guidance below plus a three-call example; the initialize instructions are a short quick-start that points at it.
 
+### Server relay
+
+The loopback relay is the default. A saved login uses the server relay instead (Safari, a phone, or any machine that cannot open `ws://127.0.0.1`).
+
+1. `npx surfcad-mcp login` (optional `--name`). It prints an `ABCD-EFGH` code and `https://surfcad.com/agent`.
+2. Sign in on that page and approve the code. The token is saved in the per-user config directory at mode 0600. It is not printed and it is not logged.
+3. Start `npx surfcad-mcp`. A saved login selects the server relay. `--remote` selects it and, with no login, tells you to run `login`. Leave the SurfCAD tab open. The tool list is the same.
+4. `npx surfcad-mcp status` shows the server and the name, not the token. `npx surfcad-mcp logout` deletes the saved login.
+
+`--local` forces the loopback relay after a login. So does `SURFCAD_MCP_TRANSPORT=local`, `SURFCAD_AGENT_BRIDGE_WS_URL`, `SURFCAD_AGENT_BRIDGE_WS_PORT`, or a non-empty `SURFCAD_PAIRING_CODE`. `--server` or `SURFCAD_AGENT_SERVER` points login and the client at a dev or staging origin.
+
+`login` itself has no MCP client, so pass `--name` (or `SURFCAD_AGENT_NAME`) when the approval sentence should name the agent. When that is omitted, the stdio server sends the MCP client name (`clientInfo.name`) on hello. With no name the server says "an agent".
+
+If the SurfCAD tab is asleep the error message is `SurfCAD tab is asleep`. A revoked token closes the socket with code 4001; run `npx surfcad-mcp login` again. `Too many commands are waiting` means the tab still has a full queue. If this package is older than the server, the handshake says `please update surfcad-mcp`.
+
 **Cursor** (`.cursor/mcp.json` or Settings → MCP):
 
 ```json
@@ -130,6 +145,10 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `not_paired` | No approved relay session. Pair first. |
 | `pairing_lost` | Tab or relay dropped; the server re-pairs on its own. Retry in a few seconds (`retryable: true`); ask the user to keep SurfCAD open in Chrome. Do not ask for a new code. |
 | `pair_pending` | Waiting for the user to click Allow in SurfCAD. |
+| `tab_asleep` | Remote relay: no SurfCAD tab answered. The message is `SurfCAD tab is asleep`. Open the tab in Chrome and retry. |
+| `too_many_pending` | Remote relay: the message is `Too many commands are waiting`. Wait for the tab to finish, then retry. |
+| `token_revoked` | The saved login was revoked or expired (socket close 4001). Run `npx surfcad-mcp login` again. |
+| `client_update_required` | This surfcad-mcp is too old. The handshake says `please update surfcad-mcp`. Update, then login again. |
 | `unknown_part` / `unknown_assembly` | Id not in the open document / vault, or a path or name was passed. Call `parts` or `list_assemblies` and retry with a listed id. |
 | `part_mismatch` | `part_id` is not the active part. `set_active_part` first, or pass the active id. |
 | `no_assembly` | No open document. `create_assembly` or `open_assembly`. |
