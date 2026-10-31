@@ -171,7 +171,9 @@ double-click opens rename (`onRenameFile` → `handleRenamePart` on
 nothing. Part names are sanitised (`sanitizePartName`) because they end up in
 `${name}.js` downloads. The assembly chip enters assembly mode on a single tap
 (`onTitleAssemblyActivate`: clears `cadPartId`, keeps the last part's mesh and
-body highlight for joints). Assembly rename is only on the Parts ribbon center
+body highlight for joints; it focuses only a part of the current document,
+never the previous document's selection, `golden:new-assembly-ghost`).
+Assembly rename is only on the Parts ribbon center
 title (`RibbonAssemblyName` in `PartFeed.jsx`, click to edit). The viewer
 assembly chip does not rename. Title chips use `gap-3` on the shared header row
 (`data-viewer-header-row`) beside the inline wordmark. `golden:viewer-title-actions`

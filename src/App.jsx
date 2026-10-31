@@ -428,6 +428,7 @@ import {
   SAVE_CONFLICT_COPY,
 } from './utils/git';
 import { docNeedsVaultLayout, newAssemblyVaultLayout, vaultLayoutFromDetection } from './utils/git/docVaultLayout.js';
+import { titleFocusPartId } from './utils/titleFocus.js';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
@@ -7486,6 +7487,22 @@ const App = () => {
   };
 
   /** Seed a blank assembly (Parts + → Assembly). The folder menu imports or opens. */
+  /**
+   * A new document starts with no selection and no meshes from the old one.
+   * The selected part id, the joint picks and the per-part run and leftover
+   * meshes all belonged to the previous assembly; left in place, tapping the
+   * assembly chip re-framed the old selected part (the bike's frame) as a
+   * ghost inside the new, empty assembly.
+   */
+  const forgetPreviousAssemblySelection = () => {
+    rememberCadPart(null);
+    jointPicksRef.current = [];
+    viewportRef.current?.clearJointHighlights?.();
+    setJointCard((cur) => (cur ? null : cur));
+    partRunsRef.current = {};
+    partLeftoversRef.current = {};
+  };
+
   const handleNewAssembly = async () => {
     const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
@@ -7511,6 +7528,7 @@ const App = () => {
     refreshGenRef.current += 1;
     partMeshMetaRef.current = {};
     setPartMeshMeta({});
+    forgetPreviousAssemblySelection();
     // Optimistic: show the seeded assembly immediately, then persist.
     rememberScripts({ [seedId]: starter });
     rememberSidecar(emptyWorkingSidecar());
@@ -7546,6 +7564,7 @@ const App = () => {
     refreshGenRef.current += 1;
     partMeshMetaRef.current = {};
     setPartMeshMeta({});
+    forgetPreviousAssemblySelection();
     rememberScripts({ [seedId]: starter });
     rememberSidecar(emptyWorkingSidecar());
     rememberAssembly(seedDoc);
@@ -9621,6 +9640,9 @@ const App = () => {
     const doc = assemblyRef.current;
     if (!doc || partId == null) return;
     const part = doc.parts.find((row) => row.id === partId);
+    // Only a part of this document: the run cache can still hold a mesh for
+    // a part of the previous one, and swapping it in draws a ghost.
+    if (!part) return;
     const mesh = meshForPart(partId);
     if (!mesh?.vertProperties) return;
     viewportRef.current?.swapPickPart?.({
@@ -9635,7 +9657,7 @@ const App = () => {
     if (featureSessionRef.current || appModeRef.current === 'game') return;
     const doc = assemblyRef.current;
     if (!doc) return;
-    const focusId = cadPartIdRef.current ?? doc.activeId ?? null;
+    const focusId = titleFocusPartId(doc, cadPartIdRef.current);
     rememberCadPart(null);
     jointPicksRef.current = [];
     viewportRef.current?.clearJointHighlights?.();
