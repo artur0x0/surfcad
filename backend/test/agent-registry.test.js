@@ -188,6 +188,48 @@ describe('tab registry', () => {
     assert.equal((await again).ok, true);
   });
 
+  test('a result is readable only by the token that submitted it', async () => {
+    const { registry } = setup();
+    registry.registerTab({
+      userId: 'user-a',
+      tabId: 't1',
+      send(frame) {
+        registry.complete('user-a', frame.id, commandResponse({
+          id: frame.id,
+          ok: true,
+          result: { n: 1 },
+        }));
+      },
+    });
+    await registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c1', command: 'status', args: {} },
+    });
+    assert.equal(await registry.wait('user-a', 'c1', 0, 'tok-b'), null);
+    const own = await registry.wait('user-a', 'c1', 0, 'tok-a');
+    assert.equal(own.status, 'done');
+    assert.equal(own.response.result.n, 1);
+    assert.equal(await registry.wait('user-a', 'c1', 0, 'tok-a'), null);
+  });
+
+  test('abortToken ends an in-flight wait and drops the result', async () => {
+    const { registry } = setup();
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send() {} });
+    const hanging = registry.submit({
+      userId: 'user-a',
+      tokenId: 'tok-a',
+      frame: { id: 'c2', command: 'status', args: {} },
+    });
+    const waiting = registry.wait('user-a', 'c2', 5000, 'tok-a');
+    registry.abortToken('tok-a');
+    assert.equal((await waiting).status, 'revoked');
+    assert.equal((await hanging).ok, false);
+    assert.equal((await hanging).error.code, 'unauthorized');
+    assert.equal(await registry.wait('user-a', 'c2', 0, 'tok-a'), null);
+    assert.equal(await registry.wait('user-a', 'c2', 0, 'tok-b'), null);
+  });
+
   test('an agent socket tells that user\'s tabs, and prompt frames stay on that user', () => {
     const { registry } = setup();
     const tab = [];

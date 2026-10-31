@@ -6,7 +6,8 @@
 import { hostname } from 'node:os';
 import { resolveAgentName, resolveServerUrl, selectRelayMode } from './remote/config.mjs';
 import { loginDevice } from './remote/login.mjs';
-import { deleteSavedLogin, formatLoginStatus, readSavedLogin } from './remote/tokenStore.mjs';
+import { logoutDevice } from './remote/logout.mjs';
+import { formatLoginStatus, readSavedLogin } from './remote/tokenStore.mjs';
 
 const HELP = `surfcad-mcp
 
@@ -16,6 +17,8 @@ const HELP = `surfcad-mcp
       Device-code login at the SurfCAD agent server. Prints the code and
       the approval URL. The token is saved on this machine and is not printed.
   npx surfcad-mcp logout
+      Revokes this machine's token on the server, then deletes the saved
+      file. If the server cannot be reached, the file is still deleted.
   npx surfcad-mcp status
 
   --remote     Use the server relay. Requires a saved login.
@@ -150,8 +153,12 @@ export async function runCli(argv, options = {}) {
       return { action: 'exit', code: 0 };
     }
     if (parsed.command === 'logout') {
-      await deleteSavedLogin(env);
-      io.stdout('Logged out.\n');
+      const result = await logoutDevice({ env, fetch: options.fetch });
+      if (result.hadLogin && !result.confirmed) {
+        io.stdout('Logged out on this machine. SurfCAD did not confirm the revoke, so that login may stay valid until it expires.\n');
+      } else {
+        io.stdout('Logged out.\n');
+      }
       return { action: 'exit', code: 0 };
     }
     if (parsed.command === 'status') {

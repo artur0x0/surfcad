@@ -14,7 +14,7 @@ import {
   entryErrorMessage,
   signInPage,
 } from './approvalPage.js';
-import { checkApprovalPost, ensureCsrfToken } from './csrf.js';
+import { approvalFetchAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
 
@@ -66,6 +66,8 @@ function entryStatus(error) {
  *   tokens: ReturnType<import('./tokens.js').createTokenService>,
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
+ *   browserLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
+ *   readLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
  *   agentSockets: { closeToken: (tokenId: string, code: number, reason: string) => number },
  * }} deps
@@ -82,7 +84,26 @@ export function createAgentRouter(deps) {
    * @param {string} [message]
    */
   function codePage(req, message) {
-    return codeFormPage(message, ensureCsrfToken(req));
+    const carried = req.query?.userCode || req.query?.code;
+    const note = message || (carried
+      ? 'Type the code shown by the agent. A link does not fill this in or approve it.'
+      : undefined);
+    return codeFormPage(note, ensureCsrfToken(req));
+  }
+
+  /**
+   * HTML approval uses the code from the typed claim, stored on the session.
+   * The Allow button confirms it. The URL and a hidden field do not.
+   * @param {import('express').Request} req
+   */
+  function claimedCode(req) {
+    const code = req.session?.agentClaimCode;
+    return typeof code === 'string' && code ? code : '';
+  }
+
+  /** @param {import('express').Request} req */
+  function clearClaimedCode(req) {
+    if (req.session) delete req.session.agentClaimCode;
   }
 
   /**
@@ -103,7 +124,48 @@ export function createAgentRouter(deps) {
     return true;
   }
 
+  /**
+   * Cookie routes. A missing Origin is allowed so same-origin fetches and
+   * the tests that omit it keep working. A foreign Origin or a cross-site
+   * `Sec-Fetch-Site` is refused.
+   * @param {import('express').Request} req
+   * @param {import('express').Response} res
+   */
+  function rejectBrowser(req, res) {
+    if (approvalFetchAllowed(req)) return false;
+    if (wantsHtml(req)) {
+      res.status(403).type('html').send('That request did not come from SurfCAD.');
+    } else {
+      res.status(403).json({ error: 'cross_origin' });
+    }
+    return true;
+  }
+
+  /**
+   * @param {import('express').Response} res
+   * @param {{ check: (key: string) => { allowed: boolean, retryAfterSec?: number } }} limiter
+   * @param {string} key
+   */
+  function rejectLimited(res, limiter, key) {
+    const hit = limiter.check(key);
+    if (hit.allowed) return false;
+    const retryAfterSec = hit.retryAfterSec || 1;
+    res.set('Retry-After', String(retryAfterSec));
+    res.status(429).json({ error: 'rate_limited', retryAfterSec: retryAfterSec });
+    return true;
+  }
+
+  /** @param {import('express').Request} req */
+  function browserKey(req) {
+    return `ip:${req.ip || 'unknown'}`;
+  }
+
   router.get('/', (req, res) => {
+    if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+    const origin = req.get('origin');
+    if (origin && !approvalFetchAllowed(req)) {
+      return res.status(403).type('html').send('That request did not come from SurfCAD.');
+    }
     if (!userFromRequest(req)) {
       return res.status(401).type('html').send(signInPage());
     }
@@ -126,6 +188,7 @@ export function createAgentRouter(deps) {
         machine: req.body?.machine,
         city,
         ip: req.ip,
+        deviceSecretHash: req.body?.deviceSecretHash,
       });
     } catch (error) {
       return next(error);
@@ -140,7 +203,6 @@ export function createAgentRouter(deps) {
     logRelay({ event: 'pair-start', bytes: messageByteLength({ name: req.body?.name, machine: req.body?.machine }) });
     return res.status(201).json({
       userCode: result.userCode,
-      deviceSecret: result.deviceSecret,
       expiresAt: result.expiresAt,
       interval: result.interval,
     });
@@ -189,6 +251,7 @@ export function createAgentRouter(deps) {
       });
     }
     if (wantsHtml(req)) {
+      if (req.session) req.session.agentClaimCode = result.userCode;
       return res.type('html').send(approvePage({ ...result, csrf: ensureCsrfToken(req) }));
     }
     return res.json({
@@ -196,6 +259,7 @@ export function createAgentRouter(deps) {
       name: result.name,
       machine: result.machine,
       city: result.city,
+      ip: result.ip,
       userCode: result.userCode,
     });
   });
@@ -208,11 +272,17 @@ export function createAgentRouter(deps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
       if (rejectApproval(req, res)) return undefined;
+      const html = wantsHtml(req);
+      const userCode = html ? claimedCode(req) : req.body?.userCode;
+      if (html && !userCode) {
+        return res.status(400).type('html').send(codePage(req, 'Enter the code shown by the agent.'));
+      }
       const result = await deps.pairing.approve({
-        userCode: req.body?.userCode,
+        userCode,
         userId: user.id,
         ip: req.ip,
       });
+      if (html) clearClaimedCode(req);
       if (!result.ok) {
         if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
         if (wantsHtml(req)) {
@@ -235,11 +305,17 @@ export function createAgentRouter(deps) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     if (rejectApproval(req, res)) return undefined;
+    const html = wantsHtml(req);
+    const userCode = html ? claimedCode(req) : req.body?.userCode;
+    if (html && !userCode) {
+      return res.status(400).type('html').send(codePage(req, 'Enter the code shown by the agent.'));
+    }
     const result = deps.pairing.deny({
-      userCode: req.body?.userCode,
+      userCode,
       userId: user.id,
       ip: req.ip,
     });
+    if (html) clearClaimedCode(req);
     if (!result.ok) {
       if (wantsHtml(req)) {
         return res.status(entryStatus(result.error)).type('html').send(codePage(req, entryErrorMessage(result.error)));
@@ -253,6 +329,8 @@ export function createAgentRouter(deps) {
 
   router.get('/tokens', async (req, res, next) => {
     try {
+      if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+      if (rejectBrowser(req, res)) return undefined;
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const tokens = await deps.tokens.list(user.id);
@@ -262,13 +340,32 @@ export function createAgentRouter(deps) {
     }
   });
 
+  router.delete('/tokens/self', async (req, res, next) => {
+    try {
+      if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
+      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const revoked = await deps.tokens.revoke(auth.userId, auth.id);
+      if (!revoked) return res.status(404).json({ error: 'not_found' });
+      deps.registry.abortToken(auth.id);
+      deps.agentSockets.closeToken(auth.id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+      logRelay({ event: 'token-revoke', userId: auth.userId });
+      return res.json({ ok: true });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.delete('/tokens/:id', async (req, res, next) => {
     try {
+      if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+      if (rejectBrowser(req, res)) return undefined;
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const tokenId = String(req.params.id);
       const revoked = await deps.tokens.revoke(user.id, tokenId);
       if (!revoked) return res.status(404).json({ error: 'not_found' });
+      deps.registry.abortToken(tokenId);
       deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });
@@ -278,12 +375,16 @@ export function createAgentRouter(deps) {
   });
 
   router.get('/tabs', (req, res) => {
+    if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+    if (rejectBrowser(req, res)) return undefined;
     const user = userFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     return res.json({ tabs: deps.registry.listTabs(user.id) });
   });
 
   router.post('/tabs/select', (req, res) => {
+    if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+    if (rejectBrowser(req, res)) return undefined;
     const user = userFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'tabId')) {
@@ -342,6 +443,7 @@ export function createAgentRouter(deps) {
     try {
       const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
       if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
       const timeout = clampTimeout(req.query.timeout);
       res.status(200);
       res.set({
@@ -351,9 +453,10 @@ export function createAgentRouter(deps) {
         'X-Accel-Buffering': 'no',
       });
       res.flushHeaders?.();
-      const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout);
-      if (!result) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: 'not_found' })}\n\n`);
+      const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout, auth.id);
+      if (!result || result.status === 'revoked') {
+        const error = result?.status === 'revoked' ? 'unauthorized' : 'not_found';
+        res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
         return res.end();
       }
       if (result.status === 'pending') {
@@ -371,9 +474,11 @@ export function createAgentRouter(deps) {
     try {
       const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
       if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
       const timeout = clampTimeout(req.query.timeout);
-      const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout);
+      const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout, auth.id);
       if (!result) return res.status(404).json({ error: 'not_found' });
+      if (result.status === 'revoked') return res.status(401).json({ error: 'Authentication required' });
       if (result.status === 'pending') {
         return res.json({ id: String(req.params.id), status: 'pending' });
       }

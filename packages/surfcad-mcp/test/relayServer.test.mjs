@@ -190,5 +190,38 @@ test('OPTIONS preflight returns Access-Control-Allow-Private-Network for surfcad
   assert.equal(res.headers.get('access-control-allow-origin'), origin);
   assert.equal(res.headers.get('access-control-allow-private-network'), 'true');
 
+  const local = await fetch(`http://127.0.0.1:${port}/`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://localhost:5173',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Private-Network': 'true',
+    },
+  });
+  assert.equal(local.status, 204);
+  assert.equal(local.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+  assert.equal(local.headers.get('access-control-allow-private-network'), 'true');
+
+  const loopback = await fetch(`http://127.0.0.1:${port}/`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://127.0.0.1:5173',
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Private-Network': 'true',
+    },
+  });
+  assert.equal(loopback.status, 204);
+  assert.equal(loopback.headers.get('access-control-allow-private-network'), 'true');
+
+  const evil = await fetch(`http://127.0.0.1:${port}/`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'http://127.evil.com',
+      'Access-Control-Request-Method': 'GET',
+    },
+  });
+  assert.equal(evil.status, 403);
+  assert.equal(evil.headers.get('access-control-allow-private-network'), null);
+
   await closeRelay(relay);
 });

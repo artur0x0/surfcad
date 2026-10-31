@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { IncomingMessage } from 'node:http';
+import { Socket } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   AGENT_HANDSHAKE_UPDATE_MESSAGE,
@@ -11,10 +13,14 @@ import {
   AGENT_SOCKET_CLOSE_CODE,
   TOKEN_EXPIRED_REASON,
   TOKEN_REVOKED_REASON,
+  TOO_MANY_CONNECTIONS_CODE,
+  TOO_MANY_CONNECTIONS_REASON,
 } from './agentSockets.js';
+import { clientAddress } from './clientIp.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
+import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
 /**
  * @param {import('node:net').Socket} socket
@@ -26,6 +32,7 @@ function rejectUpgrade(socket, status, message) {
   let reason = 'Bad Request';
   if (status === 401) reason = 'Unauthorized';
   else if (status === 403) reason = 'Forbidden';
+  else if (status === 429) reason = 'Too Many Requests';
   const body = JSON.stringify({ error: message });
   const raw = `HTTP/1.1 ${status} ${reason}\r\n`
     + 'Content-Type: application/json\r\n'
@@ -52,9 +59,14 @@ function sendJson(ws, payload) {
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
  *   maxMessageBytes: number,
- *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket) => void },
+ *   agentSockets: { add: (tokenId: string, ws: import('ws').WebSocket, userId: string) => boolean },
+ *   connectLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
+ *   pingIntervalMs: number,
  * }} relay
- * @param {{ authenticateUpgrade: (req: import('node:http').IncomingMessage) => Promise<{ id: string } | null> }} options
+ * @param {{
+ *   authenticateUpgrade: (req: import('node:http').IncomingMessage) => Promise<{ id: string } | null>,
+ *   trustProxyHops?: number,
+ * }} options
  */
 export function attachAgentWebSocket(httpServer, relay, options) {
   const wss = new WebSocketServer({
@@ -81,6 +93,13 @@ export function attachAgentWebSocket(httpServer, relay, options) {
       return;
     }
     if (pathname !== '/agent') return;
+
+    const ip = clientAddress(req, options.trustProxyHops ?? 1);
+    const connect = relay.connectLimiter.check(`ip:${ip}`);
+    if (!connect.allowed) {
+      rejectUpgrade(socket, 429, 'rate_limited');
+      return;
+    }
 
     upgraded.add(socket);
     socket.on('close', () => upgraded.delete(socket));
@@ -115,7 +134,7 @@ export function attachAgentWebSocket(httpServer, relay, options) {
       }
       if (socket.destroyed) return;
       try {
-        wss.handleUpgrade(req, socket, head, (ws) => bindTab(ws, user, relay));
+        wss.handleUpgrade(req, socket, head, (ws) => bindTab(ws, user, relay, req));
       } catch {
         rejectUpgrade(socket, 401, 'Authentication required');
       }
@@ -124,11 +143,105 @@ export function attachAgentWebSocket(httpServer, relay, options) {
     });
   });
 
+  wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+  });
+
+  const pingMs = relay.pingIntervalMs > 0 ? relay.pingIntervalMs : 30_000;
+  const heartbeat = setInterval(() => {
+    sweepSockets(wss, relay, options.authenticateUpgrade).catch(() => {});
+  }, pingMs);
+  if (typeof heartbeat.unref === 'function') heartbeat.unref();
+
   httpServer.on('close', () => {
+    clearInterval(heartbeat);
     wss.close();
   });
 
   return wss;
+}
+
+/**
+ * A fresh upgrade request with the cookie captured when the tab connected.
+ * Session middleware reads that cookie. It does not reuse the live socket.
+ * @param {Record<string, string>} headers
+ */
+function sessionProbe(headers) {
+  const socket = new Socket();
+  const req = new IncomingMessage(socket);
+  req.headers = headers;
+  req.method = 'GET';
+  req.url = '/agent';
+  req.httpVersion = '1.1';
+  return req;
+}
+
+/**
+ * Ping every socket. Terminate one that missed the previous pong.
+ * An agent whose token is revoked or expired is closed with 4001 even
+ * when it has sent no further frame. A tab whose session is gone is
+ * closed with 1000. That is not a revoked agent token.
+ * A session or token-store error closes the socket with 1011. Leaving
+ * it open would keep a tab or agent connected after the check that
+ * should have dropped it failed.
+ * @param {import('ws').WebSocketServer} wss
+ * @param {{
+ *   tokens: { status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'> },
+ * }} relay
+ * @param {(req: import('node:http').IncomingMessage) => Promise<{ id: string } | null>} [authenticateUpgrade]
+ */
+async function sweepSockets(wss, relay, authenticateUpgrade) {
+  for (const ws of wss.clients) {
+    const tab = /** @type {{ userId: string, headers: Record<string, string> } | undefined} */ (ws.tabSession);
+    if (tab && authenticateUpgrade) {
+      const probe = sessionProbe(tab.headers);
+      try {
+        const again = await authenticateUpgrade(probe);
+        if (!again || again.id !== tab.userId) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close(TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON);
+          }
+          continue;
+        }
+      } catch (err) {
+        // Fail closed. A store error is not proof the session is still valid.
+        console.error('[agent-relay] session recheck failed; closing tab socket', err?.message || err);
+        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
+        continue;
+      } finally {
+        probe.socket.destroy();
+      }
+    }
+    const auth = /** @type {{ tokenHash?: string } | undefined} */ (ws.agentAuth);
+    if (auth?.tokenHash) {
+      try {
+        const live = await relay.tokens.status(auth.tokenHash);
+        if (live !== 'ok' && ws.readyState === WebSocket.OPEN) {
+          const expired = live === 'expired';
+          ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
+          continue;
+        }
+      } catch (err) {
+        // Fail closed. 1011, not 4001: a store error is not a revoked token.
+        console.error('[agent-relay] token status failed; closing agent socket', err?.message || err);
+        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
+        continue;
+      }
+    }
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    try {
+      ws.ping();
+    } catch {
+      ws.terminate();
+    }
+  }
 }
 
 /**
@@ -146,7 +259,11 @@ export function attachAgentWebSocket(httpServer, relay, options) {
  * }} relay
  */
 function bindAgent(ws, auth, relay) {
-  relay.agentSockets.add(auth.id, ws);
+  if (!relay.agentSockets.add(auth.id, ws, auth.userId)) {
+    ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+    return;
+  }
+  ws.agentAuth = auth;
   let ready = false;
   /** @type {string | null} */
   let agentId = null;
@@ -161,14 +278,19 @@ function bindAgent(ws, auth, relay) {
       isReady: () => ready,
       markReady() {
         ready = true;
-        agentId = randomUUID();
-        relay.registry.registerAgent({
+        const id = randomUUID();
+        const accepted = relay.registry.registerAgent({
           userId: auth.userId,
-          agentId,
+          agentId: id,
           send(frame) {
             sendJson(ws, frame);
           },
         });
+        if (!accepted) {
+          ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+          return;
+        }
+        agentId = id;
       },
     }).catch(() => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
@@ -313,16 +435,35 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   });
 }
 
-function bindTab(ws, user, relay) {
+/**
+ * @param {import('ws').WebSocket & { tabSession?: { userId: string, headers: Record<string, string> } }} ws
+ * @param {{ id: string }} user
+ * @param {{
+ *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
+ *   tabSockets?: { add: (userId: string, ws: import('ws').WebSocket) => void },
+ * }} relay
+ * @param {import('node:http').IncomingMessage} req
+ */
+function bindTab(ws, user, relay, req) {
+  const headers = {};
+  if (typeof req.headers.cookie === 'string') headers.cookie = req.headers.cookie;
+  const testUser = req.headers['x-test-user'];
+  if (typeof testUser === 'string') headers['x-test-user'] = testUser;
+  ws.tabSession = { userId: String(user.id), headers };
+  relay.tabSockets?.add(user.id, ws);
   const tabId = randomUUID();
   ws.on('error', () => {});
-  relay.registry.registerTab({
+  const accepted = relay.registry.registerTab({
     userId: user.id,
     tabId,
     send(frame) {
       sendJson(ws, frame);
     },
   });
+  if (!accepted) {
+    ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+    return;
+  }
   sendJson(ws, {
     type: 'registered',
     v: 1,

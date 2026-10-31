@@ -102,11 +102,27 @@ ${note}
 }
 
 /**
- * @param {{ sentence: string, userCode: string, city?: string | null, csrf?: string }} fields
+ * City and the agent machine's IP, on one line when both are known.
+ * @param {{ city?: string | null, ip?: string | null }} fields
+ */
+function whereLine(fields) {
+  const ip = fields.ip ? `Requesting IP: ${fields.ip}` : '';
+  if (fields.city && ip) return `${fields.city}. ${ip}`;
+  if (fields.city) return String(fields.city);
+  return ip;
+}
+
+/**
+ * The code is not on this page. The user already typed it. Allow and Deny
+ * confirm that claim. A link that carries a code cannot land here filled in.
+ * @param {{ sentence: string, city?: string | null, ip?: string | null, csrf?: string }} fields
  */
 export function approvePage(fields) {
-  const code = escapeHtml(fields.userCode);
   const csrf = escapeHtml(fields.csrf || '');
+  const where = whereLine(fields);
+  const whereHtml = where
+    ? `<p class="text-ui-sm text-on-light">${escapeHtml(where)}</p>`
+    : '';
   const credit = fields.city
     ? `<p class="text-ui-xs text-muted-on-light"><a href="${escapeHtml(CITY_LOOKUP_URL)}">${escapeHtml(CITY_LOOKUP_CREDIT)}</a></p>`
     : '';
@@ -114,15 +130,16 @@ export function approvePage(fields) {
     title: 'Connect an agent',
     body: `<h1 class="text-ui-lg text-on-light">Connect an agent</h1>
 <p class="text-ui text-on-light">${escapeHtml(fields.sentence)}</p>
+<p class="text-ui-sm text-muted-on-light">The name and machine are self-reported by the agent.</p>
+${whereHtml}
 ${credit}
+<p class="text-ui-sm text-muted-on-light">This confirms the code you typed. A link cannot approve an agent.</p>
 <form method="post" action="/agent/pair/approve">
   <input type="hidden" name="csrf" value="${csrf}">
-  <input type="hidden" name="userCode" value="${code}">
   <button type="submit" class="font-ui text-ui-sm text-on-dark surface-success" data-ui-action="data-agent-approve-allow">Allow</button>
 </form>
 <form method="post" action="/agent/pair/deny">
   <input type="hidden" name="csrf" value="${csrf}">
-  <input type="hidden" name="userCode" value="${code}">
   <button type="submit" class="font-ui text-ui-sm text-on-dark surface-quiet" data-ui-action="data-agent-approve-deny">Deny</button>
 </form>`,
   });
