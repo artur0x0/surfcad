@@ -1,8 +1,8 @@
 /**
  * Ask the selected anonymized vendor for a firm quote or a human review.
- * Firm quote reveals that vendor. Human review records a lead and does not
- * charge a card and does not reveal the name. Pay review fee opens Stripe
- * Checkout and does not mark the lead paid. The quote panel must be open.
+ * Neither call reveals the vendor. The name stays hidden until the review
+ * fee is paid. Pay review fee opens Stripe Checkout and does not mark the
+ * lead paid. The quote panel must be open.
  */
 
 const SCHEMA = Object.freeze({

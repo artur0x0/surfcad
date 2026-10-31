@@ -124,9 +124,19 @@ up the active partner by that label and writes `molding_leads` with status
 `sent`, commission 0, and `reviewFeePaid` false. It does not call Stripe and
 it does not email the partner.
 
-A firm quote returns that partner’s `displayName`. A human review does not.
-A second request for the same user, partner, and type returns the same lead.
-Ranking is unchanged: fit, then price.
+Neither type returns `displayName`, notes, or any other identifying field.
+The response says to pay for review to see the partner (`payForReview`,
+message `Pay for review to see the partner.`). A second request for the same
+user, partner, and type returns the same lead and still does not reveal it.
+Walking public labels does not return names.
+
+The name is included only when that same user already owns a `human_review`
+lead for that same partner whose `reviewFeePaid` flag is true. The Stripe
+webhook is the only writer of that flag. A paid flag on a firm-quote row does
+not count. A paid lead for one partner does not reveal another. Another
+user's paid lead does not reveal it either. The public `reviewFeePaid` on
+that response means this caller has a paid human review for this partner. The
+firm-quote row itself stays unpaid. Ranking is unchanged: fit, then price.
 
 ## Human-review checkout
 
@@ -139,6 +149,9 @@ is production. Dev and staging stay on a test secret.
 The route opens a Stripe Checkout Session in `payment` mode and returns the
 hosted URL. It does not mark the lead paid, does not take a card number, and
 does not send email. The existing order PaymentIntent path is untouched.
+An unpaid firm quote does not open Checkout by itself. The quote panel shows
+the pay-for-review state, and Pay review fee opens Checkout. If that user
+has no human-review lead yet, Pay review fee records one first.
 
 Stripe tells SurfCAD the result on the webhook already mounted at
 `POST /api/webhooks/stripe`. `checkout.session.completed` and
@@ -146,7 +159,12 @@ Stripe tells SurfCAD the result on the webhook already mounted at
 `payment_status` is `paid` and the amount matches the session. A succeeded
 review PaymentIntent does the same when `amount_received` matches. Unpaid,
 expired, and failed events leave `reviewFeePaid` false. The return URL is
-not trusted. `GET /api/molding/review-status` then reveals that one partner.
+not trusted. A `moldReview=return` query does not mark the lead paid and
+does not return the partner name. `GET /api/molding/review-status` reveals
+that one partner only after the webhook has marked the caller's own
+human-review lead for that partner. The quote panel has no reveal control
+before payment. After Checkout it polls that status and shows the name once
+the fee is paid.
 
 ## Admin lead board
 

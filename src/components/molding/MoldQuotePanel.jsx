@@ -1,12 +1,14 @@
 /**
  * Budgetary molding quote. Dark glass, text only. It does not paint a skin
- * and it does not take a payment. The label stays "Budgetary, not binding."
+ * and it does not take a card. A partner name shows only after the review
+ * fee is paid. The label stays "Budgetary, not binding."
  */
 
 import React, { useEffect, useState } from 'react';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
 import { formatStudyHint } from '../../molding/resinSuggest.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
+import { PAY_FOR_REVIEW_MESSAGE } from '../../utils/moldingLeadClient.js';
 
 function money(value) {
   return Number.isFinite(value) ? `$${value.toFixed(2)}` : '—';
@@ -64,6 +66,7 @@ export default function MoldQuotePanel({
   const grades = Array.isArray(selected?.grades) ? selected.grades : [];
   const disclaimer = quote?.disclaimer || 'Budgetary, not binding.';
   const revealed = state.revealed || {};
+  const selectedName = selected ? (revealed[selected.anonLabel] || '') : '';
 
   return (
     <div
@@ -191,6 +194,11 @@ export default function MoldQuotePanel({
       )}
       {selected && state.status === 'ready' && (
         <div className="mt-2 flex flex-col gap-2">
+          {!selectedName && (
+            <p className="text-ui-sm text-muted-on-dark" data-mold-quote-paywall="">
+              {PAY_FOR_REVIEW_MESSAGE}
+            </p>
+          )}
           <button
             type="button"
             data-mold-firm-quote=""
@@ -211,13 +219,13 @@ export default function MoldQuotePanel({
           >
             Human review
           </button>
-          {state.leadMessage && (
+          {state.leadMessage && state.leadMessage !== PAY_FOR_REVIEW_MESSAGE && (
             <p className="text-ui-sm text-muted-on-dark" data-mold-quote-lead="">{state.leadMessage}</p>
           )}
           {state.leadError && (
             <p className="text-ui-sm text-on-dark" data-mold-quote-lead-error="">{state.leadError}</p>
           )}
-          {state.reviewPayable && Number.isFinite(state.reviewFeeUsd) && (
+          {!selectedName && (state.reviewPayable || state.payForReview) && Number.isFinite(state.reviewFeeUsd) && (
             <button
               type="button"
               data-mold-pay-review=""
