@@ -28,6 +28,10 @@ describe('admin page gating', () => {
     assert.match(page, /adminPageAccess/);
     assert.match(page, /NotFoundPage/);
     assert.match(page, /data-admin-page/);
+    assert.match(page, /MoldingCatalog/);
+    const catalog = readFileSync(new URL('../pages/admin/MoldingCatalog.jsx', import.meta.url), 'utf8');
+    assert.match(catalog, /data-admin-mold-catalog/);
+    assert.doesNotMatch(catalog, /stripe/i);
     assert.match(panel, /profileAdminVisible/);
     assert.match(panel, /data-profile-admin/);
     assert.match(main, /lazy\(\(\) => import\('\.\/pages\/AdminPage\.jsx'\)\)/);

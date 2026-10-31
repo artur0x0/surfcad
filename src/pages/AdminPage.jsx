@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import { BrandWordmark } from '../components/brand/BrandWordmark.jsx';
 import SiteFooter from '../components/SiteFooter.jsx';
 import { useAuth } from '../hooks/useAuth';
 import { ADMIN_STATS_DAYS, adminPageAccess } from '../utils/adminAccess.js';
 import NotFoundPage from './NotFoundPage.jsx';
+import MoldingCatalog from './admin/MoldingCatalog.jsx';
 
 const METRICS = [
   { key: 'signups', label: 'Sign-ups' },
@@ -67,6 +68,7 @@ export default function AdminPage() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
   const [forbidden, setForbidden] = useState(false);
+  const showNotFound = useCallback(() => setForbidden(true), []);
 
   useEffect(() => {
     if (access !== 'allow') return undefined;
@@ -110,7 +112,7 @@ export default function AdminPage() {
   return (
     <div
       data-admin-page=""
-      className="surface-light text-on-light font-ui h-dvh overflow-y-auto"
+      className="surface-light text-on-light font-ui min-h-dvh"
     >
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-5 py-10 sm:px-8 sm:py-14">
         <header className="mb-8 space-y-4">
@@ -166,6 +168,8 @@ export default function AdminPage() {
             />
           ))}
         </div>
+
+        <MoldingCatalog onForbidden={showNotFound} />
 
         <SiteFooter variant="light">
           <a href="/" className="underline underline-offset-4" data-admin-home="">
