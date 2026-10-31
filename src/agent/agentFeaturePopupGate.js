@@ -13,6 +13,7 @@ let agentDepth = 0;
 let popupOwner = null;
 let authorizedEdit = false;
 const dismissers = new Set();
+const workingListeners = new Set();
 
 /**
  * Would `allowFeaturePopup` say yes right now? A peek with no side effect,
@@ -51,6 +52,20 @@ export function setAgentPromptWorking(on) {
       try { fn(); } catch { /* a dismisser must not block the rest */ }
     }
   }
+  for (const fn of [...workingListeners]) {
+    try { fn(promptWorking); } catch { /* a listener must not block the rest */ }
+  }
+}
+
+/**
+ * @param {(working: boolean) => void} cb
+ * @returns {() => void}
+ */
+export function subscribeAgentPromptWorking(cb) {
+  if (typeof cb !== 'function') return () => {};
+  workingListeners.add(cb);
+  try { cb(promptWorking); } catch { /* listener */ }
+  return () => { workingListeners.delete(cb); };
 }
 
 export async function withAgentDrivenChange(fn) {
@@ -74,4 +89,5 @@ export function resetAgentFeaturePopupGateForTests() {
   popupOwner = null;
   authorizedEdit = false;
   dismissers.clear();
+  workingListeners.clear();
 }

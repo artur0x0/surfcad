@@ -28,6 +28,8 @@ export function publicToken(row) {
   return {
     id: String(row.id),
     label: row.label || '',
+    machine: row.machine || '',
+    city: row.city || null,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
     lastUsedAt: row.lastUsedAt ?? null,
@@ -107,6 +109,8 @@ export function createMongoTokenStore(model) {
         userId: row.userId,
         tokenHash: row.tokenHash,
         label: row.label,
+        machine: row.machine || '',
+        city: row.city || null,
         createdAt: row.createdAt,
         expiresAt: row.expiresAt,
         revokedAt: row.revokedAt,
@@ -123,6 +127,8 @@ export function createMongoTokenStore(model) {
         userId: String(doc.userId),
         tokenHash: doc.tokenHash,
         label: doc.label || '',
+        machine: doc.machine || '',
+        city: doc.city || null,
         createdAt: doc.createdAt,
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
@@ -137,6 +143,8 @@ export function createMongoTokenStore(model) {
         userId: String(doc.userId),
         tokenHash: doc.tokenHash,
         label: doc.label || '',
+        machine: doc.machine || '',
+        city: doc.city || null,
         createdAt: doc.createdAt,
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
@@ -205,7 +213,7 @@ export function createTokenService(opts = {}) {
       holder.store = store;
     },
     /**
-     * @param {{ userId: string, label: string }} fields
+     * @param {{ userId: string, label: string, machine?: string, city?: string | null }} fields
      * @returns {Promise<{ token: string, id: string }>}
      */
     async issue(fields) {
@@ -220,6 +228,8 @@ export function createTokenService(opts = {}) {
         userId: String(fields.userId),
         tokenHash: hashToken(token),
         label: fields.label,
+        machine: typeof fields.machine === 'string' ? fields.machine : '',
+        city: typeof fields.city === 'string' && fields.city ? fields.city : null,
         createdAt: new Date(now()).toISOString(),
         expiresAt: new Date(now() + ttlMs).toISOString(),
         revokedAt: null,

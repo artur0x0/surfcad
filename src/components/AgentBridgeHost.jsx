@@ -4,7 +4,11 @@ import {
   createLiveAgentPromptTransport,
   shouldUseLiveAgentPrompt,
 } from '../agent/agentPromptLive.js';
-import { createCloseMenuRegistry, shouldKeepAgentBridgeHostMounted } from '../agent/ws/pairingFlow.js';
+import {
+  createCloseMenuRegistry,
+  shouldKeepAgentBridgeHostMounted,
+  shouldShowAgentBridgeDisconnect,
+} from '../agent/ws/pairingFlow.js';
 import AgentBridgePairing from './AgentBridgePairing';
 
 const AgentBridgeHostContext = createContext({
@@ -13,6 +17,9 @@ const AgentBridgeHostContext = createContext({
   promptTransport: null,
   offerSlot: () => {},
   registerCloseMenu: () => () => {},
+  agentChatOpen: false,
+  openAgentChat: () => {},
+  closeAgentChat: () => {},
 });
 
 /**
@@ -27,6 +34,7 @@ export function useAgentBridgeHost() {
 export default function AgentBridgeHost({ enabled = false, children }) {
   const [link, setLink] = useState(null);
   const [paired, setPaired] = useState(false);
+  const [agentChatOpen, setAgentChatOpen] = useState(false);
   const [slot, setSlot] = useState(null);
   const closeMenusRef = useRef(null);
   if (closeMenusRef.current == null) closeMenusRef.current = createCloseMenuRegistry();
@@ -37,6 +45,11 @@ export default function AgentBridgeHost({ enabled = false, children }) {
   const closeProfileMenu = useCallback(() => {
     closeMenusRef.current.closeAll();
   }, []);
+  const openAgentChat = useCallback(() => setAgentChatOpen(true), []);
+  const closeAgentChat = useCallback(() => setAgentChatOpen(false), []);
+  useEffect(() => {
+    if (!shouldShowAgentBridgeDisconnect({ paired, link })) setAgentChatOpen(false);
+  }, [paired, link]);
   const onPairingChange = useCallback(({ paired: nextPaired, link: nextLink } = {}) => {
     setPaired(nextPaired === true);
     if (nextLink !== undefined) setLink(nextLink);
@@ -64,8 +77,11 @@ export default function AgentBridgeHost({ enabled = false, children }) {
     };
   }, [livePrompt]);
   const value = useMemo(
-    () => ({ link, paired, promptTransport, offerSlot, registerCloseMenu }),
-    [link, paired, promptTransport, offerSlot, registerCloseMenu],
+    () => ({
+      link, paired, promptTransport, offerSlot, registerCloseMenu,
+      agentChatOpen, openAgentChat, closeAgentChat,
+    }),
+    [link, paired, promptTransport, offerSlot, registerCloseMenu, agentChatOpen, openAgentChat, closeAgentChat],
   );
   const mount = shouldKeepAgentBridgeHostMounted({ agentBridgeLive: enabled });
 

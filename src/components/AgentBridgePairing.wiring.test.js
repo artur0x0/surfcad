@@ -129,6 +129,16 @@ test('Connect agent is an inline plug-icon menu row, not a big emerald button', 
   assert.doesNotMatch(connectBlock, /shadow-md/);
 });
 
+test('the connected banner shell does not take clicks outside the card', () => {
+  const open = SRC.indexOf('data-agent-connected-banner=""');
+  assert.ok(open > 0);
+  const shell = SRC.slice(Math.max(0, open - 220), open);
+  assert.match(shell, /pointer-events-none/);
+  const card = SRC.slice(open, open + 900);
+  assert.match(card, /pointer-events-auto/);
+  assert.match(card, /data-ui-action="data-agent-connected-disconnect"/);
+});
+
 test('menu and dialog Disconnect are hidden until the agent is paired', () => {
   assert.match(SRC, /shouldShowAgentBridgeDisconnect\(\{ paired, link \}\)/);
   assert.equal((SRC.match(/shouldShowAgentBridgeDisconnect/g) || []).length >= 2, true);

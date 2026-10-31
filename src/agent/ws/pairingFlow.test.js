@@ -15,12 +15,39 @@ import {
   shouldClosePairingDialogOnConnect,
   shouldKeepAgentBridgeHostMounted,
   shouldShowAgentBridgeDisconnect,
+  shouldShowLocalAgentConnect,
+  serverBlocksLocalPairing,
   shouldPollRelay,
   shouldRevealPairingCode,
   shouldShowPairingApproval,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
 } from './pairingFlow.js';
+
+test('Connect stays up until a server socket is actually open', () => {
+  assert.equal(shouldShowLocalAgentConnect({
+    relayTarget: 'auto', usingServer: false, serverUnreachable: false,
+  }), true);
+  assert.equal(shouldShowLocalAgentConnect({
+    relayTarget: 'auto', usingServer: true, serverUnreachable: false,
+  }), false);
+  assert.equal(shouldShowLocalAgentConnect({
+    relayTarget: 'server', usingServer: false, serverUnreachable: false,
+  }), false);
+  assert.equal(shouldShowLocalAgentConnect({
+    relayTarget: 'server', usingServer: false, serverUnreachable: true,
+  }), true);
+  assert.equal(shouldShowLocalAgentConnect({
+    flowOpen: true, relayTarget: 'auto', serverUnreachable: true,
+  }), false);
+  assert.equal(serverBlocksLocalPairing({
+    relayTarget: 'server', usingServer: false, serverUnreachable: true,
+  }), false);
+  assert.equal(serverBlocksLocalPairing({
+    relayTarget: 'server', usingServer: true, serverUnreachable: true,
+  }), true);
+  assert.equal(serverBlocksLocalPairing({ relayTarget: 'local' }), false);
+});
 
 test('shouldPollRelay only while flow is open and relay is not reachable', () => {
   assert.equal(shouldPollRelay({ flowOpen: false, relayReachable: false, state: 'idle' }), false);

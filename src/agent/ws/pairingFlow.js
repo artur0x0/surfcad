@@ -101,6 +101,39 @@ export function shouldShowAgentBridgeDisconnect(input = {}) {
   return input.paired === true || input.link === 'connected';
 }
 
+/**
+ * The server path hides Connect agent only while that socket is still being
+ * tried or is open. Auto keeps the button until the server socket opens.
+ * A forced server target (Safari, phone width, or the Server setting) that
+ * never opens the socket falls back so local pairing stays available.
+ *
+ * @param {{
+ *   flowOpen?: boolean,
+ *   paired?: boolean,
+ *   relayTarget?: string,
+ *   usingServer?: boolean,
+ *   serverUnreachable?: boolean,
+ * }} input
+ */
+export function shouldShowLocalAgentConnect(input = {}) {
+  if (input.flowOpen || input.paired) return false;
+  if (serverBlocksLocalPairing(input)) return false;
+  return true;
+}
+
+/**
+ * @param {{
+ *   relayTarget?: string,
+ *   usingServer?: boolean,
+ *   serverUnreachable?: boolean,
+ * }} input
+ */
+export function serverBlocksLocalPairing(input = {}) {
+  if (input.usingServer) return true;
+  if (input.relayTarget === 'server' && input.serverUnreachable !== true) return true;
+  return false;
+}
+
 export const AGENT_CONNECTED_TOAST_MS = 5000;
 export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
 

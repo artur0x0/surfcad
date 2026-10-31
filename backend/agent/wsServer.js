@@ -148,11 +148,28 @@ export function attachAgentWebSocket(httpServer, relay, options) {
 function bindAgent(ws, auth, relay) {
   relay.agentSockets.add(auth.id, ws);
   let ready = false;
+  /** @type {string | null} */
+  let agentId = null;
   ws.on('error', () => {});
+  ws.on('close', () => {
+    if (!agentId) return;
+    relay.registry.unregisterAgent(auth.userId, agentId);
+    agentId = null;
+  });
   ws.on('message', (data, isBinary) => {
     handleAgentMessage(ws, auth, relay, data, isBinary, {
       isReady: () => ready,
-      markReady: () => { ready = true; },
+      markReady() {
+        ready = true;
+        agentId = randomUUID();
+        relay.registry.registerAgent({
+          userId: auth.userId,
+          agentId,
+          send(frame) {
+            sendJson(ws, frame);
+          },
+        });
+      },
     }).catch(() => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
     });
@@ -234,6 +251,10 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
     sendJson(ws, { type: 'hello', v: version.v });
     return;
   }
+  if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
+    relay.registry.forwardToTabs(auth.userId, msg);
+    return;
+  }
   const frame = readCommandRequest(msg);
   if (!frame || frame.id == null || frame.id === '') {
     sendJson(ws, commandResponse({
@@ -292,11 +313,6 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   });
 }
 
-/**
- * @param {import('ws').WebSocket} ws
- * @param {{ id: string }} user
- * @param {{ registry: ReturnType<import('./registry.js').createMemoryTabRegistry> }} relay
- */
 function bindTab(ws, user, relay) {
   const tabId = randomUUID();
   ws.on('error', () => {});
@@ -307,7 +323,12 @@ function bindTab(ws, user, relay) {
       sendJson(ws, frame);
     },
   });
-  sendJson(ws, { type: 'registered', v: 1, tabId });
+  sendJson(ws, {
+    type: 'registered',
+    v: 1,
+    tabId,
+    agentConnected: relay.registry.agentConnected(user.id),
+  });
   ws.on('message', (data, isBinary) => {
     if (isBinary) return;
     relay.registry.touchTab(user.id, tabId);
@@ -317,6 +338,10 @@ function bindTab(ws, user, relay) {
     try {
       msg = JSON.parse(text);
     } catch {
+      return;
+    }
+    if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
+      relay.registry.forwardToAgents(user.id, msg);
       return;
     }
     const parsed = readCommandResponse(msg);

@@ -48,9 +48,9 @@ describe('device-code pairing', () => {
     assert.equal(pairing.plaintextHeld().includes(started.deviceSecret), false);
   });
 
-  test('city is optional and the sentence uses "in", never a comma', () => {
+  test('city is optional and the sentence uses "in", never a comma', async () => {
     assert.equal(cityFromRequest({ ip: '203.0.113.5', headers: {} }), null);
-    const { pairing } = setup();
+    const { pairing, tokens } = setup();
     const withCity = pairing.start({
       name: 'Cursor',
       machine: 'laptop',
@@ -60,6 +60,11 @@ describe('device-code pairing', () => {
     const shown = pairing.claim({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
     assert.equal(shown.sentence, 'Allow Cursor on laptop in Berlin to connect?');
     assert.equal(shown.sentence.includes(','), false);
+    await pairing.approve({ userCode: withCity.userCode, userId: 'user-a', ip: '198.51.100.8' });
+    const listed = await tokens.list('user-a');
+    assert.equal(listed[0].machine, 'laptop');
+    assert.equal(listed[0].city, 'Berlin');
+    assert.equal(listed[0].label, 'Cursor on laptop');
 
     const bare = pairing.start({ name: 'Cursor', machine: 'laptop', ip: '203.0.113.9' });
     const noCity = pairing.claim({ userCode: bare.userCode, userId: 'user-b', ip: '198.51.100.9' });

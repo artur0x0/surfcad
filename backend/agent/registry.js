@@ -61,6 +61,8 @@ export function createMemoryTabRegistry(opts = {}) {
 
   /** @type {Map<string, { tabs: Map<string, TabRecord>, selectedId: string | null }>} */
   const users = new Map();
+  /** @type {Map<string, Map<string, { agentId: string, userId: string, send: (frame: object) => void }>>} */
+  const agents = new Map();
   /** @type {Map<string, PendingCommand>} */
   const pending = new Map();
   /** @type {Map<string, { userId: string, response: object, at: number }>} */
@@ -76,6 +78,42 @@ export function createMemoryTabRegistry(opts = {}) {
       users.set(userId, found);
     }
     return found;
+  }
+
+  /**
+   * Presence only. Not sent from registerTab, so a tab that just joined
+   * does not look like a command frame.
+   * @param {string} userId
+   * @param {boolean} connected
+   */
+  function notifyTabs(userId, connected) {
+    const found = users.get(String(userId));
+    if (!found) return;
+    const frame = { type: 'agent', v: 1, connected: connected === true };
+    for (const tab of found.tabs.values()) {
+      try { tab.send(frame); } catch { /* a dead tab must not block the rest */ }
+    }
+  }
+
+  /**
+   * @param {string} userId
+   * @param {object} frame
+   * @param {'tabs' | 'agents'} side
+   */
+  function forward(userId, frame, side) {
+    if (side === 'tabs') {
+      const found = users.get(String(userId));
+      if (!found) return;
+      for (const tab of found.tabs.values()) {
+        try { tab.send(frame); } catch { /* tab */ }
+      }
+      return;
+    }
+    const found = agents.get(String(userId));
+    if (!found) return;
+    for (const agent of found.values()) {
+      try { agent.send(frame); } catch { /* agent */ }
+    }
   }
 
   /** @param {string} userId */
@@ -360,6 +398,61 @@ export function createMemoryTabRegistry(opts = {}) {
           resolve({ status: 'done', response });
         });
       });
+    },
+
+    /**
+     * @param {{ userId: string, agentId: string, send: (frame: object) => void }} agent
+     */
+    registerAgent(agent) {
+      const userId = String(agent.userId);
+      let found = agents.get(userId);
+      const first = !found || found.size === 0;
+      if (!found) {
+        found = new Map();
+        agents.set(userId, found);
+      }
+      found.set(agent.agentId, { agentId: agent.agentId, userId, send: agent.send });
+      if (first) notifyTabs(userId, true);
+    },
+
+    /**
+     * @param {string} userId
+     * @param {string} agentId
+     */
+    unregisterAgent(userId, agentId) {
+      const found = agents.get(String(userId));
+      if (!found) return;
+      found.delete(agentId);
+      if (found.size === 0) {
+        agents.delete(String(userId));
+        notifyTabs(userId, false);
+      }
+    },
+
+    /**
+     * @param {string} userId
+     * @returns {boolean}
+     */
+    agentConnected(userId) {
+      return (agents.get(String(userId))?.size || 0) > 0;
+    },
+
+    /**
+     * Prompt frames from an agent socket. Not stored.
+     * @param {string} userId
+     * @param {object} frame
+     */
+    forwardToTabs(userId, frame) {
+      forward(userId, frame, 'tabs');
+    },
+
+    /**
+     * Prompt frames from a tab socket. Not stored.
+     * @param {string} userId
+     * @param {object} frame
+     */
+    forwardToAgents(userId, frame) {
+      forward(userId, frame, 'agents');
     },
 
     /** Joined in-flight and unread payloads, for tests that they are dropped. */

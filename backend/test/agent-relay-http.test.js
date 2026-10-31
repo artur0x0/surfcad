@@ -219,7 +219,10 @@ describe('agent relay HTTP', () => {
       raw: `userCode=${encodeURIComponent(started.body.userCode)}&csrf=${encodeURIComponent(csrf)}`,
     });
     assert.equal(page.status, 200);
-    assert.match(page.text, /<p>Allow &lt;Cursor&gt; on laptop to connect\?<\/p>/);
+    assert.match(page.text, /<p[^>]*>Allow &lt;Cursor&gt; on laptop to connect\?<\/p>/);
+    assert.match(page.text, /surface-light/);
+    assert.match(page.text, /text-on-light/);
+    assert.match(page.text, /data-ui-action="data-agent-approve-allow"/);
     assert.equal(page.text.includes('<Cursor>'), false);
     assert.equal(page.text.includes(' in '), false);
     assert.match(page.text, /name="csrf"/);
@@ -373,6 +376,32 @@ describe('agent relay HTTP', () => {
     assert.equal(second.body.error, 'too_many_pending');
     assert.equal(second.body.message, 'Too many commands are waiting');
     assert.equal(relay.registry.pendingCount(issued.id), 1);
+  });
+
+  test('a looked-up city is "in <city>" with the credit, and a comma is stripped', async () => {
+    const relay = createAgentRelay({
+      lookupCity: async () => 'Lisbon, Portugal',
+    });
+    const port = await listen(relay);
+    const started = await send(port, '/agent/pair', {
+      method: 'POST',
+      body: { name: 'Cursor', machine: 'laptop', city: 'Ignored' },
+    });
+    const form = await send(port, '/agent', { user: 'user-a', session: 'city-1' });
+    const csrf = csrfFrom(form.text);
+    const page = await send(port, '/agent/pair/claim', {
+      method: 'POST',
+      user: 'user-a',
+      session: 'city-1',
+      origin: 'https://surfcad.com',
+      secFetchSite: 'same-origin',
+      raw: `userCode=${encodeURIComponent(started.body.userCode)}&csrf=${encodeURIComponent(csrf)}`,
+    });
+    assert.match(page.text, /Allow Cursor on laptop in Lisbon Portugal to connect\?/);
+    assert.equal(page.text.includes('Lisbon,'), false);
+    assert.equal(page.text.includes('Ignored'), false);
+    assert.match(page.text, /IP geolocation by ipdata/);
+    assert.match(page.text, /https:\/\/ipdata\.co\//);
   });
 
   test('old clients are told to update, and an oversized command is not forwarded', async () => {

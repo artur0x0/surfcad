@@ -56,7 +56,12 @@ function fakeModel() {
 describe('agent token hashes', () => {
   test('memory store keeps the SHA-256 hash and not the token', async () => {
     const { tokens, store } = memoryService();
-    const issued = await tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });
+    const issued = await tokens.issue({
+      userId: 'user-a',
+      label: 'Cursor on laptop',
+      machine: 'laptop',
+      city: 'Lisbon',
+    });
     assert.equal(Buffer.from(issued.token, 'base64url').length >= 32, true);
     const row = store.dump()[0];
     assert.equal(row.tokenHash, hashToken(issued.token));
@@ -64,6 +69,8 @@ describe('agent token hashes', () => {
     assert.equal(JSON.stringify(store.dump()).includes(issued.token), false);
     const listed = await tokens.list('user-a');
     assert.equal(listed[0].label, 'Cursor on laptop');
+    assert.equal(listed[0].machine, 'laptop');
+    assert.equal(listed[0].city, 'Lisbon');
     assert.equal(JSON.stringify(listed).includes('tokenHash'), false);
     assert.equal(JSON.stringify(listed).includes(issued.token), false);
     assert.equal((await tokens.list('user-b')).length, 0);
@@ -100,8 +107,15 @@ describe('agent token hashes', () => {
       now: () => clock.now(),
       ttlMs: 5000,
     });
-    const issued = await tokens.issue({ userId: USER_A, label: 'Cursor on laptop' });
+    const issued = await tokens.issue({
+      userId: USER_A,
+      label: 'Cursor on laptop',
+      machine: 'laptop',
+      city: 'Lisbon',
+    });
     assert.equal(model.docs[0].tokenHash, hashToken(issued.token));
+    assert.equal(model.docs[0].machine, 'laptop');
+    assert.equal(model.docs[0].city, 'Lisbon');
     assert.equal(model.docs[0].token, undefined);
     assert.equal(JSON.stringify(model.docs).includes(issued.token), false);
     assert.equal((await tokens.list(USER_A))[0].id, 'mongo-1');

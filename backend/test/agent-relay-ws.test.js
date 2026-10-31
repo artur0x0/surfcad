@@ -172,12 +172,13 @@ describe('agent relay websocket', () => {
     const reply = agent.nextMessage();
     agent.ws.send(JSON.stringify({ v: 1, id: 'c1', command: 'list_faces', args: { secret: 'payload-secret' } }));
     const started = Date.now();
-    while (tabMessages.length < 1) {
+    while (!tabMessages.some((frame) => frame.command === 'list_faces')) {
       if (Date.now() - started > 2000) break;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(tabMessages.length, 1);
-    assert.equal(tabMessages[0].args.secret, 'payload-secret');
+    const commands = tabMessages.filter((frame) => frame.command);
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0].args.secret, 'payload-secret');
     relay.registry.complete('user-a', 'c1', {
       v: 1,
       id: 'c1',
@@ -191,7 +192,7 @@ describe('agent relay websocket', () => {
     const huge = Buffer.alloc(relay.maxMessageBytes + 32, 0x61);
     agent.ws.send(huge);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(tabMessages.length, 1);
+    assert.equal(tabMessages.filter((frame) => frame.command).length, 1);
     agent.ws.close();
     old.ws.close();
   });

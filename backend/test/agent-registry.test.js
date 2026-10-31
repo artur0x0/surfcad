@@ -187,4 +187,35 @@ describe('tab registry', () => {
     registry.complete('user-a', 'c5', commandResponse({ id: 'c5', ok: true, result: {} }));
     assert.equal((await again).ok, true);
   });
+
+  test('an agent socket tells that user\'s tabs, and prompt frames stay on that user', () => {
+    const { registry } = setup();
+    const tab = [];
+    const other = [];
+    const agent = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    registry.registerTab({ userId: 'user-b', tabId: 't2', send: (frame) => other.push(frame) });
+    assert.equal(tab.length, 0);
+    assert.equal(registry.agentConnected('user-a'), false);
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag1', send: (frame) => agent.push(frame) });
+    assert.equal(tab.length, 1);
+    assert.deepEqual(tab[0], { type: 'agent', v: 1, connected: true });
+    assert.equal(other.length, 0);
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag2', send: () => {} });
+    assert.equal(tab.length, 1);
+    registry.forwardToTabs('user-a', { type: 'agent.prompt', text: 'hi' });
+    assert.equal(tab.at(-1).type, 'agent.prompt');
+    assert.equal(tab.at(-1).text, 'hi');
+    assert.equal(other.length, 0);
+    registry.forwardToAgents('user-a', { type: 'agent.reply', text: 'yo' });
+    assert.equal(agent.at(-1).text, 'yo');
+    registry.forwardToAgents('user-b', { type: 'agent.reply', text: 'nope' });
+    assert.equal(agent.length, 1);
+    registry.unregisterAgent('user-a', 'ag1');
+    assert.equal(tab.filter((frame) => frame.type === 'agent').at(-1).connected, true);
+    registry.unregisterAgent('user-a', 'ag2');
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false });
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(other.length, 0);
+  });
 });

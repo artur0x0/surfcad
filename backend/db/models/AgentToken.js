@@ -16,6 +16,14 @@ const agentTokenSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  machine: {
+    type: String,
+    default: '',
+  },
+  city: {
+    type: String,
+    default: null,
+  },
   createdAt: {
     type: Date,
     required: true,

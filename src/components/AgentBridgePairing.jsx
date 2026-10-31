@@ -18,6 +18,12 @@ import { AGENT_PAIRING_PROMPT, pairingPromptPreview } from '../agent/ws/pairingP
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
 import {
+  readRelayPreference,
+  resolveRelayTarget,
+  serverAgentWsUrl,
+} from '../agent/ws/relayPreference.js';
+import { createServerTabConnection } from '../agent/ws/serverTabConnection.js';
+import {
   AGENT_CONNECTED_TOAST_COPY,
   AGENT_CONNECTED_TOAST_MS,
   disposePairingHost,
@@ -28,6 +34,8 @@ import {
   shouldClosePairingDialogOnConnect,
   shouldPollRelay,
   shouldShowAgentBridgeDisconnect,
+  shouldShowLocalAgentConnect,
+  serverBlocksLocalPairing,
   shouldShowPairingApproval,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
@@ -68,7 +76,21 @@ export default function AgentBridgePairing({
   const [link, setLink] = useState(null);
   const [toastOpen, setToastOpen] = useState(false);
   const [popupFallback, setPopupFallback] = useState(false);
+  const [usingServer, setUsingServer] = useState(false);
+  const [serverUnreachable, setServerUnreachable] = useState(false);
+  const [preference, setPreference] = useState(() => (
+    typeof localStorage === 'undefined' ? 'auto' : readRelayPreference(localStorage)
+  ));
+  const [narrow, setNarrow] = useState(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(max-width: 768px)').matches
+  ));
   const connRef = useRef(null);
+  const serverModeRef = useRef(false);
+  const serverUnreachableRef = useRef(false);
+  const serverAttemptRef = useRef(false);
+  const userStoppedRef = useRef(false);
   const pollerRef = useRef(null);
   const transportRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
@@ -94,7 +116,13 @@ export default function AgentBridgePairing({
   const popupMode = mode === 'popup';
   const popupModeRef = useRef(popupMode);
   popupModeRef.current = popupMode;
-  const webkitHttpsBlocked = mode === 'unsupported';
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  const relayTarget = resolveRelayTarget({
+    preference,
+    userAgent,
+    isMobile: narrow,
+  });
+  const webkitHttpsBlocked = mode === 'unsupported' && relayTarget !== 'server' && !usingServer;
 
   const disposeTransport = useCallback(() => {
     transportRef.current?.dispose?.();
@@ -125,11 +153,49 @@ export default function AgentBridgePairing({
     setRelayReachable(false);
   }, [stopConnection, stopPolling]);
 
+  const disconnectFromUser = useCallback(() => {
+    userStoppedRef.current = true;
+    serverModeRef.current = false;
+    serverAttemptRef.current = false;
+    setUsingServer(false);
+    disconnectPairing();
+  }, [disconnectPairing]);
+
   useEffect(() => {
     if (!enabled) {
+      userStoppedRef.current = false;
+      serverModeRef.current = false;
+      serverAttemptRef.current = false;
+      serverUnreachableRef.current = false;
+      setUsingServer(false);
+      setServerUnreachable(false);
       disconnectPairing();
     }
   }, [enabled, disconnectPairing]);
+
+  useEffect(() => {
+    userStoppedRef.current = false;
+  }, [preference]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const sync = () => setPreference(readRelayPreference(window.localStorage));
+    window.addEventListener('surfcad-agent-relay', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('surfcad-agent-relay', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const apply = () => setNarrow(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   useEffect(() => () => {
     const next = disposePairingHost({ conn: connRef.current, poller: pollerRef.current });
@@ -219,6 +285,7 @@ export default function AgentBridgePairing({
   const onConnectionState = useCallback((next, source) => {
     if (!isCurrentPairingConnection(connRef.current, source)) return;
     setState(next);
+    if (serverModeRef.current) return;
     // The bridge window reports the relay itself (onRelay); 'advertising'
     // only means the window is opening.
     if (isRelayTabConnected(next) && !popupModeRef.current) {
@@ -265,6 +332,12 @@ export default function AgentBridgePairing({
 
   const beginConnectFlow = useCallback(() => {
     onBeginFlow?.();
+    if (serverBlocksLocalPairing({
+      relayTarget,
+      usingServer: serverModeRef.current,
+      serverUnreachable: serverUnreachableRef.current,
+    })) return;
+    serverAttemptRef.current = false;
     if (webkitHttpsBlocked) {
       setFlowOpen(true);
       return;
@@ -275,7 +348,7 @@ export default function AgentBridgePairing({
     setToken('');
     stopConnection();
     if (popupMode) startPairing('popup');
-  }, [onBeginFlow, popupMode, startPairing, stopConnection, webkitHttpsBlocked]);
+  }, [onBeginFlow, popupMode, relayTarget, startPairing, stopConnection, webkitHttpsBlocked]);
 
   const reconnectBridge = useCallback(() => {
     transportRef.current?.armOpen?.();
@@ -299,7 +372,11 @@ export default function AgentBridgePairing({
   }, [flowOpen, startPairing, state, token]);
 
   useEffect(() => {
-    if (!flowOpen || webkitHttpsBlocked || popupMode) {
+    if (!flowOpen || webkitHttpsBlocked || popupMode || serverBlocksLocalPairing({
+      relayTarget,
+      usingServer,
+      serverUnreachable,
+    })) {
       stopPolling();
       return undefined;
     }
@@ -328,7 +405,7 @@ export default function AgentBridgePairing({
     return () => {
       stopPolling();
     };
-  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, state, stopPolling, webkitHttpsBlocked, wsUrl]);
+  }, [flowOpen, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, serverUnreachable, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
 
   useEffect(() => {
     if (popupMode) return;
@@ -336,6 +413,122 @@ export default function AgentBridgePairing({
       connRef.current.connect();
     }
   }, [flowOpen, popupMode, relayReachable, state, token]);
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return undefined;
+    if (relayTarget === 'local') {
+      serverUnreachableRef.current = false;
+      setServerUnreachable(false);
+      if (serverModeRef.current || serverAttemptRef.current) {
+        serverModeRef.current = false;
+        serverAttemptRef.current = false;
+        setUsingServer(false);
+        stopConnection();
+      }
+      return undefined;
+    }
+    const pending = {
+      cancelled: false,
+      timer: /** @type {ReturnType<typeof setTimeout> | null} */ (null),
+      giveUp: /** @type {ReturnType<typeof setTimeout> | null} */ (null),
+    };
+    const markServerUnreachable = () => {
+      serverUnreachableRef.current = true;
+      setServerUnreachable(true);
+    };
+    const openServer = () => {
+      if (pending.cancelled || userStoppedRef.current) return;
+      if (!window.surfcad?.call) return;
+      if (flowOpenRef.current && connRef.current && !serverModeRef.current) return;
+      if (serverModeRef.current && connRef.current) return;
+      stopPolling();
+      serverAttemptRef.current = false;
+      stopConnection();
+      serverAttemptRef.current = true;
+      // usingServer stays false until the socket opens. A preview or golden
+      // with no /agent relay must keep Connect agent on screen.
+      const conn = createServerTabConnection({
+        url: serverAgentWsUrl(window.location),
+        call: (name, args) => window.surfcad.call(name, args),
+        onState: (next) => {
+          if (pending.cancelled || !isCurrentPairingConnection(connRef.current, conn)) return;
+          if (next === 'advertising' || next === 'paired') {
+            if (flowOpenRef.current || userStoppedRef.current) {
+              if (pending.giveUp) clearTimeout(pending.giveUp);
+              serverAttemptRef.current = false;
+              conn.disconnect();
+              return;
+            }
+            if (pending.giveUp) clearTimeout(pending.giveUp);
+            serverUnreachableRef.current = false;
+            setServerUnreachable(false);
+            serverAttemptRef.current = false;
+            serverModeRef.current = true;
+            setUsingServer(true);
+            onConnectionState(next, conn);
+            return;
+          }
+          if (!serverModeRef.current && next === 'reconnecting') {
+            if (pending.giveUp) clearTimeout(pending.giveUp);
+            serverAttemptRef.current = false;
+            markServerUnreachable();
+            conn.disconnect();
+            return;
+          }
+          if (!serverModeRef.current) return;
+          onConnectionState(next, conn);
+        },
+        onLink: (next) => {
+          if (!serverModeRef.current || !isCurrentPairingConnection(connRef.current, conn)) return;
+          setLink(next);
+        },
+      });
+      connRef.current = conn;
+      conn.connect();
+      if (pending.giveUp) clearTimeout(pending.giveUp);
+      pending.giveUp = setTimeout(() => {
+        if (pending.cancelled || serverModeRef.current) return;
+        if (!isCurrentPairingConnection(connRef.current, conn)) return;
+        serverAttemptRef.current = false;
+        markServerUnreachable();
+        conn.disconnect();
+      }, 8000);
+    };
+    const openWhenReady = (triesLeft) => {
+      if (pending.cancelled || userStoppedRef.current) return;
+      if (window.surfcad?.call) {
+        openServer();
+        return;
+      }
+      if (triesLeft <= 0) {
+        markServerUnreachable();
+        return;
+      }
+      pending.timer = setTimeout(() => openWhenReady(triesLeft - 1), 50);
+    };
+    if (userStoppedRef.current) return undefined;
+    if (relayTarget === 'server') {
+      openWhenReady(20);
+    } else {
+      probeRelayWebSocket(wsUrl, { pageSecure }).then((result) => {
+        if (pending.cancelled || userStoppedRef.current) return;
+        if (result?.ok) {
+          serverUnreachableRef.current = false;
+          setServerUnreachable(false);
+          return;
+        }
+        if (flowOpenRef.current && connRef.current && !serverModeRef.current) return;
+        openWhenReady(20);
+      }).catch(() => {
+        if (!pending.cancelled && !userStoppedRef.current) openWhenReady(20);
+      });
+    }
+    return () => {
+      pending.cancelled = true;
+      if (pending.timer) clearTimeout(pending.timer);
+      if (pending.giveUp) clearTimeout(pending.giveUp);
+    };
+  }, [enabled, onConnectionState, pageSecure, relayTarget, stopConnection, stopPolling, wsUrl]);
 
   const handleApprove = useCallback(() => {
     setApprovalUi((prev) => approvalPopupReducer(prev, 'allow'));
@@ -353,8 +546,8 @@ export default function AgentBridgePairing({
       setFlowOpen(false);
       return;
     }
-    disconnectPairing();
-  }, [disconnectPairing, handleReject, link, state]);
+    disconnectFromUser();
+  }, [disconnectFromUser, handleReject, link, state]);
 
   useEffect(() => {
     if (!flowOpen) return undefined;
@@ -519,7 +712,7 @@ export default function AgentBridgePairing({
             <button
               type="button"
               className={SECONDARY_BUTTON_CLASS}
-              onClick={disconnectPairing}
+              onClick={disconnectFromUser}
               data-ui-action="data-agent-bridge-disconnect"
             >
               Disconnect
@@ -530,7 +723,13 @@ export default function AgentBridgePairing({
     </>
   );
 
-  const connectAgentButton = !flowOpen && !paired ? (
+  const connectAgentButton = shouldShowLocalAgentConnect({
+    flowOpen,
+    paired,
+    relayTarget,
+    usingServer,
+    serverUnreachable,
+  }) ? (
     <button
       type="button"
       className={PROFILE_MENU_ITEM_CLASS}
@@ -544,10 +743,33 @@ export default function AgentBridgePairing({
   ) : null;
 
   const menuDisconnect = shouldShowAgentBridgeDisconnect({ paired, link }) && !flowOpen ? (
-    <AgentBridgeDisconnectMenuItem onDisconnect={disconnectPairing} />
+    <AgentBridgeDisconnectMenuItem onDisconnect={disconnectFromUser} />
   ) : null;
 
   const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
+  const showConnectedBanner = shouldShowAgentBridgeDisconnect({ paired, link });
+  const bannerPortal = showConnectedBanner && bodyTarget
+    ? createPortal(
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 z-[145] flex justify-center px-3 py-2"
+        data-agent-connected-banner=""
+        style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))' }}
+      >
+        <div className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-md px-3 py-2 surface-success font-ui">
+          <span className="text-ui-sm font-semibold text-on-dark">Agent connected</span>
+          <button
+            type="button"
+            className="rounded-md px-2.5 py-1 text-ui-xs font-ui text-on-dark surface-quiet"
+            onClick={disconnectFromUser}
+            data-ui-action="data-agent-connected-disconnect"
+          >
+            Disconnect
+          </button>
+        </div>
+      </div>,
+      bodyTarget,
+    )
+    : null;
   const toastPortal = toastOpen && bodyTarget
     ? createPortal(
       <div
@@ -584,6 +806,7 @@ export default function AgentBridgePairing({
     return (
       <>
         {dialog}
+        {bannerPortal}
         {toastPortal}
         {uiTarget ? createPortal(menuBody, uiTarget) : null}
       </>
@@ -594,6 +817,7 @@ export default function AgentBridgePairing({
     return (
       <>
         {dialog}
+        {bannerPortal}
         {toastPortal}
         {menuBody}
       </>
@@ -603,6 +827,7 @@ export default function AgentBridgePairing({
   return (
     <>
       {dialog}
+      {bannerPortal}
       {toastPortal}
       <div
         className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"

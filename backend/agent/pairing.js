@@ -364,7 +364,12 @@ export function createPairingService(opts) {
       const locked = lockToUser(record, fields.userId);
       if (locked) return locked;
       const label = `${record.name} on ${record.machine}`.slice(0, 160);
-      const issued = await opts.tokens.issue({ userId: String(fields.userId), label });
+      const issued = await opts.tokens.issue({
+        userId: String(fields.userId),
+        label,
+        machine: record.machine,
+        city: record.city,
+      });
       record.status = 'approved';
       record.userId = String(fields.userId);
       record.tokenPlain = issued.token;
