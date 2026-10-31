@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, SquareSplitHorizontal, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -54,6 +54,10 @@ const CrossSectionPanel = forwardRef(({
   showSideActions = false,
   sideActionsActive = false,
   onSideActionsToggle = null,
+  /** Mold draft and ejector hints. Inspection group, immediately after side actions. Hidden in game. */
+  showMoldDraft = false,
+  moldDraftActive = false,
+  onMoldDraftToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -591,6 +595,25 @@ const handleButtonClick = () => {
             data-ui-action="data-mold-side-actions"
           >
             <ArrowLeftRight size={20} />
+          </button>
+        )}
+        {showMoldDraft && (
+          <button
+            type="button"
+            onClick={() => onMoldDraftToggle?.()}
+            className={`p-2 rounded font-ui ${
+              moldDraftActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
+            aria-label={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
+            aria-pressed={!!moldDraftActive}
+            data-mold-draft=""
+            data-mold-draft-state={moldDraftActive ? 'on' : 'off'}
+            data-ui-action="data-mold-draft"
+          >
+            <ArrowUpFromLine size={20} />
           </button>
         )}
         <button

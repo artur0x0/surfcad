@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 204,
+  "count": 205,
   "$defs": {
     "status": {
       "type": "object",
@@ -2534,7 +2534,7 @@
     },
     {
       "name": "mold_fit",
-      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies each face as cavity (faces the pull), core (faces the other way), or parting-adjacent (inside the 10° band), and lists the parting line. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters, each with a suggested pull. That split is a heuristic. count, slideCount, and lifterCount are the numbers a later tooling adder can use.",
+      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies each face as cavity (faces the pull), core (faces the other way), or parting-adjacent (inside the 10° band), and lists the parting line. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters, each with a suggested pull. That split is a heuristic. count, slideCount, and lifterCount are the numbers a later tooling adder can use. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2666,6 +2666,37 @@
       "group": "measure",
       "immediate": true,
       "uiEntry": "data-mold-side-actions",
+      "example": {
+        "on": true
+      }
+    },
+    {
+      "name": "mold_draft",
+      "description": "Show or hide mold-draft violations on the active part, in the part local frame. on true flags side walls below 1° of draft relative to the mold-analysis pull and lists ejector-pin and sleeve candidate counts. Those candidates are a heuristic. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not CAD draft mode, not an automatic draft fix, and not a quote.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "true shows mold-draft violations and ejector counts. false restores paint and the part colour. Omit to toggle."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "measure",
+      "immediate": true,
+      "uiEntry": "data-mold-draft",
       "example": {
         "on": true
       }

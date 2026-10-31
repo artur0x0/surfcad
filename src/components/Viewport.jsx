@@ -612,9 +612,12 @@ import { partingLegendModel } from '../molding/parting.js';
 import { detachPartingSkin, syncPartingSkin } from '../molding/partingSkin.js';
 import { sideActionLegendModel } from '../molding/sideActions.js';
 import { detachSideActionSkin, syncSideActionSkin } from '../molding/sideActionSkin.js';
+import { moldDraftLegendModel } from '../molding/moldDraft.js';
+import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import SideActionLegend from './molding/SideActionLegend';
+import MoldDraftLegend from './molding/MoldDraftLegend';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1446,11 +1449,18 @@ const Viewport = forwardRef(({
   const clearSideActionsRef = useRef(() => {});
   const applySideActionSkinRef = useRef(() => {});
   const [sideActionLegend, setSideActionLegend] = useState(null);
+  const agentMoldDraftRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const moldDraftOnRef = useRef(false);
+  const moldDraftFieldRef = useRef(null);
+  const clearMoldDraftRef = useRef(() => {});
+  const applyMoldDraftSkinRef = useRef(() => {});
+  const [moldDraftLegend, setMoldDraftLegend] = useState(null);
   useEffect(() => {
     if (mode === 'game') {
       clearWallMapRef.current();
       clearPartingRef.current();
       clearSideActionsRef.current();
+      clearMoldDraftRef.current();
     }
   }, [mode]);
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
@@ -2737,6 +2747,7 @@ const Viewport = forwardRef(({
       moldWallMap: (args) => agentMoldWallMapRef.current(args),
       moldParting: (args) => agentMoldPartingRef.current(args),
       moldSideActions: (args) => agentMoldSideActionsRef.current(args),
+      moldDraft: (args) => agentMoldDraftRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -5391,6 +5402,7 @@ const Viewport = forwardRef(({
     clearWallMapRef.current();
     clearPartingRef.current();
     clearSideActionsRef.current();
+    clearMoldDraftRef.current();
     exitContourMode();
     setFilletMode(null);
     filletModeRef.current = null;
@@ -13702,9 +13714,19 @@ const Viewport = forwardRef(({
   };
   clearSideActionsRef.current = clearSideActions;
 
+  const clearMoldDraft = () => {
+    moldDraftOnRef.current = false;
+    moldDraftFieldRef.current = null;
+    setMoldDraftLegend(null);
+    detachMoldDraftSkin(resultRef.current);
+    for (const mesh of assemblyExtrasRef.current.values()) detachMoldDraftSkin(mesh);
+  };
+  clearMoldDraftRef.current = clearMoldDraft;
+
   const showWallMap = (wall, geometry) => {
     clearParting();
     clearSideActions();
+    clearMoldDraft();
     wallMapOnRef.current = true;
     wallFieldRef.current = { geometry, wall };
     setWallLegend(thicknessLegendModel(wall));
@@ -13714,6 +13736,7 @@ const Viewport = forwardRef(({
   const showParting = (parting, geometry) => {
     clearWallMap();
     clearSideActions();
+    clearMoldDraft();
     partingOnRef.current = true;
     partingFieldRef.current = { geometry, parting };
     setPartingLegend(partingLegendModel(parting));
@@ -13817,6 +13840,7 @@ const Viewport = forwardRef(({
   const showSideActions = (sideActions, geometry) => {
     clearWallMap();
     clearParting();
+    clearMoldDraft();
     sideActionsOnRef.current = true;
     sideActionsFieldRef.current = { geometry, sideActions };
     setSideActionLegend(sideActionLegendModel(sideActions));
@@ -13876,6 +13900,63 @@ const Viewport = forwardRef(({
     };
   };
 
+  const showMoldDraft = (moldDraft, geometry) => {
+    clearWallMap();
+    clearParting();
+    clearSideActions();
+    moldDraftOnRef.current = true;
+    moldDraftFieldRef.current = { geometry, moldDraft };
+    setMoldDraftLegend(moldDraftLegendModel(moldDraft));
+    syncMoldDraftSkin(resultRef.current, moldDraft);
+  };
+
+  applyMoldDraftSkinRef.current = (host) => {
+    if (!host) return;
+    if (!moldDraftOnRef.current || host !== resultRef.current) {
+      detachMoldDraftSkin(host);
+      return;
+    }
+    const geometry = host.geometry;
+    let cached = moldDraftFieldRef.current;
+    if (!cached || cached.geometry !== geometry) {
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+      if (analyzed?.error || !analyzed?.moldDraft) {
+        clearMoldDraft();
+        return;
+      }
+      cached = { geometry, moldDraft: analyzed.moldDraft };
+      moldDraftFieldRef.current = cached;
+      setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
+    }
+    syncMoldDraftSkin(host, cached.moldDraft);
+  };
+
+  agentMoldDraftRef.current = ({ on } = {}) => {
+    const next = typeof on === 'boolean' ? on : !moldDraftOnRef.current;
+    if (!next) {
+      clearMoldDraft();
+      return { on: false };
+    }
+    const geometry = resultRef.current?.geometry;
+    if (!geometry?.attributes?.position) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    if (analyzed?.error) return analyzed;
+    if (!analyzed.moldDraft) {
+      return { error: { code: 'no_mesh', message: 'No mold draft on that mesh' } };
+    }
+    showMoldDraft(analyzed.moldDraft, geometry);
+    return {
+      on: true,
+      violations: analyzed.moldDraft.violationCount,
+      minDeg: analyzed.moldDraft.minDeg,
+      minDraftDeg: analyzed.moldDraft.minDraftDeg,
+      pins: analyzed.moldDraft.ejectors.pinCount,
+      sleeves: analyzed.moldDraft.ejectors.sleeveCount,
+    };
+  };
+
   applyFaceSkinRef.current = (host) => {
     if (!host) return;
     const painting = paintModeRef.current;
@@ -13893,6 +13974,7 @@ const Viewport = forwardRef(({
       applyWallSkinRef.current(host);
       applyPartingSkinRef.current(host);
       applySideActionSkinRef.current(host);
+      applyMoldDraftSkinRef.current(host);
       if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
       return;
     }
@@ -13909,6 +13991,7 @@ const Viewport = forwardRef(({
     applyWallSkinRef.current(host);
     applyPartingSkinRef.current(host);
     applySideActionSkinRef.current(host);
+    applyMoldDraftSkinRef.current(host);
     if (crossSectionEnabledRef.current) syncSectionClipMeshes(host);
   };
 
@@ -16244,6 +16327,7 @@ const Viewport = forwardRef(({
       {mode !== 'game' && <WallLegend legend={wallLegend} />}
       {mode !== 'game' && <PartingLegend legend={partingLegend} />}
       {mode !== 'game' && <SideActionLegend legend={sideActionLegend} />}
+      {mode !== 'game' && <MoldDraftLegend legend={moldDraftLegend} />}
 
       {/* Cross-Section Panel */}
         <CrossSectionPanel
@@ -16274,6 +16358,7 @@ const Viewport = forwardRef(({
             clearWallMapRef.current();
             clearPartingRef.current();
             clearSideActionsRef.current();
+            clearMoldDraftRef.current();
             feaToggleRef.current?.();
           }}
           showWall={mode !== 'game'}
@@ -16285,6 +16370,9 @@ const Viewport = forwardRef(({
           showSideActions={mode !== 'game'}
           sideActionsActive={!!sideActionLegend}
           onSideActionsToggle={() => agentMoldSideActionsRef.current({})}
+          showMoldDraft={mode !== 'game'}
+          moldDraftActive={!!moldDraftLegend}
+          onMoldDraftToggle={() => agentMoldDraftRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();

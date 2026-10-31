@@ -35,7 +35,7 @@ function restorePaintSkin(host) {
   const saved = host?.userData?.sideActionPaintHidden;
   if (!saved) return;
   host.userData.sideActionPaintHidden = null;
-  if (host.userData?.stressSkin || host.userData?.wallSkin || host.userData?.partingSkin) return;
+  if (host.userData?.stressSkin || host.userData?.wallSkin || host.userData?.partingSkin || host.userData?.moldDraftSkin) return;
   const paint = host.userData?.faceColorSkin;
   if (paint) paint.visible = saved.visible;
 }

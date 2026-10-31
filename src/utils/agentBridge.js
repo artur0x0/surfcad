@@ -618,6 +618,7 @@ export function createSurfcadBridge(hostSource) {
     moldWallMap: (args) => hostFn('moldWallMap')?.(args),
     moldParting: (args) => hostFn('moldParting')?.(args),
     moldSideActions: (args) => hostFn('moldSideActions')?.(args),
+    moldDraft: (args) => hostFn('moldDraft')?.(args),
     readBodies: () => (hostFn('readBodies')?.() ?? { partId: null, bodies: [] }),
     readGeometryWorkers: () => (hostFn('readGeometryWorkers')?.() ?? null),
     resolveMoveAnchor: (args) => hostFn('resolveMoveAnchor')?.(args),
