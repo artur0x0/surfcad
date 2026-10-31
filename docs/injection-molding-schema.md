@@ -69,4 +69,14 @@ does not call Stripe. `reviewFeePaid` defaults to false.
 
 Indexes: `status` + `createdAt`; `partnerId` + `status`; `userId` + `createdAt`.
 
-This slice has no admin UI and no quote API.
+## Admin API
+
+Catalog edits are `GET` and `POST` `/api/admin/molding/partners`, `/machines`,
+`/resins`, and `/rates`, plus `PATCH /:id` and `POST /:id/deactivate` on each.
+The router is the one already mounted at `/api/admin`. Signed-out callers and
+non-admins get 404. The per-user limit matches `GET /api/admin/stats`.
+
+Lists include inactive rows. Partner rows include `displayName`. There is no
+public catalog route. Deactivate sets `active` to false and does not change
+child rows. A later `PATCH` with `active: true` turns a row back on. Leads are
+not on this API. There is no admin UI and no quote API.

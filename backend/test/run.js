@@ -23,3 +23,4 @@ import './prune-uploads.test.js';
 import './internal-users.test.js';
 import './posthog.test.js';
 import './molding-schema.test.js';
+import './molding-admin.test.js';
