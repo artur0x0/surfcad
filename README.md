@@ -20,7 +20,7 @@ npx surfcad-mcp
     "surfcad": {
       "command": "npx",
       "args": ["-y", "surfcad-mcp"],
-      "env": { "SURFCAD_PAIRING_CODE": "ABCDEF" }
+      "env": { "SURFCAD_PAIRING_CODE": "BCDFGHJK" }
     }
   }
 }
@@ -28,8 +28,8 @@ npx surfcad-mcp
 
 **Pair with surfcad.com:**
 1. Open [surfcad.com](https://surfcad.com) in Chrome.
-2. Open the profile chip and choose **Connect Agent**. When the relay is found, a six-character pairing code appears.
-3. Put that code in `SURFCAD_PAIRING_CODE`, or call the MCP `pair` tool with `{ "code": "ABCDEF" }`.
+2. Open the profile chip and choose **Connect Agent**. When the relay is found, an eight-character pairing code appears.
+3. Put that code in `SURFCAD_PAIRING_CODE`, or call the MCP `pair` tool with `{ "code": "BCDFGHJK" }`.
 4. Click **Allow** in SurfCAD. Nothing pairs without your approval.
 
 Safari on a Mac pairs through a small bridge pop-up; keep it open while the agent works. Safari on iPhone and iPad is not supported. For tools, troubleshooting, and running from a checkout, see [packages/surfcad-mcp/README.md](packages/surfcad-mcp/README.md) and [docs/agent/SKILL.md](docs/agent/SKILL.md).

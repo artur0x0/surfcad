@@ -7,8 +7,8 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 ## Pair
 
 1. Open [https://surfcad.com](https://surfcad.com) (or local dev / `?agent=1`).
-2. Open the **profile** chip (top-right AR initials) → **Connect agent**. The profile menu closes and a pairing popup opens. Copy the setup prompt if the relay is not running yet; once the relay is found the prompt hides and the six-character pairing code appears. Esc or a backdrop tap before pairing cancels the attempt.
-3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` env, or the MCP `pair` tool with `{ "code": "ABCDEF" }`). **Allow** (green check) / **Deny** (grey X) replace the code in the same popup; they never show together. After Allow the popup closes and a green **Agent connected** toast appears.
+2. Open the **profile** chip (top-right AR initials) → **Connect agent**. The profile menu closes and a pairing popup opens. Copy the setup prompt if the relay is not running yet; once the relay is found the prompt hides and the eight-character pairing code appears. Esc or a backdrop tap before pairing cancels the attempt.
+3. Run `npx surfcad-mcp` in your MCP client with that code (`SURFCAD_PAIRING_CODE` env, or the MCP `pair` tool with `{ "code": "BCDFGHJK" }`). **Allow** (green check) / **Deny** (grey X) replace the code in the same popup; they never show together. After Allow the popup closes and a green **Agent connected** toast appears.
 4. **Read the `pair` result text.** With no webhook registered it carries an onboarding note (a plain `type: "text"` block). Relay this to the user exactly: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the pair text says **Webhook is active.**, do not ask again. See [In-viewer prompts](#in-viewer-prompts-webhook-or-polling).
 5. **Call `guide { topic: "start" }`** before the first model call. The MCP server's own `guide` tool returns plain-text topics (`start`, `dialect`, `features`, `selection`, `paint`, `limits`, `camera`, `assembly`; `guide {}` lists them). `dialect` is every script helper by signature, rendered from the helper registry; `list_helpers { names }` returns a helper's full doc and examples. `start` is the build guidance below plus a three-call example; the initialize instructions are a short quick-start that points at it.
 
@@ -35,7 +35,7 @@ If the SurfCAD tab is asleep the error message is `SurfCAD tab is asleep`. A rev
     "surfcad": {
       "command": "node",
       "args": ["/absolute/path/to/surfcad/packages/surfcad-mcp/bin/surfcad-mcp.js"],
-      "env": { "SURFCAD_PAIRING_CODE": "ABCDEF" }
+      "env": { "SURFCAD_PAIRING_CODE": "BCDFGHJK" }
     }
   }
 }

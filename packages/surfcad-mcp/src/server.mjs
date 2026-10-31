@@ -81,7 +81,7 @@ function registeredToolDefinitions(bridgeTools) {
         properties: {
           code: {
             type: 'string',
-            description: '6-character pairing code from the SurfCAD Local agent panel',
+            description: '8-character pairing code from the SurfCAD Local agent panel',
           },
         },
       },
@@ -270,7 +270,7 @@ export async function createSurfcadMcpServer(options = {}) {
       if (!code) {
         return errorResult({
           code: 'bad_pairing_code',
-          message: `Missing pairing code. Pass { "code": "......" } or set SURFCAD_PAIRING_CODE. ${pairingEnvHint()}`,
+          message: `Missing pairing code. Pass { "code": "........" } or set SURFCAD_PAIRING_CODE. ${pairingEnvHint()}`,
         }, name);
       }
       try {

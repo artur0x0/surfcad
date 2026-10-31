@@ -217,7 +217,7 @@ export class RemoteSession {
   }
 
   /**
-   * Already logged in. The 6-character code is the local relay's; remote
+   * Already logged in. The 8-character code is the local relay's; remote
    * mode ignores it and reports the saved login.
    * @param {string} [_] local pairing code; a remote login ignores it
    */

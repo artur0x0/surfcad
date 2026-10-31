@@ -44,7 +44,7 @@ export function pairPendingError() {
 }
 
 export function pairingEnvHint() {
-  return 'Copy the 6-character code from SurfCAD → Local agent → Show pairing code.';
+  return 'Copy the 8-character code from SurfCAD → Local agent → Show pairing code.';
 }
 
 export function tabAsleepError() {

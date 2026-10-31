@@ -20,7 +20,7 @@ const CRASH_GUIDE = 'The whole run was treated as a crash (reason timeout, out_o
 
 const NAMES_GUIDE = 'Faces and edges are addressed by the keys and names list_faces / list_feature_edges return for the current mesh. A key from before a rebuild, a display label, or a guess answers unknown_face / unknown_edge; a key that matches several patches answers ambiguous_face / ambiguous_edge with details.candidates. List again (filter and page the list on a detailed part), then select_faces { keys } or { names } with a row from that answer. Faces a helper built carry a name (feature.role) that survives upstream edits; prefer names when you will edit the part again.';
 
-const PAIRING_GUIDE = 'A bridge call before pair is not_paired: call pair { code } with the 6-character code from SurfCAD → Local agent → Show pairing code (or set SURFCAD_PAIRING_CODE). pair_pending means the user has not clicked Allow yet; wait and retry the same call. pair_rejected means they clicked Deny; ask before trying again. pairing_lost means the tab or relay dropped and the server re-pairs on its own: retry in a few seconds, do not ask for a new code. Webhook errors (bad_webhook_url) need a public https URL; a local session polls read_messages { wait_ms: 25000 } instead.';
+const PAIRING_GUIDE = 'A bridge call before pair is not_paired: call pair { code } with the 8-character code from SurfCAD → Local agent → Show pairing code (or set SURFCAD_PAIRING_CODE). pair_pending means the user has not clicked Allow yet; wait and retry the same call. pair_rejected means they clicked Deny; ask before trying again. pairing_lost means the tab or relay dropped and the server re-pairs on its own: retry in a few seconds, do not ask for a new code. Webhook errors (bad_webhook_url) need a public https URL; a local session polls read_messages { wait_ms: 25000 } instead.';
 
 const CONTOUR_GUIDE = 'open_feature on an extrude, revolve, loft or sweep that owns a contour reopens its sketch; edit_feature then patches the sketch (points, radius, width / height, polygon_preset, or tool) and confirm_feature saves the sketch and the feature in one step. no_feature_edit means nothing is open: open_feature { id } first (feature_tree {} lists ids), then edit, then confirm. sketch_cancel leaves a reopened sketch without writing.';
 
@@ -175,9 +175,9 @@ export const ERROR_HINTS = Object.freeze({
   pair_pending: { hint: 'The user has not clicked Allow yet: wait a few seconds and retry the same call; do not ask for a new code. If SurfCAD shows no Allow prompt, the tab may be an older build than this server: ask the user to reload SurfCAD and pair again.', guide: PAIRING_GUIDE },
   pair_rejected: { hint: 'The user clicked Deny: ask them before calling pair again.', guide: PAIRING_GUIDE },
   pair_cancelled: { hint: 'The pairing attempt was cancelled: pair { code } again when the user is ready.', guide: PAIRING_GUIDE },
-  pair_failed: { hint: 'Pairing failed (message): check the code (6 characters, from the open tab) and that the tab shows it, then pair again.', guide: PAIRING_GUIDE },
+  pair_failed: { hint: 'Pairing failed (message): check the code (8 characters, from the open tab) and that the tab shows it, then pair again.', guide: PAIRING_GUIDE },
   pairing_lost: { hint: 'The tab or relay dropped and the server re-pairs on its own: retry in a few seconds; do not ask for a new code.', guide: PAIRING_GUIDE },
-  bad_pairing_code: { hint: 'pair { code: "......" } with the 6-character code from SurfCAD → Local agent → Show pairing code.', guide: PAIRING_GUIDE },
+  bad_pairing_code: { hint: 'pair { code: "........" } with the 8-character code from SurfCAD → Local agent → Show pairing code.', guide: PAIRING_GUIDE },
   tab_asleep: { hint: 'Open SurfCAD in Chrome and keep that tab open, then retry this call.' },
   too_many_pending: { hint: 'Wait for the SurfCAD tab to finish the commands already in flight, then retry.' },
   token_revoked: { hint: 'Run npx surfcad-mcp login and approve the new code in SurfCAD.' },

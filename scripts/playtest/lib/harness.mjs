@@ -127,7 +127,7 @@ export async function enableAgentBridgeAutoApprove(page) {
 }
 
 /**
- * Open Local agent pairing and return the 6-character code shown in the panel.
+ * Open Local agent pairing and return the 8-character code shown in the panel.
  * @param {import('playwright-core').Page} page
  */
 export async function showAgentBridgePairingCode(page) {

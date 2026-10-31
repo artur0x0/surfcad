@@ -112,7 +112,10 @@ export function attachAgentWebSocket(httpServer, relay, options) {
           return;
         }
         try {
-          wss.handleUpgrade(req, socket, head, (ws) => bindAgent(ws, auth, relay));
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            bindAgent(ws, auth, relay);
+            wss.emit('connection', ws, req);
+          });
         } catch {
           rejectUpgrade(socket, 401, 'Authentication required');
         }
@@ -134,7 +137,10 @@ export function attachAgentWebSocket(httpServer, relay, options) {
       }
       if (socket.destroyed) return;
       try {
-        wss.handleUpgrade(req, socket, head, (ws) => bindTab(ws, user, relay, req));
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          bindTab(ws, user, relay, req);
+          wss.emit('connection', ws, req);
+        });
       } catch {
         rejectUpgrade(socket, 401, 'Authentication required');
       }
@@ -143,6 +149,9 @@ export function attachAgentWebSocket(httpServer, relay, options) {
     });
   });
 
+  // handleUpgrade does not emit this on its own. Both upgrade paths emit
+  // it after bind. The listener is what records pongs; without that, the
+  // next heartbeat treats every socket as a missed pong and terminates it.
   wss.on('connection', (ws) => {
     ws.isAlive = true;
     ws.on('pong', () => {
@@ -180,13 +189,34 @@ function sessionProbe(headers) {
 }
 
 /**
+ * Cookie plus test user. Tabs that present the same session share one
+ * recheck per tick. The user id is compared afterwards, per socket.
+ * @param {Record<string, string>} headers
+ */
+function sessionKey(headers) {
+  return `${headers.cookie || ''}\n${headers['x-test-user'] || ''}`;
+}
+
+/**
+ * @param {import('ws').WebSocket} ws
+ * @param {number} code
+ * @param {string} reason
+ */
+function closeOpen(ws, code, reason) {
+  if (ws.readyState === WebSocket.OPEN) ws.close(code, reason);
+}
+
+/**
  * Ping every socket. Terminate one that missed the previous pong.
  * An agent whose token is revoked or expired is closed with 4001 even
  * when it has sent no further frame. A tab whose session is gone is
  * closed with 1000. That is not a revoked agent token.
- * A session or token-store error closes the socket with 1011. Leaving
- * it open would keep a tab or agent connected after the check that
- * should have dropped it failed.
+ * Each tick looks up a token hash once and a session once, then applies
+ * that result to every socket that shares it. There is no cache across
+ * ticks, so a revoke is enforced on the next heartbeat.
+ * A session or token-store error closes every socket that needed that
+ * lookup with 1011. Leaving them open would keep a tab or agent connected
+ * after the check that should have dropped it failed.
  * @param {import('ws').WebSocketServer} wss
  * @param {{
  *   tokens: { status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'> },
@@ -194,43 +224,79 @@ function sessionProbe(headers) {
  * @param {(req: import('node:http').IncomingMessage) => Promise<{ id: string } | null>} [authenticateUpgrade]
  */
 async function sweepSockets(wss, relay, authenticateUpgrade) {
-  for (const ws of wss.clients) {
+  /** @type {Map<string, { headers: Record<string, string>, sockets: import('ws').WebSocket[] }>} */
+  const sessions = new Map();
+  /** @type {Map<string, import('ws').WebSocket[]>} */
+  const byToken = new Map();
+  const clients = [...wss.clients];
+  for (const ws of clients) {
     const tab = /** @type {{ userId: string, headers: Record<string, string> } | undefined} */ (ws.tabSession);
     if (tab && authenticateUpgrade) {
-      const probe = sessionProbe(tab.headers);
-      try {
-        const again = await authenticateUpgrade(probe);
-        if (!again || again.id !== tab.userId) {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.close(TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON);
-          }
-          continue;
-        }
-      } catch (err) {
-        // Fail closed. A store error is not proof the session is still valid.
-        console.error('[agent-relay] session recheck failed; closing tab socket', err?.message || err);
-        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
-        continue;
-      } finally {
-        probe.socket.destroy();
+      const key = sessionKey(tab.headers);
+      let group = sessions.get(key);
+      if (!group) {
+        group = { headers: tab.headers, sockets: [] };
+        sessions.set(key, group);
       }
+      group.sockets.push(ws);
     }
     const auth = /** @type {{ tokenHash?: string } | undefined} */ (ws.agentAuth);
     if (auth?.tokenHash) {
-      try {
-        const live = await relay.tokens.status(auth.tokenHash);
-        if (live !== 'ok' && ws.readyState === WebSocket.OPEN) {
-          const expired = live === 'expired';
-          ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
-          continue;
+      let group = byToken.get(auth.tokenHash);
+      if (!group) {
+        group = [];
+        byToken.set(auth.tokenHash, group);
+      }
+      group.push(ws);
+    }
+  }
+
+  /** @type {Set<import('ws').WebSocket>} */
+  const dropping = new Set();
+
+  await Promise.all([...sessions.entries()].map(async ([, group]) => {
+    const probe = sessionProbe(group.headers);
+    try {
+      const again = await authenticateUpgrade(probe);
+      for (const ws of group.sockets) {
+        const tab = /** @type {{ userId: string }} */ (ws.tabSession);
+        if (!again || again.id !== tab.userId) {
+          dropping.add(ws);
+          closeOpen(ws, TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON);
         }
-      } catch (err) {
-        // Fail closed. 1011, not 4001: a store error is not a revoked token.
-        console.error('[agent-relay] token status failed; closing agent socket', err?.message || err);
-        if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
-        continue;
+      }
+    } catch (err) {
+      console.error('[agent-relay] session recheck failed; closing tab socket', err?.message || err);
+      for (const ws of group.sockets) {
+        dropping.add(ws);
+        closeOpen(ws, 1011, 'internal');
+      }
+    } finally {
+      probe.socket.destroy();
+    }
+  }));
+
+  await Promise.all([...byToken.entries()].map(async ([tokenHash, sockets]) => {
+    try {
+      const live = await relay.tokens.status(tokenHash);
+      if (live === 'ok') return;
+      const expired = live === 'expired';
+      for (const ws of sockets) {
+        dropping.add(ws);
+        closeOpen(ws, AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
+      }
+    } catch (err) {
+      console.error('[agent-relay] token status failed; closing agent socket', err?.message || err);
+      for (const ws of sockets) {
+        dropping.add(ws);
+        closeOpen(ws, 1011, 'internal');
       }
     }
+  }));
+
+  for (const ws of clients) {
+    if (dropping.has(ws)) continue;
+    if (ws.readyState !== WebSocket.OPEN) continue;
     if (ws.isAlive === false) {
       ws.terminate();
       continue;

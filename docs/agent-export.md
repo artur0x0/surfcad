@@ -431,8 +431,8 @@ Loopback-only relay for a local MCP / stdio process to drive the same bridge as 
 
 **Pairing (control messages use `type`):**
 
-1. Tab (after the user shows a code): `{ "type": "register_tab", "token": "ABCDEF" }`
-2. Local client: `{ "type": "pair", "token": "ABCDEF" }`
+1. Tab (after the user shows a code): `{ "type": "register_tab", "token": "BCDFGHJK" }`
+2. Local client: `{ "type": "pair", "token": "BCDFGHJK" }`
 3. Tab user approves: `{ "type": "pair_approve" }` → both sides receive `{ "type": "paired", "token": "…" }`
 
 **Bridge traffic (after paired):**

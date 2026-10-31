@@ -300,7 +300,7 @@ export default function AgentBridgePairing({
     if (webkitHttpsBlocked) return;
     if (!enabled || typeof window === 'undefined' || !window.surfcad?.call) return;
     stopConnection();
-    const nextCode = code || createPairingToken(6);
+    const nextCode = code || createPairingToken();
     setToken(nextCode);
     const transport = createAgentBridgeTransport({ mode: transportMode });
     transportRef.current = transport;

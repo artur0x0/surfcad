@@ -16,6 +16,7 @@ import { authenticateBrowserUpgrade } from '../agent/browserAuth.js';
 import { attachAgentWebSocket } from '../agent/wsServer.js';
 import { revokeRelayUser } from '../agent/install.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from '../agent/tabSockets.js';
+import { hashToken } from '../agent/tokens.js';
 
 /** @type {import('node:http').Server[]} */
 const servers = [];
@@ -55,6 +56,41 @@ async function listen(relay, authenticateUpgrade) {
  * @param {string} url
  * @param {Record<string, string>} headers
  */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Group timestamped events into one heartbeat tick. Lookups in a tick run
+ * together; the next tick is a full interval later.
+ * @param {{ at: number }[]} events
+ * @param {number} gapMs
+ */
+function bursts(events, gapMs) {
+  /** @type {typeof events[]} */
+  const groups = [];
+  for (const event of events) {
+    const last = groups.at(-1);
+    if (!last || event.at - last.at(-1).at > gapMs) groups.push([event]);
+    else last.push(event);
+  }
+  return groups;
+}
+
+/**
+ * @param {import('ws').WebSocket} ws
+ * @param {string} label
+ */
+function closeEvent(ws, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), 2000);
+    ws.once('close', (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    });
+  });
+}
+
 function openSocket(url, headers) {
   const ws = new WebSocket(url, { headers });
   /** @type {object[]} */
@@ -595,6 +631,171 @@ describe('agent relay websocket', () => {
     const event = await closed;
     assert.equal(event.code, 1011);
     assert.equal(event.reason, 'internal');
+  });
+
+  test('one heartbeat looks up a shared tab session once', async () => {
+    /** @type {{ id: string, at: number }[]} */
+    const probes = [];
+    let counting = false;
+    const relay = createAgentRelay({ pingIntervalMs: 80 });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      if (counting && typeof id === 'string') probes.push({ id, at: Date.now() });
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const shared = { origin: 'https://surfcad.com', 'x-test-user': 'user-a', cookie: 'sid=same' };
+    const tabs = [
+      openSocket(url, shared),
+      openSocket(url, shared),
+      openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-b', cookie: 'sid=other' }),
+    ];
+    for (const tab of tabs) {
+      await tab.opened;
+      assert.equal((await tab.nextMessage()).type, 'registered');
+    }
+    counting = true;
+    await sleep(700);
+    const groups = bursts(probes, 40);
+    assert.ok(groups.length >= 4, `expected several ticks, saw ${groups.length}`);
+    for (const group of groups.slice(1, -1)) {
+      const ids = group.map((probe) => probe.id).sort();
+      assert.deepEqual(ids, ['user-a', 'user-b']);
+    }
+    for (const tab of tabs) tab.ws.close();
+  });
+
+  test('one heartbeat looks up a shared agent token once', async () => {
+    const relay = createAgentRelay({ pingIntervalMs: 80 });
+    const port = await listen(relay, async () => null);
+    const shared = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const other = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const sockets = [
+      openSocket(url, { authorization: `Bearer ${shared.token}` }),
+      openSocket(url, { authorization: `Bearer ${shared.token}` }),
+      openSocket(url, { authorization: `Bearer ${other.token}` }),
+    ];
+    for (const agent of sockets) await agent.opened;
+    /** @type {{ hash: string, at: number }[]} */
+    const calls = [];
+    let counting = false;
+    const real = relay.tokens.status.bind(relay.tokens);
+    relay.tokens.status = async (hash) => {
+      if (counting) calls.push({ hash, at: Date.now() });
+      return real(hash);
+    };
+    counting = true;
+    await sleep(700);
+    const groups = bursts(calls, 40);
+    assert.ok(groups.length >= 4, `expected several ticks, saw ${groups.length}`);
+    const hashes = new Set([hashToken(shared.token), hashToken(other.token)]);
+    for (const group of groups.slice(1, -1)) {
+      assert.equal(group.length, 2);
+      assert.deepEqual(new Set(group.map((call) => call.hash)), hashes);
+    }
+    for (const agent of sockets) agent.ws.close();
+  });
+
+  test('a session-store error closes every tab that shared the lookup', async () => {
+    let armed = false;
+    let sharedProbes = 0;
+    const relay = createAgentRelay({ pingIntervalMs: 200 });
+    const port = await listen(relay, async (req) => {
+      if (armed && req.headers.cookie === 'sid=same') sharedProbes += 1;
+      if (armed && req.headers.cookie === 'sid=same') throw new Error('session store down');
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const headers = { origin: 'https://surfcad.com', 'x-test-user': 'user-a', cookie: 'sid=same' };
+    const first = openSocket(url, headers);
+    const second = openSocket(url, headers);
+    const other = openSocket(url, {
+      origin: 'https://surfcad.com',
+      'x-test-user': 'user-b',
+      cookie: 'sid=other',
+    });
+    await first.opened;
+    await second.opened;
+    await other.opened;
+    assert.equal((await first.nextMessage()).type, 'registered');
+    assert.equal((await second.nextMessage()).type, 'registered');
+    assert.equal((await other.nextMessage()).type, 'registered');
+    const closed = Promise.all([
+      closeEvent(first.ws, 'the first shared tab'),
+      closeEvent(second.ws, 'the second shared tab'),
+    ]);
+    armed = true;
+    const events = await closed;
+    assert.equal(events[0].code, 1011);
+    assert.equal(events[1].code, 1011);
+    assert.equal(events[0].reason, 'internal');
+    assert.equal(sharedProbes, 1);
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    other.ws.close();
+  });
+
+  test('a token-store error closes every socket that shared that token', async () => {
+    const relay = createAgentRelay({ pingIntervalMs: 200 });
+    const port = await listen(relay, async () => null);
+    const shared = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const otherIssued = await relay.tokens.issue({ userId: 'user-a', label: 'phone' });
+    const sharedHash = hashToken(shared.token);
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const first = openSocket(url, { authorization: `Bearer ${shared.token}` });
+    const second = openSocket(url, { authorization: `Bearer ${shared.token}` });
+    const other = openSocket(url, { authorization: `Bearer ${otherIssued.token}` });
+    await first.opened;
+    await second.opened;
+    await other.opened;
+    let lookups = 0;
+    let armed = false;
+    const real = relay.tokens.status.bind(relay.tokens);
+    relay.tokens.status = async (hash) => {
+      if (!armed) return real(hash);
+      lookups += 1;
+      if (hash === sharedHash) throw new Error('token store down');
+      return real(hash);
+    };
+    const closed = Promise.all([
+      closeEvent(first.ws, 'the first shared agent'),
+      closeEvent(second.ws, 'the second shared agent'),
+    ]);
+    armed = true;
+    const events = await closed;
+    assert.equal(events[0].code, 1011);
+    assert.equal(events[1].code, 1011);
+    assert.equal(events[0].reason, 'internal');
+    assert.equal(lookups, 2);
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    other.ws.close();
+  });
+
+  test('revoking a token closes every socket for it on the next heartbeat', async () => {
+    const relay = createAgentRelay({ pingIntervalMs: 80 });
+    const port = await listen(relay, async () => null);
+    const shared = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const otherIssued = await relay.tokens.issue({ userId: 'user-b', label: 'other' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const first = openSocket(url, { authorization: `Bearer ${shared.token}` });
+    const second = openSocket(url, { authorization: `Bearer ${shared.token}` });
+    const other = openSocket(url, { authorization: `Bearer ${otherIssued.token}` });
+    await first.opened;
+    await second.opened;
+    await other.opened;
+    const closed = Promise.all([
+      closeEvent(first.ws, 'the first revoked agent'),
+      closeEvent(second.ws, 'the second revoked agent'),
+    ]);
+    assert.equal(await relay.tokens.revoke('user-a', shared.id), true);
+    const events = await closed;
+    assert.equal(events[0].code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(events[1].code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(events[0].reason, 'token revoked');
+    assert.equal(events[1].reason, 'token revoked');
+    assert.equal(other.ws.readyState, WebSocket.OPEN);
+    other.ws.close();
   });
 
   test('websocket upgrades are rate limited per client IP', async () => {

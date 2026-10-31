@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { PAIRING_TOKEN_LENGTH } from '../../src/agent/ws/pairingToken.js';
 import { attachConsentPresetToBrowser } from './lib/presetConsentInit.mjs';
 
 const SHOT_DIR = process.env.GOLDEN_SHOT_DIR || tmpdir();
@@ -249,7 +250,7 @@ await page.click('[data-ui-action="data-agent-bridge-connect"]');
 await page.waitForSelector('[data-agent-bridge-waiting-relay]', { state: 'hidden', timeout: 15000 }).catch(() => {});
 await page.waitForSelector('[data-agent-bridge-code]', { state: 'visible', timeout: 15000 });
 const code = (await page.locator('[data-agent-bridge-code]').innerText()).trim();
-check('pairing code length', code.length === 6, code);
+check('pairing code length', code.length === PAIRING_TOKEN_LENGTH, code);
 
 await shot(page, 'profile-agent', 1280);
 await shot(page, 'profile-agent', 390);

@@ -2,7 +2,7 @@
 /**
  * Minimal local client for the M1 agent-bridge WebSocket relay.
  *
- *   npm run agent-bridge:client -- --token ABCDEF --command list_faces
+ *   npm run agent-bridge:client -- --token BCDFGHJK --command list_faces
  *
  * The SurfCAD tab must be showing the same pairing code and you must click
  * Allow connection when prompted.
