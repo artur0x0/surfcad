@@ -11,7 +11,7 @@ import { BufferAttribute, BufferGeometry, DoubleSide, FrontSide, Mesh } from 'th
 import { makeFaceSkinMaterial } from '../utils/faceColorSkin.js';
 import { sideActionRgb } from './sideActions.js';
 
-/** Above paint (2) and the parting skin (2.35), under the wall skin (2.4) and stress (2.5). */
+/** Above paint (2), the parting skin (2.35), and the wall skin (2.4). Under the stress skin (2.5). */
 export const SIDE_ACTION_SKIN_RENDER_ORDER = 2.42;
 
 const SKIN_NAME = 'mold-side-action-skin';
