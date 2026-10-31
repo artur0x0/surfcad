@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { bindStressField } from '../fea/stressMap.js';
 import {
   formatStudyHint,
   heuristicFillFlags,
@@ -65,8 +66,11 @@ describe('study stiffness hint', () => {
     assert.equal(hint.modulusMpa, 2400);
     assert.equal(hint.materialName, 'ABS-M30');
     assert.equal(hint.preferStiffer, true);
-    assert.match(formatStudyHint(hint), /stiffness hint, not a fill result/);
-    assert.doesNotMatch(formatStudyHint(hint), /mold-flow|certified/i);
+    assert.equal(hint.peakMpa, null);
+    assert.equal(hint.maxDisplacementMm, null);
+    const text = formatStudyHint(hint);
+    assert.match(text, /stiffness hint, not a fill result/);
+    assert.doesNotMatch(text, /Peak |Max displacement|mold-flow|certified/i);
   });
 });
 
@@ -105,5 +109,122 @@ describe('resin suggestions', () => {
     const picked = suggestResins(resins, { wall: { nominal: 1.5 }, fill, study: null });
     assert.equal(picked[0].grade, 'ABS');
     assert.match(picked[0].reason, /shrink/);
+  });
+
+  test('a nodal peak ranks the higher modulus and names it as a strain hint', () => {
+    const index = new Uint32Array([0, 1, 2]);
+    const faceIDs = new Float32Array([1]);
+    const geometry = {
+      index: { array: index },
+      attributes: { faceID: { array: faceIDs } },
+    };
+    const field = bindStressField(geometry, new Float32Array([10, 40, 10]), faceIDs);
+    const study = studyStiffnessHint({
+      study: { material: { name: 'Study ABS', E_MPa: 2000 } },
+      result: { safetyFactor: 4, p95: 2 },
+      nodalStress: () => field,
+    }, () => null);
+    assert.equal(study.peakMpa, 40);
+    assert.equal(study.preferStiffer, true);
+    const text = formatStudyHint(study);
+    assert.match(text, /Peak 40 MPa/);
+    assert.match(text, /modulus, not a strength allowable/);
+    assert.match(text, /stiffness hint, not a fill result/);
+    assert.doesNotMatch(text, /mold-flow|CalculiX|certified/i);
+    const picked = suggestResins(resins, {
+      wall: { nominal: 2 },
+      fill: { flags: [] },
+      study,
+    });
+    assert.deepEqual(picked.map((row) => row.grade), ['PC', 'ABS', 'PP']);
+    assert.match(picked[0].reason, /peak 40 MPa vs modulus 2400 MPa/);
+    assert.equal(JSON.stringify(picked).includes('usd'), false);
+  });
+
+  test('a mild peak is shown and leaves the wall-fit ranking in place', () => {
+    const index = new Uint32Array([0, 1, 2]);
+    const faceIDs = new Float32Array([1]);
+    const geometry = {
+      index: { array: index },
+      attributes: { faceID: { array: faceIDs } },
+    };
+    const field = bindStressField(geometry, new Float32Array([1, 10, 1]), faceIDs);
+    const study = studyStiffnessHint({
+      study: { material: { name: 'Study ABS', E_MPa: 2000 } },
+      result: { safetyFactor: 4, p95: 2 },
+      nodalStress: () => field,
+    }, () => null);
+    assert.equal(study.peakMpa, 10);
+    assert.equal(study.preferStiffer, false);
+    assert.match(formatStudyHint(study), /Peak 10 MPa/);
+    const picked = suggestResins(resins, {
+      wall: { nominal: 2 },
+      fill: { flags: [] },
+      study,
+    });
+    assert.deepEqual(picked.map((row) => row.grade), ['PP', 'ABS', 'PC']);
+  });
+
+  test('displacement comes from the field, and a stored max does not', () => {
+    const index = new Uint32Array([0, 1, 2]);
+    const faceIDs = new Float32Array([1]);
+    const geometry = {
+      index: { array: index },
+      attributes: { faceID: { array: faceIDs } },
+    };
+    const field = bindStressField(geometry, new Float32Array([0.25, 2, 0.5]), faceIDs);
+    const fromField = studyStiffnessHint({
+      study: { material: { name: 'Study ABS', E_MPa: 2000 } },
+      result: { safetyFactor: 4, p95: 2, displacementMax: 9 },
+      displacementField: () => field,
+    }, () => null);
+    assert.equal(fromField.maxDisplacementMm, 2);
+    assert.equal(fromField.preferStiffer, true);
+    assert.match(formatStudyHint(fromField), /Max displacement 2 mm/);
+    const storedOnly = studyStiffnessHint({
+      study: { material: { name: 'Study ABS', E_MPa: 2000 } },
+      result: { safetyFactor: 4, p95: 2, displacementMax: 9 },
+    }, () => null);
+    assert.equal(storedOnly.maxDisplacementMm, null);
+    assert.equal(storedOnly.preferStiffer, false);
+    assert.doesNotMatch(formatStudyHint(storedOnly), /Max displacement|Peak /);
+  });
+});
+
+describe('thin-wall stress flag', () => {
+  test('a hot corner on a thin triangle is flagged, and a nominal one is not', () => {
+    const index = new Uint32Array([0, 1, 2]);
+    const faceIDs = new Float32Array([1]);
+    const geometry = {
+      index: { array: index },
+      attributes: {
+        position: { array: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]) },
+        faceID: { array: faceIDs },
+      },
+    };
+    const stressField = bindStressField(geometry, new Float32Array([10, 100, 10]), faceIDs);
+    const hot = heuristicFillFlags({
+      bounds: { min: [0, 0, 0], max: [20, 20, 20] },
+      wall: { nominal: 1, thinCount: 1, field: [{ index: 0, thickness: 0.4, flag: 'thin' }] },
+      geometry,
+      stressField,
+    });
+    assert.deepEqual(hot.flags.map((flag) => flag.code), ['thin_sections', 'thin_stress']);
+    assert.match(hot.flags.find((flag) => flag.code === 'thin_stress').text, /Heuristic/);
+    assert.match(hot.flags.find((flag) => flag.code === 'thin_stress').text, /Not a mold-flow result/);
+    const cool = heuristicFillFlags({
+      bounds: { min: [0, 0, 0], max: [20, 20, 20] },
+      wall: { nominal: 1, thinCount: 0, field: [{ index: 0, thickness: 1, flag: 'nominal' }] },
+      geometry,
+      stressField,
+    });
+    assert.deepEqual(cool.flags, []);
+    const other = heuristicFillFlags({
+      bounds: { min: [0, 0, 0], max: [20, 20, 20] },
+      wall: { nominal: 1, thinCount: 1, field: [{ index: 0, thickness: 0.4, flag: 'thin' }] },
+      geometry: { ...geometry },
+      stressField,
+    });
+    assert.deepEqual(other.flags.map((flag) => flag.code), ['thin_sections']);
   });
 });

@@ -14084,7 +14084,14 @@ const Viewport = forwardRef(({
   const resinHintFromPart = (geometry, analysis) => {
     const bounds = boundsFromPositions(geometry?.attributes?.position);
     return {
-      fill: heuristicFillFlags({ bounds, wall: analysis?.wall }),
+      fill: heuristicFillFlags({
+        bounds,
+        wall: analysis?.wall,
+        geometry,
+        stressField: typeof feaPanelRef.current?.nodalStress === 'function'
+          ? feaPanelRef.current.nodalStress()
+          : null,
+      }),
       study: studyStiffnessHint(feaPanelRef.current),
       wall: analysis?.wall || null,
     };
