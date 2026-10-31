@@ -22,3 +22,4 @@ import './email-html-escape.test.js';
 import './prune-uploads.test.js';
 import './internal-users.test.js';
 import './posthog.test.js';
+import './molding-schema.test.js';
