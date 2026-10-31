@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { moldFirmQuoteCommand, moldHumanReviewCommand } from './moldLead.js';
+import { moldFirmQuoteCommand, moldHumanReviewCommand, moldPayReviewCommand } from './moldLead.js';
 
 test('firm quote forwards the label and returns the revealed name', async () => {
   const seen = [];
@@ -24,4 +24,18 @@ test('human review does not require a handler result to include a name', async (
   assert.equal(out.result.displayName, undefined);
   const missing = moldFirmQuoteCommand.run({}, {});
   assert.equal(missing.error.code, 'internal');
+});
+
+test('pay review forwards the label and does not invent a card charge', async () => {
+  const out = await moldPayReviewCommand.run({
+    moldPayHumanReview: ({ anonLabel }) => ({
+      anonLabel,
+      url: 'https://checkout.stripe.com/c/pay/cs_test_mock',
+      revealed: false,
+      reviewFeePaid: false,
+    }),
+  }, { anonLabel: 'Partner A' });
+  assert.equal(out.result.anonLabel, 'Partner A');
+  assert.equal(out.result.revealed, false);
+  assert.equal(out.result.displayName, undefined);
 });

@@ -5,7 +5,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
-import { HUMAN_REVIEW_FEE_USD } from '../../molding/reviewFee.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
 
 function money(value) {
@@ -55,6 +54,7 @@ export default function MoldQuotePanel({
   onSelect,
   onFirmQuote,
   onHumanReview,
+  onPayReview,
 }) {
   if (!state) return null;
   const quote = state.quote;
@@ -167,13 +167,25 @@ export default function MoldQuotePanel({
             className="min-h-11 rounded-md border border-chrome-border bg-transparent px-2 font-ui text-ui-sm text-on-dark disabled:opacity-60"
             onClick={() => onHumanReview?.()}
           >
-            {`Human review ($${HUMAN_REVIEW_FEE_USD})`}
+            Human review
           </button>
           {state.leadMessage && (
             <p className="text-ui-sm text-muted-on-dark" data-mold-quote-lead="">{state.leadMessage}</p>
           )}
           {state.leadError && (
             <p className="text-ui-sm text-on-dark" data-mold-quote-lead-error="">{state.leadError}</p>
+          )}
+          {state.reviewPayable && Number.isFinite(state.reviewFeeUsd) && (
+            <button
+              type="button"
+              data-mold-pay-review=""
+              data-ui-action="data-mold-pay-review"
+              disabled={!!state.leadBusy}
+              className="min-h-11 rounded-md border border-chrome-border bg-transparent px-2 font-ui text-ui-sm text-on-dark disabled:opacity-60"
+              onClick={() => onPayReview?.()}
+            >
+              {`Pay review fee ($${state.reviewFeeUsd})`}
+            </button>
           )}
         </div>
       )}

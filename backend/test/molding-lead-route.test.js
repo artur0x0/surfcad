@@ -13,6 +13,7 @@ import { createMoldingLeadRouter } from '../routes/moldingLead.js';
 import { installFakeModel } from './helpers/fakeDb.js';
 
 const USER = '64b6f0c0a1b2c3d4e5f60718';
+const previousFee = process.env.MOLDING_REVIEW_FEE_USD;
 
 let partners;
 let leads;
@@ -48,6 +49,7 @@ async function api(body, { user = USER } = {}) {
 }
 
 before(async () => {
+  delete process.env.MOLDING_REVIEW_FEE_USD;
   partners = installFakeModel(MoldingPartner, { unique: ['anonLabel'] });
   leads = installFakeModel(MoldingLead);
   await listen(createRateLimiter({ limit: 20, windowMs: 60_000 }));
@@ -59,6 +61,8 @@ beforeEach(() => {
 });
 
 after(async () => {
+  if (previousFee === undefined) delete process.env.MOLDING_REVIEW_FEE_USD;
+  else process.env.MOLDING_REVIEW_FEE_USD = previousFee;
   partners.restore();
   leads.restore();
   if (server) await new Promise((resolve) => server.close(resolve));
@@ -103,7 +107,7 @@ test('human review stores a lead and does not reveal the name or mark it paid', 
   assert.equal(res.status, 201);
   assert.equal(res.body.revealed, false);
   assert.equal(res.body.reviewFeePaid, false);
-  assert.equal(res.body.reviewFeeUsd, 150);
+  assert.equal(res.body.reviewFeeUsd, null);
   assert.equal(res.body.displayName, undefined);
   assert.doesNotMatch(JSON.stringify(res.body), /Secret Vendor/);
   assert.equal(leads.rows[0].type, 'human_review');

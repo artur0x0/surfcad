@@ -105,9 +105,28 @@ up the active partner by that label and writes `molding_leads` with status
 it does not email the partner.
 
 A firm quote returns that partner’s `displayName`. A human review does not.
-The review fee shown on the button is $150, a placeholder, and clicking it
-does not take payment. A second request for the same user, partner, and type
-returns the same lead. Ranking is unchanged: fit, then price.
+A second request for the same user, partner, and type returns the same lead.
+Ranking is unchanged: fit, then price.
+
+## Human-review checkout
+
+`POST /api/molding/review-checkout` is signed-in. The body is the public
+`anonLabel` only. The fee is `MOLDING_REVIEW_FEE_USD` on the server. Unset,
+below $0.50, or a secret key that is not allowed for this environment, and
+the route does not call Stripe. A live secret is refused unless `NODE_ENV`
+is production. Dev and staging stay on a test secret.
+
+The route opens a Stripe Checkout Session in `payment` mode and returns the
+hosted URL. It does not mark the lead paid, does not take a card number, and
+does not send email. The existing order PaymentIntent path is untouched.
+
+Stripe tells SurfCAD the result on the webhook already mounted at
+`POST /api/webhooks/stripe`. `checkout.session.completed` and
+`checkout.session.async_payment_succeeded` mark the lead paid only when
+`payment_status` is `paid` and the amount matches the session. A succeeded
+review PaymentIntent does the same when `amount_received` matches. Unpaid,
+expired, and failed events leave `reviewFeePaid` false. The return URL is
+not trusted. `GET /api/molding/review-status` then reveals that one partner.
 
 ## Admin lead board
 

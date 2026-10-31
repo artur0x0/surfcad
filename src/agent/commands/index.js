@@ -34,7 +34,7 @@ import { moldSideActionsCommand } from './moldSideActions.js';
 import { moldDraftCommand } from './moldDraft.js';
 import { moldDfmCommand } from './moldDfm.js';
 import { moldQuoteCommand } from './moldQuote.js';
-import { moldFirmQuoteCommand, moldHumanReviewCommand } from './moldLead.js';
+import { moldFirmQuoteCommand, moldHumanReviewCommand, moldPayReviewCommand } from './moldLead.js';
 import { listBodiesCommand } from './listBodies.js';
 import { geometryWorkersCommand } from './geometryWorkers.js';
 import { gitTimingsCommand } from './gitTimings.js';
@@ -241,6 +241,7 @@ const V1_COMMAND_LIST = [
   moldQuoteCommand,
   moldFirmQuoteCommand,
   moldHumanReviewCommand,
+  moldPayReviewCommand,
   listBodiesCommand,
   geometryWorkersCommand,
   gitTimingsCommand,
