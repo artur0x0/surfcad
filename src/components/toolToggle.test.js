@@ -60,11 +60,17 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
     new URL('./CrossSectionPanel.jsx', import.meta.url),
   );
   const panel = read('src/components/CrossSectionPanel.jsx');
+  const drawer = read('src/components/MoldingToolsControl.jsx');
   assert.doesNotMatch(panel, /surface-success/);
   assert.doesNotMatch(panel, /text-on-light/);
+  assert.doesNotMatch(drawer, /surface-success/);
+  assert.doesNotMatch(drawer, /text-on-light/);
   assert.match(panel, /className=\{toolToggleClass\(enabled\)\}/);
-  for (const [, prop] of MOLD_TOGGLES) {
-    assert.match(panel, new RegExp(`toolToggleClass\\(${prop}\\)`));
+  assert.match(panel, /<MoldingToolsControl/);
+  for (const [marker, prop] of MOLD_TOGGLES) {
+    assert.match(drawer, new RegExp(`toolToggleClass\\(${prop}\\)`));
+    assert.match(drawer, new RegExp(`data-ui-action="${marker}"`));
+    assert.doesNotMatch(panel, new RegExp(`data-ui-action="${marker}"`));
   }
 
   const show = {
@@ -79,7 +85,6 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
     onToggle: () => {},
     onZoomToFit: () => {},
     onSnapView: () => {},
-    onAxisHelperToggle: () => {},
     onMeasurementToggle: () => {},
     onWallToggle: () => {},
     onPartingToggle: () => {},
@@ -93,6 +98,7 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
     return renderToStaticMarkup(React.createElement(CrossSectionPanel, {
       ...handlers,
       ...show,
+      moldToolsOpen: true,
       ...props,
     }));
   }

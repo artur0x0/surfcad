@@ -1,8 +1,9 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, ClipboardList, Receipt, SquareSplitHorizontal, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
+import MoldingToolsControl from './MoldingToolsControl';
 import { toolToggleClass } from './toolToggle';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -25,8 +26,6 @@ const CrossSectionPanel = forwardRef(({
   bounds,
   measurementEnabled,
   onMeasurementToggle,
-  axisHelperEnabled,
-  onAxisHelperToggle,
   /** Slice 12: 'face' | 'edge' pick mode */
   pickMode = 'face',
   onPickModeChange = null,
@@ -67,6 +66,8 @@ const CrossSectionPanel = forwardRef(({
   showQuote = false,
   quoteActive = false,
   onQuoteToggle = null,
+  /** Initial Molding tools flyout. The rail leaves this unset. */
+  moldToolsOpen = false,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -549,105 +550,27 @@ const handleButtonClick = () => {
             <Gauge size={20} />
           </button>
         )}
-        {showWall && (
-          <button
-            type="button"
-            onClick={() => onWallToggle?.()}
-            className={toolToggleClass(wallActive)}
-            title={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
-            aria-label={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
-            aria-pressed={!!wallActive}
-            data-wall-heatmap=""
-            data-wall-heatmap-state={wallActive ? 'on' : 'off'}
-            data-ui-action="data-wall-heatmap"
-          >
-            <AlignHorizontalSpaceAround size={20} />
-          </button>
-        )}
-        {showParting && (
-          <button
-            type="button"
-            onClick={() => onPartingToggle?.()}
-            className={toolToggleClass(partingActive)}
-            title={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
-            aria-label={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
-            aria-pressed={!!partingActive}
-            data-mold-parting=""
-            data-mold-parting-state={partingActive ? 'on' : 'off'}
-            data-ui-action="data-mold-parting"
-          >
-            <SquareSplitHorizontal size={20} />
-          </button>
-        )}
-        {showSideActions && (
-          <button
-            type="button"
-            onClick={() => onSideActionsToggle?.()}
-            className={toolToggleClass(sideActionsActive)}
-            title={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
-            aria-label={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
-            aria-pressed={!!sideActionsActive}
-            data-mold-side-actions=""
-            data-mold-side-actions-state={sideActionsActive ? 'on' : 'off'}
-            data-ui-action="data-mold-side-actions"
-          >
-            <ArrowLeftRight size={20} />
-          </button>
-        )}
-        {showMoldDraft && (
-          <button
-            type="button"
-            onClick={() => onMoldDraftToggle?.()}
-            className={toolToggleClass(moldDraftActive)}
-            title={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
-            aria-label={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
-            aria-pressed={!!moldDraftActive}
-            data-mold-draft=""
-            data-mold-draft-state={moldDraftActive ? 'on' : 'off'}
-            data-ui-action="data-mold-draft"
-          >
-            <ArrowUpFromLine size={20} />
-          </button>
-        )}
-        {showDfm && (
-          <button
-            type="button"
-            onClick={() => onDfmToggle?.()}
-            className={toolToggleClass(dfmActive)}
-            title={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
-            aria-label={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
-            aria-pressed={!!dfmActive}
-            data-mold-dfm=""
-            data-mold-dfm-state={dfmActive ? 'on' : 'off'}
-            data-ui-action="data-mold-dfm"
-          >
-            <ClipboardList size={20} />
-          </button>
-        )}
-        {showQuote && (
-          <button
-            type="button"
-            onClick={() => onQuoteToggle?.()}
-            className={toolToggleClass(quoteActive)}
-            title={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
-            aria-label={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
-            aria-pressed={!!quoteActive}
-            data-mold-quote=""
-            data-mold-quote-state={quoteActive ? 'on' : 'off'}
-            data-ui-action="data-mold-quote"
-          >
-            <Receipt size={20} />
-          </button>
-        )}
-        <button
-          onClick={onAxisHelperToggle}
-          className={`p-2 rounded ${axisHelperEnabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100 active:bg-blue-100`}
-          title={axisHelperEnabled ? 'Hide Axis Helper' : 'Show Axis Helper'}
-          aria-pressed={!!axisHelperEnabled}
-          data-ui-action="data-axis-helper-toggle"
-        >
-          <Move3d size={20} />
-        </button>
+        <MoldingToolsControl
+          showWall={showWall}
+          wallActive={wallActive}
+          onWallToggle={onWallToggle}
+          showParting={showParting}
+          partingActive={partingActive}
+          onPartingToggle={onPartingToggle}
+          showSideActions={showSideActions}
+          sideActionsActive={sideActionsActive}
+          onSideActionsToggle={onSideActionsToggle}
+          showMoldDraft={showMoldDraft}
+          moldDraftActive={moldDraftActive}
+          onMoldDraftToggle={onMoldDraftToggle}
+          showDfm={showDfm}
+          dfmActive={dfmActive}
+          onDfmToggle={onDfmToggle}
+          showQuote={showQuote}
+          quoteActive={quoteActive}
+          onQuoteToggle={onQuoteToggle}
+          defaultOpen={moldToolsOpen}
+        />
         <button
           type="button"
           onClick={onMeasurementToggle}
@@ -703,14 +626,6 @@ const handleButtonClick = () => {
           data-ui-action="data-zoom-to-fit"
         >
           <Maximize2 size={20} />
-        </button>
-        <button
-          onClick={onAxisHelperToggle}
-          className={`p-2 rounded ${axisHelperEnabled ? 'text-green-600 bg-green-100' : 'text-blue-600'} hover:bg-gray-100`}
-          title={axisHelperEnabled ? 'Hide Axis Helper' : 'Show Axis Helper'}
-          data-ui-action="data-axis-helper-toggle"
-        >
-          <Move3d size={20} />
         </button>
         <button
           type="button"
