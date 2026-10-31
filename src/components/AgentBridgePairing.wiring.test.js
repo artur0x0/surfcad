@@ -28,6 +28,22 @@ test('Connect Agent opens a body-portal dialog and closes the profile menu', () 
   assert.doesNotMatch(DIALOG, /items-end/);
 });
 
+test('Safari and phone width open the server dialog and do not probe localhost', () => {
+  assert.match(SRC, /forcesServerRelay/);
+  assert.match(SRC, /serverPairingPrompt/);
+  assert.match(SRC, /SERVER_PAIRING_WAITING_COPY/);
+  assert.match(SRC, /data-agent-bridge-waiting-server=""/);
+  assert.match(SRC, /data-agent-bridge-server=""/);
+  assert.match(SRC, /shouldProbeLocalRelay/);
+  assert.match(SRC, /if \(forcedServerRef\.current\)/);
+  assert.doesNotMatch(SRC, /isSecureContext/);
+  assert.match(SRC, /readPhoneWidth/);
+  const forced = SRC.slice(SRC.indexOf('if (forcedServerRef.current)'));
+  assert.match(forced, /setFlowOpen\(true\)/);
+  const beforePopup = forced.slice(0, forced.indexOf("startPairing('popup')"));
+  assert.match(beforePopup, /return;/);
+});
+
 test('popup mode starts pairing from the Connect Agent click', () => {
   assert.match(SRC, /onBeginFlow\?\.\(\)/);
   assert.match(SRC, /if \(popupMode\) startPairing\('popup'\)/);
