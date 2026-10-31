@@ -5,7 +5,9 @@ import MoldingPartner from '../db/models/MoldingPartner.js';
 import MoldingMachine from '../db/models/MoldingMachine.js';
 import MoldingResinPrice from '../db/models/MoldingResinPrice.js';
 import MoldingToolingRate from '../db/models/MoldingToolingRate.js';
+import MoldingLead from '../db/models/MoldingLead.js';
 import * as catalog from '../services/moldingCatalog.js';
+import * as leadAdmin from '../services/moldingLeadAdmin.js';
 
 function defaultModels() {
   return {
@@ -13,6 +15,7 @@ function defaultModels() {
     machines: MoldingMachine,
     resins: MoldingResinPrice,
     rates: MoldingToolingRate,
+    leads: MoldingLead,
   };
 }
 
@@ -129,6 +132,16 @@ export function createMoldingAdminRouter(models = defaultModels()) {
   router.post('/rates/:id/deactivate', wrap(async (req, res) => {
     const rate = await catalog.deactivate(db.rates, req.params.id);
     res.json(rate);
+  }));
+
+  router.get('/leads', wrap(async (req, res) => {
+    const leads = await leadAdmin.listMoldingLeads(db, req.query);
+    res.json({ leads });
+  }));
+
+  router.patch('/leads/:id', wrap(async (req, res) => {
+    const lead = await leadAdmin.updateMoldingLead(db, req.params.id, req.body);
+    res.json(lead);
   }));
 
   return router;
