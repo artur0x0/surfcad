@@ -7,12 +7,12 @@
 import React from 'react';
 import MoldAnalysisPane from './MoldAnalysisPane';
 
-export default function SideActionLegend({ legend }) {
+export default function SideActionLegend({ legend, belowPull = false }) {
   if (!legend) return null;
   return (
     <MoldAnalysisPane
       data-side-action-legend=""
-      className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
+      className={`pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark${belowPull ? ' mold-below-pull' : ''}`}
     >
       <div className="text-ui-sm">Side actions</div>
       {legend.rows.length === 0 ? (

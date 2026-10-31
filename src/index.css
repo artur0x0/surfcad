@@ -517,6 +517,25 @@ textarea {
     box-sizing: border-box;
   }
   /* Wall-thickness legend: under the feature ribbon, clear of a left rail. */
+  .mold-pull-chip {
+    width: 11.5rem;
+  }
+  .mold-pull-choice {
+    border-radius: 0.25rem;
+    padding: 0.125rem 0.375rem;
+  }
+  .mold-pull-choice[aria-pressed="true"] {
+    background-color: rgb(var(--chrome-text) / 0.16);
+  }
+  .mold-below-pull.wall-legend-anchor {
+    top: calc(
+      var(--feature-strip-offset-desktop)
+      + var(--feature-strip-height)
+      + var(--joint-row-height)
+      + var(--feature-strip-rail-gap)
+      + 6.5rem
+    );
+  }
   .wall-legend-anchor {
     top: calc(
       var(--feature-strip-offset-desktop)
@@ -541,6 +560,15 @@ textarea {
       );
       left: 0.75rem;
     }
+    .mold-below-pull.wall-legend-anchor {
+      top: calc(
+        var(--feature-strip-offset-mobile)
+        + var(--feature-strip-height)
+        + var(--joint-row-height)
+        + var(--feature-strip-rail-gap)
+        + 6.5rem
+      );
+    }
   }
   /* DFM report shares the legend corner. Wider than the w-44 chip, and
      dropped when a legend is already open so the two panels do not stack. */
@@ -552,6 +580,9 @@ textarea {
   }
   .dfm-report-shifted {
     transform: translateY(12rem);
+  }
+  .dfm-report-below-pull {
+    transform: translateY(18rem);
   }
   /* Phone rails sit on the pane edges. Keep the report and the quote between them. */
   @media (max-width: 768px) {

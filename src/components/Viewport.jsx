@@ -607,6 +607,7 @@ import {
 import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
 import { moldFitFromGeometry } from '../molding/fromGeometry.js';
 import { dropWallJobs, requestWallField } from '../molding/wallFieldClient.js';
+import { MOLD_PULL_PLANES, unitPull } from '../molding/pullReference.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
 import { partingLegendModel } from '../molding/parting.js';
@@ -626,6 +627,7 @@ import SideActionLegend from './molding/SideActionLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
 import DfmReportPanel from './molding/DfmReportPanel';
 import MoldQuotePanel from './molding/MoldQuotePanel';
+import PullReference from './molding/PullReference';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1451,6 +1453,87 @@ const Viewport = forwardRef(({
   const clearPartingRef = useRef(() => {});
   const applyPartingSkinRef = useRef(() => {});
   const [partingLegend, setPartingLegend] = useState(null);
+  const pullReferenceRef = useRef({ mode: 'auto', plane: null, pull: null });
+  const [pullReference, setPullReference] = useState({ mode: 'auto', plane: null, pull: null });
+  const applySharedPullRef = useRef(() => ({ mode: 'auto' }));
+  function sharedMoldPull() {
+    const ref = pullReferenceRef.current;
+    if (!ref || ref.mode === 'auto' || !ref.pull) return null;
+    return ref.pull;
+  }
+  applySharedPullRef.current = (next) => {
+    const choice = next?.mode;
+    if (choice !== 'auto' && choice !== 'plane' && choice !== 'face') {
+      return { error: { code: 'bad_args', message: 'mode must be auto, plane, or face' } };
+    }
+    let pull = null;
+    let plane = null;
+    if (choice === 'plane') {
+      const row = MOLD_PULL_PLANES[next.plane];
+      if (!row) return { error: { code: 'bad_args', message: 'plane must be top, front, or right' } };
+      plane = row.id;
+      pull = row.normal.slice();
+    } else if (choice === 'face') {
+      pull = unitPull(next.pull);
+      if (next.pull != null && !pull) {
+        return { error: { code: 'bad_args', message: 'pull must be a non-zero [x, y, z] vector' } };
+      }
+    }
+    const stored = { mode: choice, plane, pull };
+    pullReferenceRef.current = stored;
+    setPullReference(stored);
+    partingFieldRef.current = null;
+    sideActionsFieldRef.current = null;
+    moldDraftFieldRef.current = null;
+    dfmFieldRef.current = null;
+    quoteFieldRef.current = null;
+    const geometry = resultRef.current?.geometry;
+    const waiting = choice === 'face' && !pull;
+    if (!geometry?.attributes?.position) {
+      return {
+        mode: choice,
+        plane,
+        pull,
+        waiting,
+        pullSource: pull ? 'override' : 'search',
+      };
+    }
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull });
+    if (analyzed?.error) return analyzed;
+    if (partingOnRef.current && analyzed.parting) {
+      partingFieldRef.current = { geometry, parting: analyzed.parting };
+      setPartingLegend(partingLegendModel(analyzed.parting));
+      syncPartingSkin(resultRef.current, analyzed.parting);
+    }
+    if (sideActionsOnRef.current && analyzed.sideActions) {
+      sideActionsFieldRef.current = { geometry, sideActions: analyzed.sideActions };
+      setSideActionLegend(sideActionLegendModel(analyzed.sideActions));
+      syncSideActionSkin(resultRef.current, analyzed.sideActions);
+    }
+    if (moldDraftOnRef.current && analyzed.moldDraft) {
+      moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
+      setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
+      syncMoldDraftSkin(resultRef.current, analyzed.moldDraft);
+    }
+    if (dfmOnRef.current) {
+      const report = dfmReport(analyzed);
+      if (report) {
+        dfmFieldRef.current = { geometry, report };
+        setDfmReportState(report);
+      }
+    }
+    return {
+      mode: choice,
+      plane,
+      pull: analyzed.pull,
+      pullSource: analyzed.pullSource,
+      fit: analyzed.fit,
+      undercutCount: analyzed.undercutCount,
+      undercutArea: analyzed.undercutArea,
+      draftedArea: analyzed.draftedArea,
+      waiting,
+    };
+  };
   const agentMoldSideActionsRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const sideActionsOnRef = useRef(false);
   const sideActionsFieldRef = useRef(null);
@@ -1463,6 +1546,7 @@ const Viewport = forwardRef(({
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
+  const pullToolsOn = mode !== 'game' && !!(partingLegend || sideActionLegend || moldDraftLegend);
   const agentMoldDfmRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const dfmOnRef = useRef(false);
   const dfmFieldRef = useRef(null);
@@ -2777,6 +2861,7 @@ const Viewport = forwardRef(({
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
       moldFit: (args) => agentMoldFitRef.current(args),
+      moldPull: (args) => applySharedPullRef.current(args),
       moldWallMap: (args) => agentMoldWallMapRef.current(args),
       moldParting: (args) => agentMoldPartingRef.current(args),
       moldSideActions: (args) => agentMoldSideActionsRef.current(args),
@@ -10750,6 +10835,9 @@ const Viewport = forwardRef(({
     if (span) classified.span = span;
     setSelectedFace(classified);
     onFaceSelected?.(classified);
+    if (pullReferenceRef.current.mode === 'face' && Array.isArray(classified?.normal)) {
+      applySharedPullRef.current({ mode: 'face', pull: classified.normal });
+    }
     if (jointPickingRef.current && list.length === 1) {
       const pos = positions?.array || null;
       const idx = index?.array || index;
@@ -13149,7 +13237,8 @@ const Viewport = forwardRef(({
   agentMoldFitRef.current = ({ partId, pull } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    const analyzed = moldFitFromGeometry(geom, faceIDsForAgentPart(partId, geom), { pull });
+    const chosen = pull != null ? pull : sharedMoldPull();
+    const analyzed = moldFitFromGeometry(geom, faceIDsForAgentPart(partId, geom), { pull: chosen });
     if (analyzed?.error) return analyzed;
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
@@ -13860,7 +13949,7 @@ const Viewport = forwardRef(({
     const geometry = host.geometry;
     let cached = partingFieldRef.current;
     if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
       if (analyzed?.error || !analyzed?.parting) {
         clearParting();
         return;
@@ -13928,7 +14017,7 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) return analyzed;
     if (!analyzed.parting) {
       return { error: { code: 'no_mesh', message: 'No parting split on that mesh' } };
@@ -13963,7 +14052,7 @@ const Viewport = forwardRef(({
     const geometry = host.geometry;
     let cached = sideActionsFieldRef.current;
     if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
       if (analyzed?.error || !analyzed?.sideActions) {
         clearSideActions();
         return;
@@ -13985,7 +14074,7 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) return analyzed;
     if (!analyzed.sideActions) {
       return { error: { code: 'no_mesh', message: 'No side actions on that mesh' } };
@@ -14026,7 +14115,7 @@ const Viewport = forwardRef(({
     const geometry = host.geometry;
     let cached = moldDraftFieldRef.current;
     if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
       if (analyzed?.error || !analyzed?.moldDraft) {
         clearMoldDraft();
         return;
@@ -14048,7 +14137,7 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) return analyzed;
     if (!analyzed.moldDraft) {
       return { error: { code: 'no_mesh', message: 'No mold draft on that mesh' } };
@@ -14092,7 +14181,7 @@ const Viewport = forwardRef(({
     }
     const cached = dfmFieldRef.current;
     if (cached && cached.geometry === geometry) return;
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) {
       clearDfm();
       return;
@@ -14117,7 +14206,7 @@ const Viewport = forwardRef(({
       setDfmReportState(cached.report);
       return { on: true, ...cached.report };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) return analyzed;
     clearQuoteRef.current();
     return publishDfm(geometry, analyzed);
@@ -14289,7 +14378,7 @@ const Viewport = forwardRef(({
     }
     const cached = quoteFieldRef.current;
     if (cached && cached.geometry === geometry) return;
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current);
+    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
     if (analyzed?.error) {
       clearQuote();
       return;
@@ -14319,7 +14408,7 @@ const Viewport = forwardRef(({
     const nextGrade = grade == null ? (prev?.grade || '') : grade;
     let analysis = quoteFieldRef.current?.geometry === geometry ? quoteFieldRef.current.analysis : null;
     if (!analysis) {
-      analysis = moldFitFromGeometry(geometry, faceIDsRef.current);
+      analysis = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
       if (analysis?.error) return analysis;
     }
     clearDfm();
@@ -16865,19 +16954,32 @@ const Viewport = forwardRef(({
       )}
 
       {mode !== 'game' && <WallLegend legend={wallLegend} />}
-      {mode !== 'game' && <PartingLegend legend={partingLegend} />}
-      {mode !== 'game' && <SideActionLegend legend={sideActionLegend} />}
-      {mode !== 'game' && <MoldDraftLegend legend={moldDraftLegend} />}
+      {mode !== 'game' && pullToolsOn && (
+        <PullReference
+          mode={pullReference.mode}
+          plane={pullReference.plane}
+          waiting={pullReference.mode === 'face' && !pullReference.pull}
+          onAuto={() => applySharedPullRef.current({ mode: 'auto' })}
+          onPlane={() => applySharedPullRef.current({ mode: 'plane', plane: pullReference.plane || 'top' })}
+          onFace={() => applySharedPullRef.current({ mode: 'face' })}
+          onPickPlane={(plane) => applySharedPullRef.current({ mode: 'plane', plane })}
+        />
+      )}
+      {mode !== 'game' && <PartingLegend legend={partingLegend} belowPull={pullToolsOn} />}
+      {mode !== 'game' && <SideActionLegend legend={sideActionLegend} belowPull={pullToolsOn} />}
+      {mode !== 'game' && <MoldDraftLegend legend={moldDraftLegend} belowPull={pullToolsOn} />}
       {mode !== 'game' && (
         <DfmReportPanel
           report={dfmReportState}
           shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
+          belowPull={pullToolsOn}
         />
       )}
       {mode !== 'game' && (
         <MoldQuotePanel
           state={moldQuote}
           shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
+          belowPull={pullToolsOn}
           onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
           onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
           onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}

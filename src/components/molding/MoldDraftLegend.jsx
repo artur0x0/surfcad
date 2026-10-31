@@ -7,7 +7,7 @@
 import React from 'react';
 import MoldAnalysisPane from './MoldAnalysisPane';
 
-export default function MoldDraftLegend({ legend }) {
+export default function MoldDraftLegend({ legend, belowPull = false }) {
   if (!legend) return null;
   const rows = [
     { key: 'violations', label: `Below ${legend.minDeg}°`, count: legend.violations, swatch: true },
@@ -17,7 +17,7 @@ export default function MoldDraftLegend({ legend }) {
   return (
     <MoldAnalysisPane
       data-mold-draft-legend=""
-      className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
+      className={`pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark${belowPull ? ' mold-below-pull' : ''}`}
     >
       <div className="text-ui-sm">Mold draft</div>
       <ul className="mt-1 flex flex-col gap-1">

@@ -4,9 +4,18 @@
  * The mesh is the one the viewport already builds. Face normals come from
  * `stampedFaceTable` (`src/utils/faceIdentity.js`) when that face's normal
  * did not cancel; otherwise the triangle cross product, the same fallback
- * an unstamped import gets. Candidate axes are the bounding-box axes plus
- * the normals of large planar PartGraph patches (`warmFaceGraph` /
- * `src/utils/partGraphPatches.js`). Bodies are reported with
+ * an unstamped import gets. Candidate axes are the bounding-box axes, the
+ * normals of large planar PartGraph patches (`warmFaceGraph` /
+ * `src/utils/partGraphPatches.js`), and an icosphere. Directions within 5°
+ * are one candidate, and d and −d are one searched axis. The search keeps
+ * the least occluded undercut area. Candidates within a band of that best
+ * score, max(2% of the part area, 25 mm²), are tied. Inside the tie, box
+ * axes and large planar normals beat a pure icosphere sample, and then
+ * drafted area decides. Drafted area sums triangle area times (n · d)²
+ * for faces outside the 10° band that are not undercuts, so a face square
+ * to the pull outweighs faces that only just leave that band. An icosphere
+ * direction wins only when it clears a substantial undercut that every
+ * principal direction still has. Bodies are reported with
  * `meshBodyComponents` (`src/utils/meshBodyComponents.js`). Occlusion uses
  * every triangle, so a closed void counts even though it shares no vertices
  * with the outer shell.
@@ -79,6 +88,22 @@ export const MOLD_FIXABLE_MAX_UNDERCUTS = 4;
 /** Planar patches smaller than this fraction of the largest are not candidates. */
 export const MOLD_PLANAR_CANDIDATE_FRAC = 0.1;
 export const MOLD_DIRECTION_DEDUP_DEG = 5;
+/** Icosphere frequency. 10 n² + 2 vertices, folded to one axis per pair, lands near 80. */
+export const MOLD_ICOSPHERE_FREQUENCY = 4;
+/** Undercut areas within this fraction of the part area of the best score are tied. */
+export const MOLD_UNDERCUT_TIE_FRAC = 0.02;
+/**
+ * Absolute floor for that tie, in mm². A lip of a few square millimetres
+ * must not tilt the pull off a principal axis.
+ */
+export const MOLD_UNDERCUT_TIE_FLOOR_MM2 = 25;
+
+/** Width of the undercut-area tie for a part of the given surface area. */
+export function undercutTieBand(totalArea) {
+  const area = Number(totalArea);
+  const span = Number.isFinite(area) && area > 0 ? area : 0;
+  return Math.max(MOLD_UNDERCUT_TIE_FRAC * span, MOLD_UNDERCUT_TIE_FLOOR_MM2);
+}
 /** Undercut triangles whose normals differ by more than this stay separate regions. */
 export const MOLD_REGION_NORMAL_DEG = 35;
 export const MOLD_GRID_CELLS = 32;
@@ -228,13 +253,16 @@ function prepareTriangles(positions, indices, stamped) {
   return { tris, stampedCount, triangleCount, min, max };
 }
 
-function addDirection(dirs, raw) {
+function addDirection(dirs, raw, principal) {
   const u = canonicalPull(raw);
   if (!u) return;
   for (const d of dirs) {
-    if (Math.abs(dot(d, u)) > DEDUP_COS) return;
+    if (Math.abs(dot(d.pull, u)) > DEDUP_COS) {
+      if (principal) d.principal = true;
+      return;
+    }
   }
-  dirs.push(u);
+  dirs.push({ pull: u, principal: !!principal });
 }
 
 function planarGroupsFromTriangles(tris) {
@@ -283,23 +311,64 @@ function betterPlanar(a, b) {
   return a.n[0] > b.n[0];
 }
 
+/** Unit directions on a frequency-n icosphere. Opposite vertices both appear. */
+function icosphereDirections(frequency) {
+  const n = Math.max(1, frequency | 0);
+  const t = (1 + Math.sqrt(5)) / 2;
+  const base = [
+    [-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0],
+    [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t],
+    [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1],
+  ];
+  const faces = [
+    [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+    [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+    [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+    [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+  ];
+  const seen = new Map();
+  for (const [ia, ib, ic] of faces) {
+    const a = base[ia];
+    const b = base[ib];
+    const c = base[ic];
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= n - i; j++) {
+        const k = n - i - j;
+        const raw = [
+          (a[0] * i + b[0] * j + c[0] * k) / n,
+          (a[1] * i + b[1] * j + c[1] * k) / n,
+          (a[2] * i + b[2] * j + c[2] * k) / n,
+        ];
+        const u = unit(raw);
+        if (!u) continue;
+        const key = `${Math.round(u[0] * 1e6)},${Math.round(u[1] * 1e6)},${Math.round(u[2] * 1e6)}`;
+        if (!seen.has(key)) seen.set(key, u);
+      }
+    }
+  }
+  return [...seen.values()];
+}
+
 function candidateDirections(tris, patches) {
   const dirs = [];
-  addDirection(dirs, [1, 0, 0]);
-  addDirection(dirs, [0, 1, 0]);
-  addDirection(dirs, [0, 0, 1]);
+  addDirection(dirs, [1, 0, 0], true);
+  addDirection(dirs, [0, 1, 0], true);
+  addDirection(dirs, [0, 0, 1], true);
   const fromPatches = Array.isArray(patches) && patches.length ? planarGroupsFromPatches(patches) : [];
   const groups = fromPatches.length ? fromPatches : planarGroupsFromTriangles(tris);
   let maxArea = 0;
   for (const g of groups) if (g.area > maxArea) maxArea = g.area;
   const floor = MOLD_PLANAR_CANDIDATE_FRAC * maxArea;
   for (const g of groups) {
-    if (g.area >= floor) addDirection(dirs, g.n);
+    if (g.area >= floor) addDirection(dirs, g.n, true);
   }
+  for (const raw of icosphereDirections(MOLD_ICOSPHERE_FREQUENCY)) addDirection(dirs, raw, false);
   return { dirs, primary: pickPrimary(groups) };
 }
 
-function betterPull(a, b, primary) {
+function betterInTie(a, b, primary) {
+  if (a.principal !== b.principal) return a.principal;
+  if (Math.abs(a.draftedArea - b.draftedArea) > 1e-4) return a.draftedArea > b.draftedArea;
   if (a.undercutCount !== b.undercutCount) return a.undercutCount < b.undercutCount;
   const pa = primary ? Math.abs(dot(a.pull, primary)) : 0;
   const pb = primary ? Math.abs(dot(b.pull, primary)) : 0;
@@ -527,13 +596,42 @@ function publicRegions(regions) {
   }));
 }
 
-function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall, parting, tris }) {
+function scoreAxis(pull, tris, skinMm) {
+  const regions = undercutsAlong(pull, tris, skinMm);
+  const hit = new Set();
+  let undercutArea = 0;
+  for (const region of regions) {
+    undercutArea += region.area;
+    for (const t of region.triangles) hit.add(t);
+  }
+  let draftedArea = 0;
+  for (const tri of tris) {
+    const nd = dot(tri.n, pull);
+    if (Math.abs(nd) <= NEUTRAL_SIN) continue;
+    if (hit.has(tri.t)) continue;
+    // Square the alignment so a face square to the pull outweighs many
+    // faces that only just leave the neutral band. A raw area sum pulls a
+    // closed box onto a diagonal.
+    draftedArea += tri.area * nd * nd;
+  }
+  return {
+    pull,
+    undercutCount: regions.length,
+    undercutArea,
+    draftedArea,
+    regions,
+  };
+}
+
+function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candidates, normals, positions, indices, skinMm, wall, parting, tris }) {
   const undercutCount = regions.length;
   return {
     version: MOLD_ANALYSIS_VERSION,
     kind: 'mold-analysis',
     fit: moldFitScore(undercutCount),
     undercutCount,
+    undercutArea: round(undercutArea, 6),
+    draftedArea: round(draftedArea, 6),
     pull: round3(pull),
     pullSource,
     thresholds: thresholds(),
@@ -541,7 +639,10 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
     normals,
     candidates: candidates.map((row) => ({
       pull: round3(row.pull),
+      principal: !!row.principal,
       undercutCount: row.undercutCount,
+      undercutArea: round(row.undercutArea, 6),
+      draftedArea: round(row.draftedArea, 6),
     })),
     undercuts: publicRegions(regions),
     bodies: bodyReport(positions, indices, regions),
@@ -585,12 +686,14 @@ export function analyzePullDirection(input) {
     : null;
   const partingFor = (pull) => classifyParting(prepared.tris, pull, faceInfo);
   if (override.pull) {
-    const regions = undercutsAlong(override.pull, prepared.tris, skinMm);
+    const scored = scoreAxis(override.pull, prepared.tris, skinMm);
     return resultOf({
       pull: override.pull,
       pullSource: 'override',
-      regions,
-      candidates: [{ pull: override.pull, undercutCount: regions.length }],
+      regions: scored.regions,
+      undercutArea: scored.undercutArea,
+      draftedArea: scored.draftedArea,
+      candidates: [scored],
       normals,
       positions,
       indices,
@@ -601,18 +704,28 @@ export function analyzePullDirection(input) {
     });
   }
   const { dirs, primary } = candidateDirections(prepared.tris, input.patches);
-  let best = null;
   const candidates = [];
-  for (const pull of dirs) {
-    const regions = undercutsAlong(pull, prepared.tris, skinMm);
-    const row = { pull, undercutCount: regions.length, regions };
+  let bestUndercut = Infinity;
+  let totalArea = 0;
+  for (const tri of prepared.tris) totalArea += tri.area;
+  for (const dir of dirs) {
+    const row = scoreAxis(dir.pull, prepared.tris, skinMm);
+    row.principal = dir.principal;
     candidates.push(row);
-    if (!best || betterPull(row, best, primary)) best = row;
+    if (row.undercutArea < bestUndercut) bestUndercut = row.undercutArea;
+  }
+  const band = undercutTieBand(totalArea);
+  let best = null;
+  for (const row of candidates) {
+    if (row.undercutArea > bestUndercut + band + 1e-4) continue;
+    if (!best || betterInTie(row, best, primary)) best = row;
   }
   return resultOf({
     pull: best.pull,
     pullSource: 'search',
     regions: best.regions,
+    undercutArea: best.undercutArea,
+    draftedArea: best.draftedArea,
     candidates,
     normals,
     positions,
