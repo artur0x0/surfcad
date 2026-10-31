@@ -1329,7 +1329,6 @@ const Viewport = forwardRef(({
   const clearJointHighlightsRef = useRef(() => {});
   const paintJointHighlightRef = useRef(() => {});
   const cuttingPlaneWidgetRef = useRef(null);
-  const axisHelperRef = useRef(null);
   const executionAbortRef = useRef(null);
   // Mirrors the last execution error for the dev-only __VIEWPORT__ hook (the real handler
   // stores it in state, which a headless caller cannot read synchronously).
@@ -2327,9 +2326,8 @@ const Viewport = forwardRef(({
   /** Always-current mesh for failed Auto-Run restore (state alone is stale in closures). */
   const cachedMeshDataRef = useRef(null);
   
-  // Measurement tool and axis helper state. measurementEnabled is declared
-  // above measureSheetOpen; the card kind is computed before this point.
-  const [axisHelperEnabled, setAxisHelperEnabled] = useState(false);
+  // measurementEnabled is declared above measureSheetOpen; the card kind is
+  // computed before this point.
   // Re-frame the part after each successful run, preserving the current orbit direction.
   const [autoFitEnabled, setAutoFitEnabled] = useState(true);
 
@@ -11500,6 +11498,7 @@ const Viewport = forwardRef(({
     let orbitControls = null;
     let orbitPointerDom = null;
     let onPointerDownRotateSpeed = null;
+    let axisHelper = null;
 
     const getContainerSize = () => readViewportContainerSize(container);
 
@@ -12132,7 +12131,10 @@ const Viewport = forwardRef(({
             renderer.render(sceneRef.current, c);
             return true;
           },
-          setAxes: (on) => { setAxisHelperEnabled(!!on); return true; },
+          setAxes: (on) => {
+            if (axisHelper) axisHelper.visible = !!on;
+            return true;
+          },
           stageContourSketch: () => {
             const meshes = highlightMeshRef.current;
             return {
@@ -12379,12 +12381,12 @@ const Viewport = forwardRef(({
       orbitPointerDom = renderer.domElement;
       orbitPointerDom.addEventListener('pointerdown', onPointerDownRotateSpeed);
 
-      // Add axis helper. Origin colors are the shared triad constant.
-      const axisHelper = new AxesHelper(50);
+      // The rail triad button is gone. The helper stays a visual AxesHelper
+      // (it does not move a body) and stays hidden.
+      axisHelper = new AxesHelper(50);
       applyTriadAxisColors(axisHelper);
+      axisHelper.visible = false;
       sceneRef.current.add(axisHelper);
-      axisHelperRef.current = axisHelper;
-      axisHelperRef.current.visible = axisHelperEnabled;
 
       const animate = () => {
         if (!loopAlive) return;
@@ -13692,16 +13694,6 @@ const Viewport = forwardRef(({
     measurePicksRef.current = seed;
     setMeasurePicks(seed);
     setMeasurementEnabled(true);
-  };
-
-  const handleAxisHelperToggle = () => {
-    setAxisHelperEnabled(prev => {
-      const newValue = !prev;
-      if (axisHelperRef.current) {
-        axisHelperRef.current.visible = newValue;
-      }
-      return newValue;
-    });
   };
 
   assemblyColorsRef.current = assemblyColors || null;
@@ -16836,8 +16828,6 @@ const Viewport = forwardRef(({
           bounds={modelBounds}
           measurementEnabled={measurementEnabled}
           onMeasurementToggle={handleMeasurementToggle}
-          axisHelperEnabled={axisHelperEnabled}
-          onAxisHelperToggle={handleAxisHelperToggle}
           pickMode={pickMode}
           showPlanes={showPlanes}
           showContours={showContours}

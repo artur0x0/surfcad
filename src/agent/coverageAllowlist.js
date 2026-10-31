@@ -8,7 +8,7 @@
  */
 
 export const COVERAGE_ALLOWLIST = Object.freeze([
-  Object.freeze({ id: 'data-axis-helper-toggle', reason: 'Viewport axis helper toggle (non-product chrome).' }),
+  Object.freeze({ id: 'data-mold-tools-toggle', reason: 'Molding tools drawer trigger. Opens the flyout; the six tools already have commands.' }),
   Object.freeze({ id: 'data-sm-unit-toggle', reason: 'Sheet metal display mm|in toggle (display chrome only).' }),
   Object.freeze({ id: 'data-game-exit', reason: 'Game mode exit to CAD (out of harness scope).' }),
   Object.freeze({ id: 'data-game-undo', reason: 'Game toolbar undo (out of harness scope).' }),

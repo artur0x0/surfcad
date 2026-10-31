@@ -52,7 +52,7 @@ export const RAIL_PAIR_WIDTH_FIT_CLASS = 'w-14';
 /** Left rails only — they hold the whole tool list and genuinely overflow. */
 export const RAIL_SCROLL_CLASS = 'overflow-y-auto overflow-x-hidden rail-scroll';
 
-/** Right rail: same height, but nothing may clip the view-snap flyout. */
+/** Right rail: same height, but nothing may clip the view-snap or molding flyout. */
 export const RAIL_NO_CLIP_CLASS = 'overflow-visible';
 
 /** data-rail-height value goldens / playtest assert (content-sized max-h). */

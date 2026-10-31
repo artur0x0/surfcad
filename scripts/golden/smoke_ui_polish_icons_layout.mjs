@@ -65,8 +65,9 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
     glyphs.length > 6 && new Set(glyphs).size === glyphs.length,
     glyphs.join(','),
   );
-  // Playtest correction: zoom-fit under view-change; XYZ triad (Move3d) stays;
-  // Lucide Frame (# / auto-fit) removed — it duplicated zoom-to-fit.
+  // Playtest correction: zoom-fit under view-change. The XYZ triad (Move3d)
+  // left the rail so the column fits a phone. Lucide Frame (# / auto-fit)
+  // stays gone — it duplicated zoom-to-fit.
   const zoomAt = rail.indexOf('data-zoom-to-fit');
   const viewAt = rail.indexOf('<ViewSnapControl');
   check(
@@ -75,11 +76,16 @@ const contourRail = read('../../src/components/ContourModeRail.jsx');
       && glyphs[0] === 'Maximize2',
   );
   check(
-    'triad (Move3d) kept; Frame (#) auto-fit gone; one zoom-fit',
-    glyphs.includes('Move3d')
+    'triad (Move3d) gone; Frame (#) auto-fit gone; one zoom-fit',
+    !glyphs.includes('Move3d')
+      && !/Move3d/.test(panel)
       && !glyphs.includes('Frame')
       && !/data-auto-fit/.test(rail)
       && glyphs.filter((g) => g === 'Maximize2').length === 1,
+  );
+  check(
+    'molding tools are a drawer on the rail, not six column buttons',
+    /<MoldingToolsControl/.test(rail) && !/data-wall-heatmap/.test(panel),
   );
 }
 
