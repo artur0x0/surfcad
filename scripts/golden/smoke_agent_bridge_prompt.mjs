@@ -238,6 +238,8 @@ async function checkPhoneServerDialog(browser) {
     check('phone does not say Waiting for relay', await phone.locator('[data-agent-bridge-waiting-relay]').count() === 0);
     const transport = await phone.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
     check('phone dialog is the server relay', transport === 'server', transport);
+    const preview = await phone.locator('textarea[data-agent-bridge-prompt-preview]').inputValue();
+    check('phone prompt box holds the full prompt', preview.includes('\n') && preview.includes('npx surfcad-mcp login') && preview.includes(`http://127.0.0.1:${previewPort}/agent`), preview);
     await phone.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await phone.locator('[data-ui-action="data-agent-bridge-copy-prompt"]').click();
     const copied = await phone.evaluate(() => navigator.clipboard.readText());

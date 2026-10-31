@@ -37,16 +37,58 @@ export function agentApprovalUrl(location) {
 }
 
 /**
+ * The CLI accepts cleartext only for localhost, 127.0.0.1, and ::1.
+ * Match that set so a prompt never tells the agent to pass a URL login
+ * will reject.
+ *
+ * @param {string} hostname
+ */
+function isCleartextLoopbackHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+/**
+ * @param {{ protocol?: string, host?: string } | null | undefined} [location]
+ * @returns {URL | null}
+ */
+function pageUrl(location) {
+  try {
+    return new URL(agentPageOrigin(location));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Plain http to a LAN or public host. The page is real, but
+ * `npx surfcad-mcp login --server` of that origin throws.
+ *
+ * @param {{ protocol?: string, host?: string } | null | undefined} [location]
+ */
+export function serverLoginNeedsLoopback(location) {
+  const url = pageUrl(location);
+  return !!url && url.protocol === 'http:' && !isCleartextLoopbackHost(url.hostname);
+}
+
+/**
  * `npx surfcad-mcp login` against the page origin. The CLI default is
- * https://surfcad.com, so that host omits `--server`. Every other origin
- * (www, staging, plain http) is passed through so the device code is
- * minted for the page the user has open.
+ * https://surfcad.com, so that host omits `--server`. https and loopback
+ * http are passed through so the device code is minted for the page the
+ * user has open. Plain http to any other host uses `http://localhost` and
+ * the page's port: login accepts that, and it reaches this backend only
+ * when the command runs on the machine serving the page.
  *
  * @param {{ protocol?: string, host?: string } | null | undefined} [location]
  */
 export function serverLoginCommand(location) {
   const origin = agentPageOrigin(location);
   if (origin === DEFAULT_AGENT_APPROVAL_ORIGIN) return MCP_LOGIN_COMMAND;
+  const url = pageUrl(location);
+  if (url && serverLoginNeedsLoopback(location)) {
+    const port = url.port ? `:${url.port}` : '';
+    return `${MCP_LOGIN_COMMAND} --server http://localhost${port}`;
+  }
   return `${MCP_LOGIN_COMMAND} --server ${origin}`;
 }
 
@@ -54,7 +96,12 @@ export function serverLoginCommand(location) {
  * @param {{ protocol?: string, host?: string } | null | undefined} [location]
  */
 export function serverPairingPrompt(location) {
-  return `Pair with the SurfCAD tab I have open. Run:\n\n${serverLoginCommand(location)}\n\nEnter the device code at ${agentApprovalUrl(location)}`;
+  const command = serverLoginCommand(location);
+  const approval = agentApprovalUrl(location);
+  const where = serverLoginNeedsLoopback(location)
+    ? '\n\nRun that command on the machine serving this page. localhost is that machine, not the computer where this chat is running.'
+    : '';
+  return `Pair with the SurfCAD tab I have open. Run:\n\n${command}\n\nEnter the device code at ${approval}${where}`;
 }
 
 /**
