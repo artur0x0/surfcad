@@ -605,6 +605,7 @@ import {
   transformPoint,
 } from '../utils/rigidSuffix.js';
 import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
+import { moldFitFromGeometry } from '../molding/fromGeometry.js';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1417,6 +1418,7 @@ const Viewport = forwardRef(({
   const agentFitCameraRef = useRef(() => false);
   const agentZoomToSelectionRef = useRef(() => ({ error: { code: 'no_selection', message: 'No selection' } }));
   const agentListFacesRef = useRef(() => ({ faces: [], partId: null }));
+  const agentMoldFitRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const agentReadBodiesRef = useRef(() => ({ partId: null, bodies: [] }));
   const agentResolveMoveAnchorRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh' } }));
   const agentDescribeJointPickRef = useRef(() => ({
@@ -2697,6 +2699,7 @@ const Viewport = forwardRef(({
       fitCamera: () => agentFitCameraRef.current(),
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
+      moldFit: (args) => agentMoldFitRef.current(args),
       readBodies: () => agentReadBodiesRef.current(),
       resolveMoveAnchor: (args) => agentResolveMoveAnchorRef.current(args),
       listEdges: (args) => agentListEdgesRef.current(args),
@@ -13044,6 +13047,18 @@ const Viewport = forwardRef(({
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       ...listed,
+    };
+  };
+
+  agentMoldFitRef.current = ({ partId, pull } = {}) => {
+    const geom = meshGeometryForAgentPart(partId);
+    if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    const analyzed = moldFitFromGeometry(geom, faceIDsForAgentPart(partId, geom), { pull });
+    if (analyzed?.error) return analyzed;
+    return {
+      partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
+      frame: 'local',
+      ...analyzed,
     };
   };
 

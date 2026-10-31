@@ -311,6 +311,12 @@ export const COMMAND_META = {
     errors: ['internal'],
     mutates: false,
   },
+  mold_fit: {
+    description: 'Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'no_mesh', 'internal'],
+    mutates: false,
+  },
   list_bodies: {
     description: 'Bodies of the active part\'s last run, in mesh order: [{ index, at, triangleCount }]. index is insert_move / insert_rotate body_index; at is the centroid move() and rotateAbout() name (insert_move / insert_rotate at, edit_feature at). Empty before the first run.',
     result: { type: 'object', additionalProperties: true },

@@ -27,6 +27,7 @@ import { cameraSetCommand } from './cameraSet.js';
 import { cameraFitCommand } from './cameraFit.js';
 import { zoomToSelectionCommand } from './zoomToSelection.js';
 import { listFacesCommand } from './listFaces.js';
+import { moldFitCommand } from './moldFit.js';
 import { listBodiesCommand } from './listBodies.js';
 import { geometryWorkersCommand } from './geometryWorkers.js';
 import { gitTimingsCommand } from './gitTimings.js';
@@ -224,6 +225,7 @@ const V1_COMMAND_LIST = [
   partsCommand,
   cameraCommand,
   listFacesCommand,
+  moldFitCommand,
   listBodiesCommand,
   geometryWorkersCommand,
   gitTimingsCommand,

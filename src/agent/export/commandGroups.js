@@ -50,6 +50,7 @@ const OVERRIDES = Object.freeze({
   selection: 'pick',
   cad_select_all: 'pick',
   list_faces: 'pick',
+  mold_fit: 'measure',
   list_edges: 'pick',
   list_feature_edges: 'pick',
   list_bodies: 'pick',
