@@ -7,7 +7,6 @@ import {
   AGENT_SOCKET_CLOSE_CODE,
   TOKEN_REVOKED_REASON,
 } from './agentSockets.js';
-import { cityFromRequest } from './approvalCopy.js';
 import {
   approvePage,
   codeFormPage,
@@ -111,13 +110,26 @@ export function createAgentRouter(deps) {
     return res.type('html').send(codePage(req));
   });
 
-  router.post('/pair', (req, res) => {
-    const result = deps.pairing.start({
-      name: req.body?.name,
-      machine: req.body?.machine,
-      city: cityFromRequest(req),
-      ip: req.ip,
-    });
+  router.post('/pair', async (req, res, next) => {
+    let city = null;
+    if (typeof deps.lookupCity === 'function') {
+      try {
+        city = await deps.lookupCity(req.ip);
+      } catch {
+        city = null;
+      }
+    }
+    let result;
+    try {
+      result = deps.pairing.start({
+        name: req.body?.name,
+        machine: req.body?.machine,
+        city,
+        ip: req.ip,
+      });
+    } catch (error) {
+      return next(error);
+    }
     if (!result.ok) {
       if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
       return res.status(entryStatus(result.error)).json({

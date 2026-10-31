@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import AgentRelayAccount from './AgentRelayAccount';
 import PrivacyChoicesController from './PrivacyChoicesController';
 import ProfileUserIdRow from './ProfileUserIdRow';
 import VaultPickerDialog from './VaultPickerDialog';
@@ -149,6 +150,8 @@ export default function AccountPane({
               <InfoRow label="Email" value={email} attr="email" />
               <InfoRow label="Created" value={created} attr="created" />
             </div>
+            <div className="my-2 border-t border-chrome-border" data-agent-relay-divider="" />
+            <AgentRelayAccount open={open} />
             <div className="my-2 border-t border-chrome-border" data-profile-privacy-divider="" />
             <PrivacyChoicesController
               variant="profileMenu"

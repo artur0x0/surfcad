@@ -21,6 +21,7 @@ import { createTokenService } from './tokens.js';
  *   commandWindowMs?: number,
  *   maxMessageBytes?: number,
  *   maxPending?: number,
+ *   lookupCity?: (ip: string | undefined) => Promise<string | null>,
  * }} [overrides]
  */
 export function createAgentRelay(overrides = {}) {
@@ -56,6 +57,7 @@ export function createAgentRelay(overrides = {}) {
     commandLimiter,
     maxMessageBytes,
     agentSockets,
+    lookupCity: overrides.lookupCity,
   });
   return {
     clock,

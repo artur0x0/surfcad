@@ -81,7 +81,13 @@ export default function PromptInput({
   promptContext = undefined,
   featurePopupOpen = false,
 }) {
-  const { paired, link, promptTransport } = useAgentBridgeHost();
+  const {
+    paired,
+    link,
+    promptTransport,
+    agentChatOpen = false,
+    closeAgentChat,
+  } = useAgentBridgeHost();
   const demoAllowed = agentPromptDemoAllowed(promptEnv);
   const demo = useMemo(
     () => readAgentPromptDemo(demoSearch, promptEnv),
@@ -98,7 +104,7 @@ export default function PromptInput({
   const transport = transportProp
     || (liveSession ? promptTransport : stubRef.current)
     || null;
-  const visible = shouldShowAgentPrompt({
+  const sessionVisible = shouldShowAgentPrompt({
     paired,
     link,
     demo,
@@ -106,6 +112,9 @@ export default function PromptInput({
     hasTransport: Boolean(transport),
     demoAllowed,
   });
+  // Phone: the bot button opens the same chat. Desktop and the demo pin stay up.
+  const shown = sessionVisible && (!isMobile || Boolean(demo) || agentChatOpen);
+  const visible = sessionVisible;
 
   const seed = demoSeed(demo?.state);
   const [input, setInput] = useState(seed.input);
@@ -146,6 +155,9 @@ export default function PromptInput({
   const rootRef = useRef(null);
   // The conversation for this connection: user messages and agent replies in order.
   const [chat, dispatchChat] = useReducer(conversationReducer, seed, conversationSeed);
+  useEffect(() => {
+    if (agentChatOpen) dispatchChat({ type: 'show' });
+  }, [agentChatOpen]);
   const [ack, setAck] = useState(null);
   const paneRef = useRef(null);
   // Follow new messages unless the user scrolled up to read.
@@ -167,10 +179,10 @@ export default function PromptInput({
   }, []);
 
   useEffect(() => {
-    if (!visible) return undefined;
+    if (!shown) return undefined;
     adjustHeight();
     return undefined;
-  }, [visible, input, adjustHeight]);
+  }, [shown, input, adjustHeight]);
 
   useEffect(() => {
     if (!visible || !transport) return undefined;
@@ -365,10 +377,11 @@ export default function PromptInput({
   // where the fold has not landed, it hides the pane as before.
   const dismissReply = useCallback(() => {
     if (foldable) return foldPrompt();
+    closeAgentChat?.();
     dispatchChat({ type: 'dismiss' });
     setAck(null);
     return { ok: true };
-  }, [foldPrompt, foldable]);
+  }, [closeAgentChat, foldPrompt, foldable]);
 
   const scrollToBottom = useCallback(() => {
     const el = paneRef.current;
@@ -423,7 +436,7 @@ export default function PromptInput({
 
   const responding = typingShown(typing);
   // Working collapses the chat so the viewport is visible; typing keeps it.
-  const showReply = visible && !working && (responding || (!chat.hidden && chat.messages.length > 0));
+  const showReply = shown && !working && (responding || (!chat.hidden && chat.messages.length > 0));
   const lastKey = chat.messages.length ? chat.messages[chat.messages.length - 1].key : '';
   const lastLen = chat.messages.length ? chat.messages[chat.messages.length - 1].text.length : 0;
 
@@ -441,7 +454,7 @@ export default function PromptInput({
     return undefined;
   }, [showReply, lastKey, lastLen, responding]);
 
-  if (!visible) return null;
+  if (!shown) return null;
 
   const nearLimit = input.length >= COUNTER_FROM;
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;

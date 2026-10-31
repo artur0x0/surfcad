@@ -40,4 +40,10 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-joints-row-scroll-prev', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),
   Object.freeze({ id: 'data-joints-row-scroll-next', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),
   Object.freeze({ id: 'data-agent-prompt-jump', reason: 'Agent prompt chat pane scroll-to-newest arrow (reader chrome only, no agent equivalent).' }),
+  Object.freeze({ id: 'data-agent-relay-auto', reason: 'Account relay preference: try the localhost relay, then the server.' }),
+  Object.freeze({ id: 'data-agent-relay-local', reason: 'Account relay preference: localhost relay only.' }),
+  Object.freeze({ id: 'data-agent-relay-server', reason: 'Account relay preference: server relay only.' }),
+  Object.freeze({ id: 'data-agent-token-revoke', reason: 'Account list revoke for a paired agent token.' }),
+  Object.freeze({ id: 'data-agent-connected-disconnect', reason: 'Persistent Agent connected banner disconnects the tab socket.' }),
+  Object.freeze({ id: 'data-agent-chat-open', reason: 'Phone stage pill opens the agent chat while an agent is connected.' }),
 ]);
