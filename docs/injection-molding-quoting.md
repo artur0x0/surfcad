@@ -104,8 +104,13 @@ The quote panel also shows heuristic fill flags and up to three grades from
 check, a high aspect ratio of the outside box, and a long stand-in flow. The
 stand-in is the longest outside edge, not a melt path. A structural study
 that is still in memory can add a stiffness hint from that study's modulus
-and safety factor. Modal, stale, and missing results add nothing. The hint
-does not read a stress field.
+and safety factor. When that study has a nodal field in memory, the hint
+also reads peak and p95 von Mises and the max displacement. Peak stress is
+compared with modulus. The library has no strength allowable. A high stress
+on a thin-wall triangle adds a thin-stress flag. All of that is heuristic.
+It is not a mold-flow result. Modal, stale, and missing results add nothing.
+With no study, or with a study that has no field in memory, the flags and
+the hint stay on the wall check, the outside box, and the stored summary.
 
 The suggestions do not change the partner resin menu or the quote request.
 The panel says they are heuristic and not a mold-flow result.

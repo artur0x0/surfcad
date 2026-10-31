@@ -15,7 +15,7 @@ import { setProbeOverlay } from './probeOverlay.js';
 import { probeQuantityName, probeUnit, readTetProbe } from './probeSample.js';
 import { probeShellAt, shellSheetFromScript } from './sheetMidsurface.js';
 import { activePlot, initialResultsView, reduceResultsView } from './resultsView.js';
-import { bindStressField, bindVectorField, setStressSkinSource } from './stressMap.js';
+import { bindStressField, bindVectorField, getStressSkinSource, setStressSkinSource } from './stressMap.js';
 import { feaTapAction, studyMemberIds } from './feaPickGate.js';
 import { composeFeaStudy, FEA_STUDY_BEGIN, readFeaStudy, scriptOutsideFeaStudy } from './studyScript.js';
 import {
@@ -1088,6 +1088,17 @@ export function useFeaStudy({
     setAnimate,
     dismissed,
     backToSetup,
+    // Read-only. These return fields the solve already stored. They do not
+    // solve, mesh, or replace those fields.
+    nodalStress() {
+      return stressFieldRef.current?.field ?? null;
+    },
+    displacementField() {
+      return displacementFieldRef.current?.field ?? null;
+    },
+    stressMap() {
+      return getStressSkinSource();
+    },
   };
 
   return api;
