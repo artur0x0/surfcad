@@ -5065,7 +5065,19 @@ function _c6EdgeGeom(M, part, mesh, e, r, opts = {}) {
   if (theta < 0.05 || theta > Math.PI - 0.05)
     throw new Error(`filletEdges: degenerate face angle ${theta} rad`);
   const t = r / Math.tan(theta / 2);
-  return { e, P0, P1, L, d, f0, f1, theta, t, r };
+  // A FREE end has a face of the part capping it (a face at the end vertex
+  // whose normal points on along the edge): beyond it is air, and a cutter
+  // may overrun it by the face push so its end face is not left as a skin in
+  // that cap (see _C6_FACE_PUSH_RATIO). An end that runs into other material (a
+  // boss edge ending on a plate) has no such face and is cut flush.
+  const capFree = (P, dir) => (typeof mesh.trisAtPoint === 'function')
+    && mesh.trisAtPoint(P).some((ti) => {
+      const n = mesh.tris[ti].n;
+      return n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2] > 0.3;
+    });
+  const freeA = capFree(P0, [-d[0], -d[1], -d[2]]);
+  const freeB = capFree(P1, d);
+  return { e, P0, P1, L, d, f0, f1, theta, t, r, freeA, freeB };
 }
 
 // Run detection (v2, see C6 block header). geoms = _c6EdgeGeom results,
@@ -5218,7 +5230,8 @@ function _c6ClosedRunCutter(M, manifoldModule, run, geoms) {
   const dC = r / Math.sin(theta / 2);
   const O0 = [P0_2d[0] + dC*bis[0], P0_2d[1] + dC*bis[1]];
   const quad = [
-    P0_2d,
+    // The rim point, out of both faces (see _C6_FACE_PUSH_RATIO).
+    [P0_2d[0] - _c6FacePush(r) * (f0_2d[0] + f1_2d[0]), P0_2d[1] - _c6FacePush(r) * (f0_2d[1] + f1_2d[1])],
     [P0_2d[0]+t*f0_2d[0], P0_2d[1]+t*f0_2d[1]],
     [P0_2d[0]+t*(f0_2d[0]+f1_2d[0]), P0_2d[1]+t*(f0_2d[1]+f1_2d[1])],
     [P0_2d[0]+t*f1_2d[0], P0_2d[1]+t*f1_2d[1]],
@@ -5327,10 +5340,54 @@ function _c6CornerSpherePoint(c, u1, u2, u3) {
   ];
 }
 
-/** The square corner of edge k's junction section: P + r·dk. */
+/**
+ * How far a cutter's corner points sit OUTSIDE the part's faces, as a
+ * fraction of the fillet radius (0.02·r: 0.08 mm on a 4 mm fillet).
+ *
+ * Manifold keeps a solid's planes in doubles but hands JavaScript a float32
+ * mesh, so a box 68.7 wide has its face at x = 34.35 while every vertex we
+ * read says 34.349998. A cutter built from those vertices with a face lying
+ * exactly in the part's face sits two microns inside it, and the subtract
+ * leaves the whole strip between the edge and the tangency line as a
+ * two-micron skin: a sheet of the old face over the new fillet, a handle in
+ * the genus, and a shell that reads the sheet as a flat and offsets it the
+ * wrong way. Every corner point of a cutter (the point on the edge, a
+ * pocket's apex) therefore moves this far out of each face it lies on; the
+ * tangency rings stay exact, so the face-lying side runs from outside the
+ * part to the tangency and crosses the face plane the way the sweep
+ * kernel's legs do. The extra sliver of cutter lies outside the part and
+ * removes nothing.
+ *
+ * Proportional to r so the tilt of that side (push/t) is the same at every
+ * scale: the float32 gap grows with the part, Manifold's merge tolerance
+ * with it, and the strip where the side crosses the true plane
+ * (gap · t / push) stays under that tolerance. Measured on the 68.7 box at
+ * r = 4: a 0.01 mm push still left a 0.6 µm fin along the tangency, 0.03 mm
+ * and up left none, 0.3 mm broke the pocket's volume check.
+ */
+const _C6_FACE_PUSH_RATIO = 0.02;
+const _c6FacePush = (r) => _C6_FACE_PUSH_RATIO * r;
+
+/** p moved eps against each direction in dirs (into the air). */
+function _c6PushOut(p, dirs, eps) {
+  const out = [p[0], p[1], p[2]];
+  for (const v of dirs) {
+    out[0] -= eps * v[0];
+    out[1] -= eps * v[1];
+    out[2] -= eps * v[2];
+  }
+  return out;
+}
+
+/**
+ * The square corner of edge k's junction section: P + r·dk, pushed out of
+ * the two faces that meet along edge k (their in-face directions are the
+ * other two edges). Shared by the prism of edge k and the pocket of c.
+ */
 function _c6CornerEdgePoint(c, k) {
   const { P, r, d } = c;
-  return [P[0] + r * d[k][0], P[1] + r * d[k][1], P[2] + r * d[k][2]];
+  const [i, j] = [0, 1, 2].filter((x) => x !== k);
+  return _c6PushOut([P[0] + r * d[k][0], P[1] + r * d[k][1], P[2] + r * d[k][2]], [d[i], d[j]], _c6FacePush(r));
 }
 
 /**
@@ -5434,8 +5491,10 @@ function _c6TrimmedEdgeCutter(M, g, capA, capB) {
       if (dot(ring0[ring0.length - 1]) > dot(ring0[0])) ring1 = ring1.slice().reverse();
     }
   }
-  const s0 = capA ? r : 0;
-  const s1 = capB ? L - r : L;
+  // An open end overruns a free end face by the push (see _c6EdgeGeom).
+  const push = _c6FacePush(r);
+  const s0 = capA ? r : (g.freeA ? -push : 0);
+  const s1 = capB ? L - r : (g.freeB ? L + push : L);
   if (!(s1 > s0 + 1e-9)) throw new Error('filletEdges: corner caps overlap on a short edge');
   if (!ring0) {
     ring0 = shift(ring1, -(s1 - s0));
@@ -5464,7 +5523,9 @@ function _c6TrimmedEdgeCutter(M, g, capA, capB) {
     tris.push([0, R0(v + 1), R0(v)]);
     tris.push([n + 1, R1(v), R1(v + 1)]);
   }
-  const expectVol = (s1 - s0) * r * r * (1 - Math.PI / 4);
+  // Section: the square minus the quarter disc, plus the strip the pushed
+  // corner adds (shoelace over Q', T_A, C, T_B gives r² + ε·r).
+  const expectVol = (s1 - s0) * (r * r * (1 - Math.PI / 4) + push * r);
   return _c6SolidFromSoup(M, 'corner edge cutter', verts, tris, expectVol);
 }
 
@@ -5495,7 +5556,9 @@ function _c6CornerPocket(M, c, pocketOpts = {}) {
     if (nrm[0] * outward[0] + nrm[1] * outward[1] + nrm[2] * outward[2] < 0) tris.push([a, cc, b]);
     else tris.push([a, b, cc]);
   };
-  const iP = add(P.slice());
+  // The apex lies on all three faces and moves out of each; the edge points
+  // move out of their two (see _C6_FACE_PUSH_RATIO). The tangent points stay.
+  const iP = add(_c6PushOut(P, c.d, _c6FacePush(r)));
   const iC = [0, 1, 2].map((k) => add(_c6CornerEdgePoint(c, k)));
   // Junction rings, one per edge; their ends are the three face tangent
   // points, which are also the octant grid's corners.
@@ -5639,7 +5702,10 @@ function _c6CornerPocket(M, c, pocketOpts = {}) {
   for (let k = 0; k < 3; k++) {
     for (let v = 0; v < nFine; v++) face(iC[k], ringAt(k, v), ringAt(k, v + 1), d[k]);
   }
-  const expectVol = r * r * r * (1 - Math.PI / 6);
+  // The r-cube minus the sphere octant, plus what the pushed apex and edge
+  // points add under the three face squares (depth ε at the corner points,
+  // 0 at the tangent point: 2ε·r² to first order).
+  const expectVol = r * r * r * (1 - Math.PI / 6) + 2 * _c6FacePush(r) * r * r;
   return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol);
 }
 
@@ -5879,10 +5945,11 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
     } else {
       // parallelepiped spanned by t·f0 and t·f1, extruded along the edge
       const B = [];
-      for (const s of [0, L]) {
+      const push = _c6FacePush(r);
+      for (const s of [g.freeA ? -push : 0, g.freeB ? L + push : L]) {
         const P = [P0[0]+s*d[0], P0[1]+s*d[1], P0[2]+s*d[2]];
         B.push(
-          P,
+          _c6PushOut(P, [f0, f1], push), // the edge point, out of both faces
           [P[0]+t*f0[0], P[1]+t*f0[1], P[2]+t*f0[2]],
           [P[0]+t*f1[0], P[1]+t*f1[1], P[2]+t*f1[2]],
           [P[0]+t*(f0[0]+f1[0]), P[1]+t*(f0[1]+f1[1]), P[2]+t*(f0[2]+f1[2])],
@@ -5967,11 +6034,12 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       //     rounded corner (every octant point is inside all three sail
       //     cylinders, so the sphere IS the true CAD corner patch).
       //   T \ octant = the cusp pocket the plain fillets leave.
-      const mkPt = (a, b, c) => [
+      // A zero coordinate puts the point on that face: push it out of it.
+      const mkPt = (a, b, c) => _c6PushOut([
         P[0] + r0*(a*m12[0] + b*m23[0] + c*m31[0]),
         P[1] + r0*(a*m12[1] + b*m23[1] + c*m31[1]),
         P[2] + r0*(a*m12[2] + b*m23[2] + c*m31[2]),
-      ];
+      ], [a ? null : m12, b ? null : m23, c ? null : m31].filter(Boolean), _c6FacePush(r0));
       const cornerBox = M.hull([
         mkPt(0,0,0), mkPt(1,0,0), mkPt(0,1,0), mkPt(0,0,1),
         mkPt(1,1,0), mkPt(1,0,1), mkPt(0,1,1), mkPt(1,1,1),
@@ -6047,6 +6115,10 @@ function _c6BuildMeshInfo(part) {
     V.push([mesh.vertProperties[i*np], mesh.vertProperties[i*np+1], mesh.vertProperties[i*np+2]]);
   const tris = [];
   const pairMap = new Map();
+  // Triangles touching a POSITION (a corner Manifold holds as several
+  // vertex indices still reads as one corner).
+  const atPoint = new Map();
+  const pointKey = (p) => `${p[0].toFixed(4)},${p[1].toFixed(4)},${p[2].toFixed(4)}`;
   for (let i = 0; i < mesh.numTri; i++) {
     const vs = [mesh.triVerts[i*3], mesh.triVerts[i*3+1], mesh.triVerts[i*3+2]];
     const v0 = V[vs[0]], v1 = V[vs[1]], v2 = V[vs[2]];
@@ -6058,9 +6130,13 @@ function _c6BuildMeshInfo(part) {
       const key = a < b ? a * 1e9 + b : b * 1e9 + a;
       if (!pairMap.has(key)) pairMap.set(key, []);
       pairMap.get(key).push(i);
+      const pk = pointKey(V[a]);
+      if (!atPoint.has(pk)) atPoint.set(pk, []);
+      atPoint.get(pk).push(i);
     }
   }
-  return { tris, pairMap };
+  const trisAtPoint = (p) => atPoint.get(pointKey(p)) || [];
+  return { tris, pairMap, trisAtPoint };
 }
 
 // Local planarity on each side of the edge: the edge triangle's plane must
