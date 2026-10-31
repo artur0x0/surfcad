@@ -323,6 +323,12 @@ export const COMMAND_META = {
     errors: ['no_mesh', 'internal'],
     mutates: false,
   },
+  mold_draft: {
+    description: 'Show or hide mold-draft violations on the active part, in the part local frame. on true flags side walls below 1° of draft relative to the mold-analysis pull and lists ejector-pin and sleeve candidate counts. Those candidates are a heuristic. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not CAD draft mode, not an automatic draft fix, and not a quote.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_wall_map: {
     description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
     result: { type: 'object', additionalProperties: true },
@@ -330,7 +336,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   mold_fit: {
-    description: 'Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies each face as cavity (faces the pull), core (faces the other way), or parting-adjacent (inside the 10° band), and lists the parting line. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters, each with a suggested pull. That split is a heuristic. count, slideCount, and lifterCount are the numbers a later tooling adder can use.',
+    description: 'Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches candidate pull directions and returns the axis with the fewest undercut regions: fit is good (0), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Stamped face normals are used when the stamp did not cancel; other triangles use the triangle normal. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies each face as cavity (faces the pull), core (faces the other way), or parting-adjacent (inside the 10° band), and lists the parting line. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters, each with a suggested pull. That split is a heuristic. count, slideCount, and lifterCount are the numbers a later tooling adder can use. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'no_mesh', 'internal'],
     mutates: false,

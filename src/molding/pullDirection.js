@@ -26,12 +26,15 @@
  * It also carries the core / cavity split and parting line
  * (`src/molding/parting.js`) for that same pull, and the side-action
  * groups (`src/molding/sideActions.js`) clustered from these undercuts.
+ * It also carries mold-draft violations and ejector hints
+ * (`src/molding/moldDraft.js`) for that same pull.
  */
 
 import { meshBodyComponents } from '../utils/meshBodyComponents.js';
 import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
 import { classifyParting } from './parting.js';
 import { groupSideActions } from './sideActions.js';
+import { analyzeMoldDraft } from './moldDraft.js';
 
 export const MOLD_ANALYSIS_VERSION = 1;
 
@@ -516,7 +519,7 @@ function publicRegions(regions) {
   }));
 }
 
-function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall, parting }) {
+function resultOf({ pull, pullSource, regions, candidates, normals, positions, indices, skinMm, wall, parting, tris }) {
   const undercutCount = regions.length;
   return {
     version: MOLD_ANALYSIS_VERSION,
@@ -537,6 +540,7 @@ function resultOf({ pull, pullSource, regions, candidates, normals, positions, i
     wall,
     parting,
     sideActions: groupSideActions(regions, pull),
+    moldDraft: analyzeMoldDraft(tris, pull, wall),
   };
 }
 
@@ -585,6 +589,7 @@ export function analyzePullDirection(input) {
       skinMm,
       wall,
       parting: partingFor(override.pull),
+      tris: prepared.tris,
     });
   }
   const { dirs, primary } = candidateDirections(prepared.tris, input.patches);
@@ -607,5 +612,6 @@ export function analyzePullDirection(input) {
     skinMm,
     wall,
     parting: partingFor(best.pull),
+    tris: prepared.tris,
   });
 }
