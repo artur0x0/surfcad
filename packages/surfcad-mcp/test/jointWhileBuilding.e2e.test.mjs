@@ -15,6 +15,7 @@ import {
   setAgentPromptWorking,
 } from '../../../src/agent/agentFeaturePopupGate.js';
 import { beginAgentJointSession } from '../../../src/agent/jointPromptGate.js';
+import { openRemoteStdio } from './remoteStdio.mjs';
 
 /**
  * joint_create through the MCP server while the tab is in building.
@@ -86,6 +87,67 @@ function jointHost(seen) {
   };
 }
 
+/**
+ * responding is the bouncing dots (tab state typing). building is the
+ * spinner (tab state working). Either phase closes the feature-popup gate;
+ * joint_create still commits.
+ * @param {Client} client
+ * @param {{ typing: boolean, built: boolean, popupAtOpen: boolean | null }} seen
+ */
+async function assertJointWhilePending(client, seen) {
+  const responding = await client.callTool({ name: 'set_status', arguments: { state: 'responding' } });
+  assert.equal(responding.isError, false, JSON.stringify(responding));
+  assert.equal(JSON.parse(responding.content[0].text).state, 'typing');
+  const typingDeadline = Date.now() + 3000;
+  while (!seen.typing) {
+    if (Date.now() > typingDeadline) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal(seen.typing, true);
+
+  const status = await client.callTool({ name: 'set_status', arguments: { state: 'building' } });
+  assert.equal(status.isError, false, JSON.stringify(status));
+  assert.equal(JSON.parse(status.content[0].text).state, 'working');
+  const statusDeadline = Date.now() + 3000;
+  while (!seen.built) {
+    if (Date.now() > statusDeadline) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal(seen.built, true);
+
+  const created = await client.callTool({
+    name: 'joint_create',
+    arguments: { type: 'coincident', picks: PICKS, name: 'Wheel seat' },
+  });
+  assert.equal(created.isError, false, JSON.stringify(created));
+  const body = JSON.parse(created.content[0].text);
+  assert.equal(body.ok, true);
+  assert.equal(body.jointId, 'j-building');
+  assert.equal(body.type, 'coincident');
+  assert.equal(seen.popupAtOpen, false, 'the feature-popup gate was closed while the joint was created');
+}
+
+/**
+ * @param {{ typing: boolean, built: boolean, popupAtOpen: boolean | null }} seen
+ * @param {ReturnType<typeof createSurfcadBridge>} api
+ * @param {import('ws').WebSocket} tab
+ * @param {object} msg
+ */
+function answerJointTab(seen, api, tab, msg) {
+  if (msg.type === PAIR_MSG.AGENT_STATUS && (msg.state === 'working' || msg.state === 'typing')) {
+    setAgentPromptWorking(true);
+    if (msg.state === 'working') seen.built = true;
+    if (msg.state === 'typing') seen.typing = true;
+    return;
+  }
+  if (typeof msg.command !== 'string' || typeof msg.id !== 'string') return;
+  void api.call(msg.command, msg.args || {}).then((env) => {
+    tab.send(JSON.stringify(env.ok
+      ? { id: msg.id, ok: true, result: env.result }
+      : { id: msg.id, ok: false, error: env.error || { code: 'refused', message: 'Command refused' } }));
+  });
+}
+
 test('joint_create commits while the tab is in building', async () => {
   resetAgentFeaturePopupGateForTests();
   const token = createPairingToken(6);
@@ -104,22 +166,12 @@ test('joint_create commits while the tab is in building', async () => {
   const client = new Client({ name: 'surfcad-mcp-joint-building', version: '1.0.0' });
   await client.connect(transport);
 
-  const seen = { popupAtOpen: null, built: false };
+  const seen = { popupAtOpen: null, built: false, typing: false };
   const api = createSurfcadBridge({ resolve: () => jointHost(seen) });
   tab.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }
-    if (msg.type === PAIR_MSG.AGENT_STATUS && (msg.state === 'working' || msg.state === 'typing')) {
-      setAgentPromptWorking(true);
-      if (msg.state === 'working') seen.built = true;
-      return;
-    }
-    if (typeof msg.command !== 'string' || typeof msg.id !== 'string') return;
-    void api.call(msg.command, msg.args || {}).then((env) => {
-      tab.send(JSON.stringify(env.ok
-        ? { id: msg.id, ok: true, result: env.result }
-        : { id: msg.id, ok: false, error: env.error || { code: 'refused', message: 'Command refused' } }));
-    });
+    answerJointTab(seen, api, tab, msg);
   });
 
   try {
@@ -129,31 +181,30 @@ test('joint_create commits while the tab is in building', async () => {
     tab.send(JSON.stringify({ type: PAIR_MSG.PAIR_APPROVE }));
     const paired = await pairing;
     assert.equal(paired.isError, false, JSON.stringify(paired).slice(0, 240));
-
-    const status = await client.callTool({ name: 'set_status', arguments: { state: 'building' } });
-    assert.equal(status.isError, false, JSON.stringify(status));
-    assert.equal(JSON.parse(status.content[0].text).state, 'working');
-    const statusDeadline = Date.now() + 3000;
-    while (!seen.built) {
-      if (Date.now() > statusDeadline) break;
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    assert.equal(seen.built, true);
-
-    const created = await client.callTool({
-      name: 'joint_create',
-      arguments: { type: 'coincident', picks: PICKS, name: 'Wheel seat' },
-    });
-    assert.equal(created.isError, false, JSON.stringify(created));
-    const body = JSON.parse(created.content[0].text);
-    assert.equal(body.ok, true);
-    assert.equal(body.jointId, 'j-building');
-    assert.equal(body.type, 'coincident');
-    assert.equal(seen.popupAtOpen, false, 'the feature-popup gate was closed while the joint was created');
+    await assertJointWhilePending(client, seen);
   } finally {
     resetAgentFeaturePopupGateForTests();
     await client.close();
     tab.close();
     await stopAgentBridgeRelay(relay);
+  }
+});
+
+test('joint_create commits while the tab is in building over the remote relay', async () => {
+  resetAgentFeaturePopupGateForTests();
+  const seen = { popupAtOpen: null, built: false, typing: false };
+  const api = createSurfcadBridge({ resolve: () => jointHost(seen) });
+  const session = await openRemoteStdio({
+    serverBin: SERVER_BIN,
+    clientName: 'surfcad-mcp-joint-building-remote',
+    onTabMessage(msg, tab) {
+      answerJointTab(seen, api, tab, msg);
+    },
+  });
+  try {
+    await assertJointWhilePending(session.client, seen);
+  } finally {
+    resetAgentFeaturePopupGateForTests();
+    await session.close();
   }
 });

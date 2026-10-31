@@ -14,6 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { startAgentBridgeRelay, stopAgentBridgeRelay } from '../src/bridge/relayServer.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
 import { createPairingToken } from '../../../src/agent/ws/pairingToken.js';
+import { openRemoteStdio } from './remoteStdio.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_BIN = join(PKG_ROOT, 'bin/surfcad-mcp.js');
@@ -137,57 +138,134 @@ async function sendPrompt(tab, inbound, id, text) {
   assert.equal(ack.delivery, 'queued');
 }
 
+/**
+ * @param {object} msg
+ * @param {import('ws').WebSocket} tab
+ */
+function answerCommand(msg, tab) {
+  if (typeof msg.command !== 'string') return;
+  tab.send(JSON.stringify({
+    id: msg.id,
+    ok: true,
+    result: { partId: 'p1', runState: 'ok', volume: 1 },
+  }));
+}
+
+/**
+ * @param {{ client: Client, tab: import('ws').WebSocket, inbound: object[] }} session
+ */
+async function rejectUnknownAndDeliver(session) {
+  await sendPrompt(session.tab, session.inbound, PROMPT_A, 'Add four holes');
+  const read = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.equal(read.isError, false, JSON.stringify(read).slice(0, 240));
+  assert.equal(jsonBlocks(read).some((row) => row.id === PROMPT_A), true);
+
+  const before = session.inbound.length;
+  const unknown = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: 'x', text: 'probe' },
+  });
+  assert.equal(unknown.isError, true);
+  const rejected = JSON.parse(texts(unknown)[0] || '{}');
+  assert.equal(rejected.code, 'unknown_prompt');
+  await settle(200);
+  const afterUnknown = session.inbound.slice(before);
+  assert.equal(afterUnknown.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+  assert.equal(afterUnknown.some((msg) => JSON.stringify(msg).includes('probe')), false);
+
+  const partials = [
+    { text: 'Added ', final: false },
+    { text: 'four holes.', final: false },
+  ];
+  for (const part of partials) {
+    const out = await session.client.callTool({
+      name: 'reply_to_user',
+      arguments: { in_reply_to: PROMPT_A, text: part.text, final: part.final },
+    });
+    assert.equal(out.isError, false, JSON.stringify(out).slice(0, 240));
+    assert.deepEqual(JSON.parse(texts(out)[0]), { id: PROMPT_A, final: false });
+  }
+  const closing = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: PROMPT_A, text: 'Done.', final: true },
+  });
+  assert.equal(closing.isError, false, JSON.stringify(closing).slice(0, 240));
+  assert.deepEqual(JSON.parse(texts(closing)[0]), { id: PROMPT_A, final: true });
+
+  const replies = [];
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline && replies.length < 3) {
+    replies.splice(0, replies.length, ...session.inbound.filter(
+      (msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === PROMPT_A,
+    ));
+    if (replies.length < 3) await settle(20);
+  }
+  assert.deepEqual(replies.map((msg) => msg.text), ['Added ', 'four holes.', 'Done.']);
+  assert.deepEqual(replies.map((msg) => msg.final), [false, false, true]);
+  assert.equal(session.inbound.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === 'x'), false);
+}
+
+/**
+ * @param {{ client: Client, tab: import('ws').WebSocket, inbound: object[] }} session
+ */
+async function recentAfterAck(session) {
+  await sendPrompt(session.tab, session.inbound, PROMPT_A, 'first');
+  await settle(1100);
+  await sendPrompt(session.tab, session.inbound, PROMPT_B, 'second');
+
+  const read = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.equal(read.isError, false, JSON.stringify(read).slice(0, 400));
+  const summary = jsonBlocks(read).at(-1);
+  assert.deepEqual(summary.acked, [PROMPT_A, PROMPT_B]);
+  assert.deepEqual(summary.recent, [
+    { id: PROMPT_A, state: 'delivered' },
+    { id: PROMPT_B, state: 'delivered' },
+  ]);
+
+  const status = await session.client.callTool({ name: 'status', arguments: {} });
+  assert.equal(status.isError, false, JSON.stringify(status).slice(0, 240));
+  assert.deepEqual(jsonBlocks(status)[0].last, { id: PROMPT_B, state: 'delivered' });
+
+  const again = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.equal(again.isError, false);
+  const recovered = jsonBlocks(again)[0];
+  assert.deepEqual(recovered.messages, []);
+  assert.deepEqual(recovered.acked, []);
+  assert.deepEqual(recovered.recent, [
+    { id: PROMPT_A, state: 'delivered' },
+    { id: PROMPT_B, state: 'delivered' },
+  ]);
+
+  const reply = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: recovered.recent[0].id, text: 'still here', final: true },
+  });
+  assert.equal(reply.isError, false, JSON.stringify(reply).slice(0, 240));
+  assert.deepEqual(JSON.parse(texts(reply)[0]), { id: PROMPT_A, final: true });
+  const frame = await waitFor(
+    session.inbound,
+    (msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === PROMPT_A && msg.text === 'still here',
+  );
+  assert.equal(frame.final, true);
+}
+
 test('reply_to_user rejects an unknown id and still delivers a real reply', async () => {
   const session = await pairedSession();
   try {
-    await sendPrompt(session.tab, session.inbound, PROMPT_A, 'Add four holes');
-    const read = await session.client.callTool({ name: 'read_messages', arguments: {} });
-    assert.equal(read.isError, false, JSON.stringify(read).slice(0, 240));
-    assert.equal(jsonBlocks(read).some((row) => row.id === PROMPT_A), true);
+    await rejectUnknownAndDeliver(session);
+  } finally {
+    await session.close();
+  }
+});
 
-    const before = session.inbound.length;
-    const unknown = await session.client.callTool({
-      name: 'reply_to_user',
-      arguments: { in_reply_to: 'x', text: 'probe' },
-    });
-    assert.equal(unknown.isError, true);
-    const rejected = JSON.parse(texts(unknown)[0] || '{}');
-    assert.equal(rejected.code, 'unknown_prompt');
-    await settle(200);
-    const afterUnknown = session.inbound.slice(before);
-    assert.equal(afterUnknown.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
-    assert.equal(afterUnknown.some((msg) => JSON.stringify(msg).includes('probe')), false);
-
-    const partials = [
-      { text: 'Added ', final: false },
-      { text: 'four holes.', final: false },
-    ];
-    for (const part of partials) {
-      const out = await session.client.callTool({
-        name: 'reply_to_user',
-        arguments: { in_reply_to: PROMPT_A, text: part.text, final: part.final },
-      });
-      assert.equal(out.isError, false, JSON.stringify(out).slice(0, 240));
-      assert.deepEqual(JSON.parse(texts(out)[0]), { id: PROMPT_A, final: false });
-    }
-    const closing = await session.client.callTool({
-      name: 'reply_to_user',
-      arguments: { in_reply_to: PROMPT_A, text: 'Done.', final: true },
-    });
-    assert.equal(closing.isError, false, JSON.stringify(closing).slice(0, 240));
-    assert.deepEqual(JSON.parse(texts(closing)[0]), { id: PROMPT_A, final: true });
-
-    const replies = [];
-    const deadline = Date.now() + 3000;
-    while (Date.now() < deadline && replies.length < 3) {
-      replies.splice(0, replies.length, ...session.inbound.filter(
-        (msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === PROMPT_A,
-      ));
-      if (replies.length < 3) await settle(20);
-    }
-    assert.deepEqual(replies.map((msg) => msg.text), ['Added ', 'four holes.', 'Done.']);
-    assert.deepEqual(replies.map((msg) => msg.final), [false, false, true]);
-    assert.equal(session.inbound.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === 'x'), false);
+test('reply_to_user rejects an unknown id and still delivers a real reply over the remote relay', async () => {
+  const session = await openRemoteStdio({
+    serverBin: SERVER_BIN,
+    clientName: 'surfcad-mcp-prompt-remote',
+    onTabMessage: answerCommand,
+  });
+  try {
+    await rejectUnknownAndDeliver(session);
   } finally {
     await session.close();
   }
@@ -196,44 +274,20 @@ test('reply_to_user rejects an unknown id and still delivers a real reply', asyn
 test('read_messages lists prompt ids in recent after the ack', async () => {
   const session = await pairedSession();
   try {
-    await sendPrompt(session.tab, session.inbound, PROMPT_A, 'first');
-    await settle(1100);
-    await sendPrompt(session.tab, session.inbound, PROMPT_B, 'second');
+    await recentAfterAck(session);
+  } finally {
+    await session.close();
+  }
+});
 
-    const read = await session.client.callTool({ name: 'read_messages', arguments: {} });
-    assert.equal(read.isError, false, JSON.stringify(read).slice(0, 400));
-    const summary = jsonBlocks(read).at(-1);
-    assert.deepEqual(summary.acked, [PROMPT_A, PROMPT_B]);
-    assert.deepEqual(summary.recent, [
-      { id: PROMPT_A, state: 'delivered' },
-      { id: PROMPT_B, state: 'delivered' },
-    ]);
-
-    const status = await session.client.callTool({ name: 'status', arguments: {} });
-    assert.equal(status.isError, false, JSON.stringify(status).slice(0, 240));
-    assert.deepEqual(jsonBlocks(status)[0].last, { id: PROMPT_B, state: 'delivered' });
-
-    const again = await session.client.callTool({ name: 'read_messages', arguments: {} });
-    assert.equal(again.isError, false);
-    const recovered = jsonBlocks(again)[0];
-    assert.deepEqual(recovered.messages, []);
-    assert.deepEqual(recovered.acked, []);
-    assert.deepEqual(recovered.recent, [
-      { id: PROMPT_A, state: 'delivered' },
-      { id: PROMPT_B, state: 'delivered' },
-    ]);
-
-    const reply = await session.client.callTool({
-      name: 'reply_to_user',
-      arguments: { in_reply_to: recovered.recent[0].id, text: 'still here', final: true },
-    });
-    assert.equal(reply.isError, false, JSON.stringify(reply).slice(0, 240));
-    assert.deepEqual(JSON.parse(texts(reply)[0]), { id: PROMPT_A, final: true });
-    const frame = await waitFor(
-      session.inbound,
-      (msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === PROMPT_A && msg.text === 'still here',
-    );
-    assert.equal(frame.final, true);
+test('read_messages lists prompt ids in recent after the ack over the remote relay', async () => {
+  const session = await openRemoteStdio({
+    serverBin: SERVER_BIN,
+    clientName: 'surfcad-mcp-prompt-remote',
+    onTabMessage: answerCommand,
+  });
+  try {
+    await recentAfterAck(session);
   } finally {
     await session.close();
   }
