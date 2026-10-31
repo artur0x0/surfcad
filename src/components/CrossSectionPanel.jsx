@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, SquareSplitHorizontal, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, ArrowUpFromLine, ClipboardList, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -58,6 +58,10 @@ const CrossSectionPanel = forwardRef(({
   showMoldDraft = false,
   moldDraftActive = false,
   onMoldDraftToggle = null,
+  /** Budgetary DFM report. Inspection group, immediately after mold draft. Hidden in game. */
+  showDfm = false,
+  dfmActive = false,
+  onDfmToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -614,6 +618,25 @@ const handleButtonClick = () => {
             data-ui-action="data-mold-draft"
           >
             <ArrowUpFromLine size={20} />
+          </button>
+        )}
+        {showDfm && (
+          <button
+            type="button"
+            onClick={() => onDfmToggle?.()}
+            className={`p-2 rounded font-ui ${
+              dfmActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
+            aria-label={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
+            aria-pressed={!!dfmActive}
+            data-mold-dfm=""
+            data-mold-dfm-state={dfmActive ? 'on' : 'off'}
+            data-ui-action="data-mold-dfm"
+          >
+            <ClipboardList size={20} />
           </button>
         )}
         <button

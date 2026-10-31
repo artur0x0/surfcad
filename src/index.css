@@ -524,6 +524,25 @@ textarea {
       left: 0.75rem;
     }
   }
+  /* DFM report shares the legend corner. Wider than the w-44 chip, and
+     dropped when a legend is already open so the two panels do not stack. */
+  .dfm-report-panel {
+    width: 18rem;
+    max-width: calc(100vw - 6.5rem);
+    max-height: min(32rem, 70vh);
+  }
+  .dfm-report-shifted {
+    transform: translateY(12rem);
+  }
+  /* Phone rails sit on the pane edges. Keep the report between them. */
+  @media (max-width: 768px) {
+    .wall-legend-anchor.dfm-report-panel {
+      left: calc(0.75rem + 4rem + var(--feature-strip-rail-gap));
+      right: calc(0.75rem + 4rem + var(--feature-strip-rail-gap));
+      width: auto;
+      max-width: none;
+    }
+  }
   /* Desktop CAD: pin the left helper rail 10px under the ribbon. */
   .rail-full-below-strip {
     top: calc(
