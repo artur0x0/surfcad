@@ -1,7 +1,7 @@
 // components/CrossSectionPanel.jsx
 /* eslint-disable react-hooks/exhaustive-deps -- see Viewport note; same ref-backed pattern */
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, SquareSplitHorizontal, X } from 'lucide-react';
+import { FlipHorizontal, Check, CornerDownRight, Gauge, Maximize2, Ruler, Move3d, Spline, RectangleHorizontal, Layers3, NotebookPen, Palette, AlignHorizontalSpaceAround, ArrowLeftRight, SquareSplitHorizontal, X } from 'lucide-react';
 import TrianglesCenterlineDashedVertical from './icons/TrianglesCenterlineDashedVertical';
 import ViewSnapControl from './ViewSnapControl';
 import { PLANE_PRESETS } from '../utils/crossSection';
@@ -50,6 +50,10 @@ const CrossSectionPanel = forwardRef(({
   showParting = false,
   partingActive = false,
   onPartingToggle = null,
+  /** Side actions. Inspection group, immediately after core and cavity. Hidden in game. */
+  showSideActions = false,
+  sideActionsActive = false,
+  onSideActionsToggle = null,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
    *  matches phone; the wrapping-row fallback is kept for any other caller. */
   verticalRail = false,
@@ -568,6 +572,25 @@ const handleButtonClick = () => {
             data-ui-action="data-mold-parting"
           >
             <SquareSplitHorizontal size={20} />
+          </button>
+        )}
+        {showSideActions && (
+          <button
+            type="button"
+            onClick={() => onSideActionsToggle?.()}
+            className={`p-2 rounded font-ui ${
+              sideActionsActive
+                ? 'surface-success text-on-dark'
+                : 'text-on-light'
+            }`}
+            title={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
+            aria-label={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
+            aria-pressed={!!sideActionsActive}
+            data-mold-side-actions=""
+            data-mold-side-actions-state={sideActionsActive ? 'on' : 'off'}
+            data-ui-action="data-mold-side-actions"
+          >
+            <ArrowLeftRight size={20} />
           </button>
         )}
         <button

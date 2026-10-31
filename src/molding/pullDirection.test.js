@@ -71,6 +71,7 @@ test('wall-only analysis returns thickness and does not score a pull', () => {
   assert.equal(result.wall.nominal, 10);
   assert.equal(result.wall.max, 10);
   assert.equal(result.wall.field.length, 12);
+  assert.equal(result.sideActions, undefined);
 });
 
 test('a box searches to a good fit along +Z', () => {
@@ -83,6 +84,10 @@ test('a box searches to a good fit along +Z', () => {
   assert.equal(result.kind, 'mold-analysis');
   assert.equal(result.normals.triangle, 12);
   assert.equal(result.normals.stamped, 0);
+  assert.equal(result.sideActions.count, 0);
+  assert.equal(result.sideActions.heuristic, true);
+  assert.equal(result.sideActions.slideCount, 0);
+  assert.equal(result.sideActions.lifterCount, 0);
   assert.ok(result.candidates.some((row) => row.pull[0] === 1 && row.undercutCount === 0));
 });
 
