@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
+import { HUMAN_REVIEW_FEE_USD } from '../../molding/reviewFee.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
 
 function money(value) {
@@ -52,6 +53,8 @@ export default function MoldQuotePanel({
   onCavity,
   onGrade,
   onSelect,
+  onFirmQuote,
+  onHumanReview,
 }) {
   if (!state) return null;
   const quote = state.quote;
@@ -59,6 +62,7 @@ export default function MoldQuotePanel({
   const selected = vendors.find((row) => row.anonLabel === state.selected) || vendors[0] || null;
   const grades = Array.isArray(selected?.grades) ? selected.grades : [];
   const disclaimer = quote?.disclaimer || 'Budgetary, not binding.';
+  const revealed = state.revealed || {};
 
   return (
     <div
@@ -100,6 +104,7 @@ export default function MoldQuotePanel({
         <ul className="mt-2 flex flex-col gap-1" data-mold-quote-vendors="">
           {vendors.map((vendor) => {
             const on = vendor.anonLabel === selected?.anonLabel;
+            const name = revealed[vendor.anonLabel];
             return (
               <li key={vendor.anonLabel}>
                 <button
@@ -109,7 +114,10 @@ export default function MoldQuotePanel({
                   className={`w-full rounded-md px-2 py-1 text-left font-ui text-ui-sm ${on ? 'surface-success text-on-dark' : 'text-on-dark'}`}
                   onClick={() => onSelect?.(vendor.anonLabel)}
                 >
-                  <div>{vendor.anonLabel}</div>
+                  <div data-mold-quote-name={name || undefined}>{name || vendor.anonLabel}</div>
+                  {name && (
+                    <div className={on ? 'text-on-dark' : 'text-muted-on-dark'}>{vendor.anonLabel}</div>
+                  )}
                   <div className={on ? 'text-on-dark' : 'text-muted-on-dark'}>
                     {`${vendor.region || '—'} · ${vendor.machineCount} machines fit`}
                   </div>
@@ -138,6 +146,36 @@ export default function MoldQuotePanel({
             ))}
           </select>
         </label>
+      )}
+      {selected && state.status === 'ready' && (
+        <div className="mt-2 flex flex-col gap-2">
+          <button
+            type="button"
+            data-mold-firm-quote=""
+            data-ui-action="data-mold-firm-quote"
+            disabled={!!state.leadBusy}
+            className="min-h-11 rounded-md surface-success px-2 font-ui text-ui-sm text-on-dark disabled:opacity-60"
+            onClick={() => onFirmQuote?.()}
+          >
+            Request firm quote
+          </button>
+          <button
+            type="button"
+            data-mold-human-review=""
+            data-ui-action="data-mold-human-review"
+            disabled={!!state.leadBusy}
+            className="min-h-11 rounded-md border border-chrome-border bg-transparent px-2 font-ui text-ui-sm text-on-dark disabled:opacity-60"
+            onClick={() => onHumanReview?.()}
+          >
+            {`Human review ($${HUMAN_REVIEW_FEE_USD})`}
+          </button>
+          {state.leadMessage && (
+            <p className="text-ui-sm text-muted-on-dark" data-mold-quote-lead="">{state.leadMessage}</p>
+          )}
+          {state.leadError && (
+            <p className="text-ui-sm text-on-dark" data-mold-quote-lead-error="">{state.leadError}</p>
+          )}
+        </div>
       )}
     </div>
   );

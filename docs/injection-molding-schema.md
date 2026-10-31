@@ -85,4 +85,6 @@ not on this API.
 
 Signed-in admins edit the same rows at `/admin` (`data-admin-mold-catalog`).
 There is no leads board. `POST /api/molding/quote` returns a budgetary quote
-and does not store it.
+and does not store it. `POST /api/molding/leads` stores a lead for the
+signed-in user. It does not call Stripe. A firm quote reveals that partner.
+A human review does not.

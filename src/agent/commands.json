@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 207,
+  "count": 209,
   "$defs": {
     "status": {
       "type": "object",
@@ -2780,6 +2780,78 @@
       "example": {
         "on": true,
         "quantity": 1000
+      }
+    },
+    {
+      "name": "mold_request_firm_quote",
+      "description": "Ask the selected anonymized vendor for a firm quote. Creates a molding lead for the signed-in user and reveals that one vendor’s display name. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Other vendors stay anonymous. Does not charge a card, does not email the partner, and does not change the part. Ranking stays fit then price.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "anonLabel": {
+            "type": "string",
+            "description": "Public label from the open budgetary quote, such as Partner A. Omit to use the selected vendor."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "sign_in",
+        "unknown_partner",
+        "bad_args",
+        "lead_failed",
+        "rate_limited",
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "measure",
+      "immediate": true,
+      "uiEntry": "data-mold-firm-quote",
+      "example": {
+        "anonLabel": "Partner A"
+      }
+    },
+    {
+      "name": "mold_request_human_review",
+      "description": "Record a human-review lead for the selected anonymized vendor. The button shows the placeholder review fee. This call does not charge a card and does not reveal the vendor. The name stays hidden until that fee is paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "anonLabel": {
+            "type": "string",
+            "description": "Public label from the open budgetary quote, such as Partner A. Omit to use the selected vendor."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "sign_in",
+        "unknown_partner",
+        "bad_args",
+        "lead_failed",
+        "rate_limited",
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "measure",
+      "immediate": true,
+      "uiEntry": "data-mold-human-review",
+      "example": {
+        "anonLabel": "Partner A"
       }
     },
     {

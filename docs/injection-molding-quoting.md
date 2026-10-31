@@ -94,3 +94,17 @@ The quote button on the right rail opens a glass panel. It says Budgetary, not
 binding. Quantity and cavity count send a new request. The resin menu is the
 selected vendor’s grade list. Opening the quote closes the DFM report, and
 opening the DFM report closes the quote. Neither one clears a mold skin.
+
+## Firm quote and human review
+
+`POST /api/molding/leads` is signed-in. The body is `type` (`firm_quote` or
+`human_review`), the public `anonLabel`, and an optional snapshot of the
+numbers on screen. A price the client invents is not a field. The route looks
+up the active partner by that label and writes `molding_leads` with status
+`sent`, commission 0, and `reviewFeePaid` false. It does not call Stripe and
+it does not email the partner.
+
+A firm quote returns that partner’s `displayName`. A human review does not.
+The review fee shown on the button is $150, a placeholder, and clicking it
+does not take payment. A second request for the same user, partner, and type
+returns the same lead. Ranking is unchanged: fit, then price.

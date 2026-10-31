@@ -341,6 +341,18 @@ export const COMMAND_META = {
     errors: ['no_mesh', 'bad_args', 'quote_failed', 'rate_limited', 'internal'],
     mutates: false,
   },
+  mold_request_firm_quote: {
+    description: 'Ask the selected anonymized vendor for a firm quote. Creates a molding lead for the signed-in user and reveals that one vendor’s display name. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Other vendors stay anonymous. Does not charge a card, does not email the partner, and does not change the part. Ranking stays fit then price.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['sign_in', 'unknown_partner', 'bad_args', 'lead_failed', 'rate_limited', 'no_mesh', 'internal'],
+    mutates: false,
+  },
+  mold_request_human_review: {
+    description: 'Record a human-review lead for the selected anonymized vendor. The button shows the placeholder review fee. This call does not charge a card and does not reveal the vendor. The name stays hidden until that fee is paid. anonLabel picks a row from the open budgetary quote; omit it to use the selected vendor. Does not email the partner and does not change the part.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['sign_in', 'unknown_partner', 'bad_args', 'lead_failed', 'rate_limited', 'no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_wall_map: {
     description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
     result: { type: 'object', additionalProperties: true },
