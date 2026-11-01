@@ -14,12 +14,16 @@ const POSITION_CLASS = 'fixed top-16 left-1/2 z-[140] w-[min(100vw-1.5rem,24rem)
  */
 export default function AgentSessionToast({
   kind,
+  message,
   onDismiss,
   onDisconnect,
   onReconnect,
   className = '',
 }) {
   const connected = kind === 'connected';
+  const disconnectedCopy = typeof message === 'string' && message
+    ? message
+    : AGENT_DISCONNECTED_TOAST_COPY;
   return (
     <div
       className={className || POSITION_CLASS}
@@ -50,7 +54,7 @@ export default function AgentSessionToast({
           </button>
         )}
       >
-        {connected ? AGENT_CONNECTED_TOAST_COPY : AGENT_DISCONNECTED_TOAST_COPY}
+        {connected ? AGENT_CONNECTED_TOAST_COPY : disconnectedCopy}
       </ErrorPopup>
     </div>
   );

@@ -433,6 +433,7 @@ export function createAgentRouter(deps) {
       if (!revoked) return res.status(404).json({ error: 'not_found' });
       deps.registry.abortToken(auth.id, auth.userId);
       deps.agentSockets.closeToken(auth.id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+      deps.registry.dropAgentPresence(auth.userId);
       logRelay({ event: 'token-revoke', userId: auth.userId });
       return res.json({ ok: true });
     } catch (error) {
@@ -451,6 +452,7 @@ export function createAgentRouter(deps) {
       if (!revoked) return res.status(404).json({ error: 'not_found' });
       deps.registry.abortToken(tokenId, user.id);
       deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+      deps.registry.dropAgentPresence(user.id);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });
     } catch (error) {
@@ -482,8 +484,9 @@ export function createAgentRouter(deps) {
 
   router.post('/commands', async (req, res, next) => {
     try {
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
+      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const { auth, epoch } = live;
       const bytes = messageByteLength(req.body);
       if (bytes > deps.maxMessageBytes) {
         return res.status(413).json({ error: 'Message exceeds the size cap' });
@@ -501,6 +504,9 @@ export function createAgentRouter(deps) {
       }
       if (deps.registry.hasInFlight(auth.userId, frame.id)) {
         return res.status(409).json({ error: 'duplicate_id' });
+      }
+      if (!deps.registry.noteAgentSeen(auth.userId, { clearHold: true, epoch })) {
+        return res.status(401).json({ error: 'Authentication required' });
       }
       const attempt = deps.registry.trySubmit({
         userId: auth.userId,
@@ -578,9 +584,13 @@ export function createAgentRouter(deps) {
     let timeout = 0;
     let status = 'error';
     try {
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
+      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const { auth, epoch } = live;
       if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
+      if (!deps.registry.noteAgentSeen(auth.userId, { clearHold: true, epoch })) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
       timeout = clampTimeout(req.query.timeout);
       polling = auth;
       logRelay({
@@ -611,14 +621,33 @@ export function createAgentRouter(deps) {
 
   router.post('/prompts', async (req, res, next) => {
     try {
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
+      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const { auth, epoch } = live;
       const bytes = messageByteLength(req.body);
       if (bytes > deps.maxMessageBytes) {
         return res.status(413).json({ error: 'Message exceeds the size cap' });
       }
       const type = req.body && typeof req.body.type === 'string' ? req.body.type : '';
       if (!type.startsWith('agent.')) return res.status(400).json({ error: 'bad_call' });
+      if (type === 'agent.close_session') {
+        if (deps.registry.presenceEpoch(auth.userId) !== epoch) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        deps.registry.endAgentSession(auth.userId);
+        await deps.tokens.markUsed(auth);
+        logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
+        return res.status(202).json({ ok: true });
+      }
+      if (!deps.registry.noteAgentSeen(auth.userId, { clearHold: true, epoch })) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (type === 'agent.progress') {
+        deps.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true });
+        await deps.tokens.markUsed(auth);
+        logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
+        return res.status(202).json({ ok: true });
+      }
       if (type === 'agent.message') {
         const problem = sessionMessageProblem(req.body);
         if (problem) return res.status(400).json({ error: problem });
@@ -645,4 +674,26 @@ function clampTimeout(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.min(30_000, parsed);
+}
+
+/**
+ * Authenticate, then re-check the token. The presence epoch is captured
+ * before that second check so a revoke in between cannot be cleared.
+ * Does not stamp last-seen.
+ * @param {{
+ *   tokens: {
+ *     authenticate: (raw: string | null) => Promise<{ userId: string, id: string, tokenHash: string } | null>,
+ *     status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'>,
+ *   },
+ *   registry: { presenceEpoch: (userId: string) => number },
+ * }} deps
+ * @param {string | null} raw
+ */
+async function authenticateLiveAgent(deps, raw) {
+  const auth = await deps.tokens.authenticate(raw);
+  if (!auth) return null;
+  const epoch = deps.registry.presenceEpoch(auth.userId);
+  const live = await deps.tokens.status(auth.tokenHash);
+  if (live !== 'ok') return null;
+  return { auth, epoch };
 }

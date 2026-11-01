@@ -25,6 +25,10 @@ export const PAIR_MSG = Object.freeze({
   AGENT_STATUS: 'agent.status',
   /** Agent → page, or the page noting a bridge call. Contract v:1. Refreshes the working deadline. */
   AGENT_ACTIVITY: 'agent.activity',
+  /** Agent → page. Contract v:1. Working signal only. No thinking text. */
+  AGENT_PROGRESS: 'agent.progress',
+  /** Agent → server. Ends the session. Not sent on process exit. */
+  AGENT_CLOSE_SESSION: 'agent.close_session',
   /** Page → paired agent. Contract v:1. `{ id }`. */
   AGENT_PROMPT_CANCEL: 'agent.prompt.cancel',
   /** Agent → page. Contract v:1. `{ id, state }`. */

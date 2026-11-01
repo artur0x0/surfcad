@@ -123,6 +123,7 @@ export function createAgentPromptTransport(bridge) {
 
   const replyListeners = new Set();
   const workingListeners = new Set();
+  const progressListeners = new Set();
   const ackListeners = new Set();
   /** Prompt ids that already received a final reply. */
   const finalIds = new Set();
@@ -162,6 +163,10 @@ export function createAgentPromptTransport(bridge) {
       emitTo(workingListeners, msg.working);
       return;
     }
+    if (msg.type === PAIR_MSG.AGENT_PROGRESS && msg.v === 1 && msg.working === true) {
+      emitTo(progressListeners, { working: true });
+      return;
+    }
     if (msg.type === PAIR_MSG.AGENT_PROMPT_ACK && typeof msg.id === 'string' && typeof msg.delivery === 'string') {
       const event = { id: msg.id, delivery: msg.delivery };
       if (msg.error != null) event.error = msg.error;
@@ -181,6 +186,7 @@ export function createAgentPromptTransport(bridge) {
     for (const id of [...cancelWaiters.keys()]) settleCancel(id, 'not_found');
     replyListeners.clear();
     workingListeners.clear();
+    progressListeners.clear();
     ackListeners.clear();
     finalIds.clear();
   }
@@ -199,6 +205,15 @@ export function createAgentPromptTransport(bridge) {
   function onWorking(cb) {
     workingListeners.add(cb);
     return () => { workingListeners.delete(cb); };
+  }
+
+  /**
+   * A progress frame means the agent is working. Text on the frame is ignored.
+   * @param {(event: { working: true }) => void} cb
+   */
+  function onProgress(cb) {
+    progressListeners.add(cb);
+    return () => { progressListeners.delete(cb); };
   }
 
   /**
@@ -275,5 +290,5 @@ export function createAgentPromptTransport(bridge) {
     return promise;
   }
 
-  return { send, cancel, onReply, onWorking, onAck, dispose };
+  return { send, cancel, onReply, onWorking, onProgress, onAck, dispose };
 }

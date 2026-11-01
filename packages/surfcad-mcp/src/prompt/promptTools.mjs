@@ -26,10 +26,16 @@ export const CLOSING_REPLY_GUIDANCE = 'When you finish a task started from the S
 export const BUILDING_STATUS_GUIDANCE = 'Call set_status { state: "building" } only once you have everything you need and are actually creating or editing geometry.';
 
 /**
+ * Session presence. Kept short: it is part of the initialize instructions,
+ * which hosts truncate past 2 KB.
+ */
+export const SESSION_PRESENCE_GUIDANCE = 'Be interactive: post_progress while working, especially during long reasoning. A fresh process per tool call is normal and stays present. A long-lived process is optional, never required. Call close_session when done, never on exit.';
+
+/**
  * First paragraph of the MCP initialize `instructions`.
  * Goldens pin the webhook sentence as the prefix.
  */
-export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE}`;
+export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE} ${SESSION_PRESENCE_GUIDANCE}`;
 
 /** Exact wording the agent should relay when asking the user for a webhook. */
 export const PROMPT_ONBOARDING_ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.';
@@ -49,6 +55,8 @@ export const PROMPT_TOOL_NAMES = Object.freeze([
   'read_messages',
   'reply_to_user',
   'set_status',
+  'post_progress',
+  'close_session',
 ]);
 
 const PROMPT_TOOL_SET = new Set(PROMPT_TOOL_NAMES);
@@ -165,6 +173,30 @@ export function promptToolDefinitions() {
         },
       },
     },
+    {
+      name: 'post_progress',
+      description: 'Tell SurfCAD you are working, without showing thinking text. Call it while you work, especially during long reasoning, so the phone folds the chat and the bot button spins. Optional text is accepted and discarded; it is never shown. This also keeps the session present. It does not close the task.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: {
+            type: 'string',
+            maxLength: 500,
+            description: 'Optional note for yourself. It is not sent to the tab and is not shown.',
+          },
+        },
+      },
+    },
+    {
+      name: 'close_session',
+      description: 'End this SurfCAD agent session. Call it once when you are done. The server marks the agent offline immediately. Do not call it on process exit, stdin end, or SIGTERM. A later tool call can start a new session.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
   ];
 }
 
@@ -214,6 +246,14 @@ export async function callPromptTool(prompts, name, args) {
   }
   if (name === 'set_status') {
     const result = await prompts.setStatus(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+  if (name === 'post_progress') {
+    const result = await prompts.postProgress(args);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+  if (name === 'close_session') {
+    const result = await prompts.closeSession();
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
   throw Object.assign(new Error(`Unknown tool: ${name}`), { code: 'unknown_tool' });

@@ -36,7 +36,12 @@ import {
   shouldClearPromptOnSend,
   stepPromptFlight,
 } from '../agent/agentPromptSend.js';
-import { shouldOpenAgentChatOnConnect, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
+import {
+  AGENT_PROGRESS_RECENT_MS,
+  mobileChatHideReason,
+  shouldOpenAgentChatOnConnect,
+  shouldShowAgentBridgeDisconnect,
+} from '../agent/ws/pairingFlow.js';
 import { featureSheetEditLift, isTouchEditDevice } from '../utils/featureFieldEdit.js';
 import { useModalViewport } from '../hooks/useModalViewport.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
@@ -414,13 +419,38 @@ export default function PromptInput({
     return undefined;
   }, [agentGone, commitFlight, dispatchTyping, holding, visible]);
 
-  // Agent-owned feature cards stay closed for the whole run, in either mode.
+  // A progress frame keeps the spinner briefly after it arrives. The text
+  // on that frame is never read.
+  const [progressUntil, setProgressUntil] = useState(0);
+  const progressRecent = progressUntil > Date.now();
   useEffect(() => {
-    setAgentPromptWorking(pending);
+    if (typeof transport?.onProgress !== 'function') return undefined;
+    return transport.onProgress(() => {
+      setProgressUntil(Date.now() + AGENT_PROGRESS_RECENT_MS);
+      if (mobileChatHideReason({ isMobile, progressEdge: true })) closeAgentChat?.();
+    });
+  }, [closeAgentChat, isMobile, transport]);
+  useEffect(() => {
+    if (!(progressUntil > Date.now())) return undefined;
+    const timer = setTimeout(() => setProgressUntil(0), progressUntil - Date.now());
+    return () => clearTimeout(timer);
+  }, [progressUntil]);
+  const wasPendingRef = useRef(false);
+  useEffect(() => {
+    const started = pending === true && wasPendingRef.current !== true;
+    wasPendingRef.current = pending === true;
+    if (mobileChatHideReason({ isMobile, promptStarted: started })) closeAgentChat?.();
+  }, [closeAgentChat, isMobile, pending]);
+
+  // Agent-owned feature cards stay closed for the whole run, in either mode.
+  // Progress without a prompt uses the same spinner as a prompt in flight.
+  const agentBusy = pending || progressRecent;
+  useEffect(() => {
+    setAgentPromptWorking(agentBusy);
     return () => {
-      if (pending) setAgentPromptWorking(false);
+      if (agentBusy) setAgentPromptWorking(false);
     };
-  }, [pending]);
+  }, [agentBusy]);
 
   // Demo seeds start pending without an event. Every later event goes through
   // dispatchTyping, which restarts the deadline itself. This only catches the
