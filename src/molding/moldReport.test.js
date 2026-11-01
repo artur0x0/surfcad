@@ -182,9 +182,9 @@ test('plate, tray, cup, snap hook, and through hole report their own geometry', 
   assert.equal(plateReport.geometry.projectedAreaMm2, 400);
   assert.equal(plateReport.geometry.sideActionCount, 0);
   assert.equal(plateReport.geometry.draft.minDeg, 1);
-  assert.equal(plateReport.geometry.draft.positive, 0);
-  assert.equal(plateReport.geometry.draft.negative, 0);
-  assert.ok(plateReport.geometry.draft.below > 0);
+  assert.equal(plateReport.geometry.draft.positive, 1);
+  assert.equal(plateReport.geometry.draft.negative, 1);
+  assert.equal(plateReport.geometry.draft.below, 4);
   assert.equal(plateReport.geometry.draft.belowPositive, plateReport.geometry.draft.below);
   assert.equal(plateReport.geometry.draft.belowNegative, 0);
   const pcabs = resinEconomics('PC/ABS');

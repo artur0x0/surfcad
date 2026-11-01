@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { runScript } from '../lib/surfcad/index.js';
+import { stampedFaceTable } from '../utils/faceIdentity.js';
+import { buildSolidGeometry } from '../utils/partSolidCache.js';
+import { moldFitFromGeometry } from './fromGeometry.js';
 import { PARTING_ROLE_RGB } from './parting.js';
 import { analyzePullDirection, analyzeWallOnly, MOLD_REGION_NORMAL_DEG } from './pullDirection.js';
 import {
@@ -19,6 +23,42 @@ import {
   parseDraftThreshold,
   signedDraftDeg,
 } from './moldDraft.js';
+
+function surfaceOf(mesh) {
+  const positions = mesh.positions;
+  const indices = mesh.indices;
+  let area = 0;
+  let count = 0;
+  const vert = (i) => [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = vert(indices[t]);
+    const b = vert(indices[t + 1]);
+    const c = vert(indices[t + 2]);
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [
+      ab[1] * ac[2] - ab[2] * ac[1],
+      ab[2] * ac[0] - ab[0] * ac[2],
+      ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    const triArea = 0.5 * Math.hypot(cr[0], cr[1], cr[2]);
+    if (!(triArea > 1e-12)) continue;
+    area += triArea;
+    count += 1;
+  }
+  return { area, count };
+}
+
+function assertCoversMesh(draft, mesh) {
+  const { area, count } = surfaceOf(mesh);
+  assert.equal(draft.triangleCount, count);
+  assert.equal(new Set(draft.triangles.map((row) => row.index)).size, count);
+  const classArea = draft.positive.area + draft.negative.area + draft.below.area;
+  assert.ok(Math.abs(classArea - area) < 1e-3, `${classArea} vs ${area}`);
+  for (const row of draft.triangles) {
+    assert.ok(row.state === 'positive' || row.state === 'negative' || row.state === 'below');
+  }
+}
 
 function boxMesh(min, max) {
   const [x0, y0, z0] = min;
@@ -80,21 +120,25 @@ test('a vertical wall is 0° and a pull-facing face is 90°', () => {
   assert.equal(draftAngleDeg([Math.cos((1 * Math.PI) / 180), 0, one], [0, 0, 1]), 1);
 });
 
-test('a box flags four vertical walls and no ejectors', () => {
-  const result = analyzePullDirection({ ...boxMesh([0, 0, 0], [10, 10, 10]), pull: [0, 0, 1] });
+test('a box flags four vertical walls and classifies the caps', () => {
+  const mesh = boxMesh([0, 0, 0], [10, 10, 10]);
+  const result = analyzePullDirection({ ...mesh, pull: [0, 0, 1] });
   const draft = result.moldDraft;
   assert.equal(draft.violationCount, 4);
-  assert.equal(draft.triangleCount, 8);
-  assert.equal(draft.minDraftDeg, 0);
+  assert.equal(draft.triangleCount, 12);
+  assert.equal(draft.minDraftDeg, -90);
   assert.equal(draft.minDeg, 1);
-  assert.equal(draft.positive.count, 0);
-  assert.equal(draft.negative.count, 0);
+  assert.equal(draft.positive.count, 1);
+  assert.equal(draft.positive.area, 100);
+  assert.equal(draft.negative.count, 1);
+  assert.equal(draft.negative.area, 100);
   assert.equal(draft.below.count, 4);
   assert.equal(draft.below.area, 400);
   assert.equal(draft.below.positive.count, 4);
   assert.equal(draft.below.positive.area, 400);
   assert.equal(draft.below.negative.count, 0);
-  assert.equal(draft.triangles.every((row) => row.state === 'below' && row.sign === 'positive'), true);
+  assert.equal(draft.triangles.filter((row) => row.state === 'below' && row.sign === 'positive').length, 8);
+  assertCoversMesh(draft, mesh);
   assert.equal(draft.ejectors.heuristic, true);
   assert.equal(draft.ejectors.pinCount, 0);
   assert.equal(draft.ejectors.sleeveCount, 0);
@@ -104,7 +148,8 @@ test('a box flags four vertical walls and no ejectors', () => {
   assert.equal(legend.below.count, 4);
   assert.equal(legend.below.area, 400);
   assert.equal(legend.below.positive.count, 4);
-  assert.equal(legend.negative.area, 0);
+  assert.equal(legend.positive.area, 100);
+  assert.equal(legend.negative.area, 100);
   assert.equal(legend.heuristic, true);
   assert.equal(moldDraftLegendModel(null), null);
   const wallOnly = analyzeWallOnly(boxMesh([0, 0, 0], [10, 10, 10]));
@@ -204,7 +249,9 @@ test('a thin rib yields pins and a thick boss yields one sleeve', () => {
   assert.equal(plain.moldDraft.violationCount, 8);
   assert.equal(plain.moldDraft.below.count, 8);
   assert.equal(plain.moldDraft.below.positive.count, 8);
-  assert.equal(plain.moldDraft.negative.count, 0);
+  assert.ok(plain.moldDraft.positive.count > 0);
+  assert.ok(plain.moldDraft.negative.count > 0);
+  assertCoversMesh(plain.moldDraft, shell);
 });
 
 function addLoop(positions, loop, z) {
@@ -321,47 +368,61 @@ function draftOf(mesh) {
   return analyzePullDirection({ ...mesh, pull: [0, 0, 1] }).moldDraft;
 }
 
-test('a plate, a tray, a snap hook, and a through hole are below 1° and still positive', () => {
-  const plate = draftOf(boxMesh([0, 0, 0], [20, 20, 2]));
-  assert.equal(plate.positive.count, 0);
+test('a plate, a tray, a snap hook, and a through hole classify every face', () => {
+  const plateMesh = boxMesh([0, 0, 0], [20, 20, 2]);
+  const plate = draftOf(plateMesh);
+  assert.equal(plate.positive.count, 1);
+  assert.equal(plate.positive.area, 400);
   assert.equal(plate.below.count, 4);
   assert.equal(plate.below.area, 160);
   assert.equal(plate.below.positive.count, 4);
-  assert.equal(plate.negative.count, 0);
-  assert.equal(plate.minDraftDeg, 0);
+  assert.equal(plate.negative.count, 1);
+  assert.equal(plate.negative.area, 400);
+  assert.equal(plate.minDraftDeg, -90);
+  assertCoversMesh(plate, plateMesh);
 
-  const tray = draftOf(openTray());
-  assert.equal(tray.positive.count, 0);
-  assert.ok(tray.below.count > 0);
+  const trayMesh = openTray();
+  const tray = draftOf(trayMesh);
+  assert.ok(tray.positive.area > 0);
   assert.ok(tray.below.area > 0);
-  assert.equal(tray.negative.count, 0);
+  assert.ok(tray.negative.area > 0);
+  assertCoversMesh(tray, trayMesh);
 
-  const hook = draftOf(snapHook());
-  assert.equal(hook.positive.count, 0);
-  assert.ok(hook.below.count > 0);
-  assert.equal(hook.negative.count, 0);
-  assert.equal(hook.negative.area, 0);
+  const hookMesh = snapHook();
+  const hook = draftOf(hookMesh);
+  assert.ok(hook.below.area > 0);
+  assert.ok(hook.positive.area + hook.negative.area > 0);
+  assertCoversMesh(hook, hookMesh);
 
-  const hole = draftOf(throughHole());
-  assert.equal(hole.positive.count, 0);
+  const holeMesh = throughHole();
+  const hole = draftOf(holeMesh);
+  assert.equal(hole.positive.count, 1);
+  assert.ok(Math.abs(hole.positive.area - 256) < 1e-3);
   assert.equal(hole.below.count, 8);
   assert.equal(hole.below.positive.count, 8);
-  assert.equal(hole.negative.count, 0);
+  assert.equal(hole.negative.count, 1);
+  assert.ok(Math.abs(hole.negative.area - 256) < 1e-3);
   assert.ok(Math.abs(hole.below.area - 1248) < 1e-3);
+  assertCoversMesh(hole, holeMesh);
 });
 
 test('a drafted cup is positive at or above 1° and an inverted cup is negative at or above 1°', () => {
-  const cup = draftOf(taperedCup(true));
-  assert.equal(cup.negative.count, 0);
-  assert.equal(cup.negative.area, 0);
+  const cupMesh = taperedCup(true);
+  const cup = draftOf(cupMesh);
+  const cupWalls = cup.samples.filter((sample) => Math.abs(sample.signedDeg) < 45);
+  assert.ok(cupWalls.length > 0);
+  assert.ok(cupWalls.some((sample) => sample.signedDeg > 4 && sample.signedDeg < 5));
+  assert.ok(cupWalls.every((sample) => sample.signedDeg > 1));
   assert.equal(cup.below.count, 0);
   assert.ok(cup.positive.count > 0);
   assert.ok(cup.positive.area > 0);
-  assert.ok(cup.minDraftDeg > 4 && cup.minDraftDeg < 5);
+  assert.ok(cup.negative.area > 0);
+  assert.equal(cup.minDraftDeg, -90);
+  assertCoversMesh(cup, cupMesh);
 
   const split = classifyMoldDraft(cup, 5);
   assert.equal(split.samples, cup.samples);
-  assert.equal(split.negative.count, 0);
+  assert.ok(split.negative.count > 0);
   assert.ok(split.positive.count > 0);
   assert.ok(split.below.count > 0);
   assert.ok(split.below.positive.count > 0);
@@ -369,13 +430,100 @@ test('a drafted cup is positive at or above 1° and an inverted cup is negative 
   assert.ok(split.positive.area > 0);
   assert.ok(split.below.area > 0);
 
-  const back = draftOf(taperedCup(false));
-  assert.equal(back.positive.count, 0);
+  const backMesh = taperedCup(false);
+  const back = draftOf(backMesh);
+  const backWalls = back.samples.filter((sample) => Math.abs(sample.signedDeg) < 45);
+  assert.ok(backWalls.length > 0);
+  assert.ok(backWalls.some((sample) => sample.signedDeg < -4 && sample.signedDeg > -5));
+  assert.ok(backWalls.every((sample) => sample.signedDeg < -1));
   assert.equal(back.below.count, 0);
   assert.ok(back.negative.count > 0);
   assert.ok(back.negative.area > 0);
+  assert.ok(back.positive.area > 0);
   assert.ok(back.minDraftDeg < 0);
-  assert.equal(back.triangles.every((row) => row.sign === 'negative'), true);
+  assertCoversMesh(back, backMesh);
+});
+
+test('a stamp along the pull does not drop a geometrically vertical fillet facet', () => {
+  const facet = {
+    t: 0,
+    ia: 0,
+    ib: 1,
+    ic: 2,
+    n: [0, 0, -1],
+    nGeom: [1, 0, 0],
+    area: 12,
+    centroid: [8, 0, 4],
+  };
+  const cap = {
+    t: 1,
+    ia: 3,
+    ib: 4,
+    ic: 5,
+    n: [0, 0, 1],
+    nGeom: [0, 0, 1],
+    area: 40,
+    centroid: [0, 0, 10],
+  };
+  const draft = analyzeMoldDraft([facet, cap], [0, 0, 1]);
+  assert.equal(draft.triangleCount, 2);
+  assert.equal(draft.triangles.find((row) => row.index === 0).state, 'below');
+  assert.equal(draft.triangles.find((row) => row.index === 0).sign, 'positive');
+  const classArea = draft.positive.area + draft.negative.area + draft.below.area;
+  assert.ok(Math.abs(classArea - 52) < 1e-6);
+});
+
+const SHELL_FILLET = `
+// --- cube begin id=cube1 ---
+let box1 = Manifold.cube([68.7, 74.10000000000001, 37.5], true);
+let part = box1;
+// --- cube end id=cube1 ---
+// --- fillet-mode begin id=fillet1 ---
+const selEdges = edgesNamed(part, "cube1.back~cube1.right", "cube1.back~cube1.bottom", "cube1.bottom~cube1.right", "cube1.bottom~cube1.left", "cube1.bottom~cube1.front", "cube1.front~cube1.left", "cube1.back~cube1.left", "cube1.front~cube1.right");
+part = filletEdges(part, selEdges, 4, { sphericalCorners: true });
+// --- fillet-mode end id=fillet1 ---
+part = hollow(part, 1.85, { center: [0.0003, -0.0003, 18.75], normal: [0, 0, 1] });
+return part;
+`;
+
+test('Shell_Fillet_Test classifies every face, including fillets, and the areas sum', { timeout: 120_000 }, async () => {
+  const ran = await runScript(SHELL_FILLET);
+  assert.equal(ran.status, 'NoError', ran.status);
+  const { geometry, faceIDs } = buildSolidGeometry(ran.mesh);
+  ran.manifold?.delete?.();
+  const result = moldFitFromGeometry(geometry, faceIDs);
+  assert.equal(result.error, undefined);
+  const draft = result.moldDraft;
+  const table = stampedFaceTable(geometry, faceIDs);
+  const classified = new Map(draft.triangles.map((row) => [row.index, row]));
+  const pos = geometry.attributes.position.array;
+  const idx = geometry.index.array;
+  let meshArea = 0;
+  let filletTris = 0;
+  const vert = (i) => [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
+  for (let t = 0; t < idx.length / 3; t++) {
+    const a = vert(idx[t * 3]);
+    const b = vert(idx[t * 3 + 1]);
+    const c = vert(idx[t * 3 + 2]);
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [
+      ab[1] * ac[2] - ab[2] * ac[1],
+      ab[2] * ac[0] - ab[0] * ac[2],
+      ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    const triArea = 0.5 * Math.hypot(cr[0], cr[1], cr[2]);
+    if (!(triArea > 1e-12)) continue;
+    meshArea += triArea;
+    const row = classified.get(t);
+    assert.ok(row, `triangle ${t} unclassified`);
+    assert.ok(row.state === 'positive' || row.state === 'negative' || row.state === 'below');
+    const name = table?.faces?.[table.triFace?.[t]]?.name || '';
+    if (/fillet/i.test(name)) filletTris += 1;
+  }
+  assert.ok(filletTris > 0, 'Shell_Fillet_Test has no stamped fillet triangles');
+  const classArea = draft.positive.area + draft.negative.area + draft.below.area;
+  assert.ok(Math.abs(classArea - meshArea) < 1e-2, `${classArea} vs ${meshArea}`);
 });
 
 test('positive and negative draft colours are the cavity and core colours', () => {

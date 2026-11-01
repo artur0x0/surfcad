@@ -127,7 +127,8 @@ test('a stamped cube report names faces and stays a good fit', { timeout: 60_000
   assert.equal(report.naming.stamped, true);
   assert.ok(report.naming.names.some((name) => name.includes('.top') || name.includes('.bottom')));
   assert.equal(report.ejectors.pinCount, result.moldDraft.ejectors.pinCount);
-  assert.equal(report.draft.negative, 0);
+  assert.ok(report.draft.negative > 0);
+  assert.ok(report.draft.positive > 0);
   assert.ok(report.draft.below > 0);
   assert.equal(report.draft.belowPositive, result.moldDraft.below.positive.count);
   assert.equal(report.draft.belowNegative, 0);

@@ -48,7 +48,7 @@ function scrollFieldIntoView(el) {
 function sheetField(el) {
   if (!el || !el.closest) return null;
   if (!/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return null;
-  if (el.closest('.modal-fit') || el.closest('[data-feature-card]')) return el;
+  if (el.closest('.modal-fit') || el.closest('[data-feature-card]') || el.closest('[data-mold-results-pane]')) return el;
   return null;
 }
 

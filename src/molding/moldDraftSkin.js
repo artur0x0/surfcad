@@ -1,7 +1,7 @@
 /**
  * Lit mold-draft skin for the active part.
  *
- * Paints every side wall in the three draft classes. Positive ≥ T uses the
+ * Paints every classified face in the three draft classes. Positive ≥ T uses the
  * cavity colour. Negative ≥ T uses the core colour. Below T, either sign,
  * is the needs-work red with a world-space hatch so it does not depend on
  * hue alone. While the skin is visible the paint skin is hidden. Detach

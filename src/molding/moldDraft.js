@@ -10,8 +10,11 @@
  * above T is Negative ≥ T and uses the core colour. Absolute draft below T,
  * either sign, is Below T: a red hatch, the needs-work class. A side wall
  * at 0° is Below T and its sign stays positive. There is no zero-draft
- * class. Tops and bottoms, outside the 10° band from the pull, are not
- * classified. Nothing here changes the mesh.
+ * class. Every triangle is classified, including tops, bottoms, and
+ * fillets. The angle is that triangle's geometric normal. A stamped face
+ * normal is one average for the whole face, and using it would drop a
+ * curved fillet whose average leaves the side-wall band. Nothing here
+ * changes the mesh.
  *
  * The sign uses the part centroid in the plane perpendicular to the pull.
  * A normal that points away from that center is an outside wall, and its
@@ -30,7 +33,7 @@ import { PARTING_NEUTRAL_DEG, PARTING_ROLE_RGB } from './parting.js';
 export const MOLD_DRAFT_MIN_DEG = 1;
 /** Buttons in the draft section. The agent may pass any angle in (0, 90]. */
 export const MOLD_DRAFT_PRESETS = Object.freeze([0.5, 1, 2, 3, 5]);
-/** Same band as `PARTING_NEUTRAL_DEG`. Only these walls are checked for draft. */
+/** Same band as `PARTING_NEUTRAL_DEG`. Ejector pins use it. Draft does not. */
 export const MOLD_DRAFT_NEUTRAL_DEG = PARTING_NEUTRAL_DEG;
 /** Matches `MOLD_REGION_NORMAL_DEG`. Triangles this close stay one face. */
 export const MOLD_DRAFT_CLUSTER_DEG = 35;
@@ -380,6 +383,9 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
  * A bad pull or an empty mesh is an empty report, not an error.
  * The buckets use the default 1° threshold. `classifyMoldDraft` retargets them.
  * Positive ≥ T, Negative ≥ T, and Below T, with the Below T sign split.
+ * Every triangle with a geometric normal is sampled. `nGeom` wins over the
+ * stamped face normal in `n`, which is one average and mis-aims a fillet.
+ * The 10° band stays on ejector ribs only.
  */
 export function analyzeMoldDraft(tris, pull, wall = null) {
   const d = unit(pull);
@@ -390,25 +396,23 @@ export function analyzeMoldDraft(tris, pull, wall = null) {
   const ribs = [];
   const bosses = [];
   for (const tri of tris) {
-    const n = unit(tri.n);
+    const n = unit(tri.nGeom || tri.n);
     if (!n) continue;
     const along = dot(n, d);
     const sideWall = Math.abs(along) <= NEUTRAL_SIN;
     const angle = draftAngleDeg(n, d);
-    if (sideWall) {
-      const signed = signedDraftDeg(n, d, tri.centroid, center);
-      if (signed != null) {
-        samples.push({
-          t: tri.t,
-          ia: tri.ia,
-          ib: tri.ib,
-          ic: tri.ic,
-          n,
-          area: tri.area || 0,
-          centroid: tri.centroid || [0, 0, 0],
-          signedDeg: signed,
-        });
-      }
+    const signed = signedDraftDeg(n, d, tri.centroid, center);
+    if (signed != null) {
+      samples.push({
+        t: tri.t,
+        ia: tri.ia,
+        ib: tri.ib,
+        ic: tri.ic,
+        n,
+        area: tri.area || 0,
+        centroid: tri.centroid || [0, 0, 0],
+        signedDeg: signed,
+      });
     }
     const flag = flags.get(tri.t);
     if (flag === 'thin' && sideWall) ribs.push({ ...tri, n, draftDeg: angle });

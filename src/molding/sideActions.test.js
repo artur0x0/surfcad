@@ -185,6 +185,10 @@ test('the core and cavity legend lists each side action', () => {
   assert.equal(legend.groups[0].selected, true);
   assert.equal(partingLegendModel(parting).rows.length, 3);
   assert.equal(splitLegendModel(null), null);
+  const empty = splitLegendModel(parting, { count: 0, groups: [], slideCount: 0, lifterCount: 0 });
+  assert.deepEqual(empty.rows.map((row) => row.label), ['Core', 'Cavity', 'Parting line']);
+  assert.equal(empty.groups.length, 0);
+  assert.equal(empty.rows.some((row) => row.label === 'Side action' || row.label === 'Lifter'), false);
 });
 
 test('a zero pull and a missing list are zero groups', () => {

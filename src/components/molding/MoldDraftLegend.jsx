@@ -2,8 +2,8 @@
  * Mold-draft section of the molding results pane.
  *
  * Threshold buttons rebucket the signed field. The reference plane is the
- * shared pull control above this section. Pin and sleeve counts are a
- * heuristic, and the section says so. This is not the CAD draft tool.
+ * shared pull control above this section. Pin and sleeve counts stay a
+ * side-wall estimate. This is not the CAD draft tool.
  */
 
 import React from 'react';
@@ -89,7 +89,7 @@ export default function MoldDraftLegend({ legend, onThreshold = null }) {
           </button>
         ))}
       </div>
-      <ul className="mt-1 flex flex-col gap-1">
+      <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end="">
         {rows.map((row) => (
           <li key={row.key} className="flex flex-col gap-0.5 text-ui-sm">
             <div className="flex items-center justify-between gap-2">
@@ -125,9 +125,6 @@ export default function MoldDraftLegend({ legend, onThreshold = null }) {
           </li>
         ))}
       </ul>
-      <div className="mt-1 text-ui-sm text-muted-on-dark" data-mold-draft-heuristic="" data-mold-pane-end="">
-        Heuristic
-      </div>
     </div>
   );
 }

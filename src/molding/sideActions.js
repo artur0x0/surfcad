@@ -462,21 +462,22 @@ export function groupSideActions(regions, pull, tris = null) {
 }
 
 /**
- * Core/cavity legend plus one row per slide or lifter. Omitting side
- * actions still inserts the side-action swatch with no group buttons.
+ * Core/cavity legend plus one row per slide or lifter. The Side action
+ * swatch is inserted only when that count is greater than 0.
  * `partingLegendModel` itself stays the three role rows.
  */
 export function splitLegendModel(parting, sideActions = null, selectedId = null) {
   const base = partingLegendModel(parting);
   if (!base) return null;
+  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+  const showSide = (sideActions?.count || 0) > 0 || groups.length > 0;
   const rows = [];
   for (const row of base.rows) {
-    if (row.role === 'parting-line') {
+    if (row.role === 'parting-line' && showSide) {
       rows.push({ role: 'side', label: 'Side action', css: rgbCss(SIDE_ACTION_FACE_RGB) });
     }
     rows.push(row);
   }
-  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
   return {
     rows,
     groups: groups.map((group) => ({
@@ -495,7 +496,7 @@ export function splitLegendModel(parting, sideActions = null, selectedId = null)
   };
 }
 
-/** Legend rows. Null without an analysis. Zero groups still produce a chip. */
+/** Legend rows. Null without an analysis. Zero groups produce no rows. */
 export function sideActionLegendModel(sideActions) {
   if (!sideActions || !Array.isArray(sideActions.groups)) return null;
   const groups = sideActions.groups;
