@@ -157,6 +157,7 @@ function Harness() {
   const [on, setOn] = useState({});
   const [pullMode, setPullMode] = useState('auto');
   const [pullPlane, setPullPlane] = useState('top');
+  const [draftMin, setDraftMin] = useState(1);
   const press = (key) => {
     setOn((prev) => ({ ...prev, [key]: !prev[key] }));
     setWhich(key);
@@ -224,7 +225,27 @@ function Harness() {
       )}
       {which === 'draft' && (
         <Pane>
-          <MoldDraftLegend legend={{ minDeg: 1, violations: 14, pins: 8, sleeves: 2, css: '#f97316' }} />
+          <PullReference
+            mode={pullMode}
+            plane={pullPlane}
+            waiting={pullMode === 'face'}
+            onAuto={() => setPullMode('auto')}
+            onPlane={() => setPullMode('plane')}
+            onFace={() => setPullMode('face')}
+            onPickPlane={(id) => { setPullMode('plane'); setPullPlane(id); }}
+          />
+          <MoldDraftLegend
+            legend={{
+              minDeg: draftMin,
+              presets: [0.5, 1, 2, 3, 5],
+              positiveAbove: { count: 8, area: 1048.1 },
+              positiveBelow: { count: 4, area: 160 },
+              negative: { count: 2, area: 36.2 },
+              pins: 8,
+              sleeves: 2,
+            }}
+            onThreshold={setDraftMin}
+          />
         </Pane>
       )}
       {which === 'report' && (
@@ -481,6 +502,18 @@ try {
     const box = await page.locator(tool.pane).boundingBox();
     check(`${tool.name} pane has a box`, !!box && box.height > 20, JSON.stringify(box));
     if (!box) continue;
+    if (tool.name === 'mold draft') {
+      await page.locator('[data-mold-draft-threshold="2"]').click();
+      const pressed = await page.locator('[data-mold-draft-threshold="2"]').getAttribute('aria-pressed');
+      const previous = await page.locator('[data-mold-draft-threshold="1"]').getAttribute('aria-pressed');
+      check('draft threshold 2° is pressed and 1° is not', pressed === 'true' && previous === 'false');
+      await page.locator('[data-mold-pull-choice="plane"]').click();
+      await page.locator('[data-mold-pull-plane="front"]').click();
+      const mode = await page.locator('[data-mold-pull]').getAttribute('data-mold-pull-mode');
+      const front = await page.locator('[data-mold-pull-plane="front"]').getAttribute('aria-pressed');
+      check('draft reference plane Front is pressed', mode === 'plane' && front === 'true');
+      await page.screenshot({ path: join(shotDir, 'mold-draft-390.png') });
+    }
     const x = box.x + Math.min(28, box.width / 2);
     const y = box.y + Math.min(36, Math.max(8, box.height / 3));
     const hit = await page.evaluate(({ px, py, sel }) => {
@@ -640,6 +673,17 @@ try {
     deskClear.placed === '1' && !deskClear.hitLeft && !deskClear.hitRight
     && deskClear.gapLeft >= 9 && deskClear.gapRight >= 9,
     JSON.stringify(deskClear));
+  await desk.evaluate(() => window.__moldShow('draft'));
+  await desk.waitForSelector('[data-mold-draft-legend]');
+  await desk.locator('[data-mold-draft-threshold="0.5"]').click();
+  const deskDraft = await desk.locator('[data-mold-draft-threshold="0.5"]').getAttribute('aria-pressed');
+  check('desktop draft threshold 0.5° is pressed', deskDraft === 'true');
+  const deskDraftClear = await desk.evaluate(railsClear);
+  check('1280×800 mold draft misses both toolbars',
+    deskDraftClear.placed === '1' && !deskDraftClear.hitLeft && !deskDraftClear.hitRight
+    && deskDraftClear.gapLeft >= 9 && deskDraftClear.gapRight >= 9,
+    JSON.stringify(deskDraftClear));
+  await desk.screenshot({ path: join(shotDir, 'mold-draft-1280.png') });
   await desk.screenshot({ path: join(shotDir, 'mold-results-1280.png') });
   await desktop.close();
 

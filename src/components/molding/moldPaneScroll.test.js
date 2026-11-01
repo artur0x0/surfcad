@@ -160,10 +160,27 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.doesNotMatch(sides, /data-side-action-legend/);
 
   const draft = renderToStaticMarkup(React.createElement(MoldDraftLegend, {
-    legend: { minDeg: 1, violations: 2, pins: 4, sleeves: 1, css: '#abc' },
+    legend: {
+      minDeg: 1,
+      presets: [0.5, 1, 2, 3, 5],
+      positiveAbove: { count: 8, area: 1048.1 },
+      positiveBelow: { count: 4, area: 160 },
+      negative: { count: 2, area: 36.2 },
+      pins: 4,
+      sleeves: 1,
+    },
   }));
   assert.match(draft, /data-mold-draft-legend/);
   assert.match(draft, /data-mold-pane-end/);
+  assert.match(draft, /data-mold-draft-threshold="1"/);
+  assert.match(draft, /data-ui-action="data-mold-draft-threshold"/);
+  assert.match(draft, /Positive ≥ 1°/);
+  assert.match(draft, /Positive &lt; 1°/);
+  assert.match(draft, /Negative/);
+  assert.match(draft, /mold-draft-swatch-negative/);
+  assert.match(draft, /8 · 1048 mm²/);
+  assert.match(draft, /2 · 36.2 mm²/);
+  assert.doesNotMatch(draft, /style=/);
 
   const report = renderToStaticMarkup(React.createElement(MoldReportPanel, {
     report: {

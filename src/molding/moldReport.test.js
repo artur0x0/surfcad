@@ -179,6 +179,9 @@ test('plate, tray, cup, snap hook, and through hole report their own geometry', 
   assert.equal(plateReport.geometry.volumeCm3, 0.8);
   assert.equal(plateReport.geometry.projectedAreaMm2, 400);
   assert.equal(plateReport.geometry.sideActionCount, 0);
+  assert.equal(plateReport.geometry.draft.minDeg, 1);
+  assert.equal(typeof plateReport.geometry.draft.positiveAbove, 'number');
+  assert.equal(plateReport.geometry.draft.negative, 0);
   assert.equal(plateReport.estimates.massKg, null);
   assert.match(plateReport.notes.mass, /density/);
   assert.equal(plateReport.estimates.toolingAluminumUsd, null);

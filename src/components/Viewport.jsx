@@ -613,7 +613,7 @@ import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin
 import { detachPartingSkin, syncPartingSkin } from '../molding/partingSkin.js';
 import { splitLegendModel } from '../molding/sideActions.js';
 import { detachSideActionSkin } from '../molding/sideActionSkin.js';
-import { moldDraftLegendModel } from '../molding/moldDraft.js';
+import { classifyMoldDraft, moldDraftLegendModel, moldDraftSummary, parseDraftThreshold } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { saveAs } from 'file-saver';
 import { dfmReport } from '../molding/dfmReport.js';
@@ -1562,9 +1562,7 @@ const Viewport = forwardRef(({
       syncPartingSkin(resultRef.current, analyzed.parting, analyzed.sideActions, selected);
     }
     if (moldDraftOnRef.current && analyzed.moldDraft) {
-      moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
-      setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
-      syncMoldDraftSkin(resultRef.current, analyzed.moldDraft);
+      paintDraft(analyzed.moldDraft, geometry);
     }
     if (reportOnRef.current) {
       const prev = moldReportRef.current;
@@ -1595,6 +1593,7 @@ const Viewport = forwardRef(({
   const agentMoldDraftRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const moldDraftOnRef = useRef(false);
   const moldDraftFieldRef = useRef(null);
+  const draftThresholdRef = useRef(1);
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
@@ -13937,7 +13936,11 @@ const Viewport = forwardRef(({
       };
     }
     if (analyzed.moldDraft) {
-      moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
+      moldDraftFieldRef.current = {
+        geometry,
+        moldDraft: classifyMoldDraft(analyzed.moldDraft, draftThresholdRef.current),
+        base: analyzed.moldDraft,
+      };
     }
     const report = analyzed.dfm || dfmReport(analyzed);
     if (report) dfmFieldRef.current = { geometry, report };
@@ -13949,7 +13952,9 @@ const Viewport = forwardRef(({
         pull: analyzed.pull,
       });
     }
-    if (analyzed.moldDraft) moldCacheRef.current.set('draft', geometry, pull, analyzed.moldDraft);
+    if (analyzed.moldDraft) {
+      moldCacheRef.current.set('draft', geometry, pull, analyzed.moldDraft, draftThresholdRef.current);
+    }
     const cachedReport = moldCacheRef.current.get('report', geometry, pull);
     moldCacheRef.current.set('report', geometry, pull, {
       analysis: analyzed,
@@ -14394,17 +14399,19 @@ const Viewport = forwardRef(({
     };
   };
 
-  const showMoldDraft = (moldDraft, geometry) => {
-    clearWallMap();
-    clearParting();
-    clearSideActions();
-    clearDfm();
-    clearQuote();
+  function paintDraft(base, geometry) {
+    const classified = classifyMoldDraft(base, draftThresholdRef.current);
     moldDraftOnRef.current = true;
-    moldDraftFieldRef.current = { geometry, moldDraft };
-    setMoldDraftLegend(moldDraftLegendModel(moldDraft));
-    syncMoldDraftSkin(resultRef.current, moldDraft);
-  };
+    moldDraftFieldRef.current = { geometry, moldDraft: classified, base };
+    setMoldDraftLegend(moldDraftLegendModel(classified));
+    syncMoldDraftSkin(resultRef.current, classified);
+    moldCacheRef.current.set('draft', geometry, sharedMoldPull(), base, draftThresholdRef.current);
+    return classified;
+  }
+
+  function draftAgentResult(classified) {
+    return { on: true, ...moldDraftSummary(classified) };
+  }
 
   applyMoldDraftSkinRef.current = (host) => {
     if (!host) return;
@@ -14418,8 +14425,18 @@ const Viewport = forwardRef(({
       syncMoldDraftSkin(host, cached.moldDraft);
       return;
     }
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'draft');
+    const pull = sharedMoldPull();
+    const threshold = draftThresholdRef.current;
+    const hit = moldCacheRef.current.get('draft', geometry, pull, threshold);
+    const base = hit.hit ? hit.value : moldCacheRef.current.findDraftBase(geometry, pull);
+    if (base) {
+      paintDraft(base, geometry);
+      return;
+    }
+    const showToken = draftShowRef.current;
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, pull, 'draft');
     promise.then((analyzed) => {
+      if (draftShowRef.current !== showToken) return;
       if (!moldDraftOnRef.current || resultRef.current?.geometry !== geometry) return;
       if (gen != null && moldJobGenRef.current !== gen) return;
       if (analyzed?.dropped) return;
@@ -14429,17 +14446,19 @@ const Viewport = forwardRef(({
         return;
       }
       rememberMoldAnalysis(geometry, analyzed);
-      setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
-      syncMoldDraftSkin(host, analyzed.moldDraft);
+      paintDraft(analyzed.moldDraft, geometry);
       if (gen != null) endMoldProgress(gen);
     }).catch(() => {
-      if (gen != null && moldJobGenRef.current === gen) clearMoldDraft();
+      if (draftShowRef.current === showToken && gen != null && moldJobGenRef.current === gen) clearMoldDraft();
     });
   };
 
-  agentMoldDraftRef.current = async ({ on } = {}) => {
-    const next = typeof on === 'boolean' ? on : !moldDraftOnRef.current;
-    if (!next) {
+  agentMoldDraftRef.current = async ({ on, threshold } = {}) => {
+    const parsed = parseDraftThreshold(threshold);
+    if (parsed.error) return { error: parsed.error };
+    if (parsed.threshold != null) draftThresholdRef.current = parsed.threshold;
+    const show = on === true || threshold != null || (on == null && !moldDraftOnRef.current);
+    if (on === false || !show) {
       clearMoldDraft();
       return { on: false };
     }
@@ -14447,25 +14466,30 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const draftHit = moldCacheRef.current.get('draft', geometry, sharedMoldPull());
-    if (draftHit.hit && draftHit.value) {
-      showMoldDraft(draftHit.value, geometry);
-      return {
-        on: true,
-        violations: draftHit.value.violationCount,
-        minDeg: draftHit.value.minDeg,
-        minDraftDeg: draftHit.value.minDraftDeg,
-        pins: draftHit.value.ejectors.pinCount,
-        sleeves: draftHit.value.ejectors.sleeveCount,
-      };
+    const field = moldDraftFieldRef.current;
+    if (moldDraftOnRef.current && field?.base && field.geometry === geometry && threshold != null) {
+      return draftAgentResult(paintDraft(field.base, geometry));
+    }
+    const pull = sharedMoldPull();
+    const hit = moldCacheRef.current.get('draft', geometry, pull, draftThresholdRef.current);
+    const cachedBase = hit.hit ? hit.value : moldCacheRef.current.findDraftBase(geometry, pull);
+    if (cachedBase) {
+      clearWallMap();
+      clearParting();
+      clearSideActions();
+      clearDfm();
+      clearQuote();
+      return draftAgentResult(paintDraft(cachedBase, geometry));
     }
     clearWallMap();
     clearParting();
     clearSideActions();
+    clearDfm();
+    clearQuote();
     const showToken = ++draftShowRef.current;
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'draft');
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, pull, 'draft');
     const analyzed = await promise;
-    if (showToken !== draftShowRef.current) return { on: false };
+    if (draftShowRef.current !== showToken) return { on: false };
     if (gen != null && moldJobGenRef.current !== gen) return { on: !!moldDraftOnRef.current };
     if (analyzed?.dropped) return { on: !!moldDraftOnRef.current };
     if (analyzed?.error) {
@@ -14477,16 +14501,10 @@ const Viewport = forwardRef(({
       return { error: { code: 'no_mesh', message: 'No mold draft on that mesh' } };
     }
     rememberMoldAnalysis(geometry, analyzed);
-    showMoldDraft(analyzed.moldDraft, geometry);
+    if (draftShowRef.current !== showToken) return { on: false };
+    const classified = paintDraft(analyzed.moldDraft, geometry);
     if (gen != null) endMoldProgress(gen);
-    return {
-      on: true,
-      violations: analyzed.moldDraft.violationCount,
-      minDeg: analyzed.moldDraft.minDeg,
-      minDraftDeg: analyzed.moldDraft.minDraftDeg,
-      pins: analyzed.moldDraft.ejectors.pinCount,
-      sleeves: analyzed.moldDraft.ejectors.sleeveCount,
-    };
+    return draftAgentResult(classified);
   };
 
   const clearDfm = () => {
@@ -15037,9 +15055,11 @@ const Viewport = forwardRef(({
     }
 
     const prevGeometry = resultRef.current.geometry;
-    if (prevGeometry && prevGeometry !== geometry) moldCacheRef.current.invalidateMesh(prevGeometry);
     resultRef.current.geometry = geometry;
-    if (prevGeometry !== geometry) releaseGeometryIn(solidCacheRef.current, prevGeometry);
+    if (prevGeometry && prevGeometry !== geometry) {
+      moldCacheRef.current.invalidateMesh(prevGeometry);
+      releaseGeometryIn(solidCacheRef.current, prevGeometry);
+    }
     pruneSolidCacheIn(solidCacheRef.current, resultRef.current, assemblyExtrasRef.current);
     // New mesh, including after fillet. Coplanar caps join here; the blend
     // stays its own patch.
@@ -17356,7 +17376,19 @@ const Viewport = forwardRef(({
               onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
             />
           )}
-          {moldDraftLegend && <MoldDraftLegend legend={moldDraftLegend} />}
+          {moldDraftLegend && (
+            <MoldDraftLegend
+              legend={moldDraftLegend}
+              onThreshold={(threshold) => {
+                const parsed = parseDraftThreshold(threshold);
+                if (parsed.error || parsed.threshold == null) return;
+                draftThresholdRef.current = parsed.threshold;
+                const field = moldDraftFieldRef.current;
+                if (!field?.base) return;
+                paintDraft(field.base, field.geometry);
+              }}
+            />
+          )}
           {moldReport && (
             <MoldReportPanel
               report={moldReport}

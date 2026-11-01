@@ -31,6 +31,12 @@ test('a cache hit returns the stored result and a miss does not', () => {
   assert.equal(report.hit, true);
   assert.equal(report.value.sideActionCount, 0);
   assert.equal(cache.get('draft', part, null).hit, false);
+  cache.set('draft', part, [0, 0, 1], { samples: 1 }, 1);
+  assert.equal(cache.get('draft', part, [0, 0, 1], 1).value.samples, 1);
+  assert.equal(cache.get('draft', part, [0, 0, 1], 3).hit, false);
+  assert.equal(cache.get('draft', part, [1, 0, 0], 1).hit, false);
+  assert.equal(cache.findDraftBase(part, [0, 0, 1]).samples, 1);
+  assert.equal(cache.findDraftBase(part, [1, 0, 0]), null);
   assert.equal(cache.get('wall', mesh(9), null).hit, false);
 });
 
