@@ -28,6 +28,7 @@ import {
 import { copyTextWithFallback } from '../agent/ws/copyText.js';
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
 import { createRelayPoller, DEFAULT_RELAY_POLL_MS } from '../agent/ws/relayPoller.js';
+import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 import {
   forcesServerRelay,
   readPhoneWidth,
@@ -97,6 +98,8 @@ export default function AgentBridgePairing({
   uiTarget = undefined,
   /** Close the profile menu when Connect Agent opens the dialog. */
   onBeginFlow = null,
+  /** Reload-restore signal. Does not change the join latch. */
+  onAgentReport = null,
 }) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
@@ -130,6 +133,8 @@ export default function AgentBridgePairing({
   const userStoppedRef = useRef(false);
   const joinLatchRef = useRef(false);
   const sawAgentUpRef = useRef(false);
+  const onAgentReportRef = useRef(onAgentReport);
+  onAgentReportRef.current = onAgentReport;
   const narrowRef = useRef(narrow);
   narrowRef.current = narrow;
   const pollerRef = useRef(null);
@@ -231,6 +236,7 @@ export default function AgentBridgePairing({
   }, [applyJoinEvent, stopConnection, stopPolling]);
 
   const disconnectFromUser = useCallback(() => {
+    forgetAgentChatSession();
     userStoppedRef.current = true;
     serverModeRef.current = false;
     serverAttemptRef.current = false;
@@ -693,6 +699,9 @@ export default function AgentBridgePairing({
         },
         onAgent: (connected, info) => {
           if (pending.cancelled || !isCurrentPairingConnection(connRef.current, conn)) return;
+          if (connected) onAgentReportRef.current?.('agent-up');
+          else if (info?.source === 'agent') onAgentReportRef.current?.('agent-down');
+          else if (info?.source === 'registered') onAgentReportRef.current?.('registered-down');
           if (connected) {
             sawAgentUpRef.current = true;
             applyJoinEvent('agent-up');

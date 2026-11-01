@@ -5,6 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { formatAgentLastUsed, visibleAgentTokens } from '../agent/ws/agentSessionList.js';
+import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 import {
   isSafariFamily,
   readPhoneWidth,
@@ -77,6 +78,7 @@ export default function AgentRelayAccount({ open = false }) {
       credentials: 'include',
     });
     if (!response.ok) return;
+    forgetAgentChatSession({ close: false });
     setTokens((rows) => rows.filter((row) => row.id !== id));
   };
 

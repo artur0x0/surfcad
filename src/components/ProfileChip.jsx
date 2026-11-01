@@ -14,6 +14,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
 import { agentBridgeRingLabel, agentBridgeRingState } from '../agent/ws/agentBridgeChrome.js';
+import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 import { profileInitials } from '../utils/profileInitials.js';
 import { useAgentBridgeHost } from './AgentBridgeHost';
 import { clearGithubToken, loadGithubToken } from '../utils/git/githubAuth.js';
@@ -146,6 +147,7 @@ export default function ProfileChip({
     }
     clearGithubToken();
     session.markNeedsReauth();
+    forgetAgentChatSession();
     await checkAuth();
     onSignedOut?.();
   };
