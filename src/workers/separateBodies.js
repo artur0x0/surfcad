@@ -21,7 +21,10 @@
  *     solid up to 0.001 mm off the face) does not boolean-join and used to
  *     stay a 12-triangle body. When the boxes meet but do not
  *     overlap, merge-on nudges that tool into the host by at most WELD_EPS
- *     and unions again. `{ merge: false }` is not nudged.
+ *     and unions again. A touch boolean that joins the component count but
+ *     raises genus above the sum of the two inputs added a handle; that
+ *     result is dropped and the tool stays its own body. `{ merge: false }`
+ *     is not nudged.
  * A receiver that is one body, or whose bodies do not overlap, takes the
  * original method. A boolean that already joins, and a tool that does not
  * meet the host, stay bit-identical.
@@ -106,6 +109,27 @@ const OVERLAP_EPS = 1e-6;
  * above the float gap that leaves a cube sitting on a face unmerged.
  */
 const WELD_EPS = 1e-3;
+
+function genusOf(m) {
+  try {
+    const g = m.genus();
+    return Number.isFinite(g) ? g : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/**
+ * A touch boolean joined the pieces but invented a handle. Genus of a real
+ * union is at most the sum of the two genera (a lip around a cube caps the
+ * hole and comes back lower). A multi-body tool reports a negative genus;
+ * that is not a credit toward a higher result. Anything above the sum is a
+ * sliver join, not a weld.
+ */
+function weldAddedHandle(self, other, joined) {
+  const budget = Math.max(0, genusOf(self)) + Math.max(0, genusOf(other));
+  return genusOf(joined) > budget;
+}
 
 /** Run count of a mesh, and how many of those runs own at least one triangle. */
 export function meshRunCounts(mesh) {
@@ -620,22 +644,31 @@ export function installSeparateBodies(module) {
 
   // Face contact already boolean-joins and must stay bit-identical. A tool
   // that only meets the host (an edge, or a gap within WELD_EPS) and comes
-  // back still separate is sealed and unioned once more.
+  // back still separate is sealed and unioned once more. A join whose genus
+  // is higher than the two inputs is a sliver handle: keep the pieces apart.
   const weldMerge = (self, other) => {
     const selfBox = boxOf(self);
     const otherBox = boxOf(other);
     if (!boxesMeet(selfBox, otherBox, WELD_EPS) || boxesOverlap(selfBox, otherBox)) {
       return mergeAdd(self, other);
     }
-    const plain = mergeAdd(self, other);
     const before = componentCount(self, module) + componentCount(other, module);
-    if (componentCount(plain, module) < before) return plain;
+    const plain = mergeAdd(self, other);
+    if (componentCount(plain, module) < before) {
+      if (!weldAddedHandle(self, other, plain)) return plain;
+      del(plain);
+      return Manifold.compose([other, self]);
+    }
     const sealed = sealTool(selfBox, other);
     if (sealed === other) return plain;
-    del(plain);
     const welded = mergeAdd(self, sealed);
     del(sealed);
-    return welded;
+    if (componentCount(welded, module) < before && !weldAddedHandle(self, other, welded)) {
+      del(plain);
+      return welded;
+    }
+    del(welded);
+    return plain;
   };
 
   // The per-body paths already noted a composed result (the sum over the
