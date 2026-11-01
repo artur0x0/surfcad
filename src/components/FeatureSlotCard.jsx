@@ -17,12 +17,21 @@ function ContourSlot({
   title,
   contour,
   contours,
+  profiles = null,
   onPick,
   onHover,
   onNew,
   onEdit,
+  onLoopRole,
+  onRemove,
 }) {
   const rows = contoursForSlot(contours, role);
+  const multi = Array.isArray(profiles);
+  const selectedRow = (row) => (
+    multi
+      ? profiles.find((item) => item.contourId === row.id || item.contourName === row.name)
+      : (contour?.contourId === row.id ? contour : null)
+  );
   return (
     <div
       className="flex flex-col gap-1 font-sans"
@@ -44,41 +53,78 @@ function ContourSlot({
       ) : (
         <div className="flex flex-col gap-0.5 max-h-24 overflow-y-auto" role="listbox" aria-label={`${title} contours`}>
           {rows.map((row) => {
-            const on = contour?.contourId === row.id;
+            const picked = selectedRow(row);
+            const on = !!picked;
+            const loopRole = picked?.loopRole || 'auto';
             return (
-              <button
-                key={row.id}
-                type="button"
-                data-ui-action={UI_ACTION}
-                role="option"
-                aria-selected={on}
-                data-slot-pick={row.id}
-                data-slot-chip={on ? (contour.contourName || row.name || row.id) : undefined}
-                data-slot-edit={on ? '' : undefined}
-                data-slot-selected={on ? '' : undefined}
-                title={on ? `Edit ${contour.contourName || row.name}` : `Use ${row.label || row.name}`}
-                aria-label={on ? `Edit ${contour.contourName || row.name}` : `Use ${row.label || row.name}`}
-                onPointerEnter={() => onHover?.(row.id)}
-                onPointerLeave={() => onHover?.(null)}
-                onFocus={() => onHover?.(row.id)}
-                onBlur={() => onHover?.(null)}
-                onClick={() => (on ? onEdit?.() : onPick?.(row))}
-                data-contour-unused={row.unused ? '' : undefined}
-                className={`relative flex items-center gap-2 rounded px-2.5 py-1 text-left text-[13px] ${
-                  on
-                    ? 'bg-amber-500 text-amber-950'
-                    : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
-                }`}
-              >
-                <span className="min-w-0 flex-1 truncate">{row.label || row.name}</span>
-                {row.unused ? (
-                  <span
-                    className={`pointer-events-none absolute right-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ${on ? 'bg-amber-950/80' : 'bg-amber-200/90'}`}
-                    data-contour-unused-dot=""
-                    aria-hidden="true"
-                  />
+              <div key={row.id} className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  data-ui-action={UI_ACTION}
+                  role="option"
+                  aria-selected={on}
+                  data-slot-pick={row.id}
+                  data-slot-chip={on ? (picked.contourName || row.name || row.id) : undefined}
+                  data-slot-edit={on ? '' : undefined}
+                  data-slot-selected={on ? '' : undefined}
+                  data-slot-loop-role={on && multi ? loopRole : undefined}
+                  title={on ? `Edit ${picked.contourName || row.name}` : `Use ${row.label || row.name}`}
+                  aria-label={on ? `Edit ${picked.contourName || row.name}` : `Use ${row.label || row.name}`}
+                  onPointerEnter={() => onHover?.(row.id)}
+                  onPointerLeave={() => onHover?.(null)}
+                  onFocus={() => onHover?.(row.id)}
+                  onBlur={() => onHover?.(null)}
+                  onClick={() => (on ? onEdit?.(picked) : onPick?.(row))}
+                  data-contour-unused={row.unused ? '' : undefined}
+                  className={`relative flex items-center gap-2 rounded px-2.5 py-1 text-left text-[13px] ${
+                    on
+                      ? 'bg-amber-500 text-amber-950'
+                      : 'bg-cyan-950/80 text-cyan-100 border border-cyan-700/70'
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate">{row.label || row.name}</span>
+                  {row.unused ? (
+                    <span
+                      className={`pointer-events-none absolute right-1.5 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full ${on ? 'bg-amber-950/80' : 'bg-amber-200/90'}`}
+                      data-contour-unused-dot=""
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </button>
+                {on && multi ? (
+                  <div className="flex gap-0.5" data-slot-loop-roles={row.id}>
+                    {[
+                      { id: 'auto', label: 'Auto' },
+                      { id: 'outer', label: 'Outer' },
+                      { id: 'hole', label: 'Hole' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-ui-action={UI_ACTION}
+                        data-loop-role={opt.id}
+                        data-loop-role-contour={row.id}
+                        aria-pressed={loopRole === opt.id}
+                        onClick={() => onLoopRole?.(picked, opt.id)}
+                        className={`flex-1 px-2 py-1 text-[13px] ${
+                          loopRole === opt.id ? 'bg-cyan-600 text-white' : 'bg-cyan-950/80 text-cyan-100'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      data-ui-action={UI_ACTION}
+                      data-slot-remove={row.id}
+                      onClick={() => onRemove?.(picked)}
+                      className="px-2 py-1 text-[13px] bg-cyan-950/80 text-cyan-100 border border-cyan-700/70"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 ) : null}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -152,6 +198,8 @@ const FeatureSlotCard = ({
   onHover,
   onNew,
   onEdit,
+  onLoopRole,
+  onRemoveProfile,
   onOffset,
   onExtrudeChange,
   onRevolveChange,
@@ -278,11 +326,18 @@ const FeatureSlotCard = ({
             index={0}
             title="Profile"
             contour={card.profile}
+            profiles={extrude ? (card.profiles || []) : null}
             contours={contours}
             onHover={onHover}
             onPick={(row) => onPick?.({ role: 'profile', index: 0 }, row)}
             onNew={() => onNew?.({ role: 'profile', index: 0 })}
-            onEdit={() => onEdit?.({ role: 'profile', index: 0 })}
+            onEdit={(row) => onEdit?.({
+              role: 'profile',
+              index: 0,
+              ...(row?.contourId || row?.id ? { contourId: row.contourId || row.id } : {}),
+            })}
+            onLoopRole={onLoopRole}
+            onRemove={onRemoveProfile}
           />
         )}
         {sweep && (

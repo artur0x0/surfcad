@@ -80,6 +80,12 @@ import {
   parseLoftReferences,
 } from './loftReference.js';
 import {
+  appendSketchLoop,
+  classifyExtrudeLoops,
+  incomingClosedProfile,
+  loopsFromProfileExpr,
+} from './sketchLoops.js';
+import {
   emitExtrudeReferenceLines,
   emitPathProfileExpr,
   emitRevolveReferenceLines,
@@ -370,6 +376,7 @@ export function normalizeLoftProfile(raw = {}, fallbackTool = 'circle') {
     planeLabel: owns ? (raw.planeLabel || '') : '',
     contourId: raw.contourId || null,
     contourName: raw.contourName || null,
+    ...(raw.profileSet === true ? { profileSet: true } : {}),
   };
 }
 
@@ -403,6 +410,7 @@ export function selectLoftProfile(state, index) {
     dimensionLive: null,
     tool: cur.tool,
     params: { ...cur.params },
+    profileSet: cur.profileSet === true,
     picks: [],
     tagId: null,
     loft: { ...base.loft, selected, picking: null },
@@ -812,6 +820,57 @@ export function switchContourTool(state, tool) {
     return { ...written, pickedContourId: null };
   }
   return nextState;
+}
+
+function finishSketchAdd(state) {
+  if (!isLoftEntry(state?.entry)) return state;
+  const written = writeLoftSelected(state, {
+    tool: state.tool,
+    params: state.params,
+    profileSet: state.profileSet === true,
+  });
+  return state.profileSet === true
+    ? { ...written, profileSet: true }
+    : { ...written, profileSet: false };
+}
+
+/**
+ * First closed profile on an empty sketch sets the profile.
+ * A later closed profile adds a loop. A centres sketch, or an explicit
+ * `params.contour`, still replaces. Hole sketches always replace.
+ */
+export function applySketchAdd(state, tool, params = {}, { inset = false } = {}) {
+  if (!state) return { ok: false, message: 'Contour sketch is not open' };
+  if (tool === 'arc' || tool === 'dimension' || tool === 'constraints') {
+    return { ok: true, state: armContourGesture(state, tool), appended: false };
+  }
+  const hole = isHoleEntry(state.entry);
+  const explicitContour = !!(params && Object.prototype.hasOwnProperty.call(params, 'contour'));
+  const closed = incomingClosedProfile(tool, params);
+  if (!hole && !explicitContour && state.profileSet === true && closed) {
+    const appended = appendSketchLoop(state, tool, params, { inset: !!inset });
+    if (!appended.ok) return appended;
+    return {
+      ok: true,
+      state: finishSketchAdd(appended.state),
+      appended: true,
+      loops: appended.loops,
+    };
+  }
+  const switched = switchContourTool(state, tool);
+  let next = {
+    ...switched,
+    params: { ...(switched.params || {}), ...(params || {}) },
+  };
+  const kept = state.tool === tool || sketchKeepsGeometry(state) || tool === 'cursor';
+  if (!hole && explicitContour && incomingClosedProfile(next.tool, next.params)) {
+    next = { ...next, profileSet: true };
+  } else if (!hole && !kept && incomingClosedProfile(tool, next.params)) {
+    next = { ...next, profileSet: true };
+  } else if (!hole && !kept) {
+    next = { ...next, profileSet: false };
+  }
+  return { ok: true, state: finishSketchAdd(next), appended: false };
 }
 
 /**
@@ -1291,11 +1350,48 @@ export function buildExtrudeSolidPreview(face, tool, params, extrude) {
   }
   if (!contours?.length) return null;
   const w0 = extrudeWOffset(extGate.normalized.distance, extGate.normalized.sense);
-  return {
+  const payload = {
     plane: prev.plane,
     rings: prev.rings,
     contours,
     profile: prev.profile,
+    extrude: extGate.normalized,
+    axis: axis.axis,
+    w0,
+    distance: extGate.normalized.distance,
+  };
+  if (contours.length > 1) {
+    const ordered = buildExtrudeLoopsPreview(face, [{
+      name: 'preview',
+      role: null,
+      loops: contours,
+    }], extrude);
+    if (ordered) {
+      payload.contours = ordered.contours;
+      payload.solids = ordered.solids;
+    }
+  }
+  return payload;
+}
+
+/**
+ * Preview for several saved contours on one extrude.
+ * `records` is `{ name, role, loops }`. Nested loops become holes.
+ */
+export function buildExtrudeLoopsPreview(face, records, extrude) {
+  const extGate = validateExtrudeParams({ ...defaultExtrudeParams(), ...(extrude || {}) });
+  if (!extGate.ok) return null;
+  const plane = planeFromContourFace(face);
+  if (!plane?.center) return null;
+  const axis = resolveExtrudeAxis(plane, extGate.normalized.direction);
+  if (!axis.ok) return null;
+  const classified = classifyExtrudeLoops(records);
+  if (!classified.ok || !classified.solids?.length) return null;
+  const w0 = extrudeWOffset(extGate.normalized.distance, extGate.normalized.sense);
+  return {
+    plane,
+    contours: classified.solids[0],
+    solids: classified.solids,
     extrude: extGate.normalized,
     axis: axis.axis,
     w0,
@@ -1925,7 +2021,21 @@ export function composeContourExtrude(buffer, {
   featureId = null,
   contourId = null,
   contourName = null,
+  profiles = null,
 } = {}) {
+  const profileList = Array.isArray(profiles)
+    ? profiles.filter((row) => row && (row.contourName || row.contourId))
+    : [];
+  const explicitRole = profileList.some((row) => row.loopRole === 'outer' || row.loopRole === 'hole');
+  if (profileList.length > 1 || explicitRole) {
+    return _composeSavedContourExtrude(buffer, {
+      profiles: profileList,
+      extrude,
+      combine,
+      merge,
+      featureId,
+    });
+  }
   const gate = validateContourProfile(tool, params);
   if (!gate.ok) return gate;
 
@@ -2269,6 +2379,137 @@ function _namedContour(buffer, name, id) {
     (name && (stmt.name === name || stmt.id === name))
     || (id && (stmt.id === id || stmt.name === id))
   )) || null;
+}
+
+function _samePlaneExpr(a, b) {
+  if (!a || !b) return false;
+  if (a.planeExpr && a.planeExpr === b.planeExpr) return true;
+  const fa = _frameFromPlaneExpr(a.planeExpr);
+  const fb = _frameFromPlaneExpr(b.planeExpr);
+  if (!fa || !fb) return false;
+  const keys = ['center', 'normal', 'x', 'y'];
+  return keys.every((key) => fa[key].every((n, i) => Math.abs(n - fb[key][i]) < 1e-4));
+}
+
+/**
+ * Several saved contours on one extrude. Nested loops share one makeExtrude.
+ * Disjoint outers are a union of makeExtrude calls on the same plane.
+ */
+function _composeSavedContourExtrude(buffer, {
+  profiles,
+  extrude = {},
+  combine,
+  merge,
+  featureId = null,
+} = {}) {
+  const extGate = validateExtrudeParams(extrude);
+  if (!extGate.ok) return extGate;
+
+  const text = String(buffer || '');
+  if (!featureMarkersBalanced(text, CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END)) {
+    return {
+      ok: false,
+      message: 'composeContourExtrude: unbalanced extrude markers — refusing silent no-op.',
+    };
+  }
+
+  const stripped = stripContourSiblingBlocks(buffer);
+  const blocks = listContourExtrudeBlocks(stripped);
+  const { existing, finalId } = _resolveFeatureId(blocks, featureId, 'extrude');
+  const stmts = [];
+  for (const row of profiles) {
+    const stmt = _namedContour(stripped, row.contourName, row.contourId);
+    if (!stmt) {
+      return {
+        ok: false,
+        message: `Extrude contour ${row.contourName || row.contourId} is not saved`,
+      };
+    }
+    stmts.push({ row, stmt });
+  }
+  for (let i = 1; i < stmts.length; i += 1) {
+    if (!_samePlaneExpr(stmts[0].stmt, stmts[i].stmt)) {
+      return { ok: false, message: 'Extrude contours must share a plane' };
+    }
+  }
+  const records = [];
+  for (const item of stmts) {
+    const loops = loopsFromProfileExpr(item.stmt.profileExpr);
+    if (!loops?.length) {
+      return { ok: false, message: `Extrude could not read loops from ${item.stmt.name}` };
+    }
+    const role = item.row.loopRole;
+    records.push({
+      name: item.stmt.name,
+      role: role === 'outer' || role === 'hole' ? role : null,
+      loops,
+    });
+  }
+  const classified = classifyExtrudeLoops(records);
+  if (!classified.ok) return classified;
+
+  const plane = _frameFromPlaneExpr(stmts[0].stmt.planeExpr);
+  if (plane) {
+    const axis = resolveExtrudeAxis(plane, extGate.normalized.direction);
+    if (!axis.ok) return axis;
+  }
+
+  const host = _placeHost(stripped, existing);
+  const combineOp = solidCombineOp(combine ?? extrude?.combine);
+  let distance = extGate.normalized.distance;
+  let w = extrudeWOffset(distance, extGate.normalized.sense);
+  if (combineOp === 'subtract') {
+    const span = sheetCutExtrudeSpan(text, distance, w);
+    distance = span.distance;
+    w = span.w;
+  }
+  const names = _namesBeside(
+    stripped,
+    listContourExtrudeBlocks(stripped).find((b) => b.id === finalId),
+  );
+  const frameName = classified.frameName || stmts[0].stmt.name;
+  const lines = emitExtrudeReferenceLines({
+    begin: CONTOUR_EXTRUDE_BEGIN,
+    end: CONTOUR_EXTRUDE_END,
+    featureId: finalId,
+    contour: frameName,
+    contoursExpr: classified.groups === 1 ? classified.expr : null,
+    solidExpr: classified.groups > 1 ? classified.expr : null,
+    distance,
+    w,
+    roles: classified.roles,
+    partLine: (expr) => emitPartPlace(
+      names,
+      expr,
+      host,
+      host,
+      combineOp,
+      solidMergeOn(merge ?? extrude?.merge),
+    ),
+  });
+  const next = _writeFeatureBlock(stripped, finalId, listContourExtrudeBlocks, lines.join('\n'));
+  const owned = contourExtrudeOwnedRegion(next, finalId);
+  if (!/makeExtrude\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourExtrude: makeExtrude missing — refusing silent no-op.',
+    };
+  }
+  if (!/placeInFrame\s*\(|transformByFrame\s*\(/.test(owned)) {
+    return {
+      ok: false,
+      message: 'composeContourExtrude: placeInFrame missing — refusing unscoped insert.',
+    };
+  }
+  const placeErr = advancedPlaceError(owned, host, 'composeContourExtrude', combineOp);
+  if (placeErr) return { ok: false, message: placeErr };
+  return {
+    ok: true,
+    buffer: next,
+    run: true,
+    featureId: finalId,
+    contours: stmts.map((item) => ({ name: item.stmt.name })),
+  };
 }
 
 function _frameFromPlaneExpr(expr) {

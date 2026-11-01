@@ -12,6 +12,15 @@ export const slotAssignContourCommand = Object.freeze({
         description: 'profile (default), path (sweep), or loft station',
       },
       index: { type: 'integer', minimum: 0, description: 'Loft station index when role is station' },
+      loop_role: {
+        type: 'string',
+        enum: ['auto', 'outer', 'hole'],
+        description: 'Extrude profile only. auto classifies a nested loop as a hole. outer or hole overrides that test.',
+      },
+      remove: {
+        type: 'boolean',
+        description: 'Extrude profile only. Drop this contour from the slot instead of adding it.',
+      },
     },
   }),
   example: Object.freeze({ contour_id: 'c1', role: 'profile' }),
@@ -19,6 +28,9 @@ export const slotAssignContourCommand = Object.freeze({
   checkArgs(args) {
     if (typeof args?.contour_id !== 'string' || !args.contour_id) {
       return { code: 'bad_args', message: 'slot_assign_contour needs contour_id' };
+    }
+    if (args.loop_role != null && !['auto', 'outer', 'hole'].includes(args.loop_role)) {
+      return { code: 'bad_args', message: 'loop_role must be auto, outer, or hole' };
     }
     return null;
   },

@@ -8,6 +8,7 @@
 
 import { planeUvToWorld } from './contourPick.js';
 import {
+  buildExtrudeLoopsPreview,
   buildExtrudeSolidPreview,
   buildLoftSolidPreview,
   buildRevolveSolidPreview,
@@ -20,7 +21,9 @@ import {
   isSweepEntry,
   planeFromContourFace,
   REVOLVE_SEGMENTS,
+  toolToProfileParams,
 } from './contourMode.js';
+import { buildProfileFromParams } from './crossSectionSubstrate.js';
 import { SEPARATE_BODY_CALL } from './featureMarkers.js';
 import { inferExtrudeSense } from './featureSheetWriteback.js';
 import { parseLoftReferences } from './loftReference.js';
@@ -61,7 +64,7 @@ export function emptyFeatureSlotCard(kind) {
       revolve: { ...defaultRevolveParams(), segments: REVOLVE_SEGMENTS },
     };
   }
-  return { ...base, profile: null, extrude: { ...defaultExtrudeParams() } };
+  return { ...base, profile: null, profiles: [], extrude: { ...defaultExtrudeParams() } };
 }
 
 function refOf(contour) {
@@ -102,6 +105,10 @@ export function renameFeatureSlotRefs(card, contourId, contour) {
   const hit = (row) => row?.contourId === contourId;
   let next = card;
   if (hit(card.profile)) next = { ...next, profile: { ...card.profile, ...ref } };
+  if (Array.isArray(card.profiles)) {
+    const profiles = card.profiles.map((row) => (hit(row) ? { ...row, ...ref } : row));
+    next = { ...next, profiles, profile: profiles[0] ? { ...profiles[0] } : next.profile };
+  }
   if (hit(card.path)) next = { ...next, path: { ...card.path, ...ref } };
   if (next.stations) {
     next = {
@@ -119,6 +126,10 @@ export function clearFeatureSlotRefs(card, contourId) {
   const blank = { contourId: null, contourName: null, label: '', plane: null };
   let next = card;
   if (hit(card.profile)) next = { ...next, profile: null };
+  if (Array.isArray(card.profiles)) {
+    const profiles = card.profiles.filter((row) => !hit(row));
+    next = { ...next, profiles, profile: profiles[0] ? { ...profiles[0] } : null };
+  }
   if (hit(card.path)) next = { ...next, path: null };
   if (next.stations) {
     next = {
@@ -151,7 +162,46 @@ export function assignFeatureSlot(card, slot, contour) {
       sweep: { reverse: !!card.sweep?.reverse, closed },
     };
   }
+  if (card.kind === 'makeExtrude') return assignExtrudeProfile(card, slot, ref);
   return { ...card, profile: named(ref) ? ref : null };
+}
+
+function loopRoleOf(slot) {
+  const role = slot?.loopRole || slot?.loop_role;
+  if (role === 'outer' || role === 'hole' || role === 'auto') return role;
+  return 'auto';
+}
+
+function extrudeProfiles(card) {
+  if (Array.isArray(card?.profiles) && card.profiles.length) return card.profiles.map((row) => ({ ...row }));
+  if (named(card?.profile)) return [{ ...card.profile, loopRole: card.profile.loopRole || 'auto' }];
+  return [];
+}
+
+function withExtrudeProfiles(card, profiles) {
+  const list = profiles.filter((row) => named(row));
+  return {
+    ...card,
+    profiles: list,
+    profile: list[0] ? { ...list[0] } : null,
+  };
+}
+
+/** Extrude keeps every assigned contour. The first stays `profile` for older readers. */
+function assignExtrudeProfile(card, slot, ref) {
+  const id = ref.contourId || ref.contourName;
+  let profiles = extrudeProfiles(card);
+  if (slot?.remove) {
+    profiles = profiles.filter((row) => row.contourId !== id && row.contourName !== id);
+    return withExtrudeProfiles(card, profiles);
+  }
+  if (!named(ref)) return withExtrudeProfiles(card, profiles);
+  const loopRole = loopRoleOf(slot);
+  const next = { ...ref, loopRole };
+  const index = profiles.findIndex((row) => row.contourId === next.contourId || row.contourName === next.contourName);
+  if (index >= 0) profiles[index] = { ...profiles[index], ...next };
+  else profiles.push(next);
+  return withExtrudeProfiles(card, profiles);
 }
 
 export function setFeatureStationOffset(card, index, offset) {
@@ -289,9 +339,15 @@ export function featureSlotCardFromEdit(session, contours = []) {
     const sense = parsed
       ? inferExtrudeSense(parsed.distance, parsed.w)
       : (fields.sense || card.extrude.sense);
+    const names = parsed?.names?.length ? parsed.names : [];
+    const profiles = names.map((name) => ({
+      ...contourRef(name, contours),
+      loopRole: parsed?.roles?.[name] || 'auto',
+    }));
     return {
       ...card,
-      profile: contourRef(parsed?.name, contours),
+      profile: profiles[0] || null,
+      profiles,
       extrude: {
         ...card.extrude,
         ...(distance != null ? { distance } : {}),
@@ -360,6 +416,7 @@ export function featureSlotCommitPayload(card) {
   const featureId = card.featureId || null;
   const circle = { tool: 'circle', params: { ...defaultContourParams('circle') } };
   if (card.kind === 'makeExtrude') {
+    const profiles = (card.profiles?.length ? card.profiles : [card.profile]).filter((row) => named(row));
     return {
       entry: 'makeExtrude',
       ...circle,
@@ -369,6 +426,11 @@ export function featureSlotCommitPayload(card) {
       featureId,
       contourId: card.profile.contourId,
       contourName: card.profile.contourName,
+      profiles: profiles.map((row) => ({
+        contourId: row.contourId,
+        contourName: row.contourName,
+        loopRole: row.loopRole || 'auto',
+      })),
       extrude: { ...defaultExtrudeParams(), ...card.extrude },
     };
   }
@@ -490,6 +552,31 @@ function pathWorldPoints(row) {
 export function buildFeatureSlotPreview(card, contours, live = null) {
   if (!card) return null;
   if (card.kind === 'makeExtrude') {
+    const refs = (card.profiles?.length ? card.profiles : [card.profile]).filter((row) => named(row));
+    if (refs.length > 1) {
+      let face = null;
+      const records = [];
+      for (let i = 0; i < refs.length; i += 1) {
+        const prof = slotProfile(refs[i], { role: 'profile' }, contours, i === 0 ? live : null);
+        if (!prof) return null;
+        face = face || prof.face;
+        let loops;
+        try {
+          loops = buildProfileFromParams(toolToProfileParams(prof.tool, prof.params)).contours;
+        } catch {
+          return null;
+        }
+        if (!loops?.length) return null;
+        const role = refs[i].loopRole;
+        records.push({
+          name: refs[i].contourName || `c${i}`,
+          role: role === 'outer' || role === 'hole' ? role : null,
+          loops,
+        });
+      }
+      const payload = buildExtrudeLoopsPreview(face, records, card.extrude);
+      return payload ? { kind: 'extrude', payload } : null;
+    }
     const prof = slotProfile(card.profile, { role: 'profile' }, contours, live);
     if (!prof) return null;
     const payload = buildExtrudeSolidPreview(prof.face, prof.tool, prof.params, card.extrude);

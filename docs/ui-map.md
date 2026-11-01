@@ -933,7 +933,7 @@ edge that is closer still picks. `golden:fillet-edge-hit` taps within about
 ### The "in-mode" pattern
 Contour / Extrude / Revolve / Loft / Sweep: `src/utils/contourMode.js` +
 `src/utils/featureSlotCard.js` + `ContourModeRail.jsx` + `ContourModeChip.jsx` +
-`FeatureSlotCard.jsx`; enter/exit/confirm are
+`FeatureSlotCard.jsx` (an Extrude profile slot lists every assigned contour, with Auto / Outer / Hole and Remove on a selected chip); enter/exit/confirm are
 `enterContourMode` (`src/components/Viewport.jsx:4288`),
 `exitContourMode` (`:4125`), and `confirmContourProfile` (`:4562`).
 Fillet / Chamfer: `src/utils/filletMode.js` + `FilletModeChip.jsx` (same

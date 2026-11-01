@@ -596,7 +596,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   sketch_add: {
-    description: 'Switch contour rail tool and set profile parameters.',
+    description: 'Set the sketch profile. The first closed profile replaces an empty sketch. A later closed profile adds another loop on that same sketch (outer plus holes). A centres sketch, or params.contour, still replaces. Result may include appended and loops.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_sketch', 'plane_card_open', 'invalid_profile', 'internal'],
     mutates: false,
@@ -638,7 +638,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   slot_assign_contour: {
-    description: 'Assign a saved @contour id to a slot on the open card.',
+    description: 'Assign a saved @contour id to a slot on the open card. Extrude accepts several profiles: each call appends, and the same id again updates loop_role (auto, outer, or hole) without duplicating. remove: true drops that contour. Nested loops are holes unless loop_role says otherwise. Revolve, sweep, and loft stay one contour per slot.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_slot', 'unknown_contour', 'bad_args', 'internal'],
     mutates: false,

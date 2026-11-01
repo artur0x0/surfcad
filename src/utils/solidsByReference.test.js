@@ -52,7 +52,13 @@ test('an extrude names a contour and the block id is not an offset', () => {
   const owned = contourExtrudeOwnedRegion(first.buffer, 'extrude1');
   assert.match(owned, /makeExtrude\(/);
   assert.doesNotMatch(owned, /makeCrossSection/);
-  assert.deepEqual(parseExtrudeReference(owned), { name: 'c1', distance: 10, w: 0 });
+  assert.deepEqual(parseExtrudeReference(owned), {
+    name: 'c1',
+    names: ['c1'],
+    distance: 10,
+    w: 0,
+    roles: {},
+  });
   const shifted = parseFeatureMarkers(`// moved\n${first.buffer}`).find((f) => f.kind === 'extrude');
   assert.equal(shifted.id, 'extrude1');
 });

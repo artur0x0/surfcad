@@ -14,6 +14,7 @@ import {
   PlaneGeometry,
   ExtrudeGeometry,
   Shape,
+  Path,
   Quaternion,
   BufferGeometry,
   BufferAttribute,
@@ -169,6 +170,7 @@ import {
   savedContourRings,
   withAutoPickedContour,
 } from '../utils/savedContours';
+import { incomingClosedProfile } from '../utils/sketchLoops';
 import { shouldClearViewportScript } from '../utils/helperPaletteSnippets';
 import { rollbackClearsPart } from '../utils/featureSkip';
 import { hasNamedContour, mintContourIdentity } from '../utils/namedContour';
@@ -202,12 +204,14 @@ import {
   buildRevolveSolidPreview,
   buildSweepSolidPreview,
   activeContourFace,
+  applySketchAdd,
   contourWorkplaneFace,
   contourWorkplane,
   applyContourPlaneEdit,
   axisPresetFrame,
   contourHostCenter,
   cursorSketchEmpty,
+  defaultContourParams,
   enterContourState,
   intersectRayPlane,
   isExtrudeEntry,
@@ -225,6 +229,7 @@ import {
   selectedLoftDrawFrame,
   setLoftStationPlane,
   resolveExtrudeAxis,
+  sketchKeepsGeometry,
   resolveRevolveAxis,
   selectLoftProfile,
   setLoftProfileOffset,
@@ -3668,63 +3673,86 @@ const Viewport = forwardRef(({
   const paintExtrudePreview = useCallback((payload) => {
     clearExtrudePreview();
     if (!payload?.plane || !payload?.contours?.length || !sceneRef.current) return;
-    const loop = payload.contours[0];
-    if (!loop || loop.length < 3) return;
-    const shape = new Shape();
-    shape.moveTo(loop[0][0], loop[0][1]);
-    for (let i = 1; i < loop.length; i++) {
-      const u = Number(loop[i][0]);
-      const v = Number(loop[i][1]);
-      if (!Number.isFinite(u) || !Number.isFinite(v)) return;
-      shape.lineTo(u, v);
-    }
-    shape.closePath();
-    const geom = new ExtrudeGeometry(shape, {
-      depth: payload.distance,
-      bevelEnabled: false,
-      curveSegments: 1,
-    });
-    // Unlit, like every other preview: a lit material turned the faces angled
-    // away from the lights dark and muddy (see utils/previewStyle.js).
-    const mat = makePreviewSkinMaterial();
-    const mesh = new ThreeMesh(geom, mat);
-    mesh.name = 'contourExtrudePreview';
-    mesh.renderOrder = PREVIEW_RENDER_ORDER.skin;
-    mesh.frustumCulled = false;
+    const solids = payload.solids?.length ? payload.solids : [payload.contours];
+    const loopArea = (pts) => {
+      let s = 0;
+      for (let i = 0; i < pts.length; i += 1) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        s += a[0] * b[1] - b[0] * a[1];
+      }
+      return s;
+    };
+    const trace = (path, loop) => {
+      path.moveTo(loop[0][0], loop[0][1]);
+      for (let i = 1; i < loop.length; i += 1) {
+        const u = Number(loop[i][0]);
+        const v = Number(loop[i][1]);
+        if (!Number.isFinite(u) || !Number.isFinite(v)) return false;
+        path.lineTo(u, v);
+      }
+      path.closePath();
+      return true;
+    };
     const { plane, w0 } = payload;
     const n = plane.normal;
     const x = plane.x;
     const y = plane.y;
     const c = plane.center;
-    mesh.matrix.set(
-      x[0], y[0], n[0], c[0] + w0 * n[0],
-      x[1], y[1], n[1], c[1] + w0 * n[1],
-      x[2], y[2], n[2], c[2] + w0 * n[2],
-      0, 0, 0, 1,
-    );
-    mesh.matrixAutoUpdate = false;
     const group = new Group();
     group.name = 'contourExtrudePreviewGroup';
-    group.add(mesh);
-    // Start and end loops, exactly like Loft's station rings — the skin alone
-    // reads as a smear without them.
+    const mat = makePreviewSkinMaterial();
     const outlineMat = makePreviewOutlineMaterial();
-    for (const w of [w0, w0 + Number(payload.distance)]) {
-      if (!Number.isFinite(w)) continue;
-      const pos = new Float32Array((loop.length + 1) * 3);
-      for (let i = 0; i <= loop.length; i++) {
-        const [u, v] = loop[i % loop.length];
-        for (let k = 0; k < 3; k++) {
-          pos[i * 3 + k] = c[k] + u * x[k] + v * y[k] + w * n[k];
+    for (const solid of solids) {
+      const outer = solid?.[0];
+      if (!outer || outer.length < 3) continue;
+      const shape = new Shape();
+      if (!trace(shape, outer)) continue;
+      const outerArea = loopArea(outer);
+      for (const hole of solid.slice(1)) {
+        if (!hole || hole.length < 3) continue;
+        const wound = outerArea * loopArea(hole) > 0 ? hole.slice().reverse() : hole;
+        const path = new Path();
+        if (!trace(path, wound)) continue;
+        shape.holes.push(path);
+      }
+      const geom = new ExtrudeGeometry(shape, {
+        depth: payload.distance,
+        bevelEnabled: false,
+        curveSegments: 1,
+      });
+      const mesh = new ThreeMesh(geom, mat);
+      mesh.name = 'contourExtrudePreview';
+      mesh.renderOrder = PREVIEW_RENDER_ORDER.skin;
+      mesh.frustumCulled = false;
+      mesh.matrix.set(
+        x[0], y[0], n[0], c[0] + w0 * n[0],
+        x[1], y[1], n[1], c[1] + w0 * n[1],
+        x[2], y[2], n[2], c[2] + w0 * n[2],
+        0, 0, 0, 1,
+      );
+      mesh.matrixAutoUpdate = false;
+      group.add(mesh);
+      for (const loop of solid) {
+        for (const w of [w0, w0 + Number(payload.distance)]) {
+          if (!Number.isFinite(w)) continue;
+          const pos = new Float32Array((loop.length + 1) * 3);
+          for (let i = 0; i <= loop.length; i += 1) {
+            const [u, v] = loop[i % loop.length];
+            for (let k = 0; k < 3; k += 1) {
+              pos[i * 3 + k] = c[k] + u * x[k] + v * y[k] + w * n[k];
+            }
+          }
+          const g = new BufferGeometry();
+          g.setAttribute('position', new BufferAttribute(pos, 3));
+          const line = new Line(g, outlineMat);
+          line.renderOrder = PREVIEW_RENDER_ORDER.outline;
+          line.frustumCulled = false;
+          group.add(line);
         }
       }
-      const g = new BufferGeometry();
-      g.setAttribute('position', new BufferAttribute(pos, 3));
-      const line = new Line(g, outlineMat);
-      line.renderOrder = PREVIEW_RENDER_ORDER.outline;
-      line.frustumCulled = false;
-      group.add(line);
     }
+    if (!group.children.length) return;
     anchorToActivePart(group);
     sceneRef.current.add(group);
     extrudePreviewRef.current = group;
@@ -4904,6 +4932,7 @@ const Viewport = forwardRef(({
         contourName: saved.name,
         params: contour ? { ...applied.params, contour: { ...contour, refs } } : applied.params,
       };
+      next.profileSet = incomingClosedProfile(next.tool, next.params);
       contourLiveWriteRef.current = next;
       contourModeRef.current = next;
       setContourMode(next);
@@ -4924,7 +4953,12 @@ const Viewport = forwardRef(({
     if (!card || !slot) return;
     const ref = slot.role === 'station'
       ? card.stations?.[slot.index]
-      : (slot.role === 'path' ? card.path : card.profile);
+      : slot.role === 'path'
+        ? card.path
+        : (
+          (slot.contourId && (card.profiles || []).find((row) => row.contourId === slot.contourId))
+          || card.profile
+        );
     if (!ref?.contourId) return;
     slotReturnRef.current = slot;
     if (!openSavedContour(ref.contourId)) slotReturnRef.current = null;
@@ -13449,11 +13483,11 @@ const Viewport = forwardRef(({
       setContourMode(next);
       return { result: { tool, gesture: tool } };
     }
-    const switched = switchContourTool(prev, tool);
-    let next = {
-      ...switched,
-      params: { ...(switched.params || {}), ...(params || {}) },
-    };
+    const applied = applySketchAdd(prev, tool, params || {}, { inset: false });
+    if (!applied.ok) {
+      return { error: { code: 'invalid_profile', message: applied.message || 'sketch_add did not add a loop' } };
+    }
+    let next = applied.state;
     if (isHoleEntry(next.entry) && next.tool === 'rectangle') {
       next = materializeHoleRectangleCenters(next);
     }
@@ -13463,7 +13497,12 @@ const Viewport = forwardRef(({
     contourLiveWriteRef.current = next;
     contourModeRef.current = next;
     setContourMode(next);
-    return { result: { tool } };
+    return {
+      result: {
+        appended: !!applied.appended,
+        ...(applied.loops ? { loops: applied.loops } : {}),
+      },
+    };
   };
 
   const agentContourGesturePlan = (applied, meta) => {
@@ -13688,7 +13727,13 @@ const Viewport = forwardRef(({
     return { result: { kind } };
   };
 
-  agentSlotAssignContourRef.current = ({ contour_id, role = 'profile', index = 0 }) => {
+  agentSlotAssignContourRef.current = ({
+    contour_id,
+    role = 'profile',
+    index = 0,
+    loop_role = null,
+    remove = false,
+  }) => {
     const card = featureSlotsRef.current;
     if (!card) {
       return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
@@ -13703,11 +13748,22 @@ const Viewport = forwardRef(({
     }
     const slot = role === 'station'
       ? { role: 'station', index: Number(index) || 0 }
-      : { role };
+      : { role, loopRole: loop_role, remove: !!remove };
     const next = assignFeatureSlot(card, slot, saved);
     featureSlotsRef.current = next;
     setFeatureSlots(next);
-    return { result: { contour_id: saved.id, contour_name: saved.name, role } };
+    const profiles = (next.profiles || []).map((row) => ({
+      contour_id: row.contourId,
+      loop_role: row.loopRole || 'auto',
+    }));
+    return {
+      result: {
+        contour_id: saved.id,
+        contour_name: saved.name,
+        role,
+        ...(profiles.length ? { profiles } : {}),
+      },
+    };
   };
 
   agentSlotSetParamsRef.current = (args = {}) => {
@@ -17344,11 +17400,27 @@ const Viewport = forwardRef(({
           entry={contourMode.entry}
           compact={isMobile}
           canUndo={contourUndoDepth > 0}
-          onSelectTool={(id) => setContourMode((prev) => {
-            if (!prev) return prev;
-            if (id === 'arc' || id === 'dimension' || id === 'constraints') return armContourGesture(prev, id);
-            return switchContourTool(prev, id);
-          })}
+          onSelectTool={(id) => {
+            const prev = contourModeRef.current;
+            if (!prev) return;
+            if (id === 'arc' || id === 'dimension' || id === 'constraints') {
+              setContourMode(armContourGesture(prev, id));
+              return;
+            }
+            const shape = id === 'rectangle' || id === 'circle' || id === 'polygon';
+            const fresh = shape && !sketchKeepsGeometry(prev) && prev.tool !== id;
+            if (shape && (prev.profileSet || fresh)) {
+              const applied = applySketchAdd(prev, id, defaultContourParams(id), { inset: true });
+              if (!applied.ok) {
+                showContourToast(applied.message || 'Could not add a loop');
+                return;
+              }
+              contourModeRef.current = applied.state;
+              setContourMode(applied.state);
+              return;
+            }
+            setContourMode(switchContourTool(prev, id));
+          }}
           onUndo={onContourBack}
           onConfirm={confirmContourProfile}
           onBack={cancelContourEditor}
@@ -17704,6 +17776,16 @@ const Viewport = forwardRef(({
             setSlotHoverId(contour?.id || null);
             setFeatureSlots((prev) => assignFeatureSlot(prev, slot, contour));
           }}
+          onLoopRole={(row, loopRole) => setFeatureSlots((prev) => assignFeatureSlot(
+            prev,
+            { role: 'profile', loopRole },
+            { id: row.contourId, name: row.contourName, label: row.label, plane: row.plane },
+          ))}
+          onRemoveProfile={(row) => setFeatureSlots((prev) => assignFeatureSlot(
+            prev,
+            { role: 'profile', remove: true },
+            { id: row.contourId, name: row.contourName },
+          ))}
           onNew={beginNewContour}
           onEdit={editSlotContour}
           onOffset={(index, offset) => setFeatureSlots((prev) => setFeatureStationOffset(prev, index, offset))}

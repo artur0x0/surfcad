@@ -16210,7 +16210,7 @@
     },
     {
       "name": "sketch_add",
-      "description": "Switch contour rail tool and set profile parameters.",
+      "description": "Set the sketch profile. The first closed profile replaces an empty sketch. A later closed profile adds another loop on that same sketch (outer plus holes). A centres sketch, or params.contour, still replaces. Result may include appended and loops.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -17916,7 +17916,7 @@
     },
     {
       "name": "slot_assign_contour",
-      "description": "Assign a saved @contour id to a slot on the open card.",
+      "description": "Assign a saved @contour id to a slot on the open card. Extrude accepts several profiles: each call appends, and the same id again updates loop_role (auto, outer, or hole) without duplicating. remove: true drops that contour. Nested loops are holes unless loop_role says otherwise. Revolve, sweep, and loft stay one contour per slot.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -17941,6 +17941,19 @@
             "type": "integer",
             "minimum": 0,
             "description": "Loft station index when role is station"
+          },
+          "loop_role": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "outer",
+              "hole"
+            ],
+            "description": "Extrude profile only. auto classifies a nested loop as a hole. outer or hole overrides that test."
+          },
+          "remove": {
+            "type": "boolean",
+            "description": "Extrude profile only. Drop this contour from the slot instead of adding it."
           }
         }
       },

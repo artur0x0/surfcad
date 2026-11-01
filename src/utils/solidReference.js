@@ -28,30 +28,73 @@ function blockLines(begin, end, featureId, lines) {
   ];
 }
 
+function formatLoopRoles(roles) {
+  const parts = Object.entries(roles || {})
+    .filter(([, role]) => role === 'outer' || role === 'hole')
+    .map(([name, role]) => `${name}=${role}`);
+  if (!parts.length) return null;
+  return `// loop-role ${parts.join(' ')}`;
+}
+
 export function emitExtrudeReferenceLines({
   begin,
   end,
   featureId,
   contour,
+  contoursExpr = null,
+  solidExpr = null,
   distance,
   w,
   partLine,
+  roles = null,
 }) {
-  const solid = `makeExtrude(${contour}.contours, ${emitNum(distance)})`;
+  const height = emitNum(distance);
+  const solid = solidExpr
+    ? String(solidExpr).replaceAll('__H__', height)
+    : `makeExtrude(${contoursExpr || `${contour}.contours`}, ${height})`;
   const placed = partLine(`placeInFrame(${contour}.plane, ${solid}, [0, 0, ${emitNum(w)}])`);
-  return blockLines(begin, end, featureId, [placed]);
+  const roleLine = formatLoopRoles(roles);
+  return blockLines(begin, end, featureId, roleLine ? [roleLine, placed] : [placed]);
 }
 
-/** @returns {{ name: string, distance: number, w: number } | null} */
+function contourNamesIn(text) {
+  const names = [];
+  const re = /([A-Za-z_$][\w$]*)\.contours\b/g;
+  let match = re.exec(text);
+  while (match) {
+    if (!names.includes(match[1])) names.push(match[1]);
+    match = re.exec(text);
+  }
+  return names;
+}
+
+function loopRolesIn(text) {
+  const roles = {};
+  const roleLine = String(text || '').match(/\/\/ loop-role ([^\n]+)/);
+  if (!roleLine) return roles;
+  for (const part of roleLine[1].trim().split(/\s+/)) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const role = part.slice(eq + 1);
+    if (role === 'outer' || role === 'hole') roles[part.slice(0, eq)] = role;
+  }
+  return roles;
+}
+
+/** @returns {{ name: string, names: string[], distance: number, w: number, roles: Record<string, string> } | null} */
 export function parseExtrudeReference(block) {
   const text = String(block || '');
-  const call = text.match(/makeExtrude\s*\(\s*([A-Za-z_$][\w$]*)\.contours\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/);
+  const call = text.match(/makeExtrude\s*\(([\s\S]*?),\s*(-?\d+(?:\.\d+)?)\s*\)/);
   if (!call) return null;
+  const names = contourNamesIn(text);
+  if (!names.length) return null;
   const shift = text.match(/\[\s*0\s*,\s*0\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/);
   return {
-    name: call[1],
+    name: names[0],
+    names,
     distance: Number(call[2]),
     w: shift ? Number(shift[1]) : 0,
+    roles: loopRolesIn(text),
   };
 }
 

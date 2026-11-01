@@ -237,7 +237,7 @@ function hintFromMessage(code, message) {
     return { hint: 'The part is empty: insert_cube / insert_cylinder / insert_tube (or an extrude from a sketch) first, then this insert again.' };
   }
   if (code === 'insert_failed' && /needs a sketch profile|needs two or more sketch profiles/i.test(message)) {
-    return { hint: 'Sketch the profile first: sketch_begin → sketch_add → sketch_commit (one contour per profile), then insert again.' };
+    return { hint: 'Sketch the profile first: sketch_begin → sketch_add → sketch_commit (a second sketch_add adds a loop on that sketch), then insert again.' };
   }
   return null;
 }
