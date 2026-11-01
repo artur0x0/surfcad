@@ -601,13 +601,17 @@ export function createAgentRouter(deps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
       timeout = clampTimeout(req.query.timeout);
+      // A pull session id: held prompts are offered to it once and stay
+      // held until `agent.prompt.taken`. Without one they are drained
+      // (older clients).
+      const consumer = pullSession(req.query.session);
       polling = auth;
       logRelay({
         event: 'prompt-poll-start',
         userId: auth.userId,
         timeoutMs: timeout,
       });
-      const result = await deps.registry.waitPrompts(auth.userId, timeout, auth.id);
+      const result = await deps.registry.waitPrompts(auth.userId, timeout, auth.id, consumer);
       if (!result) {
         status = 'revoked';
         return res.status(401).json({ error: 'Authentication required' });
@@ -661,6 +665,12 @@ export function createAgentRouter(deps) {
         logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
         return res.status(202).json({ ok: true });
       }
+      if (type === 'agent.prompt.taken') {
+        const taken = deps.registry.takeHeldPrompts(auth.userId, req.body.ids);
+        await deps.tokens.markUsed(auth);
+        logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
+        return res.status(202).json({ ok: true, taken });
+      }
       if (type === 'agent.message') {
         const problem = sessionMessageProblem(req.body);
         if (problem) return res.status(400).json({ error: problem });
@@ -678,6 +688,17 @@ export function createAgentRouter(deps) {
   });
 
   return router;
+}
+
+/** A pull session id from GET /agent/prompts?session=: opaque, URL-safe, 8 to 64 characters. */
+const PULL_SESSION_RE = /^[A-Za-z0-9_-]{8,64}$/;
+
+/**
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+function pullSession(value) {
+  return typeof value === 'string' && PULL_SESSION_RE.test(value) ? value : null;
 }
 
 /**

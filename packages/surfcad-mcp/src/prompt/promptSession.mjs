@@ -125,13 +125,28 @@ function defaultSetTimer(fn, ms) {
  *   rateLimitMs?: number,
  *   idleMs?: number,
  *   webhookTimeoutMs?: number,
+ *   onTaken?: (ids: string[]) => void,
  * }} options
+ * `onTaken` fires with the prompt ids the agent now has (read_messages
+ * returned them, or the webhook POST succeeded). The server relay holds a
+ * prompt until it hears this, so a one-shot process that exits before
+ * reading does not lose it.
  */
 export function createPromptSession(options) {
   if (!options || typeof options.send !== 'function') {
     throw new TypeError('createPromptSession requires send');
   }
   const send = options.send;
+  const onTaken = typeof options.onTaken === 'function' ? options.onTaken : null;
+  /** @param {string[]} ids */
+  function noteTaken(ids) {
+    if (!onTaken || ids.length === 0) return;
+    try {
+      onTaken(ids);
+    } catch {
+      /* advisory */
+    }
+  }
   const now = options.now || (() => Date.now());
   const setTimer = options.setTimer || defaultSetTimer;
   const clearTimer = options.clearTimer || ((timer) => clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)));
@@ -487,6 +502,7 @@ export function createPromptSession(options) {
       if (posted === 'sent') {
         remember(prompt.id, 'delivered');
         emit(ack(prompt.id, 'webhook'));
+        noteTaken([prompt.id]);
         return;
       }
     }
@@ -536,6 +552,15 @@ export function createPromptSession(options) {
         return;
       }
       screenshot = shot.value;
+    }
+    // The server relay offers a held prompt to every new socket or pull
+    // session until one reports it taken, so the same id can arrive again
+    // (a reconnect in this process). Keep the copy this process has.
+    const known = states.get(id);
+    if (known) {
+      if (known === 'queued') emit(ack(id, 'queued'));
+      else if (known === 'delivered' || known === 'replied') noteTaken([id]);
+      return;
     }
     const at = now();
     if (at - lastAcceptedAt < rateLimitMs) {
@@ -612,6 +637,7 @@ export function createPromptSession(options) {
     const taken = queue.splice(0, count);
     const messages = [];
     const images = [];
+    const takenIds = [];
     for (const item of taken) {
       if (item.kind === 'cancel') {
         messages.push({ type: 'cancel', id: item.id });
@@ -619,6 +645,7 @@ export function createPromptSession(options) {
         continue;
       }
       if (states.get(item.id) === 'queued') states.set(item.id, 'delivered');
+      takenIds.push(item.id);
       messages.push({
         v: 1,
         id: item.id,
@@ -640,6 +667,7 @@ export function createPromptSession(options) {
         : null);
     }
     noteActivity();
+    noteTaken(takenIds);
     return { messages, images };
   }
 
@@ -704,11 +732,18 @@ export function createPromptSession(options) {
     if (typeof inReplyTo !== 'string' || !inReplyTo || inReplyTo.length > 80) {
       throw Object.assign(new Error('in_reply_to is required'), { code: 'bad_args' });
     }
-    // Only a prompt this session accepted. Checked before any send, so an
-    // invented id never becomes an agent.reply on the tab.
-    const state = states.get(inReplyTo);
+    // A prompt this session accepted, or a prompt id from an earlier
+    // one-shot process (a fresh surfcad-mcp per tool call reads in one
+    // process and replies from the next). Anything that is not a prompt id
+    // is refused before any send. The page drops a reply for an id it never
+    // sent, so an invented UUID cannot become a bubble.
+    let state = states.get(inReplyTo);
     if (!state) {
-      throw Object.assign(new Error('in_reply_to is not a prompt delivered to this session'), { code: 'unknown_prompt' });
+      if (!UUID_RE.test(inReplyTo)) {
+        throw Object.assign(new Error('in_reply_to is not a prompt delivered to this session'), { code: 'unknown_prompt' });
+      }
+      remember(inReplyTo, 'delivered');
+      state = 'delivered';
     }
     if (state === 'cancelled') {
       return { ok: false, error: 'cancelled' };

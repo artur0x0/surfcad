@@ -4,6 +4,7 @@
  * The bearer token is never logged and is never placed in the URL.
  */
 
+import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import {
   AGENT_HANDSHAKE_UPDATE_MESSAGE,
@@ -164,6 +165,8 @@ export class RemoteSession {
   /** Frames that arrived before the hello ack. A prompt must not fail the handshake. */
   #early = [];
   #promptPull = 0;
+  /** This process's pull session: GET /agent/prompts offers each held prompt to it once. */
+  #pullSession = randomUUID().replace(/-/g, '');
   /** @type {AbortController | null} */
   #promptAbort = null;
   /** @type {Map<string, { resolve: (v: unknown) => void, reject: (e: Error) => void }>} */
@@ -202,6 +205,12 @@ export class RemoteSession {
       : COMMAND_WAIT_MS;
     this.#prompts = options.promptSession || createPromptSession({
       send: (payload) => this.#sendToTab(payload),
+      // The server holds a tab prompt until a process reports it taken.
+      onTaken: (ids) => {
+        Promise.resolve()
+          .then(() => this.#sendToTab({ type: PAIR_MSG.AGENT_PROMPT_TAKEN, v: 1, ids }))
+          .catch(() => { /* advisory; the next hello or pull offers them again */ });
+      },
     });
   }
 
@@ -554,6 +563,7 @@ export class RemoteSession {
     this.#promptAbort = ac;
     const url = new URL(this.#urls.promptsUrl);
     url.searchParams.set('timeout', '25000');
+    url.searchParams.set('session', this.#pullSession);
     let res;
     try {
       res = await this.#fetch(url, {

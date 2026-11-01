@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Server relay: a tab prompt sent while the agent is present but has no socket open (a fresh `surfcad-mcp` per tool call, between calls) is held by the server and reaches the next process. The tab hears `queued` at once. Each new socket is offered held prompts after hello, and an HTTPS-fallback pull is offered them once per process (`GET /agent/prompts?session=<id>`). The process reports them with `agent.prompt.taken { ids }` when `read_messages` returns them or the webhook POST succeeds; the server then drops them. A prompt offered twice to one process is kept once. Presence ending (inactive, `close_session`, revoke, expiry) fails the held prompts back to the tab.
+- `reply_to_user` accepts an `in_reply_to` that an earlier process received. An id that is not a prompt id is still `unknown_prompt`.
 - `set_status` works with no prompt in flight: the SurfCAD tab now keeps a session-level agent state (working, replying, idle) that an explicit `set_status`, every model-changing tool call, and `post_progress` drive, and that returns to idle 60 s after the last one. An agent-started build, or a build run as a fresh `surfcad-mcp` process per tool call, collapses the chat and spins the avatar like a prompt in flight. No new tool and no wire change: the tab reads `agent.status` with or without an `id`, and classifies the bridge calls it runs itself. The description of `set_status` says so.
 
 ## 0.3.4 - 2026-10-31
