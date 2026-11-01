@@ -236,6 +236,31 @@ test('each molding pane renders the scroll container and its last control', asyn
   const endAt = report.indexOf('data-mold-pane-end');
   assert.ok(payAt > 0 && endAt > payAt);
 
+  const priced = renderToStaticMarkup(React.createElement(MoldReportPanel, {
+    report: {
+      framing: 'Mold report',
+      disclaimer: 'Budgetary, not binding.',
+      grade: 'PP',
+      quantity: 17,
+      geometry: { volumeCm3: 100, projectedAreaMm2: 10000, sideActionCount: 2 },
+      estimates: { massKg: 0.09, pressTons: 50.99, toolingUsd: 11000, partUsd: 12.34, totalUsd: 209.78 },
+      notes: {},
+      assumptions: { priceSource: 'published' },
+    },
+    resins: [{ grade: 'PP' }, { grade: 'PC/ABS' }],
+    onGrade() {},
+    onQuantity() {},
+    onExport() {},
+  }));
+  assert.match(priced, /data-mold-report-field="mass"/);
+  assert.match(priced, /0\.0900 kg/);
+  assert.match(priced, /\$11000\.00/);
+  assert.match(priced, /\$12\.34/);
+  assert.match(priced, /data-mold-report-price-formula/);
+  assert.match(priced, /Material \+ press time \+ tooling \/ quantity/);
+  assert.match(priced, /data-mold-report-custom/);
+  assert.match(priced, /value="17"/);
+
   const { default: MoldResultsPane } = await importJsx(new URL('./MoldResultsPane.jsx', import.meta.url));
   const { default: PullReference } = await importJsx(new URL('./PullReference.jsx', import.meta.url));
   const pane = renderToStaticMarkup(React.createElement(

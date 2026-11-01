@@ -57,7 +57,12 @@ unique.
 `wallMinMm` and `wallMaxMm` are greater than 0. Melt and mold temperatures
 are 0 or greater, in °C. Each low value is less than or equal to its high
 value. `notes` is optional. `active` defaults to true. There is no
-`usdPerKg`.
+`usdPerKg` on the collection.
+
+The seed module also stores a published density and a USD per kilogram on
+every grade, each with a source and an as-of date. That table is what the
+mold report reads. Saving a seed grade does not copy those fields into
+`molding_resins`, and the public route does not return them.
 
 The curated seed is typical unfilled grades (ABS, PP, HDPE, PC, PA66, POM,
 PC/ABS). `GET /api/admin/molding/resin-library` inserts a seed grade only

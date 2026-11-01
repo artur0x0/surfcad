@@ -57,7 +57,7 @@ export default function MoldReportPanel({
   const mass = num(estimates.massKg, 4);
   const toolAl = money(estimates.toolingAluminumUsd);
   const toolSt = money(estimates.toolingSteelUsd);
-  const tooling = toolAl && toolSt ? `Aluminum ${toolAl} · Steel ${toolSt}` : null;
+  const tooling = toolAl && toolSt ? `Aluminum ${toolAl} · Steel ${toolSt}` : money(estimates.toolingUsd);
   const vendors = Array.isArray(quoteState?.quote?.vendors) ? quoteState.quote.vendors : [];
   const selected = vendors.find((row) => row.anonLabel === quoteState?.selected) || vendors[0] || null;
   const revealed = quoteState?.revealed || {};
@@ -147,6 +147,11 @@ export default function MoldReportPanel({
         <Row label="Press size" testId="tonnage" value={tons ? `${tons} t` : null} />
         <Row label="Tooling estimate" testId="tooling" value={tooling} note={notes.tooling} />
         <Row label="Part price" testId="price" value={money(estimates.partUsd)} note={notes.price} />
+        {report.assumptions?.priceSource === 'published' && Number.isFinite(estimates.partUsd) ? (
+          <div className="text-ui-sm text-muted-on-dark" data-mold-report-price-formula="">
+            Material + press time + tooling / quantity
+          </div>
+        ) : null}
         <Row label="Total" testId="total" value={money(estimates.totalUsd)} note={notes.price} />
       </dl>
       {quoteState?.status === 'loading' && (

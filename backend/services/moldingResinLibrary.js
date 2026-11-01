@@ -1,5 +1,6 @@
-// Generic injection-resin properties. No dollars, no partner id.
-// Listing inserts curated grades that are not already stored.
+// Generic injection-resin properties. No dollars on the stored row, no partner id.
+// The seed file carries published density and $/kg for the mold report.
+// publicResinView does not copy them. Listing inserts curated grades that are not already stored.
 
 import { CatalogError, assertObjectId } from './moldingCatalog.js';
 import { MOLDING_RESIN_SEED, MOLDING_RESIN_SEED_NOTE } from '../db/models/moldingResinSeed.js';

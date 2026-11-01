@@ -1,5 +1,11 @@
-// Typical unfilled injection grades. Not a supplier datasheet and not a price.
+// Typical unfilled injection grades.
+// densityGCm3 and usdPerKg are published stand-ins for the mold report.
+// They are not written onto molding_resins. The public route does not return
+// them. Partner prices stay in molding_resin_prices.
 // An admin list inserts a row only when that grade is missing.
+//
+// Prices are North American levels converted at 2.20462 lb/kg and rounded to
+// the cent. They are not a live feed and not a supplier quote.
 
 export const MOLDING_RESIN_SEED = Object.freeze([
   Object.freeze({
@@ -13,6 +19,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 260,
     moldTempLowC: 40,
     moldTempHighC: 80,
+    densityGCm3: 1.04,
+    densitySource: 'Typical unfilled injection ABS, commonly 1.04 g/cm³ within 1.03–1.07 (Jeek Mould plastic density chart, ISO 1183 class).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 3.26,
+    priceSource: 'Star Plastics North America market update, June 2026: ABS $1.48/lb, converted at 2.20462 lb/kg.',
+    priceAsOf: '2026-06-01',
   }),
   Object.freeze({
     grade: 'PP',
@@ -25,6 +37,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 280,
     moldTempLowC: 20,
     moldTempHighC: 80,
+    densityGCm3: 0.90,
+    densitySource: 'Typical unfilled injection PP homopolymer, 0.90 g/cm³ within 0.89–0.91 (Jeek Mould plastic density chart).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 1.60,
+    priceSource: 'Star Plastics June 2026 update, citing May 2026 North America PP homopolymer injection at $0.70–$0.75/lb. Midpoint $0.725/lb converted at 2.20462 lb/kg.',
+    priceAsOf: '2026-06-01',
   }),
   Object.freeze({
     grade: 'HDPE',
@@ -37,6 +55,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 280,
     moldTempLowC: 20,
     moldTempHighC: 60,
+    densityGCm3: 0.95,
+    densitySource: 'Typical unfilled injection HDPE, about 0.95 g/cm³ within 0.94–0.97 (Jeek Mould plastic density chart; AGS specific-gravity table 0.95).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 1.50,
+    priceSource: 'Argus Global Polyethylene issue 26-34 (21 August 2026): US HDPE injection marker $1,499/t, rounded to the cent.',
+    priceAsOf: '2026-08-21',
   }),
   Object.freeze({
     grade: 'PC',
@@ -49,6 +73,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 320,
     moldTempLowC: 80,
     moldTempHighC: 120,
+    densityGCm3: 1.20,
+    densitySource: 'Typical unfilled injection PC, 1.20 g/cm³ within 1.19–1.22 (Kik plastics property table; Jeek Mould density chart).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 3.70,
+    priceSource: 'Star Plastics North America market update, June 2026: polycarbonate $1.68/lb, converted at 2.20462 lb/kg.',
+    priceAsOf: '2026-06-01',
   }),
   Object.freeze({
     grade: 'PA66',
@@ -61,6 +91,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 300,
     moldTempLowC: 60,
     moldTempHighC: 90,
+    densityGCm3: 1.14,
+    densitySource: 'Typical unfilled dry PA66, 1.14 g/cm³ within 1.13–1.16 (Kik plastics property table; AGS unfilled PA66 specific gravity 1.14).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 4.19,
+    priceSource: 'Star Plastics North America market update, June 2026: nylon 66 $1.90/lb, converted at 2.20462 lb/kg.',
+    priceAsOf: '2026-06-01',
   }),
   Object.freeze({
     grade: 'POM',
@@ -73,6 +109,12 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 220,
     moldTempLowC: 60,
     moldTempHighC: 100,
+    densityGCm3: 1.41,
+    densitySource: 'Typical unfilled POM, 1.41 g/cm³ within 1.39–1.43 (Kik plastics property table; AGS acetal specific gravity 1.41).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 2.89,
+    priceSource: 'ZiJunPlastics POM price trends, September 2026: North America spot average about $2,890/t.',
+    priceAsOf: '2026-09-01',
   }),
   Object.freeze({
     grade: 'PC/ABS',
@@ -85,7 +127,19 @@ export const MOLDING_RESIN_SEED = Object.freeze([
     meltTempHighC: 280,
     moldTempLowC: 50,
     moldTempHighC: 80,
+    densityGCm3: 1.13,
+    densitySource: 'Typical unfilled PC/ABS, 1.13 g/cm³ within 1.10–1.18 (AGS specific-gravity table, Injectoblend FABSPC003).',
+    densityAsOf: '2026-11-01',
+    usdPerKg: 3.48,
+    priceSource: 'No separate PC/ABS transaction print. Midpoint of the June 2026 Star Plastics North America ABS ($3.26/kg) and PC ($3.70/kg) levels.',
+    priceAsOf: '2026-06-01',
   }),
 ]);
 
 export const MOLDING_RESIN_SEED_NOTE = 'Typical unfilled grade. Not a supplier datasheet.';
+
+/** Published density and $/kg for one library grade. Null when the grade is not in the table. */
+export function resinEconomics(grade) {
+  if (typeof grade !== 'string' || !grade) return null;
+  return MOLDING_RESIN_SEED.find((row) => row.grade === grade) || null;
+}

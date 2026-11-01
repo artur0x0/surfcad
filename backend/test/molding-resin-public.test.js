@@ -48,6 +48,18 @@ after(() => {
 });
 
 describe('public molding resin library', () => {
+  test('every seed grade has a published density and price', () => {
+    assert.equal(MOLDING_RESIN_SEED.length, 7);
+    for (const row of MOLDING_RESIN_SEED) {
+      assert.ok(row.densityGCm3 > 0, row.grade);
+      assert.ok(row.usdPerKg > 0, row.grade);
+      assert.match(row.densitySource, /\S/, row.grade);
+      assert.match(row.priceSource, /\S/, row.grade);
+      assert.match(row.densityAsOf, /^\d{4}-\d{2}-\d{2}$/, row.grade);
+      assert.match(row.priceAsOf, /^\d{4}-\d{2}-\d{2}$/, row.grade);
+    }
+  });
+
   test('an empty collection returns the seed and does not write', async () => {
     const res = await api('/api/molding/resin-library');
     assert.equal(res.status, 200);
@@ -60,6 +72,7 @@ describe('public molding resin library', () => {
     const abs = res.body.resins.find((row) => row.grade === 'ABS');
     assert.equal(abs.tensileModulusMpa, 2300);
     assert.equal(abs.usdPerKg, undefined);
+    assert.equal(abs.densityGCm3, undefined);
     assert.equal(abs.partnerId, undefined);
     assert.equal(library.rows.length, 0);
     assert.equal(prices.rows.length, 0);

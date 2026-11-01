@@ -12,6 +12,8 @@ import {
   projectedAreaMm2,
 } from './moldReport.js';
 import { readMoldReportXlsx, moldReportXlsx } from './moldReportXlsx.js';
+import { resinEconomics } from '../../backend/db/models/moldingResinSeed.js';
+import { REPORT_TOOLING_CARD } from './toolingRateCard.js';
 
 function boxMesh(min, max) {
   const [x0, y0, z0] = min;
@@ -185,12 +187,14 @@ test('plate, tray, cup, snap hook, and through hole report their own geometry', 
   assert.ok(plateReport.geometry.draft.below > 0);
   assert.equal(plateReport.geometry.draft.belowPositive, plateReport.geometry.draft.below);
   assert.equal(plateReport.geometry.draft.belowNegative, 0);
-  assert.equal(plateReport.estimates.massKg, null);
-  assert.match(plateReport.notes.mass, /density/);
+  const pcabs = resinEconomics('PC/ABS');
+  assert.equal(plateReport.estimates.massKg, Math.round((0.8 * pcabs.densityGCm3) / 1000 * 1e6) / 1e6);
+  assert.ok(plateReport.estimates.toolingUsd > 0);
   assert.equal(plateReport.estimates.toolingAluminumUsd, null);
-  assert.equal(plateReport.estimates.partUsd, null);
+  assert.equal(plateReport.assumptions.priceSource === 'published' || plateReport.notes.price != null, true);
   assert.ok(plateReport.estimates.pressTons > 0);
   assert.equal(plateReport.assumptions.rates, null);
+  assert.equal(plateReport.assumptions.published.card.baseMoldUsd, REPORT_TOOLING_CARD.baseMoldUsd);
   assert.equal(plateReport.assumptions.cavityPressureMpa, 50);
 
   const expected = [
@@ -210,7 +214,16 @@ test('plate, tray, cup, snap hook, and through hole report their own geometry', 
       name,
     );
     assert.ok(report.geometry.projectedAreaMm2 > 0, name);
-    assert.equal(report.estimates.massKg, null, name);
+    if (report.geometry.volumeCm3 > 0) {
+      assert.equal(
+        report.estimates.massKg,
+        Math.round((report.geometry.volumeCm3 * pcabs.densityGCm3) / 1000 * 1e6) / 1e6,
+        name,
+      );
+    } else {
+      assert.equal(report.estimates.massKg, null, name);
+      assert.match(report.notes.mass, /volume/, name);
+    }
   }
   const hole = reportOf(throughHole());
   assert.ok(Math.abs(hole.geometry.projectedAreaMm2 - 256) < 1e-6);
@@ -334,10 +347,113 @@ test('the workbook round-trips geometry, resin, quantity, estimates, and assumpt
   assert.equal(value('Below threshold')[2], '');
   assert.equal(value('Resin')[1], 'PC/ABS');
   assert.equal(value('Quantity')[1], 100);
-  assert.equal(value('Part mass (kg)')[1], '');
-  assert.match(String(value('Part mass (kg)')[2]), /density/);
+  const pcabs = resinEconomics('PC/ABS');
+  assert.equal(value('Part mass (kg)')[1], Math.round((0.8 * pcabs.densityGCm3) / 1000 * 1e6) / 1e6);
+  assert.equal(value('Resin density (g/cm3)')[1], pcabs.densityGCm3);
+  assert.match(String(value('Resin density (g/cm3)')[2]), /PC\/ABS|1\.13|unfilled/);
+  assert.equal(value('Resin price (USD/kg)')[1], pcabs.usdPerKg);
+  assert.equal(value('Resin price as of')[1], pcabs.priceAsOf);
+  assert.match(String(value('Resin price (USD/kg)')[2]), /PC\/ABS|Star Plastics|midpoint/);
+  assert.ok(Number(value('Tooling estimate (USD)')[1]) > 0);
+  assert.ok(Number(value('Part price (USD)')[1]) > 0);
+  assert.equal(value('Price path')[1], 'published');
+  assert.match(String(value('Part price formula')[1]), /toolingUsd \/ quantity/);
+  assert.match(String(value('Mass formula')[1]), /densityGCm3/);
+  assert.match(String(value('Rates')[1]), /baseMoldUsd=8000/);
+  assert.match(String(value('Rates')[2]), /not a supplier quote/i);
   assert.equal(value('Clamp pressure (MPa)')[1], 50);
   assert.equal(value('Fill (s)')[1], 2);
-  assert.match(String(value('Rates')[1]), /No tooling rate card/);
   assert.ok(rows.length > 20);
+});
+
+function money(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
+function round6(value) {
+  return Math.round(Number(value) * 1e6) / 1e6;
+}
+
+function pricedPlate(quantity, grade, extras = {}) {
+  const mesh = boxMesh([0, 0, 0], [100, 100, 10]);
+  return buildMoldReport({
+    positions: mesh.positions,
+    indices: mesh.indices,
+    analysis: {
+      kind: 'mold-analysis',
+      pull: [0, 0, 1],
+      sideActions: { count: extras.sides ?? 0, slideCount: extras.sides ?? 0, lifterCount: 0 },
+      wall: extras.wall === undefined ? { max: 2 } : extras.wall,
+      parting: { lines: [] },
+      moldDraft: { minDeg: 1, positiveAbove: 0, positiveBelow: 0, negative: 0 },
+    },
+    grade,
+    quantity,
+    library: [{ grade: 'PP' }, { grade: 'PC/ABS' }, { grade: 'ABS-GF30' }],
+  });
+}
+
+test('mass is volume times density, and a higher quantity lowers the part price', () => {
+  const card = REPORT_TOOLING_CARD;
+  const pcabs = resinEconomics('PC/ABS');
+  const pp = resinEconomics('PP');
+  const at25 = pricedPlate(25, 'PC/ABS');
+  const at1000 = pricedPlate(1000, 'PC/ABS');
+  const at17 = pricedPlate(17, 'PC/ABS');
+  const at10000 = pricedPlate(10000, 'PC/ABS');
+  const polypropylene = pricedPlate(1000, 'PP');
+  assert.equal(at1000.geometry.volumeCm3, 100);
+  assert.equal(at1000.geometry.projectedAreaMm2, 10000);
+  assert.equal(at1000.estimates.massKg, round6((100 * pcabs.densityGCm3) / 1000));
+  assert.equal(polypropylene.estimates.massKg, round6((100 * pp.densityGCm3) / 1000));
+  assert.notEqual(at1000.estimates.massKg, polypropylene.estimates.massKg);
+
+  const factor = Math.max(card.minSizeFactor, 10000 / card.referenceAreaMm2);
+  const tooling = money(card.baseMoldUsd * factor);
+  assert.equal(at1000.estimates.toolingUsd, tooling);
+  assert.equal(at25.estimates.toolingUsd, tooling);
+  assert.equal(at25.estimates.materialUsd, at1000.estimates.materialUsd);
+  assert.equal(at25.estimates.pressUsd, at1000.estimates.pressUsd);
+  const cycle = card.fillS + card.kCoolSPerMm2 * 4 + card.mechS;
+  assert.equal(at1000.estimates.cycleS, round6(cycle));
+  assert.equal(at1000.estimates.pressUsd, money((cycle / 3600) * card.machineRateUsdPerHour));
+  assert.equal(at1000.estimates.materialUsd, money(at1000.estimates.massKg * pcabs.usdPerKg));
+
+  const partAt = (report, quantity) => money(
+    report.estimates.materialUsd + report.estimates.pressUsd + report.estimates.toolingUsd / quantity,
+  );
+  assert.equal(at17.estimates.partUsd, partAt(at17, 17));
+  assert.equal(at25.estimates.partUsd, partAt(at25, 25));
+  assert.equal(at1000.estimates.partUsd, partAt(at1000, 1000));
+  assert.equal(at10000.estimates.partUsd, partAt(at10000, 10000));
+  assert.ok(at17.estimates.partUsd > at25.estimates.partUsd);
+  assert.ok(at25.estimates.partUsd > at1000.estimates.partUsd);
+  assert.ok(at1000.estimates.partUsd > at10000.estimates.partUsd);
+  assert.notEqual(polypropylene.estimates.partUsd, at1000.estimates.partUsd);
+  assert.equal(at1000.assumptions.priceSource, 'published');
+  assert.equal(at1000.assumptions.published.resin.densitySource, pcabs.densitySource);
+  assert.equal(at1000.assumptions.published.formulas.part, 'partUsd = materialUsd + pressUsd + toolingUsd / quantity');
+
+  const twoSides = pricedPlate(1000, 'PC/ABS', { sides: 2 });
+  assert.equal(twoSides.estimates.toolingUsd, money(tooling + 2 * card.sideActionAdderUsd));
+  assert.ok(twoSides.estimates.partUsd > at1000.estimates.partUsd);
+});
+
+test('a grade missing from the resin table is flagged and not guessed', () => {
+  const report = pricedPlate(1000, 'ABS-GF30');
+  assert.equal(report.estimates.massKg, null);
+  assert.match(report.notes.mass, /density/);
+  assert.equal(report.estimates.partUsd, null);
+  assert.match(report.notes.price, /density and price/);
+  assert.ok(report.estimates.toolingUsd > 0);
+  assert.equal(report.estimates.materialUsd, null);
+});
+
+test('a missing wall flags the part price and still reports mass and tooling', () => {
+  const report = pricedPlate(100, 'PC/ABS', { wall: null });
+  assert.ok(report.estimates.massKg > 0);
+  assert.ok(report.estimates.toolingUsd > 0);
+  assert.equal(report.estimates.pressUsd, null);
+  assert.equal(report.estimates.partUsd, null);
+  assert.match(report.notes.price, /wall/);
 });
