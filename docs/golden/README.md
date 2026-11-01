@@ -49,6 +49,7 @@ Gate acceptance still requires `test_real_worker.mjs` via `npm run verify` when 
 | `golden:agent-part-rename-commit` | `smoke_agent_part_rename_commit.mjs` |
 | `golden:agent-headless` | `smoke_agent_headless.mjs` |
 | `golden:agent-playtest` | `smoke_agent_playtest.mjs` |
+| `golden:agent-session-toast` | `smoke_agent_session_toast.mjs` |
 | `golden:agent-visible` | `smoke_agent_visible.mjs` |
 | `golden:app-loads` | `smoke_app_loads.mjs` |
 | `golden:artur-bend-fillet` | `smoke_artur_bend_fillet.mjs` |

@@ -61,6 +61,7 @@
         "golden:assembly-save-child-parts": "node scripts/golden/smoke_assembly_save_child_parts.mjs",
         "golden:agent-part-rename-commit": "node scripts/golden/smoke_agent_part_rename_commit.mjs",
         "golden:agent-playtest": "node scripts/golden/smoke_agent_playtest.mjs",
+        "golden:agent-session-toast": "node scripts/golden/smoke_agent_session_toast.mjs",
         "golden:agent-visible": "node scripts/golden/smoke_agent_visible.mjs",
         "playtest": "npm run build:playtest && node scripts/playtest/run.mjs",
         "playtest:visible": "npm run build && AGENT_VISIBLE=1 node scripts/playtest/run.mjs --scenario bracket-holes-fillet",

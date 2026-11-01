@@ -82,6 +82,12 @@
   /* The pane grows to about six lines of reply, then scrolls inside. */
   --agent-prompt-max-reply: min(200px, 40vh);
   --agent-prompt-max-reply-mobile: min(160px, 32vh);
+  /* Shared ErrorPopup inset. A 16px line + this pad on each side + the 1px
+     border is about half the old agent toast (44px button + 1px border
+     each side = 46px). The tap target stays --toast-hit and is not the
+     card height. See docs/ui-style-guide.md. */
+  --toast-pad: 4px;
+  --toast-hit: 44px;
   --agent-prompt-desktop-bottom: 48px;
   --agent-prompt-mobile-bottom: 56px;
   --agent-prompt-desktop-width: min(640px, calc(100% - 12rem));
@@ -453,6 +459,62 @@ textarea {
     }
   }
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
+  /* Default inset for ErrorPopup. Utilities (px-4 py-2, roomy py-0, stacked
+     p-3) still win, so those cards keep their own padding. */
+  .toast-card {
+    padding: var(--toast-pad);
+  }
+  /* Frost + tint sit on a sibling behind the words. surface-glass-chip's
+     backdrop-filter clips overflow to the radius, which would eat a hit
+     target that hangs outside the shorter card. */
+  .toast-glass {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+  /* Disconnect / Reconnect. 12px type, one-line box. The 44px hit is the
+     ::before below, so the card stays one line tall. */
+  [data-error-popup] .toast-action {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 1rem;
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: 0.375rem;
+    line-height: 1rem;
+    font-size: 12px;
+  }
+  /* Dismiss X on the short card. The roomy delete card keeps its own 44px box. */
+  [data-error-popup]:not([data-error-roomy]) [data-error-dismiss] {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    line-height: 1;
+  }
+  /* 44×44 hit. Anchored at the button's left so a narrow X grows outward,
+     into the card padding and past the card, not into the control beside it.
+     A wide label (Disconnect, Undo) is already ≥44px, so the hit matches it. */
+  [data-error-popup] [data-error-actions] > button {
+    position: relative;
+  }
+  [data-error-popup] [data-error-actions] > button::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: max(100%, var(--toast-hit));
+    height: var(--toast-hit);
+    transform: translateY(-50%);
+  }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }
   /* Join code on the server-relay Connect Agent screen. 32px is large text. */

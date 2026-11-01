@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(join(dir, 'AgentBridgePairing.jsx'), 'utf8');
+const TOAST = readFileSync(join(dir, 'AgentSessionToast.jsx'), 'utf8');
 const DIALOG = readFileSync(join(dir, 'AgentBridgePairingDialog.jsx'), 'utf8');
 const POPUP = readFileSync(join(dir, 'AgentBridgeApprovalPopup.jsx'), 'utf8');
 const CSS = readFileSync(join(dir, '../index.css'), 'utf8');
@@ -111,16 +112,22 @@ test('popup auto-closes when connected and shows the Agent connected toast, not 
   assert.match(SRC, /shouldClosePairingDialogOnConnect/);
   assert.match(SRC, /setFlowOpen\(false\)/);
   assert.doesNotMatch(SRC, /setToastOpen/);
-  assert.match(SRC, /data-agent-bridge-connected-toast/);
-  assert.match(SRC, /data-agent-bridge-disconnected-toast/);
-  assert.match(SRC, /AGENT_CONNECTED_TOAST_COPY/);
-  assert.match(SRC, /AGENT_CONNECTED_TOAST_MS/);
-  assert.match(SRC, /AGENT_DISCONNECTED_TOAST_COPY/);
-  assert.match(SRC, /data-ui-action="data-agent-connected-toast-disconnect"/);
-  assert.match(SRC, /data-ui-action="data-agent-disconnected-toast-reconnect"/);
+  assert.match(SRC, /<AgentSessionToast/);
+  assert.match(SRC, /onDisconnect=\{disconnectFromUser\}/);
+  assert.match(SRC, /beginConnectFlow\(\)/);
   assert.match(SRC, /shouldToastAgentDisconnect/);
+  assert.match(TOAST, /data-agent-bridge-connected-toast/);
+  assert.match(TOAST, /data-agent-bridge-disconnected-toast/);
+  assert.match(TOAST, /AGENT_CONNECTED_TOAST_COPY/);
+  assert.match(TOAST, /AGENT_CONNECTED_TOAST_MS/);
+  assert.match(TOAST, /AGENT_DISCONNECTED_TOAST_COPY/);
+  assert.match(TOAST, /data-ui-action="data-agent-connected-toast-disconnect"/);
+  assert.match(TOAST, /data-ui-action="data-agent-disconnected-toast-reconnect"/);
+  assert.match(TOAST, /toast-action/);
+  assert.doesNotMatch(TOAST, /min-h-\[44px\]/);
   assert.doesNotMatch(SRC, /data-agent-connected-banner/);
   assert.doesNotMatch(SRC, /data-agent-connected-disconnect/);
+  assert.doesNotMatch(TOAST, /data-agent-connected-banner/);
 });
 
 test('connection ring is a wrap sibling with a glow, not a rotated child of the glass chip', () => {
