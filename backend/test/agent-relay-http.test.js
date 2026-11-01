@@ -865,6 +865,43 @@ describe('agent relay HTTP', () => {
     }
   });
 
+  test('GET /agent/prompts with a pull session is offered held prompts once; taken removes them; without one it drains', async () => {
+    const clock = createManualClock(0);
+    const relay = createAgentRelay({ clock });
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'poller' });
+    const held = (id) => relay.registry.deliverPrompt('user-a', { type: 'agent.prompt', v: 1, id, text: id }, {});
+    // The first pull stamps presence, so the next prompt is held for this agent.
+    assert.equal((await send(port, '/agent/prompts?timeout=0&session=proc0000000001', { token: issued.token })).status, 200);
+    held('p1');
+    const first = await send(port, '/agent/prompts?timeout=0&session=proc0000000001', { token: issued.token });
+    assert.deepEqual(first.body.messages.map((m) => m.id), ['p1']);
+    const again = await send(port, '/agent/prompts?timeout=0&session=proc0000000001', { token: issued.token });
+    assert.deepEqual(again.body.messages, []);
+    const next = await send(port, '/agent/prompts?timeout=0&session=proc0000000002', { token: issued.token });
+    assert.deepEqual(next.body.messages.map((m) => m.id), ['p1']);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), ['p1']);
+    const taken = await send(port, '/agent/prompts', {
+      method: 'POST',
+      token: issued.token,
+      body: { type: 'agent.prompt.taken', v: 1, ids: ['p1'] },
+    });
+    assert.equal(taken.status, 202);
+    assert.deepEqual(taken.body, { ok: true, taken: 1 });
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), []);
+    const third = await send(port, '/agent/prompts?timeout=0&session=proc0000000003', { token: issued.token });
+    assert.deepEqual(third.body.messages, []);
+    // An older client with no session id, or a malformed one, drains.
+    held('p2');
+    const legacy = await send(port, '/agent/prompts?timeout=0&session=x', { token: issued.token });
+    assert.deepEqual(legacy.body.messages.map((m) => m.id), ['p2']);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), []);
+    held('p3');
+    const plain = await send(port, '/agent/prompts?timeout=0', { token: issued.token });
+    assert.deepEqual(plain.body.messages.map((m) => m.id), ['p3']);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), []);
+  });
+
   test('DELETE /agent/tokens/self revokes only the calling token', async () => {
     const relay = createAgentRelay();
     const port = await listen(relay);

@@ -888,6 +888,81 @@ describe('agent relay websocket', () => {
     tab.ws.close();
   });
 
+  test('a prompt for a present agent is held for the next process until one takes it', async () => {
+    const clock = createManualClock(0);
+    const relay = createAgentRelay({ clock, promptHoldMs: 1000 });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const tab = openSocket(url, { origin: 'http://localhost:5173', 'x-test-user': 'user-a' });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'one-shot' });
+    const hello = async () => {
+      const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+      await agent.opened;
+      agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+      assert.equal((await agent.nextMessage()).type, 'hello');
+      return agent;
+    };
+
+    // Process 1: one tool call, then the process exits.
+    const first = await hello();
+    assert.equal((await tab.nextMessage()).connected, true);
+    first.ws.close();
+    await sleep(40);
+
+    // Between calls the tab sends a prompt: held, and queued at once.
+    const promptId = '44444444-4444-4444-8444-444444444444';
+    tab.ws.send(JSON.stringify({ type: 'agent.prompt', v: 1, id: promptId, text: 'held for the next process' }));
+    const queued = await tab.nextMessage();
+    assert.deepEqual(queued, { type: 'agent.prompt.ack', id: promptId, delivery: 'queued' });
+    clock.advance(5000);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), [promptId]);
+
+    // Process 2 is offered the prompt on hello and exits without reading it.
+    const second = await hello();
+    const offered = await second.nextMessage();
+    assert.equal(offered.type, 'agent.prompt');
+    assert.equal(offered.id, promptId);
+    assert.equal(offered.text, 'held for the next process');
+    second.ws.close();
+    await sleep(40);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), [promptId]);
+
+    // Process 3 is offered it again and reports it taken (read_messages returned it).
+    const third = await hello();
+    assert.equal((await third.nextMessage()).id, promptId);
+    third.ws.send(JSON.stringify({ type: 'agent.prompt.taken', v: 1, ids: [promptId] }));
+    await sleep(30);
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), []);
+    third.ws.close();
+    await sleep(40);
+
+    // The taken frame never reaches the tab.
+    assert.equal(tab.ws.readyState, WebSocket.OPEN);
+
+    // A second prompt, then close_session: the held prompt fails back to the
+    // tab before the agent-down frame.
+    const secondId = '55555555-5555-4555-8555-555555555555';
+    tab.ws.send(JSON.stringify({ type: 'agent.prompt', v: 1, id: secondId, text: 'never read' }));
+    assert.equal((await tab.nextMessage()).delivery, 'queued');
+    const fourth = await hello();
+    assert.equal((await fourth.nextMessage()).id, secondId);
+    fourth.ws.send(JSON.stringify({ type: 'agent.close_session', v: 1 }));
+    const failed = await tab.nextMessage();
+    assert.deepEqual(failed, { type: 'agent.prompt.ack', id: secondId, delivery: 'failed', error: 'not_paired' });
+    const down = await tab.nextMessage();
+    assert.equal(down.type, 'agent');
+    assert.equal(down.connected, false);
+    assert.equal(down.reason, 'closed');
+    assert.deepEqual(relay.registry.heldPromptIds('user-a'), []);
+    fourth.ws.close();
+    tab.ws.close();
+  });
+
   test('a paired agent can post a session note, and a tab or another user cannot', async () => {
     const clock = createManualClock(0);
     const relay = createAgentRelay({ clock });
@@ -1245,7 +1320,13 @@ describe('agent relay websocket', () => {
     tabB.ws.send(JSON.stringify({
       type: 'agent.prompt', v: 1, id: promptId, text: 'still here',
     }));
-    await sleep(20);
+    // The agent is present with no socket open: the prompt is held for it
+    // and the tab hears queued at once.
+    const queued = await tabB.nextMessage();
+    assert.equal(queued.type, 'agent.prompt.ack');
+    assert.equal(queued.id, promptId);
+    assert.equal(queued.delivery, 'queued');
+    assert.deepEqual(relay.registry.heldPromptIds('user-b'), [promptId]);
 
     clock.advance(TOKEN_TTL_MS - 1);
     const still = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {

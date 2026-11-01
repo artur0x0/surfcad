@@ -318,6 +318,79 @@ describe('tab registry', () => {
     assert.equal(registry.forwardToAgents('nobody', { type: 'agent.prompt', text: 'no' }), 0);
   });
 
+  test('a prompt for a present agent is held until taken, offered once per consumer, and fails when presence ends', async () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock, promptHoldMs: 1000, presenceTtlMs: 10_000 });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    const expired = [];
+    const prompt = (id) => ({ type: 'agent.prompt', v: 1, id, text: id });
+    const expireNote = (id) => ({ onExpire() { expired.push(id); } });
+
+    // Present (a one-shot process stamped last-seen) with no socket open:
+    // no short hold, and each new consumer is offered the prompt once.
+    registry.noteAgentSeen('user-a');
+    assert.deepEqual(registry.deliverPrompt('user-a', prompt('p1'), expireNote('p1')), { delivered: 0, held: true, present: true });
+    clock.advance(5000);
+    assert.deepEqual(expired, []);
+    assert.deepEqual(registry.offerPrompts('user-a', 'sock-1').map((f) => f.id), ['p1']);
+    assert.deepEqual(registry.offerPrompts('user-a', 'sock-1'), []);
+    assert.deepEqual(registry.offerPrompts('user-a', 'sock-2').map((f) => f.id), ['p1']);
+    assert.deepEqual(registry.heldPromptIds('user-a'), ['p1']);
+    assert.equal(registry.takeHeldPrompts('user-a', ['nope']), 0);
+    assert.equal(registry.takeHeldPrompts('user-a', 'p1'), 0);
+    assert.equal(registry.takeHeldPrompts('user-a', ['p1']), 1);
+    assert.deepEqual(registry.heldPromptIds('user-a'), []);
+    assert.deepEqual(registry.offerPrompts('user-a', 'sock-3'), []);
+
+    // A live socket gets it now and counts as offered; the row is still held
+    // for the next socket until that process reports it taken.
+    const agent = [];
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag1', send: (frame) => agent.push(frame) });
+    assert.deepEqual(registry.deliverPrompt('user-a', prompt('p2'), expireNote('p2')), { delivered: 1, held: true, present: true });
+    assert.equal(agent.at(-1).id, 'p2');
+    assert.deepEqual(registry.offerPrompts('user-a', 'ag1'), []);
+    assert.deepEqual(registry.offerPrompts('user-a', 'ag2').map((f) => f.id), ['p2']);
+
+    // The HTTPS pull: offered once per pull session, and a waiting pull
+    // session is woken with only the rows it has not seen.
+    const first = await registry.waitPrompts('user-a', 5000, 'tok-a', 'pull-1');
+    assert.deepEqual(first.messages.map((f) => f.id), ['p2']);
+    const pending = registry.waitPrompts('user-a', 5000, 'tok-a', 'pull-1');
+    const other = registry.waitPrompts('user-a', 5000, 'tok-a', 'pull-2');
+    assert.deepEqual((await other).messages.map((f) => f.id), ['p2']);
+    registry.deliverPrompt('user-a', prompt('p3'), expireNote('p3'));
+    assert.deepEqual((await pending).messages.map((f) => f.id), ['p3']);
+    assert.deepEqual(registry.heldPromptIds('user-a'), ['p2', 'p3']);
+
+    // Presence ends with no activity: every held row fails back to the tab.
+    registry.unregisterAgent('user-a', 'ag1');
+    clock.advance(10_000);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.deepEqual(expired, ['p2', 'p3']);
+    assert.deepEqual(registry.heldPromptIds('user-a'), []);
+
+    // close_session fails them too.
+    registry.noteAgentSeen('user-a');
+    registry.deliverPrompt('user-a', prompt('p4'), expireNote('p4'));
+    registry.endAgentSession('user-a');
+    assert.deepEqual(expired, ['p2', 'p3', 'p4']);
+
+    // Not present: the short hold, which an offer cancels.
+    assert.deepEqual(registry.deliverPrompt('user-a', prompt('p5'), expireNote('p5')), { delivered: 0, held: true, present: false });
+    clock.advance(999);
+    assert.deepEqual(registry.offerPrompts('user-a', 'sock-9').map((f) => f.id), ['p5']);
+    clock.advance(5000);
+    assert.deepEqual(expired, ['p2', 'p3', 'p4'], 'an offered prompt does not time out');
+    // An older client with no pull session drains what is left.
+    assert.deepEqual(registry.drainPrompts('user-a').map((f) => f.id), ['p5']);
+    assert.deepEqual(registry.heldPromptIds('user-a'), []);
+    // Not present and nobody comes: the short hold fails it.
+    registry.deliverPrompt('user-a', prompt('p6'), expireNote('p6'));
+    clock.advance(1000);
+    assert.deepEqual(expired, ['p2', 'p3', 'p4', 'p6']);
+  });
+
   test('a session note is one per second per account', () => {
     const clock = createManualClock(0);
     const registry = createMemoryTabRegistry({ clock, sessionMessageGapMs: 1000 });

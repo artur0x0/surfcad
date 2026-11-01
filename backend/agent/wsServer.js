@@ -461,13 +461,14 @@ function bindAgent(ws, auth, relay) {
         }, seen);
         if (accepted === false) {
           ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
-          return;
+          return undefined;
         }
         if (accepted !== true) {
           refuseDeadToken(ws, 'revoked', undefined, relay, auth);
-          return;
+          return undefined;
         }
         agentId = id;
+        return id;
       },
     }).catch(() => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'internal');
@@ -510,7 +511,7 @@ function refuseDeadToken(ws, live, id, relay, auth) {
  * }} relay
  * @param {import('ws').RawData} data
  * @param {boolean} isBinary
- * @param {{ isReady: () => boolean, markReady: () => void }} ready
+ * @param {{ isReady: () => boolean, markReady: (seen?: { clearHold?: boolean, epoch?: number }) => string | undefined }} ready
  */
 async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   if (isBinary) {
@@ -548,10 +549,16 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
       ws.close(1008, error);
       return;
     }
-    ready.markReady({ clearHold: true, epoch });
+    const consumer = ready.markReady({ clearHold: true, epoch });
     if (ws.readyState !== WebSocket.OPEN) return;
     sendJson(ws, { type: 'hello', v: version.v });
-    for (const frame of relay.registry.drainPrompts(auth.userId)) {
+    // Held prompts are offered to this socket and stay held until the
+    // process reports them taken, so a one-shot process that exits first
+    // does not lose them.
+    const held = typeof consumer === 'string'
+      ? relay.registry.offerPrompts(auth.userId, consumer)
+      : relay.registry.drainPrompts(auth.userId);
+    for (const frame of held) {
       sendJson(ws, frame);
     }
     return;
@@ -571,6 +578,11 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   }
   if (msg?.type === 'agent.progress') {
     relay.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true });
+    return;
+  }
+  if (msg?.type === 'agent.prompt.taken') {
+    // Agent → server only: these prompts reached the agent. Not forwarded.
+    relay.registry.takeHeldPrompts(auth.userId, msg.ids);
     return;
   }
   if (msg?.type === 'agent.message') {

@@ -33,4 +33,10 @@ export const PAIR_MSG = Object.freeze({
   AGENT_PROMPT_CANCEL: 'agent.prompt.cancel',
   /** Agent → page. Contract v:1. `{ id, state }`. */
   AGENT_PROMPT_CANCEL_RESULT: 'agent.prompt.cancel.result',
+  /**
+   * Agent → server relay only. Contract v:1. `{ ids }`: prompts the agent
+   * has now (read_messages returned them, or the webhook POST succeeded),
+   * so the server stops holding them for the next process. Not forwarded.
+   */
+  AGENT_PROMPT_TAKEN: 'agent.prompt.taken',
 });
