@@ -306,9 +306,11 @@ describe('tab registry', () => {
     registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p5', text: 'flush' }, {
       onExpire() { expired.push('p5'); },
     });
-    assert.equal(registry.drainPrompts('user-a')[0].text, 'flush');
+    registry.abortToken('tok-a', 'user-a');
+    assert.deepEqual(registry.drainPrompts('user-a'), []);
+    assert.deepEqual(expired, ['p3', 'p5']);
     clock.advance(1000);
-    assert.deepEqual(expired, ['p3']);
+    assert.deepEqual(expired, ['p3', 'p5']);
     const agent = [];
     registry.registerAgent({ userId: 'user-a', agentId: 'ag', send: (frame) => agent.push(frame) });
     assert.equal(registry.forwardToAgents('user-a', { type: 'agent.prompt', text: 'live' }), 1);

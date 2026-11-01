@@ -430,7 +430,7 @@ export function createAgentRouter(deps) {
       if (!auth) return res.status(401).json({ error: 'Authentication required' });
       const revoked = await deps.tokens.revoke(auth.userId, auth.id);
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(auth.id);
+      deps.registry.abortToken(auth.id, auth.userId);
       deps.agentSockets.closeToken(auth.id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
       logRelay({ event: 'token-revoke', userId: auth.userId });
       return res.json({ ok: true });
@@ -448,7 +448,7 @@ export function createAgentRouter(deps) {
       const tokenId = String(req.params.id);
       const revoked = await deps.tokens.revoke(user.id, tokenId);
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(tokenId);
+      deps.registry.abortToken(tokenId, user.id);
       deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });

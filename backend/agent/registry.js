@@ -177,6 +177,16 @@ export function createMemoryTabRegistry(opts = {}) {
     return true;
   }
 
+  /**
+   * Fail every held prompt for this account. Same ack as a hold expiry.
+   * @param {string} userId
+   */
+  function expireHeldPrompts(userId) {
+    const rows = promptInbox.get(String(userId));
+    if (!rows || rows.length === 0) return;
+    for (const row of [...rows]) row.onExpire();
+  }
+
   /** @param {string} key */
   function wakePromptWaiters(key) {
     const pending = promptWaiters.get(key);
@@ -504,15 +514,20 @@ export function createMemoryTabRegistry(opts = {}) {
 
     /**
      * End long-poll and SSE waits for one token, and drop its unread results.
+     * When `userId` is set, held tab prompts for that account expire too:
+     * each row tells the tab delivery failed, and a later hello or
+     * `GET /agent/prompts` cannot take them.
      * @param {string} tokenId
+     * @param {string} [userId]
      */
-    abortToken(tokenId) {
+    abortToken(tokenId, userId) {
       const id = String(tokenId);
-      for (const [userId, list] of [...promptWaiters.entries()]) {
+      if (userId != null && String(userId) !== '') expireHeldPrompts(userId);
+      for (const [waiterUserId, list] of [...promptWaiters.entries()]) {
         for (const waiter of [...list]) {
           if (waiter.tokenId === id) waiter.abort();
         }
-        if ((promptWaiters.get(userId)?.length || 0) === 0) promptWaiters.delete(userId);
+        if ((promptWaiters.get(waiterUserId)?.length || 0) === 0) promptWaiters.delete(waiterUserId);
       }
       for (const item of [...pending.values()]) {
         if (item.tokenId !== id || item.finished) continue;
