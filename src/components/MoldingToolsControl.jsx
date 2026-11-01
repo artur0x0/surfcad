@@ -27,21 +27,27 @@ import { toolToggleClass } from './toolToggle';
 const MoldingToolsControl = ({
   showWall = false,
   wallActive = false,
+  wallPending = false,
   onWallToggle = null,
   showParting = false,
   partingActive = false,
+  partingPending = false,
   onPartingToggle = null,
   showSideActions = false,
   sideActionsActive = false,
+  sideActionsPending = false,
   onSideActionsToggle = null,
   showMoldDraft = false,
   moldDraftActive = false,
+  moldDraftPending = false,
   onMoldDraftToggle = null,
   showDfm = false,
   dfmActive = false,
+  dfmPending = false,
   onDfmToggle = null,
   showQuote = false,
   quoteActive = false,
+  quotePending = false,
   onQuoteToggle = null,
   /** Initial open state. The rail leaves this unset; tests pass true. */
   defaultOpen = false,
@@ -49,12 +55,13 @@ const MoldingToolsControl = ({
   const [open, setOpen] = useState(!!defaultOpen);
   const anyShown = showWall || showParting || showSideActions || showMoldDraft || showDfm || showQuote;
   if (!anyShown) return null;
-  const anyOn = (showWall && wallActive)
-    || (showParting && partingActive)
-    || (showSideActions && sideActionsActive)
-    || (showMoldDraft && moldDraftActive)
-    || (showDfm && dfmActive)
-    || (showQuote && quoteActive);
+  const anyOn = (showWall && (wallActive || wallPending))
+    || (showParting && (partingActive || partingPending))
+    || (showSideActions && (sideActionsActive || sideActionsPending))
+    || (showMoldDraft && (moldDraftActive || moldDraftPending))
+    || (showDfm && (dfmActive || dfmPending))
+    || (showQuote && (quoteActive || quotePending));
+  const toolState = (active, pending) => (pending ? 'pending' : (active ? 'on' : 'off'));
 
   return (
     <div className="relative flex" data-mold-tools="">
@@ -71,12 +78,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onWallToggle)}
-              className={toolToggleClass(wallActive)}
-              title={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
-              aria-label={wallActive ? 'Hide wall thickness' : 'Show wall thickness'}
+              className={toolToggleClass(wallActive || wallPending)}
+              title={wallPending ? 'Computing wall thickness' : (wallActive ? 'Hide wall thickness' : 'Show wall thickness')}
+              aria-label={wallPending ? 'Computing wall thickness' : (wallActive ? 'Hide wall thickness' : 'Show wall thickness')}
               aria-pressed={!!wallActive}
+              aria-busy={wallPending || undefined}
               data-wall-heatmap=""
-              data-wall-heatmap-state={wallActive ? 'on' : 'off'}
+              data-wall-heatmap-state={toolState(wallActive, wallPending)}
               data-ui-action="data-wall-heatmap"
             >
               <AlignHorizontalSpaceAround size={20} />
@@ -86,12 +94,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onPartingToggle)}
-              className={toolToggleClass(partingActive)}
-              title={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
-              aria-label={partingActive ? 'Hide core and cavity' : 'Show core and cavity'}
+              className={toolToggleClass(partingActive || partingPending)}
+              title={partingPending ? 'Computing core and cavity' : (partingActive ? 'Hide core and cavity' : 'Show core and cavity')}
+              aria-label={partingPending ? 'Computing core and cavity' : (partingActive ? 'Hide core and cavity' : 'Show core and cavity')}
               aria-pressed={!!partingActive}
+              aria-busy={partingPending || undefined}
               data-mold-parting=""
-              data-mold-parting-state={partingActive ? 'on' : 'off'}
+              data-mold-parting-state={toolState(partingActive, partingPending)}
               data-ui-action="data-mold-parting"
             >
               <SquareSplitHorizontal size={20} />
@@ -101,12 +110,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onSideActionsToggle)}
-              className={toolToggleClass(sideActionsActive)}
-              title={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
-              aria-label={sideActionsActive ? 'Hide side actions' : 'Show side actions'}
+              className={toolToggleClass(sideActionsActive || sideActionsPending)}
+              title={sideActionsPending ? 'Computing side actions' : (sideActionsActive ? 'Hide side actions' : 'Show side actions')}
+              aria-label={sideActionsPending ? 'Computing side actions' : (sideActionsActive ? 'Hide side actions' : 'Show side actions')}
               aria-pressed={!!sideActionsActive}
+              aria-busy={sideActionsPending || undefined}
               data-mold-side-actions=""
-              data-mold-side-actions-state={sideActionsActive ? 'on' : 'off'}
+              data-mold-side-actions-state={toolState(sideActionsActive, sideActionsPending)}
               data-ui-action="data-mold-side-actions"
             >
               <ArrowLeftRight size={20} />
@@ -116,12 +126,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onMoldDraftToggle)}
-              className={toolToggleClass(moldDraftActive)}
-              title={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
-              aria-label={moldDraftActive ? 'Hide mold draft' : 'Show mold draft'}
+              className={toolToggleClass(moldDraftActive || moldDraftPending)}
+              title={moldDraftPending ? 'Computing mold draft' : (moldDraftActive ? 'Hide mold draft' : 'Show mold draft')}
+              aria-label={moldDraftPending ? 'Computing mold draft' : (moldDraftActive ? 'Hide mold draft' : 'Show mold draft')}
               aria-pressed={!!moldDraftActive}
+              aria-busy={moldDraftPending || undefined}
               data-mold-draft=""
-              data-mold-draft-state={moldDraftActive ? 'on' : 'off'}
+              data-mold-draft-state={toolState(moldDraftActive, moldDraftPending)}
               data-ui-action="data-mold-draft"
             >
               <ArrowUpFromLine size={20} />
@@ -131,12 +142,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onDfmToggle)}
-              className={toolToggleClass(dfmActive)}
-              title={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
-              aria-label={dfmActive ? 'Hide DFM report' : 'Show DFM report'}
+              className={toolToggleClass(dfmActive || dfmPending)}
+              title={dfmPending ? 'Computing DFM report' : (dfmActive ? 'Hide DFM report' : 'Show DFM report')}
+              aria-label={dfmPending ? 'Computing DFM report' : (dfmActive ? 'Hide DFM report' : 'Show DFM report')}
               aria-pressed={!!dfmActive}
+              aria-busy={dfmPending || undefined}
               data-mold-dfm=""
-              data-mold-dfm-state={dfmActive ? 'on' : 'off'}
+              data-mold-dfm-state={toolState(dfmActive, dfmPending)}
               data-ui-action="data-mold-dfm"
             >
               <ClipboardList size={20} />
@@ -146,12 +158,13 @@ const MoldingToolsControl = ({
             <button
               type="button"
               onClick={() => pressMoldTool(setOpen, onQuoteToggle)}
-              className={toolToggleClass(quoteActive)}
-              title={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
-              aria-label={quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote'}
+              className={toolToggleClass(quoteActive || quotePending)}
+              title={quotePending ? 'Computing budgetary quote' : (quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote')}
+              aria-label={quotePending ? 'Computing budgetary quote' : (quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote')}
               aria-pressed={!!quoteActive}
+              aria-busy={quotePending || undefined}
               data-mold-quote=""
-              data-mold-quote-state={quoteActive ? 'on' : 'off'}
+              data-mold-quote-state={toolState(quoteActive, quotePending)}
               data-ui-action="data-mold-quote"
             >
               <Receipt size={20} />

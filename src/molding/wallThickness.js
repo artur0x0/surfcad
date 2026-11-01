@@ -42,7 +42,20 @@
  *
  * Spacing is min(0.5 × nominal, 0.8 mm), raised so the probe count stays
  * under 80k. A centroid pass estimates nominal before that spacing. The ray
- * grid is a broadphase for the ray, not a second thickness definition.
+ * and the sphere share one BVH. The BVH is a broadphase, not a second
+ * thickness definition.
+ *
+ * A triangle shorter than 0.05 mm across is a float needle, not a wall: a
+ * square-cut rim on a mesh whose face is not float32-exact grows a fan of
+ * those along the outer edge. Their samples sit on that edge, so the
+ * shrinking ball is bounded by the adjacent side facet and the five
+ * iterations stop near 1 mm instead of the rim width. A needle copies the
+ * thickness of the face it belongs to. A rib end is wider than that
+ * cutoff, so it still reads the rib. Manifold repeats a vertex under a
+ * new index, so the copy walks edges after welding positions within
+ * 0.01 mm. A crack on that face can wind the other way; either winding
+ * counts. Opposite skins of a real wall do not share an edge and stay
+ * hitable.
  */
 
 export const MOLD_WALL_THIN_RATIO = 0.6;
@@ -54,7 +67,6 @@ export const MOLD_WALL_MODE_FRACTION = 0.35;
 export const MOLD_WALL_BIN_MM = 0.1;
 /** Bin width is at least this fraction of the band median. */
 export const MOLD_WALL_BIN_FRACTION = 0.05;
-export const MOLD_WALL_GRID_CELLS = 16;
 /** Hits closer than this are the source surface, not a wall. */
 export const MOLD_WALL_HIT_EPS_MM = 1e-4;
 /** |n_hit · ray| below this is a grazing ray and is not used. */
@@ -69,6 +81,9 @@ export const MOLD_WALL_SPACING_FACTOR = 0.5;
 /** Raised spacing keeps the refined probe count at or under this. */
 export const MOLD_WALL_MAX_SAMPLES = 80000;
 export const MOLD_WALL_SPHERE_ITERS = 5;
+/** Altitude below this is a float needle on a coplanar face, not its own wall. */
+export const MOLD_WALL_SLIVER_ALTITUDE_MM = 0.05;
+const SLIVER_COPLANAR_COS = Math.cos((2 * Math.PI) / 180);
 const MOLD_WALL_MIN_SPACING_MM = 0.05;
 const MOLD_WALL_MAX_STEPS = 48;
 
@@ -230,11 +245,97 @@ function edgeKey(i, j) {
   return i < j ? `${i},${j}` : `${j},${i}`;
 }
 
+/** Positions within this share one edge endpoint. Same tolerance as parting. */
+const ADJACENCY_WELD_MM = 0.01;
+
+/**
+ * Map each vertex index to one representative. Two indices whose positions
+ * are within `ADJACENCY_WELD_MM` share a representative, including across a
+ * bin edge. A needle then shares an edge with the coplanar face it hangs
+ * from even when Manifold stored that corner twice.
+ */
+function weldCanon(tris) {
+  const scale = 1 / ADJACENCY_WELD_MM;
+  const bins = new Map();
+  const points = [];
+  const seen = new Set();
+  const add = (index, p) => {
+    if (seen.has(index)) return;
+    seen.add(index);
+    const slot = points.length;
+    points.push({ index, p });
+    const key = `${Math.round(p[0] * scale)},${Math.round(p[1] * scale)},${Math.round(p[2] * scale)}`;
+    let list = bins.get(key);
+    if (!list) {
+      list = [];
+      bins.set(key, list);
+    }
+    list.push(slot);
+  };
+  for (const tri of tris) {
+    add(tri.ia, tri.a);
+    add(tri.ib, tri.b);
+    add(tri.ic, tri.c);
+  }
+  const parent = points.map((_, i) => i);
+  const find = (i) => {
+    let x = i;
+    while (parent[x] !== x) x = parent[x];
+    let y = i;
+    while (parent[y] !== y) {
+      const next = parent[y];
+      parent[y] = x;
+      y = next;
+    }
+    return x;
+  };
+  const unite = (a, b) => {
+    const pa = find(a);
+    const pb = find(b);
+    if (pa !== pb) parent[pb] = pa;
+  };
+  const limit = ADJACENCY_WELD_MM * ADJACENCY_WELD_MM;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i].p;
+    const ix = Math.round(p[0] * scale);
+    const iy = Math.round(p[1] * scale);
+    const iz = Math.round(p[2] * scale);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const list = bins.get(`${ix + dx},${iy + dy},${iz + dz}`);
+          if (!list) continue;
+          for (const j of list) {
+            if (j <= i) continue;
+            const q = points[j].p;
+            const ddx = p[0] - q[0];
+            const ddy = p[1] - q[1];
+            const ddz = p[2] - q[2];
+            if (ddx * ddx + ddy * ddy + ddz * ddz <= limit) unite(i, j);
+          }
+        }
+      }
+    }
+  }
+  const canon = new Map();
+  for (let i = 0; i < points.length; i++) {
+    canon.set(points[i].index, points[find(i)].index);
+  }
+  return canon;
+}
+
 function buildAdjacency(tris) {
+  const canon = weldCanon(tris);
+  const id = (index) => canon.get(index) ?? index;
   const edges = new Map();
   for (const tri of tris) {
-    const pairs = [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]];
+    const pairs = [
+      [id(tri.ia), id(tri.ib)],
+      [id(tri.ib), id(tri.ic)],
+      [id(tri.ic), id(tri.ia)],
+    ];
     for (const [i, j] of pairs) {
+      if (i === j) continue;
       const key = edgeKey(i, j);
       let list = edges.get(key);
       if (!list) {
@@ -268,7 +369,7 @@ function buildAdjacency(tris) {
     raySkip.set(tri.t, ray);
     sphereSkip.set(tri.t, sphere);
   }
-  return { raySkip, sphereSkip };
+  return { raySkip, sphereSkip, neighbors };
 }
 
 function rayTriangle(origin, dir, tri) {
@@ -289,7 +390,7 @@ function rayTriangle(origin, dir, tri) {
   return t;
 }
 
-function buildGrid(tris) {
+function meshDiag(tris) {
   let min = [Infinity, Infinity, Infinity];
   let max = [-Infinity, -Infinity, -Infinity];
   for (const tri of tris) {
@@ -300,106 +401,59 @@ function buildGrid(tris) {
       }
     }
   }
-  const diag = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
-  const pad = Math.max(MOLD_WALL_HIT_EPS_MM, diag * 1e-6);
-  min = [min[0] - pad, min[1] - pad, min[2] - pad];
-  max = [max[0] + pad, max[1] + pad, max[2] + pad];
-  const cells = MOLD_WALL_GRID_CELLS;
-  const size = [0, 1, 2].map((k) => Math.max((max[k] - min[k]) / cells, 1e-9));
-  const buckets = new Array(cells * cells * cells);
-  const span = cells * cells;
-  for (const tri of tris) {
-    const lo = [0, 0, 0];
-    const hi = [0, 0, 0];
-    for (let k = 0; k < 3; k++) {
-      let a = tri.a[k];
-      let b = tri.b[k];
-      let c = tri.c[k];
-      if (b < a) a = b;
-      if (c < a) a = c;
-      b = tri.a[k];
-      if (tri.b[k] > b) b = tri.b[k];
-      if (tri.c[k] > b) b = tri.c[k];
-      lo[k] = Math.max(0, Math.min(cells - 1, Math.floor((a - min[k]) / size[k])));
-      hi[k] = Math.max(0, Math.min(cells - 1, Math.floor((b - min[k]) / size[k])));
-    }
-    for (let iz = lo[2]; iz <= hi[2]; iz++) {
-      for (let iy = lo[1]; iy <= hi[1]; iy++) {
-        for (let ix = lo[0]; ix <= hi[0]; ix++) {
-          const key = ix + cells * iy + span * iz;
-          let bucket = buckets[key];
-          if (!bucket) {
-            bucket = [];
-            buckets[key] = bucket;
-          }
-          bucket.push(tri);
-        }
-      }
-    }
-  }
-  return { min, size, cells, span, buckets, diag };
+  return Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 }
 
-function cellIndex(grid, p, axis) {
-  const i = Math.floor((p[axis] - grid.min[axis]) / grid.size[axis]);
-  if (i < 0) return 0;
-  if (i >= grid.cells) return grid.cells - 1;
-  return i;
+/** Entry distance of a ray against an AABB. Null when the ray misses. A box the ray starts inside returns 0. */
+function rayBoxEntry(origin, dir, min, max) {
+  let tmin = 0;
+  let tmax = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const d = dir[k];
+    if (Math.abs(d) < 1e-15) {
+      if (origin[k] < min[k] - 1e-8 || origin[k] > max[k] + 1e-8) return null;
+      continue;
+    }
+    let t1 = (min[k] - origin[k]) / d;
+    let t2 = (max[k] - origin[k]) / d;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax + 1e-8) return null;
+  }
+  return tmin > 0 ? tmin : 0;
 }
 
-function nearestHit(origin, dir, grid, skip, seen, stamp) {
-  const { cells, size, min, buckets, span } = grid;
-  let ix = cellIndex(grid, origin, 0);
-  let iy = cellIndex(grid, origin, 1);
-  let iz = cellIndex(grid, origin, 2);
-  const axes = [0, 1, 2].map((axis) => {
-    const component = dir[axis];
-    if (Math.abs(component) < 1e-15) return { step: 0, tMax: Infinity, tDelta: Infinity };
-    const step = component > 0 ? 1 : -1;
-    const index = cellIndex(grid, origin, axis);
-    const boundary = min[axis] + (step > 0 ? (index + 1) * size[axis] : index * size[axis]);
-    let tMax = (boundary - origin[axis]) / component;
-    if (!(tMax > 0)) tMax = 0;
-    return { step, tMax, tDelta: Math.abs(size[axis] / component) };
-  });
-  let best = Infinity;
-  let bestN = null;
-  const maxSteps = cells * 3 + 3;
-  for (let step = 0; step < maxSteps; step++) {
-    const bucket = buckets[ix + cells * iy + span * iz];
-    if (bucket) {
-      for (const tri of bucket) {
-        if (seen[tri.t] === stamp) continue;
-        seen[tri.t] = stamp;
-        if (skip.has(tri.t)) continue;
-        const nd = dot(tri.n, dir);
-        if (nd <= BACKFACE_EPS) continue;
-        const t = rayTriangle(origin, dir, tri);
-        if (t == null || t <= MOLD_WALL_HIT_EPS_MM || t >= best) continue;
-        best = t;
-        bestN = nd;
-      }
+function nearestHit(origin, dir, node, skip, best) {
+  if (!node) return;
+  const entry = rayBoxEntry(origin, dir, node.min, node.max);
+  if (entry == null || entry >= best.dist) return;
+  if (node.tris) {
+    for (const tri of node.tris) {
+      if (skip.has(tri.t)) continue;
+      const nd = dot(tri.n, dir);
+      if (nd <= BACKFACE_EPS) continue;
+      const t = rayTriangle(origin, dir, tri);
+      if (t == null || t <= MOLD_WALL_HIT_EPS_MM || t >= best.dist) continue;
+      best.dist = t;
+      best.nd = nd;
     }
-    const tx = axes[0].tMax;
-    const ty = axes[1].tMax;
-    const tz = axes[2].tMax;
-    const tNext = tx < ty ? (tx < tz ? tx : tz) : (ty < tz ? ty : tz);
-    if (!(tNext < best) || tNext > grid.diag) break;
-    if (tx <= ty && tx <= tz) {
-      ix += axes[0].step;
-      if (ix < 0 || ix >= cells) break;
-      axes[0].tMax += axes[0].tDelta;
-    } else if (ty <= tz) {
-      iy += axes[1].step;
-      if (iy < 0 || iy >= cells) break;
-      axes[1].tMax += axes[1].tDelta;
-    } else {
-      iz += axes[2].step;
-      if (iz < 0 || iz >= cells) break;
-      axes[2].tMax += axes[2].tDelta;
-    }
+    return;
   }
-  return best < Infinity ? { dist: best, nd: bestN } : null;
+  const leftEntry = node.left ? rayBoxEntry(origin, dir, node.left.min, node.left.max) : null;
+  const rightEntry = node.right ? rayBoxEntry(origin, dir, node.right.min, node.right.max) : null;
+  const leftFirst = rightEntry == null || (leftEntry != null && leftEntry <= rightEntry);
+  if (leftFirst) {
+    nearestHit(origin, dir, node.left, skip, best);
+    nearestHit(origin, dir, node.right, skip, best);
+  } else {
+    nearestHit(origin, dir, node.right, skip, best);
+    nearestHit(origin, dir, node.left, skip, best);
+  }
 }
 
 function boundsOf(list) {
@@ -570,16 +624,17 @@ function closestContact(node, center, excluded, origin, dir, srcN, best, scratch
   }
 }
 
-function probeRay(tri, point, dir, grid, skip, seen, stamp) {
-  const inset = Math.max(MOLD_WALL_HIT_EPS_MM, grid.diag * 1e-6);
+function probeRay(point, dir, diag, bvh, skip) {
+  const inset = Math.max(MOLD_WALL_HIT_EPS_MM, diag * 1e-6);
   const origin = [
     point[0] + dir[0] * inset,
     point[1] + dir[1] * inset,
     point[2] + dir[2] * inset,
   ];
-  const hit = nearestHit(origin, dir, grid, skip, seen, stamp);
-  if (!hit) return null;
-  return { dist: hit.dist + inset, nd: hit.nd };
+  const best = { dist: diag, nd: null };
+  nearestHit(origin, dir, bvh, skip, best);
+  if (!(best.dist < diag) || best.nd == null) return null;
+  return { dist: best.dist + inset, nd: best.nd };
 }
 
 function probeSphere(point, dir, ray, diag, bvh, excluded, srcN) {
@@ -777,6 +832,66 @@ function wallThresholds(thinRatio, thickRatio) {
   };
 }
 
+function triangleAltitude(tri) {
+  if (!(tri.longest > 1e-12) || !(tri.area > 0)) return 0;
+  return (2 * tri.area) / tri.longest;
+}
+
+/**
+ * A float needle copies the face it hangs off. The walk stays on needles,
+ * then takes the thickest neighbour that is wide enough to be a real wall
+ * and lies in the same plane, either winding. A crack from a float vertex
+ * faces the other way and still belongs to that face. Rib ends are wider
+ * than the cutoff, so they keep the sphere that reads the rib.
+ */
+function adoptSliverReadings(tris, neighbors, byIndex) {
+  const donor = new Map();
+  for (const tri of tris) {
+    if (triangleAltitude(tri) < MOLD_WALL_SLIVER_ALTITUDE_MM) continue;
+    const sample = byIndex.get(tri.t);
+    if (sample) donor.set(tri.t, sample);
+  }
+  if (!donor.size) return;
+  const byTri = new Map();
+  for (const tri of tris) byTri.set(tri.t, tri);
+  for (const tri of tris) {
+    if (triangleAltitude(tri) >= MOLD_WALL_SLIVER_ALTITUDE_MM) continue;
+    const sample = byIndex.get(tri.t);
+    if (!sample) continue;
+    const seen = new Set([tri.t]);
+    const queue = [tri.t];
+    let gift = null;
+    while (queue.length) {
+      const cur = queue.shift();
+      const next = neighbors.get(cur);
+      if (!next) continue;
+      for (const nb of next) {
+        if (seen.has(nb)) continue;
+        const other = byTri.get(nb);
+        if (!other || Math.abs(dot(other.n, tri.n)) < SLIVER_COPLANAR_COS) continue;
+        seen.add(nb);
+        const offered = donor.get(nb);
+        if (offered) {
+          if (!gift || offered.thickness > gift.thickness) gift = offered;
+          continue;
+        }
+        if (triangleAltitude(other) < MOLD_WALL_SLIVER_ALTITUDE_MM) queue.push(nb);
+      }
+    }
+    if (gift && gift.thickness > sample.thickness + 1e-4) {
+      byIndex.set(tri.t, {
+        t: sample.t,
+        ia: sample.ia,
+        ib: sample.ib,
+        ic: sample.ic,
+        area: sample.area,
+        thickness: gift.thickness,
+        source: gift.source,
+      });
+    }
+  }
+}
+
 /**
  * Local thickness field for triangles prepared by `analyzePullDirection`.
  * `nTri` is the mesh triangle count, including degenerates that were dropped
@@ -792,30 +907,21 @@ export function measureWallThickness(tris, nTri, options) {
   const thickRatio = options.thickRatio;
   const count = Math.max(0, Math.floor(nTri) || 0);
   if (!tris?.length) return emptyWall(count, thinRatio, thickRatio);
-  let maxIndex = count;
   for (const tri of tris) {
-    if (tri.t + 1 > maxIndex) maxIndex = tri.t + 1;
     tri.longest = Math.max(dist(tri.a, tri.b), dist(tri.b, tri.c), dist(tri.c, tri.a));
   }
-  const { raySkip, sphereSkip } = buildAdjacency(tris);
-  const grid = buildGrid(tris);
+  const { raySkip, sphereSkip, neighbors } = buildAdjacency(tris);
+  const diag = meshDiag(tris);
   const bvh = buildBvh(tris);
-  const seen = new Uint32Array(maxIndex);
-  let stamp = 1;
   const probe = (tri, point) => {
-    stamp += 1;
-    if (stamp >= 0xfffffffe) {
-      seen.fill(0);
-      stamp = 1;
-    }
     // The triangle's own normal. A curved face keeps one stamp for every
     // facet, and that vector does not pass through the wall.
     const n = tri.nGeom || tri.n;
     const side = tri.n && n && dot(tri.n, n) < 0 ? -1 : 1;
     const dir = [-n[0] * side, -n[1] * side, -n[2] * side];
     const srcN = [n[0] * side, n[1] * side, n[2] * side];
-    const ray = probeRay(tri, point, dir, grid, raySkip.get(tri.t), seen, stamp);
-    const diameter = probeSphere(point, dir, ray, grid.diag, bvh, sphereSkip.get(tri.t), srcN);
+    const ray = probeRay(point, dir, diag, bvh, raySkip.get(tri.t));
+    const diameter = probeSphere(point, dir, ray, diag, bvh, sphereSkip.get(tri.t), srcN);
     return combineProbe(ray, diameter);
   };
   const collect = (spacing) => {
@@ -844,6 +950,7 @@ export function measureWallThickness(tris, nTri, options) {
         source: chosen.source,
       });
     }
+    adoptSliverReadings(tris, neighbors, best);
     return best;
   };
   const pass = options.pass === 'centroid' ? 'centroid' : 'refine';

@@ -44,7 +44,8 @@ export const moldFitCommand = Object.freeze({
       return { error: { code: 'internal', message: 'moldFit handler is missing' } };
     }
     const out = score({ partId: args?.part_id, pull: args?.pull });
-    if (out?.error) return { error: out.error };
-    return { result: out };
+    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
+    if (out && typeof out.then === 'function') return out.then(pack);
+    return pack(out);
   },
 });

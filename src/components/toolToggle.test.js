@@ -68,7 +68,8 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
   assert.match(panel, /className=\{toolToggleClass\(enabled\)\}/);
   assert.match(panel, /<MoldingToolsControl/);
   for (const [marker, prop] of MOLD_TOGGLES) {
-    assert.match(drawer, new RegExp(`toolToggleClass\\(${prop}\\)`));
+    const pending = prop.replace(/Active$/, 'Pending');
+    assert.match(drawer, new RegExp(`toolToggleClass\\(${prop} \\|\\| ${pending}\\)`));
     assert.match(drawer, new RegExp(`data-ui-action="${marker}"`));
     assert.doesNotMatch(panel, new RegExp(`data-ui-action="${marker}"`));
   }

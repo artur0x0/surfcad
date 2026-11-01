@@ -476,7 +476,7 @@ function geometricVerticalArea(mesh) {
   return area;
 }
 
-test('vertical fillets and flat walls are zero-draft, and the snap lip stays', () => {
+test('vertical fillets and flat walls stay core or cavity, and the snap lip stays', () => {
   for (const segments of [2, 4, 8]) {
     for (const tilt of segments === 4 ? [0, 0.25] : [0]) {
       const mesh = filletedCornerTray(segments, tilt);
@@ -486,15 +486,15 @@ test('vertical fillets and flat walls are zero-draft, and the snap lip stays', (
       assert.equal(result.undercutArea, 0, `segments ${segments} tilt ${tilt} area`);
       assert.equal(result.fit, 'good');
       assert.equal(result.parting.counts.parting, 0);
-      assert.ok(result.parting.triangles.every((row) => row.role === 'core' || row.role === 'cavity'));
+      assert.equal(result.parting.areas.zeroDraft, undefined);
+      assert.ok(result.parting.triangles.every((row) => (
+        (row.role === 'core' || row.role === 'cavity') && row.zeroDraft == null
+      )));
       assert.equal(result.parting.triangles.length, mesh.indices.length / 3);
       const vertical = geometricVerticalArea(mesh);
-      const reported = result.parting.areas.zeroDraft;
       assert.ok(vertical > 100, `vertical area ${vertical}`);
-      assert.ok(Math.abs(reported - vertical) <= Math.max(0.05, vertical * 1e-4),
-        `zero-draft ${reported} vs vertical ${vertical} segments ${segments} tilt ${tilt}`);
-      const flagged = result.parting.triangles.filter((row) => row.zeroDraft).length;
-      assert.ok(flagged > 0);
+      const owned = result.parting.areas.core + result.parting.areas.cavity;
+      assert.ok(owned + 1e-3 >= vertical, `owned ${owned} vs vertical ${vertical}`);
     }
   }
   const hook = analyzePullDirection(snapHook());

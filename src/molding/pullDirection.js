@@ -699,18 +699,11 @@ function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candid
 }
 
 /**
- * Search pull directions, or score one override.
- *
- * @param {{
- *   positions: ArrayLike<number>,
- *   indices: ArrayLike<number>,
- *   patches?: Array<{ kind?: string, area?: number, normal?: number[] }>|null,
- *   stamped?: { triFace: ArrayLike<number>, normals: ArrayLike<ArrayLike<number>> }|null,
- *   pull?: number[]|null,
- *   wall?: { thinRatio?: number, thickRatio?: number }|null,
- * }} input
+ * Validate the mesh and keep the prepared triangles. An `{ error }` return
+ * is the same object `analyzePullDirection` used to return. The worker
+ * runs the later stages and yields between them.
  */
-export function analyzePullDirection(input) {
+export function openMoldQuery(input) {
   const positions = input?.positions;
   const indices = input?.indices;
   if (!positions || !indices || indices.length < 3 || positions.length < 9) {
@@ -723,40 +716,49 @@ export function analyzePullDirection(input) {
   const prepared = prepareTriangles(positions, indices, input.stamped || null);
   if (!prepared.tris.length) return { error: { code: 'no_mesh', message: 'No mesh to score' } };
   const diag = len(sub(prepared.max, prepared.min));
-  const skinMm = Math.max(MOLD_SKIN_MM, MOLD_SKIN_DIAG_FRAC * diag);
-  const normals = { stamped: prepared.stampedCount, triangle: prepared.triangleCount };
-  const wall = measureWallThickness(prepared.tris, Math.floor(indices.length / 3), wallOpts);
-  const faceInfo = input.stamped?.names?.length
-    ? { triFace: input.stamped.triFace, names: input.stamped.names }
-    : null;
-  const partingFor = (pull) => classifyParting(prepared.tris, pull, faceInfo);
-  if (override.pull) {
-    const scored = scoreAxis(override.pull, prepared.tris, skinMm);
-    return resultOf({
-      pull: override.pull,
-      pullSource: 'override',
-      regions: scored.regions,
-      undercutArea: scored.undercutArea,
-      draftedArea: scored.draftedArea,
-      candidates: [scored],
-      normals,
-      positions,
-      indices,
-      skinMm,
-      wall,
-      parting: partingFor(override.pull),
-      tris: prepared.tris,
-    });
-  }
-  const { dirs, primary } = candidateDirections(prepared.tris, input.patches);
-  const candidates = [];
+  return {
+    positions,
+    indices,
+    patches: input.patches || null,
+    prepared,
+    skinMm: Math.max(MOLD_SKIN_MM, MOLD_SKIN_DIAG_FRAC * diag),
+    wallOpts,
+    override,
+    faceInfo: input.stamped?.names?.length
+      ? { triFace: input.stamped.triFace, names: input.stamped.names }
+      : null,
+    normals: { stamped: prepared.stampedCount, triangle: prepared.triangleCount },
+  };
+}
+
+/** One wall pass. `extra.pass` selects centroid or refine; the default is refine. */
+export function measureMoldWall(query, extra = null) {
+  const measured = extra ? { ...query.wallOpts, ...extra } : query.wallOpts;
+  return measureWallThickness(
+    query.prepared.tris,
+    Math.floor(query.indices.length / 3),
+    measured,
+  );
+}
+
+/** Candidate directions for a search. An override does not call this. */
+export function moldSearchPlan(query) {
+  return candidateDirections(query.prepared.tris, query.patches);
+}
+
+/** Score one direction. `dir.principal` is kept for the tie break. */
+export function scoreMoldDirection(query, dir) {
+  const row = scoreAxis(dir.pull, query.prepared.tris, query.skinMm);
+  row.principal = !!dir.principal;
+  return row;
+}
+
+/** Winner of `candidates`, using the same tie band as the search. */
+export function chooseMoldPull(query, candidates, primary) {
   let bestUndercut = Infinity;
   let totalArea = 0;
-  for (const tri of prepared.tris) totalArea += tri.area;
-  for (const dir of dirs) {
-    const row = scoreAxis(dir.pull, prepared.tris, skinMm);
-    row.principal = dir.principal;
-    candidates.push(row);
+  for (const tri of query.prepared.tris) totalArea += tri.area;
+  for (const row of candidates) {
     if (row.undercutArea < bestUndercut) bestUndercut = row.undercutArea;
   }
   const band = undercutTieBand(totalArea);
@@ -765,19 +767,64 @@ export function analyzePullDirection(input) {
     if (row.undercutArea > bestUndercut + band + 1e-4) continue;
     if (!best || betterInTie(row, best, primary)) best = row;
   }
+  return best;
+}
+
+/** Parting, side actions, and mold draft for the chosen pull. */
+export function finishMoldQuery(query, chosen, wall) {
   return resultOf({
+    pull: chosen.pull,
+    pullSource: chosen.pullSource,
+    regions: chosen.regions,
+    undercutArea: chosen.undercutArea,
+    draftedArea: chosen.draftedArea,
+    candidates: chosen.candidates,
+    normals: query.normals,
+    positions: query.positions,
+    indices: query.indices,
+    skinMm: query.skinMm,
+    wall,
+    parting: classifyParting(query.prepared.tris, chosen.pull, query.faceInfo),
+    tris: query.prepared.tris,
+  });
+}
+
+/**
+ * Search pull directions, or score one override.
+ *
+ * @param {{
+ *   positions: ArrayLike<number>,
+ *   indices: ArrayLike<number>,
+ *   patches?: Array<{ kind?: string, area?: number, normal?: number[] }>|null,
+ *   stamped?: { triFace: ArrayLike<number>, normals: ArrayLike<ArrayLike<number>> }|null,
+ *   pull?: number[]|null,
+ *   wall?: { thinRatio?: number, thickRatio?: number }|null,
+ * }} input
+ */
+export function analyzePullDirection(input) {
+  const query = openMoldQuery(input);
+  if (query.error) return query;
+  const wall = measureMoldWall(query);
+  if (query.override.pull) {
+    const scored = scoreMoldDirection(query, { pull: query.override.pull, principal: false });
+    return finishMoldQuery(query, {
+      pull: scored.pull,
+      pullSource: 'override',
+      regions: scored.regions,
+      undercutArea: scored.undercutArea,
+      draftedArea: scored.draftedArea,
+      candidates: [scored],
+    }, wall);
+  }
+  const plan = moldSearchPlan(query);
+  const candidates = plan.dirs.map((dir) => scoreMoldDirection(query, dir));
+  const best = chooseMoldPull(query, candidates, plan.primary);
+  return finishMoldQuery(query, {
     pull: best.pull,
     pullSource: 'search',
     regions: best.regions,
     undercutArea: best.undercutArea,
     draftedArea: best.draftedArea,
     candidates,
-    normals,
-    positions,
-    indices,
-    skinMm,
-    wall,
-    parting: partingFor(best.pull),
-    tris: prepared.tris,
-  });
+  }, wall);
 }

@@ -137,7 +137,9 @@ test('without Worker the plate is measured on this thread', async () => {
 test('the viewport heatmap posts to the wall worker', () => {
   const view = readFileSync(new URL('../components/Viewport.jsx', import.meta.url), 'utf8');
   assert.match(view, /requestWallField\(/);
+  assert.match(view, /requestMoldAnalysis\(/);
   assert.match(view, /dropWallJobs\(/);
+  assert.match(view, /dropMoldJobs\(/);
   assert.doesNotMatch(view, /wallOnly:\s*true/);
   assert.doesNotMatch(view, /measureWallThickness/);
 });
