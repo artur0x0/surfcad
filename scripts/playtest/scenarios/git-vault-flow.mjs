@@ -213,13 +213,21 @@ export async function run(ctx) {
       if (n >= 2) break;
       await new Promise((resolve) => { setTimeout(resolve, 200); });
     }
+    // Reload opens the vault default (main). Agent saves landed on
+    // feature/playtest-save, so return there before the clean check.
+    const back = await agentCall(page, 'git_branch_switch', {
+      branch: 'feature/playtest-save',
+      confirm: true,
+    });
+    const switched = back.ok === true
+      && (back.result?.status === 'switched' || back.result?.status === 'same');
     const snap = await waitForGitClean(page);
     return {
-      ok: n >= 2 && snap.ok,
-      call: 'dirty',
-      args: {},
-      envelope: snap.dirty,
-      detail: `parts=${n} ${snap.detail}`,
+      ok: n >= 2 && switched && snap.ok,
+      call: 'git_branch_switch',
+      args: { branch: 'feature/playtest-save', confirm: true },
+      envelope: switched ? snap.dirty : back,
+      detail: `parts=${n} switch=${back.result?.status || back.error?.code} ${snap.detail}`,
     };
   });
 
