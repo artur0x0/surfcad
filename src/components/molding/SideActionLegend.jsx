@@ -1,6 +1,7 @@
 /**
  * Side-action section of the molding results pane. Labels stay
- * `text-on-dark`. Slide versus lifter is a heuristic, and the section says so.
+ * `text-on-dark`. Each row is one slide or lifter, with its area and
+ * release direction. Slide versus lifter is a heuristic, and the section says so.
  */
 
 import React from 'react';
@@ -29,7 +30,10 @@ export default function SideActionLegend({ legend }) {
                 />
                 {row.label}
               </span>
-              <span className="tabular-nums text-muted-on-dark">{row.pull}</span>
+              <span className="flex items-baseline gap-2 tabular-nums text-muted-on-dark">
+                {row.areaLabel ? <span data-side-action-area="">{row.areaLabel}</span> : null}
+                <span>{row.pull}</span>
+              </span>
             </li>
           ))}
         </ul>

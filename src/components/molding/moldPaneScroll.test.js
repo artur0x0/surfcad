@@ -146,10 +146,12 @@ test('each molding pane renders the scroll container and its last control', asyn
   const sides = renderToStaticMarkup(React.createElement(SideActionLegend, {
     legend: {
       more: 0,
-      rows: [{ id: 'a', kind: 'slide', css: '#abc', label: 'Slide', pull: '[0, 0, 1]' }],
+      rows: [{ id: 'a', kind: 'slide', css: '#abc', label: 'Slide', pull: '-Z', areaLabel: '12 mm²' }],
     },
   }));
   assert.match(sides, /data-side-action-legend/);
+  assert.match(sides, /data-side-action-area/);
+  assert.match(sides, /12 mm²/);
   assert.match(sides, /data-mold-pane-end/);
 
   const draft = renderToStaticMarkup(React.createElement(MoldDraftLegend, {

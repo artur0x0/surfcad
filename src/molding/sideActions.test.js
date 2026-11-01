@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runScript } from '../lib/surfcad/index.js';
 import { analyzePullDirection } from './pullDirection.js';
 import { MOLD_REGION_NORMAL_DEG } from './pullDirection.js';
 import {
@@ -106,6 +107,63 @@ test('same-direction regions on one side are one action, even far apart', () => 
   assert.equal(legend.rows.length, 4);
   assert.equal(legend.more, 0);
   assert.equal(legend.rows[0].label, 'Slide');
+  assert.equal(legend.rows[0].areaLabel, '4 mm²');
+});
+
+test('a wall within half a degree of vertical is not a side action', () => {
+  const grouped = groupSideActions([
+    region(0, [1, 0, 0], 1, { area: 40 }),
+    region(1, [1, 0, Math.sin((0.25 * Math.PI) / 180)], 1, { area: 30 }),
+    region(2, [0, 0, -1], -1, { area: 12 }),
+  ], [0, 0, 1]);
+  assert.equal(grouped.count, 1);
+  assert.equal(grouped.slideCount, 0);
+  assert.equal(grouped.lifterCount, 1);
+  assert.equal(grouped.groups[0].area, 12);
+  assert.deepEqual(grouped.groups[0].pull, [0, 0, -1]);
+  const legend = sideActionLegendModel(grouped);
+  assert.equal(legend.rows[0].label, 'Lifter');
+  assert.equal(legend.rows[0].pull, '-Z');
+  assert.equal(legend.rows[0].areaLabel, '12 mm²');
+});
+
+/**
+ * Closed box plus one internal wall. At 0° the wall is vertical and must
+ * not be a slide. At 2° it is a true undercut (occluded, outside the half
+ * degree band) and becomes one slide. The 10° drafted-area band must not
+ * swallow it.
+ */
+function occludedWall(deg) {
+  const positions = [];
+  const indices = [];
+  const box = boxMesh([0, 0, 0], [20, 20, 12]);
+  appendMesh(positions, indices, box.positions, box.indices);
+  const lean = Math.tan((deg * Math.PI) / 180);
+  const z0 = 2;
+  const z1 = 8;
+  const x0 = 8;
+  const x1 = 8 + (z1 - z0) * lean;
+  const base = positions.length / 3;
+  positions.push(x0, 6, z0, x0, 14, z0, x1, 14, z1, x1, 6, z1);
+  indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  return { positions, indices, pull: [0, 0, 1] };
+}
+
+test('an occluded wall is a slide only once it leaves the vertical band', () => {
+  const upright = analyzePullDirection(occludedWall(0));
+  assert.equal(upright.undercutCount, 0);
+  assert.equal(upright.sideActions.count, 0);
+  const grazing = analyzePullDirection(occludedWall(0.25));
+  assert.equal(grazing.undercutCount, 0);
+  assert.equal(grazing.sideActions.count, 0);
+  const drafted = analyzePullDirection(occludedWall(2));
+  assert.equal(drafted.error, undefined);
+  assert.equal(drafted.undercutCount, 1);
+  assert.equal(drafted.sideActions.count, 1);
+  assert.equal(drafted.sideActions.slideCount, 1);
+  assert.equal(drafted.sideActions.lifterCount, 0);
+  assert.ok(drafted.sideActions.groups[0].pull[0] > 0.9);
+  assert.ok(drafted.sideActions.groups[0].area > 40);
 });
 
 test('a zero pull and a missing list are zero groups', () => {
@@ -136,4 +194,38 @@ test('a box has no side actions and a shelf plus a tilted wall splits', () => {
   assert.ok(lifter.triangles.length >= 1);
   assert.equal(part.fit, 'fixable');
   assert.equal(part.undercutCount, 2);
+});
+
+const SHELL_FILLET = `
+// --- cube begin id=cube1 ---
+let box1 = Manifold.cube([68.7, 74.10000000000001, 37.5], true);
+let part = box1;
+// --- cube end id=cube1 ---
+// --- fillet-mode begin id=fillet1 ---
+const selEdges = edgesNamed(part, "cube1.back~cube1.right", "cube1.back~cube1.bottom", "cube1.bottom~cube1.right", "cube1.bottom~cube1.left", "cube1.bottom~cube1.front", "cube1.front~cube1.left", "cube1.back~cube1.left", "cube1.front~cube1.right");
+part = filletEdges(part, selEdges, 4, { sphericalCorners: true });
+// --- fillet-mode end id=fillet1 ---
+part = hollow(part, 1.85, { center: [0.0003, -0.0003, 18.75], normal: [0, 0, 1] });
+return part;
+`;
+
+test('Shell_Fillet_Test has no side actions on the searched pull', { timeout: 120_000 }, async () => {
+  const ran = await runScript(SHELL_FILLET);
+  assert.equal(ran.status, 'NoError', ran.status);
+  const np = ran.mesh.numProp || 3;
+  const src = ran.mesh.vertProperties;
+  const positions = new Float64Array((src.length / np) * 3);
+  for (let i = 0, v = 0; i < src.length; i += np, v += 3) {
+    positions[v] = src[i];
+    positions[v + 1] = src[i + 1];
+    positions[v + 2] = src[i + 2];
+  }
+  const result = analyzePullDirection({ positions, indices: ran.mesh.triVerts });
+  assert.equal(result.error, undefined);
+  assert.equal(result.fit, 'good');
+  assert.deepEqual(result.pull, [0, 0, 1]);
+  assert.equal(result.undercutCount, 0);
+  assert.equal(result.sideActions.count, 0);
+  assert.equal(result.sideActions.slideCount, 0);
+  assert.equal(result.sideActions.lifterCount, 0);
 });

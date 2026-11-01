@@ -330,6 +330,7 @@ test('a flat plate prefers the pull through the large faces', () => {
   assert.equal(result.fit, 'good');
   assert.equal(result.undercutArea, 0);
   assert.deepEqual(result.pull, [0, 0, 1]);
+  assert.equal(result.sideActions.count, 0);
   assert.ok(result.draftedArea > 700);
 });
 
@@ -338,6 +339,7 @@ test('an open filleted tray pulls straight out the top', () => {
   assert.equal(result.error, undefined);
   assert.equal(result.fit, 'good');
   assert.equal(result.undercutCount, 0);
+  assert.equal(result.sideActions.count, 0);
   assert.deepEqual(result.pull, [0, 0, 1]);
 });
 
@@ -345,6 +347,7 @@ test('a drafted cup pulls out the rim', () => {
   const result = analyzePullDirection(draftedCup());
   assert.equal(result.fit, 'good');
   assert.equal(result.undercutCount, 0);
+  assert.equal(result.sideActions.count, 0);
   assert.deepEqual(result.pull, [0, 0, 1]);
 });
 
@@ -352,6 +355,7 @@ test('a through hole along Z pulls cleanly out the hole', () => {
   const result = analyzePullDirection(throughHole());
   assert.equal(result.fit, 'good');
   assert.equal(result.undercutCount, 0);
+  assert.equal(result.sideActions.count, 0);
   assert.deepEqual(result.pull, [0, 0, 1]);
 });
 
@@ -361,6 +365,11 @@ test('a snap hook keeps a principal pull and reports the lip undercut', () => {
   assert.deepEqual(result.pull, [0, 0, 1]);
   assert.equal(result.undercutCount, 1);
   assert.equal(result.undercutArea, 12);
+  assert.equal(result.sideActions.count, 1);
+  assert.equal(result.sideActions.slideCount, 0);
+  assert.equal(result.sideActions.lifterCount, 1);
+  assert.equal(result.sideActions.groups[0].area, 12);
+  assert.deepEqual(result.sideActions.groups[0].pull, [0, 0, -1]);
   assert.ok(result.undercutArea <= MOLD_UNDERCUT_TIE_FLOOR_MM2);
   const chosen = result.candidates.find((row) => row.pull[0] === 0 && row.pull[1] === 0 && row.pull[2] === 1);
   assert.equal(chosen.principal, true);

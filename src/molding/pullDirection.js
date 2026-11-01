@@ -21,11 +21,12 @@
  * with the outer shell.
  *
  * A triangle is an undercut along unit axis d when its own normal is more
- * than 0.5° off perpendicular to d, the facing normal (the stamp, when it
- * did not cancel) leaves the 10° band, and another triangle covers that
- * centroid and sits strictly beyond it. A cell's height range is not a
- * cover: a vertical wall that only grazes the cell is not an undercut.
- * Near-parallel faces are left for draft analysis.
+ * than 0.5° off perpendicular to d and another triangle covers that
+ * centroid and sits strictly beyond it. A wall inside that band is not an
+ * undercut and not a side action. A cell's height range is not a cover: a
+ * vertical wall that only grazes the cell is not an undercut. Zero draft
+ * on those walls belongs to the draft tool. The 10° band is only the
+ * drafted-area score, not the undercut test.
  * Connected undercut triangles that share a vertex, face the same way, and
  * agree within 35° are one region. The count is regions.
  *
@@ -80,7 +81,7 @@ export function analyzeWallOnly(input) {
   };
 }
 
-/** |n · d| at or under this is parallel to the pull (draft, not an undercut). */
+/** |n · d| at or under this does not add to the drafted-area score. */
 export const MOLD_NEUTRAL_DEG = 10;
 /** A face this close to the cell's outer height is skin, not an undercut. */
 export const MOLD_SKIN_MM = 0.05;
@@ -492,7 +493,6 @@ function undercutsAlong(d, tris, skin) {
   const hits = [];
   for (const row of prepared) {
     if (Math.abs(row.ndGeom) <= VERTICAL_SIN) continue;
-    if (Math.abs(row.nd) <= NEUTRAL_SIN) continue;
     const facingOut = row.nd > 0;
     const h = row.h;
     let occluded = false;

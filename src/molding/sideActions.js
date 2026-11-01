@@ -1,19 +1,24 @@
 /**
  * Side-action groups (injection molding, M2.2).
  *
- * Each M1 undercut region already shares a side and a normal. This step
- * clusters those regions into the slides and lifters a later quote can
- * count. The split is a heuristic. A region whose normal sits within 45°
- * of the main pull is a lifter, and its suggested pull is that normal
- * (the way the steel leaves the plastic, not an angled ejection path).
- * A region closer to the parting plane is a slide, and its suggested pull
- * is the part of the normal that lies in the parting plane.
+ * Only a true undercut becomes a slide or a lifter. A region whose normal
+ * lies within `PARTING_ZERO_DRAFT_DEG` of the parting plane is a vertical
+ * wall, not a side action. Draft analysis owns that wall. Nothing here
+ * names a part or turns a zero-draft wall into a slide.
+ *
+ * Each remaining region gets a release direction from its own normal.
+ * A normal within 45° of the main pull is a lifter, and its pull is that
+ * normal (the way the steel leaves the plastic). A normal closer to the
+ * parting plane is a slide, and its pull is the part of the normal that
+ * lies in the parting plane. The split is a heuristic.
  *
  * Regions of the same kind and the same side whose suggested pulls agree
  * within 35° are one action, including when they sit far apart. Opposite
  * walls disagree in direction, so they stay separate. Nothing here builds
  * mold CAD. A messy mesh returns groups instead of failing.
  */
+
+import { PARTING_ZERO_DRAFT_DEG } from './parting.js';
 
 /** Matches `MOLD_REGION_NORMAL_DEG`. Suggested pulls this close share an action. */
 export const SIDE_ACTION_ALIGN_DEG = 35;
@@ -22,6 +27,8 @@ export const SIDE_ACTION_LIFTER_DEG = 45;
 
 const ALIGN_COS = Math.cos((SIDE_ACTION_ALIGN_DEG * Math.PI) / 180);
 const LIFTER_COS = Math.cos((SIDE_ACTION_LIFTER_DEG * Math.PI) / 180);
+/** Same band as the undercut test. A wall this close to vertical is not a side action. */
+const VERTICAL_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 
 /** Discrete skin colours. Not stress, and not a CSS token. */
 export const SIDE_ACTION_KIND_RGB = Object.freeze({
@@ -97,6 +104,23 @@ function formatPull(pull) {
   return pull.map((n) => n.toFixed(2)).join(' ');
 }
 
+function formatArea(area) {
+  if (!Number.isFinite(area)) return '';
+  const text = Math.abs(area - Math.round(area)) < 0.05
+    ? String(Math.round(area))
+    : Math.abs(area) >= 10
+      ? area.toFixed(1)
+      : area.toFixed(2);
+  return `${text} mm²`;
+}
+
+/** A vertical wall, within half a degree, is not a true undercut. */
+function clearsVertical(normal, pull) {
+  const n = unit(normal);
+  if (!n) return false;
+  return Math.abs(dot(n, pull)) > VERTICAL_SIN;
+}
+
 function emptyActions() {
   return {
     heuristic: true,
@@ -118,6 +142,7 @@ export function groupSideActions(regions, pull) {
   if (!d || !Array.isArray(regions)) return emptyActions();
   const members = [];
   for (const region of regions) {
+    if (!clearsVertical(region?.normal, d)) continue;
     const suggested = suggestSidePull(region?.normal, d);
     if (!suggested || (region.side !== 1 && region.side !== -1)) continue;
     members.push({ region, kind: suggested.kind, pull: suggested.pull });
@@ -212,6 +237,7 @@ export function sideActionLegendModel(sideActions) {
     kind: group.kind,
     label: group.kind === 'lifter' ? 'Lifter' : 'Slide',
     pull: formatPull(group.pull),
+    areaLabel: formatArea(group.area),
     css: rgbCss(sideActionRgb(group.kind, index)),
   }));
   return {
