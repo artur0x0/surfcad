@@ -17,7 +17,8 @@ import { attachAgentWebSocket } from '../agent/wsServer.js';
 import { revokeRelayUser } from '../agent/install.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from '../agent/tabSockets.js';
 import { hashToken } from '../agent/tokens.js';
-import { AGENT_PRESENCE_TTL_MS } from '../agent/limits.js';
+import { AGENT_PRESENCE_TTL_MS, TOKEN_TTL_MS } from '../agent/limits.js';
+import { agentDisconnectToastCopy } from '../../src/agent/ws/pairingFlow.js';
 
 /** @type {import('node:http').Server[]} */
 const servers = [];
@@ -122,8 +123,16 @@ function openSocket(url, headers) {
       resolve(ws);
     });
     ws.on('unexpected-response', (_req, res) => {
-      res.resume();
-      fail(Object.assign(new Error(`HTTP ${res.statusCode}`), { statusCode: res.statusCode }));
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('error', () => {
+        fail(Object.assign(new Error(`HTTP ${res.statusCode}`), { statusCode: res.statusCode }));
+      });
+      res.on('end', () => {
+        let body = null;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = null; }
+        fail(Object.assign(new Error(`HTTP ${res.statusCode}`), { statusCode: res.statusCode, body }));
+      });
     });
   });
   return {
@@ -1190,5 +1199,110 @@ describe('agent relay websocket', () => {
     assert.equal(tab.at(-1).reason, 'revoked');
     await sleep(40);
     assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === true).length, 1);
+  });
+
+  test('a pairing expires 7 days after issue', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    assert.equal(TOKEN_TTL_MS, 7 * DAY);
+    const clock = createManualClock(1_700_000_000_000);
+    const relay = createAgentRelay({
+      clock,
+      presenceTtlMs: 8 * DAY,
+      promptHoldMs: 8 * DAY,
+    });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const held = await relay.tokens.issue({ userId: 'user-b', label: 'phone' });
+
+    const tabA = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-a' });
+    const tabB = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-b' });
+    await tabA.opened;
+    await tabB.opened;
+    assert.equal((await tabA.nextMessage()).type, 'registered');
+    assert.equal((await tabB.nextMessage()).type, 'registered');
+
+    const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    const up = await tabA.nextMessage();
+    assert.equal(up.type, 'agent');
+    assert.equal(up.connected, true);
+
+    const quiet = openSocket(url, { authorization: `Bearer ${held.token}` });
+    await quiet.opened;
+    quiet.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await quiet.nextMessage()).type, 'hello');
+    assert.equal((await tabB.nextMessage()).connected, true);
+    quiet.ws.close();
+    await sleep(40);
+
+    const promptId = '33333333-3333-4333-8333-333333333333';
+    tabB.ws.send(JSON.stringify({
+      type: 'agent.prompt', v: 1, id: promptId, text: 'still here',
+    }));
+    await sleep(20);
+
+    clock.advance(TOKEN_TTL_MS - 1);
+    const still = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
+      headers: { authorization: `Bearer ${issued.token}` },
+    });
+    assert.equal(still.status, 200);
+    clock.advance(1);
+
+    const closed = closeEvent(agent.ws, 'the expired socket');
+    agent.ws.send(JSON.stringify({ v: 1, id: 'c-expired', command: 'status', args: {} }));
+    const failed = await agent.nextMessage();
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error.message, 'Token expired');
+    const event = await closed;
+    assert.equal(event.code, AGENT_SOCKET_CLOSE_CODE);
+    assert.equal(event.reason, 'token expired');
+    const down = await tabA.nextMessage();
+    assert.deepEqual(down, { type: 'agent', v: 1, connected: false, reason: 'expired' });
+    assert.equal(
+      agentDisconnectToastCopy(down.reason),
+      'Agent pairing expired: pair again with a new code',
+    );
+
+    const prompts = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
+      headers: { authorization: `Bearer ${issued.token}` },
+    });
+    assert.equal(prompts.status, 401);
+    assert.equal((await prompts.json()).error, 'expired');
+
+    await assert.rejects(
+      openSocket(url, { authorization: `Bearer ${issued.token}` }).opened,
+      (error) => error.statusCode === 401 && error.body?.error === 'expired',
+    );
+
+    const heldPrompts = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
+      headers: { authorization: `Bearer ${held.token}` },
+    });
+    assert.equal(heldPrompts.status, 401);
+    assert.equal((await heldPrompts.json()).error, 'expired');
+    const ack = await tabB.nextMessage();
+    assert.equal(ack.type, 'agent.prompt.ack');
+    assert.equal(ack.id, promptId);
+    assert.equal(ack.delivery, 'failed');
+    const heldDown = await tabB.nextMessage();
+    assert.equal(heldDown.reason, 'expired');
+    assert.equal(heldDown.connected, false);
+
+    const fresh = await relay.tokens.issue({ userId: 'user-a', label: 'again' });
+    const again = openSocket(url, { authorization: `Bearer ${fresh.token}` });
+    await again.opened;
+    again.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await again.nextMessage()).type, 'hello');
+    const back = await tabA.nextMessage();
+    assert.equal(back.connected, true);
+    assert.equal(back.reason, undefined);
+    again.ws.close();
+    tabA.ws.close();
+    tabB.ws.close();
   });
 });

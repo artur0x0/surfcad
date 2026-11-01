@@ -161,7 +161,8 @@ offers Disconnect and X and dismisses after 3 seconds. It is not a banner.
 A live disconnect hides the chat and shows `data-agent-bridge-disconnected-toast`
 with Reconnect, which opens the pairing dialog, and X, also for 3 seconds.
 The presence frame's `reason` picks the copy: `inactive` is "Agent disconnected: inactive for 10 min",
-`closed` is "Agent ended the session", and `revoked` is "Agent access revoked".
+`closed` is "Agent ended the session", `revoked` is "Agent access revoked",
+and `expired` is "Agent pairing expired: pair again with a new code".
 A frame with no reason stays "Agent disconnected". The 3 second reload grace does not show that toast.
 The viewer stays interactive while the agent works.
 Agent-driven feature cards do not auto-open during that work. Agent paint still runs then: `paint_open` enters paint mode headless (no card, `paintMode.headless`), so a colour applied during a prompt is written like any other.

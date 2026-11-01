@@ -17,6 +17,7 @@ import {
   TOO_MANY_CONNECTIONS_REASON,
 } from './agentSockets.js';
 import { clientAddress } from './clientIp.js';
+import { forgetExpiredPairing } from './expirePairing.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
@@ -108,14 +109,20 @@ export function attachAgentWebSocket(httpServer, relay, options) {
 
     const bearer = readBearer(req.headers.authorization);
     if (bearer) {
-      relay.tokens.authenticate(bearer).then((auth) => {
-        if (!auth || socket.destroyed) {
-          if (!socket.destroyed) rejectUpgrade(socket, 401, 'Authentication required');
+      relay.tokens.inspect(bearer).then((found) => {
+        if (socket.destroyed) return;
+        if (found.status === 'expired') {
+          forgetExpiredPairing(relay, found.auth);
+          rejectUpgrade(socket, 401, 'expired');
+          return;
+        }
+        if (found.status !== 'ok' || !found.auth) {
+          rejectUpgrade(socket, 401, 'Authentication required');
           return;
         }
         try {
           wss.handleUpgrade(req, socket, head, (ws) => {
-            bindAgent(ws, auth, relay);
+            bindAgent(ws, found.auth, relay);
             wss.emit('connection', ws, req);
           });
         } catch {
@@ -361,6 +368,10 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
       const live = await relay.tokens.status(tokenHash);
       if (live === 'ok') return;
       const expired = live === 'expired';
+      if (expired) {
+        const auth = sockets.find((sock) => sock.agentAuth)?.agentAuth;
+        forgetExpiredPairing(relay, auth);
+      }
       for (const ws of sockets) {
         dropping.add(ws);
         closeOpen(ws, AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
@@ -453,7 +464,7 @@ function bindAgent(ws, auth, relay) {
           return;
         }
         if (accepted !== true) {
-          refuseDeadToken(ws, 'revoked');
+          refuseDeadToken(ws, 'revoked', undefined, relay, auth);
           return;
         }
         agentId = id;
@@ -469,7 +480,7 @@ function bindAgent(ws, auth, relay) {
  * @param {string} live
  * @param {string | number | undefined} id
  */
-function refuseDeadToken(ws, live, id) {
+function refuseDeadToken(ws, live, id, relay, auth) {
   const expired = live === 'expired';
   sendJson(ws, commandResponse({
     id,
@@ -479,6 +490,7 @@ function refuseDeadToken(ws, live, id) {
       message: expired ? 'Token expired' : 'Token revoked',
     },
   }));
+  if (expired && relay) forgetExpiredPairing(relay, auth);
   ws.close(AGENT_SOCKET_CLOSE_CODE, expired ? TOKEN_EXPIRED_REASON : TOKEN_REVOKED_REASON);
 }
 
@@ -521,7 +533,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   const epoch = relay.registry.presenceEpoch(auth.userId);
   const live = await relay.tokens.status(auth.tokenHash);
   if (live !== 'ok') {
-    refuseDeadToken(ws, live, msg?.id);
+    refuseDeadToken(ws, live, msg?.id, relay, auth);
     return;
   }
   if (msg == null) {
@@ -587,7 +599,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   }
   const again = await relay.tokens.status(auth.tokenHash);
   if (again !== 'ok') {
-    refuseDeadToken(ws, again, frame.id);
+    refuseDeadToken(ws, again, frame.id, relay, auth);
     return;
   }
   const limited = relay.commandLimiter.check(auth.id);

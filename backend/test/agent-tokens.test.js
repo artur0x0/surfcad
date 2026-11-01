@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { createManualClock } from '../agent/clock.js';
+import { TOKEN_TTL_MS } from '../agent/limits.js';
 import { createMongoTokenStore, createMemoryTokenStore, createTokenService, hashToken } from '../agent/tokens.js';
 
 const USER_A = 'a'.repeat(24);
@@ -115,6 +116,49 @@ describe('agent token hashes', () => {
     assert.equal(await tokens.authenticate(second.token), null);
     assert.equal((await tokens.authenticate(other.token)).userId, 'user-b');
     assert.deepEqual(await tokens.revokeAll('user-a'), []);
+  });
+
+  test('use does not extend a 7 day pairing', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    assert.equal(TOKEN_TTL_MS, 7 * DAY);
+    const { clock, store, tokens } = memoryService(TOKEN_TTL_MS);
+    const issued = await tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const expiresAt = store.dump()[0].expiresAt;
+    assert.equal(Date.parse(expiresAt) - clock.now(), TOKEN_TTL_MS);
+    clock.advance(TOKEN_TTL_MS - 1);
+    await tokens.markUsed(await tokens.authenticate(issued.token));
+    assert.equal(store.dump()[0].expiresAt, expiresAt);
+    assert.equal((await tokens.inspect(issued.token)).status, 'ok');
+    clock.advance(1);
+    assert.equal((await tokens.inspect(issued.token)).status, 'expired');
+    assert.equal(store.dump()[0].expiresAt, expiresAt);
+    assert.equal(await tokens.authenticate(issued.token), null);
+  });
+
+  test('a stored 90-day expiry is capped at 7 days from issue', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const start = 1_700_000_000_000;
+    const clock = createManualClock(start);
+    const store = createMemoryTokenStore();
+    const raw = Buffer.alloc(32, 9).toString('base64url');
+    const created = start - 2 * DAY;
+    await store.insert({
+      id: 'legacy',
+      userId: 'user-a',
+      tokenHash: hashToken(raw),
+      label: 'legacy',
+      createdAt: new Date(created).toISOString(),
+      expiresAt: new Date(created + 90 * DAY).toISOString(),
+      revokedAt: null,
+      lastUsedAt: null,
+    });
+    const tokens = createTokenService({ store, now: () => clock.now() });
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), created + TOKEN_TTL_MS);
+    assert.equal(Date.parse(store.dump()[0].expiresAt), created + 90 * DAY);
+    clock.advance(created + TOKEN_TTL_MS - start);
+    assert.equal((await tokens.inspect(raw)).status, 'expired');
+    assert.equal(Date.parse(store.dump()[0].expiresAt), created + 90 * DAY);
   });
 
   test('an expired token is rejected', async () => {

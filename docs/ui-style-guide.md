@@ -486,7 +486,8 @@ Single-line card:
 The agent session card (Agent connected / Agent disconnected) is this
 single-line card (`toast-card`, `toast-action`). A presence reason replaces
 the disconnected line: "Agent disconnected: inactive for 10 min", "Agent
-ended the session", or "Agent access revoked". A frame with no reason keeps
+ended the session", "Agent access revoked", or "Agent pairing expired:
+pair again with a new code". A frame with no reason keeps
 "Agent disconnected".
 
 - Height is **40px** (`--toast-height`), including the 1px border. The

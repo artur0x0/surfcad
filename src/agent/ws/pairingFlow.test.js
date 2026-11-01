@@ -264,6 +264,7 @@ test('pairing toasts are transient and a reload grace is not a disconnect', () =
   assert.equal(agentDisconnectToastCopy('inactive'), 'Agent disconnected: inactive for 10 min');
   assert.equal(agentDisconnectToastCopy('closed'), 'Agent ended the session');
   assert.equal(agentDisconnectToastCopy('revoked'), 'Agent access revoked');
+  assert.equal(agentDisconnectToastCopy('expired'), 'Agent pairing expired: pair again with a new code');
   assert.equal(agentDisconnectToastCopy(undefined), 'Agent disconnected');
   const ended = stepAgentSessionToast(null, 'disconnected', 2000, { reason: 'closed' });
   assert.equal(ended.reason, 'closed');

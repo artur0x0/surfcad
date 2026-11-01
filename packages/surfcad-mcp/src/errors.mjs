@@ -71,6 +71,28 @@ export function tokenRevokedError() {
   });
 }
 
+export const TOKEN_EXPIRED_MESSAGE = 'Agent pairing expired, get a new join code.';
+
+export function tokenExpiredError() {
+  return Object.assign(new Error(TOKEN_EXPIRED_MESSAGE), {
+    code: 'expired',
+    hint: 'The pairing expired, get a new join code in SurfCAD, then run npx surfcad-mcp login again.',
+    retryable: false,
+  });
+}
+
+/**
+ * HTTP 401 from the agent relay. `expired` is a dead pairing; anything else
+ * is treated as a revoked login.
+ * @param {any} json
+ */
+export function authErrorFromBody(json) {
+  const error = json && typeof json.error === 'string' ? json.error : '';
+  const message = json && typeof json.message === 'string' ? json.message : '';
+  if (error === 'expired' || message === 'Token expired') return tokenExpiredError();
+  return tokenRevokedError();
+}
+
 /**
  * @param {string} [message]
  */
@@ -95,6 +117,7 @@ export function asRemoteError(error) {
       code === 'tab_asleep'
       || code === 'too_many_pending'
       || code === 'token_revoked'
+      || code === 'expired'
       || code === 'client_update_required'
     ) return error;
   }
@@ -107,6 +130,7 @@ export function asRemoteError(error) {
     : (typeof error === 'string' ? error : '');
   if (code === 'tab_asleep' || message === 'SurfCAD tab is asleep') return tabAsleepError();
   if (code === 'too_many_pending' || message === 'Too many commands are waiting') return tooManyPendingError();
+  if (code === 'expired' || message === 'Token expired') return tokenExpiredError();
   if (code === 'token_revoked' || code === 'unauthorized' || code === '4001') return tokenRevokedError();
   if (
     code === 'client_update_required'

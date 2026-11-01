@@ -17,7 +17,9 @@ import { runCli } from '../src/cli.mjs';
 import { configDir, normalizeServer, resolveAgentName, selectRelayMode, tokenPath } from '../src/remote/config.mjs';
 import { loginStatusError } from '../src/remote/login.mjs';
 import { agentHelloFrame, RemoteSession } from '../src/remote/session.mjs';
+import { createManualClock } from '../../../backend/agent/clock.js';
 import { createAgentRelay } from '../../../backend/agent/createRelay.js';
+import { TOKEN_TTL_MS } from '../../../backend/agent/limits.js';
 import { deliverTabAgentFrame } from '../../../backend/agent/tabPrompt.js';
 import { attachAgentWebSocket } from '../../../backend/agent/wsServer.js';
 
@@ -719,4 +721,35 @@ test('login --code redeems a join code, stores the token, and does not print it'
   assert.match(again.join(''), /not valid/);
   assert.equal(again.join('').includes(created.code), false);
   assert.equal(again.join('').includes(saved.token), false);
+});
+
+test('a pairing older than 7 days tells the agent to get a new join code', async () => {
+  const clock = createManualClock(1_700_000_000_000);
+  const relay = createAgentRelay({ clock, presenceTtlMs: TOKEN_TTL_MS + 60_000 });
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'aged' });
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: () => {},
+  });
+  sessions.push(session);
+  await session.connect();
+  clock.advance(TOKEN_TTL_MS);
+  await assert.rejects(session.call('status', {}), (err) => {
+    assert.equal(err.code, 'expired');
+    assert.match(err.message, /expired, get a new join code/);
+    return true;
+  });
+  const fresh = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: () => {},
+  });
+  sessions.push(fresh);
+  await assert.rejects(fresh.connect(), (err) => {
+    assert.equal(err.code, 'expired');
+    assert.match(err.message, /expired, get a new join code/);
+    return true;
+  });
 });

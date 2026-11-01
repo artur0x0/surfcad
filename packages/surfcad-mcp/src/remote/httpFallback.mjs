@@ -5,7 +5,7 @@
  */
 
 import { readCommandResponse } from '../commandProtocol.mjs';
-import { asRemoteError, tokenRevokedError } from '../errors.mjs';
+import { asRemoteError, authErrorFromBody } from '../errors.mjs';
 
 /** How long a command may sit unanswered, on the WebSocket and on HTTPS. */
 export const COMMAND_WAIT_MS = 10 * 60 * 1000;
@@ -24,7 +24,7 @@ export function commandWaitTimeout() {
  * @param {any} json
  */
 function httpFailure(status, json) {
-  if (status === 401) return tokenRevokedError();
+  if (status === 401) return authErrorFromBody(json);
   const code = typeof json?.error === 'string' ? json.error : '';
   const message = typeof json?.message === 'string' ? json.message : '';
   return asRemoteError({ code, message: message || code });
@@ -189,7 +189,7 @@ export async function callOverHttp(options) {
   } catch {
     posted = null;
   }
-  if (post.status === 401) throw tokenRevokedError();
+  if (post.status === 401) throw authErrorFromBody(posted);
   if (post.status !== 202) throw httpFailure(post.status, posted);
 
   const deadline = now() + COMMAND_WAIT_MS;
@@ -223,6 +223,7 @@ function isTerminal(err) {
   return code === 'tab_asleep'
     || code === 'too_many_pending'
     || code === 'token_revoked'
+    || code === 'expired'
     || code === 'client_update_required'
     || code === 'not_found';
 }
@@ -242,7 +243,11 @@ async function waitViaSse(options, fetchImpl, signal) {
     },
     signal,
   });
-  if (res.status === 401) throw tokenRevokedError();
+  if (res.status === 401) {
+    let json = null;
+    try { json = await res.json(); } catch { json = null; }
+    throw authErrorFromBody(json);
+  }
   if (!res.ok) {
     try { await res.body?.cancel?.(); } catch { /* noop */ }
     throw Object.assign(new Error(`Event stream failed (${res.status})`), { code: 'sse_failed' });
@@ -274,7 +279,7 @@ async function waitViaPoll(options, fetchImpl, signal) {
   } catch {
     json = null;
   }
-  if (res.status === 401) throw tokenRevokedError();
+  if (res.status === 401) throw authErrorFromBody(json);
   if (res.status === 404) {
     throw Object.assign(new Error('That command is no longer waiting.'), { code: 'not_found' });
   }

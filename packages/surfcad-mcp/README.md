@@ -64,7 +64,8 @@ Clear failures:
 | What happened | What you see |
 | --- | --- |
 | No SurfCAD tab for about 30 seconds | `SurfCAD tab is asleep` |
-| Token revoked or expired (socket close 4001) | Run `npx surfcad-mcp login` again |
+| Token revoked (socket close 4001, `token revoked`) | Run `npx surfcad-mcp login` again |
+| Pairing expired (HTTP `expired`, or socket close 4001, `token expired`) | Agent pairing expired, get a new join code |
 | Too many commands already waiting | `Too many commands are waiting` |
 | This package is older than the server | `please update surfcad-mcp` |
 

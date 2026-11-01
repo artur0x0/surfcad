@@ -227,14 +227,64 @@ export function createTokenService(opts = {}) {
   }
 
   /**
+   * @param {unknown} value
+   * @returns {number}
+   */
+  function instantMs(value) {
+    if (value instanceof Date) {
+      const n = value.getTime();
+      return Number.isFinite(n) ? n : NaN;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const n = Date.parse(String(value ?? ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  /**
+   * Absolute expiry. A stored `expiresAt` longer than `ttlMs` from
+   * `createdAt` is capped. Missing dates are already expired.
+   * @param {Record<string, unknown>} row
+   * @returns {number}
+   */
+  function effectiveExpiryMs(row) {
+    const stored = instantMs(row.expiresAt);
+    const created = instantMs(row.createdAt);
+    const cap = Number.isFinite(created) ? created + ttlMs : NaN;
+    if (Number.isFinite(stored) && Number.isFinite(cap)) return Math.min(stored, cap);
+    if (Number.isFinite(cap)) return cap;
+    if (Number.isFinite(stored)) return stored;
+    return 0;
+  }
+
+  /**
    * @param {Record<string, unknown> | null} row
    * @returns {'ok' | 'revoked' | 'expired' | 'missing'}
    */
   function liveness(row) {
     if (!row) return 'missing';
     if (row.revokedAt) return 'revoked';
-    if (new Date(String(row.expiresAt)).getTime() <= now()) return 'expired';
+    if (effectiveExpiryMs(row) <= now()) return 'expired';
     return 'ok';
+  }
+
+  /**
+   * @param {string | undefined | null} raw
+   * @returns {Promise<{ status: 'ok' | 'revoked' | 'expired' | 'missing', auth: { userId: string, id: string, tokenHash: string, label: string } | null }>}
+   */
+  async function inspect(raw) {
+    if (typeof raw !== 'string' || raw.length < 32) return { status: 'missing', auth: null };
+    const tokenHash = hashToken(raw);
+    const row = await rowByHash(tokenHash);
+    if (!row) return { status: 'missing', auth: null };
+    return {
+      status: liveness(row),
+      auth: {
+        userId: String(row.userId),
+        id: String(row.id),
+        tokenHash,
+        label: String(row.label || ''),
+      },
+    };
   }
 
   return {
@@ -273,17 +323,16 @@ export function createTokenService(opts = {}) {
      * @param {string | undefined | null} raw
      */
     async authenticate(raw) {
-      if (typeof raw !== 'string' || raw.length < 32) return null;
-      const tokenHash = hashToken(raw);
-      const row = await rowByHash(tokenHash);
-      if (!row || liveness(row) !== 'ok') return null;
-      return {
-        userId: String(row.userId),
-        id: String(row.id),
-        tokenHash,
-        label: String(row.label || ''),
-      };
+      const found = await inspect(raw);
+      if (found.status !== 'ok') return null;
+      return found.auth;
     },
+    /**
+     * Same lookup as authenticate, including a dead token, so a caller can
+     * tell expired from revoked. Does not slide `expiresAt`.
+     * @param {string | undefined | null} raw
+     */
+    inspect,
     /**
      * Re-check a socket that already authenticated. `ok` is the only state
      * that may run another command.
@@ -294,14 +343,22 @@ export function createTokenService(opts = {}) {
       if (typeof tokenHash !== 'string' || tokenHash.length === 0) return 'missing';
       return liveness(await rowByHash(tokenHash));
     },
-    /** @param {{ tokenHash: string }} auth */
+    /**
+     * Records `lastUsedAt` only. The pairing expiry stays at issue time
+     * plus the absolute TTL.
+     * @param {{ tokenHash: string }} auth
+     */
     async markUsed(auth) {
       await holder.store.touch(auth.tokenHash, new Date(now()).toISOString());
     },
     /** @param {string} userId */
     async list(userId) {
       const rows = await holder.store.listByUser(String(userId));
-      return rows.map((row) => publicToken(row));
+      return rows.map((row) => {
+        const pub = publicToken(row);
+        pub.expiresAt = new Date(effectiveExpiryMs(row)).toISOString();
+        return pub;
+      });
     },
     /**
      * @param {string} userId
