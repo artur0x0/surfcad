@@ -3,10 +3,6 @@ import {
   checkAgentHandshakeVersion,
   readCommandRequest,
 } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
-import {
-  AGENT_SOCKET_CLOSE_CODE,
-  TOKEN_REVOKED_REASON,
-} from './agentSockets.js';
 import { forgetExpiredPairing } from './expirePairing.js';
 import {
   approvePage,
@@ -18,6 +14,7 @@ import {
 import { approvalFetchAllowed, browserReadAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
+import { revokeOneAgentToken } from './revokeToken.js';
 import { hashApprovingSession } from './sessionKey.js';
 import { sessionMessageProblem } from './sessionMessage.js';
 
@@ -436,11 +433,11 @@ export function createAgentRouter(deps) {
       const live = await requireLiveAgent(deps, req, res);
       if (!live) return undefined;
       const { auth } = live;
-      const revoked = await deps.tokens.revoke(auth.userId, auth.id);
+      const revoked = await revokeOneAgentToken(deps, auth.userId, auth.id, {
+        heldPrompts: 'account',
+        dropPresence: true,
+      });
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(auth.id, auth.userId);
-      deps.agentSockets.closeToken(auth.id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
-      deps.registry.dropAgentPresence(auth.userId);
       logRelay({ event: 'token-revoke', userId: auth.userId });
       return res.json({ ok: true });
     } catch (error) {
@@ -455,11 +452,11 @@ export function createAgentRouter(deps) {
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const tokenId = String(req.params.id);
-      const revoked = await deps.tokens.revoke(user.id, tokenId);
+      const revoked = await revokeOneAgentToken(deps, user.id, tokenId, {
+        heldPrompts: 'account',
+        dropPresence: true,
+      });
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(tokenId, user.id);
-      deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
-      deps.registry.dropAgentPresence(user.id);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });
     } catch (error) {

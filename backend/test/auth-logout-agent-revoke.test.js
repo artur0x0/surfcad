@@ -14,7 +14,7 @@ import LoginEvent from '../db/models/LoginEvent.js';
 import authRoutes from '../routes/auth.js';
 import { initializePassport } from '../auth/passport.js';
 import { enforceCredentialRevocation } from '../auth/session.js';
-import { installAgentRelay, attachAgentSockets } from '../agent/install.js';
+import { installAgentRelay, attachAgentSockets, mountedAgentRelay } from '../agent/install.js';
 import { AGENT_SOCKET_CLOSE_CODE } from '../agent/agentSockets.js';
 import {
   AGENT_DISCONNECTED_TOAST_COPY,
@@ -26,6 +26,8 @@ const ORIGIN = 'https://surfcad.com';
 
 /** @type {import('node:http').Server | null} */
 let server = null;
+/** @type {string} */
+let userId = '';
 /** @type {number} */
 let port = 0;
 /** @type {(() => void)[]} */
@@ -164,6 +166,7 @@ before(async () => {
     authProvider: 'local',
     emailVerified: true,
   });
+  userId = String(inserted._id);
   const user = await User.findById(inserted._id);
   await user.setPassword('password12');
   await user.save();
@@ -237,11 +240,18 @@ test('sign-out revokes only that browser, and a password change still revokes bo
   assert.equal(phoneUp.connected, true);
   assert.equal(deskUp.connected, true);
   const deskAgent = await helloAgent(deskToken);
+  const relay = mountedAgentRelay();
+  assert.ok(relay);
+  const legacy = await relay.tokens.issue({ userId, label: 'legacy' });
+  const legacyAgent = await helloAgent(legacy.token);
   assert.equal(await promptStatus(phoneToken), 200);
   assert.equal(await promptStatus(deskToken), 200);
+  assert.equal(await promptStatus(legacy.token), 200);
 
   let deskAgentClosed = false;
+  let legacyAgentClosed = false;
   deskAgent.ws.once('close', () => { deskAgentClosed = true; });
+  legacyAgent.ws.once('close', () => { legacyAgentClosed = true; });
   const phoneAgentClosed = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timed out waiting for the iphone agent to close')), 3000);
     phoneAgent.ws.once('close', (code, reason) => {
@@ -271,7 +281,9 @@ test('sign-out revokes only that browser, and a password change still revokes bo
   assert.equal(closed.reason, 'token revoked');
   await sleep(40);
   assert.equal(deskAgentClosed, false);
+  assert.equal(legacyAgentClosed, false);
   assert.equal(deskAgent.ws.readyState, WebSocket.OPEN);
+  assert.equal(legacyAgent.ws.readyState, WebSocket.OPEN);
   assert.equal(deskTab.ws.readyState, WebSocket.OPEN);
   const phoneTabEnd = await phoneTabClosed;
   assert.equal(phoneTabEnd.code, 1000);
@@ -279,6 +291,7 @@ test('sign-out revokes only that browser, and a password change still revokes bo
 
   assert.equal(await promptStatus(phoneToken), 401);
   assert.equal(await promptStatus(deskToken), 200);
+  assert.equal(await promptStatus(legacy.token), 200);
   const me = await phoneRequest('GET', '/api/auth/me');
   assert.equal(me.body?.authenticated, false);
   const deskMe = await deskRequest('GET', '/api/auth/me');
@@ -326,4 +339,6 @@ test('sign-out revokes only that browser, and a password change still revokes bo
   assert.equal(await promptStatus(secondPhone), 401);
   assert.equal(await promptStatus(secondDesk), 401);
   assert.equal(await promptStatus(deskToken), 401);
+  assert.equal(await promptStatus(legacy.token), 401);
+  assert.notEqual(legacyAgent.ws.readyState, WebSocket.OPEN);
 });

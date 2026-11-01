@@ -8,6 +8,7 @@ import { authenticateBrowserUpgrade } from './browserAuth.js';
 import { cityLookupEnabled, createCityLookup } from './cityLookup.js';
 import { createAgentRelay } from './createRelay.js';
 import { warnIfAgentRelayIsClustered } from './processMode.js';
+import { revokeOneAgentToken } from './revokeToken.js';
 import { hashApprovingSession } from './sessionKey.js';
 import { createMongoTokenStore } from './tokens.js';
 import { attachAgentWebSocket } from './wsServer.js';
@@ -104,8 +105,7 @@ export async function revokeRelaySession(relay, userId, sessionId) {
   relay.joinCodes.clearSession(id, sessionKey);
   const ids = await relay.tokens.revokeBySession(id, sessionKey);
   for (const tokenId of ids) {
-    relay.registry.abortToken(tokenId);
-    relay.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
+    await revokeOneAgentToken(relay, id, tokenId, { alreadyRevoked: true });
   }
   if (ids.length === 0) return ids;
   const live = await relay.tokens.countLive(id);
@@ -139,6 +139,11 @@ export function closeSessionTabSockets(userId, sessionId) {
   const sessionKey = hashApprovingSession(sessionId);
   if (!sessionKey) return 0;
   return state.relay.tabSockets.closeSession(String(userId), sessionKey);
+}
+
+/** The mounted relay. Tests use it to insert a token that has no session. */
+export function mountedAgentRelay() {
+  return state.relay;
 }
 
 /**

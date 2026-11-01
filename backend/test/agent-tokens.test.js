@@ -188,6 +188,34 @@ describe('agent token hashes', () => {
     assert.equal(Date.parse(store.dump()[0].expiresAt), created + 90 * DAY);
   });
 
+  test('a token with no pairing time is capped at 7 days from the first check', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const start = 1_700_000_000_000;
+    const clock = createManualClock(start);
+    const store = createMemoryTokenStore();
+    const raw = Buffer.alloc(32, 4).toString('base64url');
+    await store.insert({
+      id: 'undated',
+      userId: 'user-a',
+      tokenHash: hashToken(raw),
+      label: 'undated',
+      createdAt: null,
+      expiresAt: new Date(start + 90 * DAY).toISOString(),
+      revokedAt: null,
+      lastUsedAt: null,
+    });
+    const tokens = createTokenService({ store, now: () => clock.now() });
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse(String(store.dump()[0].createdAt)), start);
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), start + TOKEN_TTL_MS);
+    clock.advance(DAY);
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), start + TOKEN_TTL_MS);
+    clock.advance(TOKEN_TTL_MS - DAY);
+    assert.equal((await tokens.inspect(raw)).status, 'expired');
+    assert.equal(Date.parse(String(store.dump()[0].expiresAt)), start + 90 * DAY);
+  });
+
   test('an expired token is rejected', async () => {
     const { clock, tokens } = memoryService(1000);
     const issued = await tokens.issue({ userId: 'user-a', label: 'Cursor on laptop' });

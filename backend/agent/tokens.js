@@ -115,6 +115,20 @@ export function createMemoryTokenStore() {
       return ids;
     },
     /**
+     * Freeze a missing pairing time so a 7-day cap does not slide.
+     * A row that already has `createdAt` is left alone.
+     * @param {string} tokenHash
+     * @param {string} when
+     * @returns {Promise<string | null>}
+     */
+    async stampCreatedAt(tokenHash, when) {
+      const row = byHash.get(tokenHash);
+      if (!row) return null;
+      if (row.createdAt) return /** @type {string} */ (row.createdAt);
+      row.createdAt = when;
+      return when;
+    },
+    /**
      * @param {string} tokenHash
      * @param {string} when
      */
@@ -236,6 +250,18 @@ export function createMongoTokenStore(model) {
     /**
      * @param {string} tokenHash
      * @param {string} when
+     * @returns {Promise<string | Date | null>}
+     */
+    async stampCreatedAt(tokenHash, when) {
+      const doc = await model.findOne({ tokenHash }).lean();
+      if (!doc) return null;
+      if (doc.createdAt) return doc.createdAt;
+      await model.updateOne({ tokenHash }, { $set: { createdAt: new Date(when) } });
+      return when;
+    },
+    /**
+     * @param {string} tokenHash
+     * @param {string} when
      */
     async touch(tokenHash, when) {
       const result = await model.updateOne({ tokenHash }, { $set: { lastUsedAt: when } });
@@ -264,7 +290,7 @@ export function createTokenService(opts = {}) {
   async function rowByHash(tokenHash) {
     const row = await holder.store.findByHash(tokenHash);
     if (!row || !hashesMatch(String(row.tokenHash), tokenHash)) return null;
-    return row;
+    return ensurePairedAt(row);
   }
 
   /**
@@ -283,18 +309,32 @@ export function createTokenService(opts = {}) {
 
   /**
    * Absolute expiry. A stored `expiresAt` longer than `ttlMs` from
-   * `createdAt` is capped. Missing dates are already expired.
+   * `createdAt` (the pairing time) is capped. A missing pairing time is
+   * capped at `now + ttlMs` after `ensurePairedAt` freezes `createdAt`.
    * @param {Record<string, unknown>} row
    * @returns {number}
    */
   function effectiveExpiryMs(row) {
     const stored = instantMs(row.expiresAt);
     const created = instantMs(row.createdAt);
-    const cap = Number.isFinite(created) ? created + ttlMs : NaN;
-    if (Number.isFinite(stored) && Number.isFinite(cap)) return Math.min(stored, cap);
-    if (Number.isFinite(cap)) return cap;
-    if (Number.isFinite(stored)) return stored;
-    return 0;
+    const cap = Number.isFinite(created) ? created + ttlMs : now() + ttlMs;
+    if (Number.isFinite(stored)) return Math.min(stored, cap);
+    return cap;
+  }
+
+  /**
+   * @param {Record<string, unknown> | null} row
+   */
+  async function ensurePairedAt(row) {
+    if (!row || Number.isFinite(instantMs(row.createdAt))) return row;
+    const stamped = new Date(now()).toISOString();
+    if (typeof holder.store.stampCreatedAt === 'function') {
+      const saved = await holder.store.stampCreatedAt(String(row.tokenHash), stamped);
+      row.createdAt = saved || stamped;
+    } else {
+      row.createdAt = stamped;
+    }
+    return row;
   }
 
   /**
@@ -403,7 +443,9 @@ export function createTokenService(opts = {}) {
     /** @param {string} userId */
     async list(userId) {
       const rows = await holder.store.listByUser(String(userId));
-      return rows.map((row) => {
+      const ready = [];
+      for (const row of rows) ready.push(await ensurePairedAt(row));
+      return ready.map((row) => {
         const pub = publicToken(row);
         pub.expiresAt = new Date(effectiveExpiryMs(row)).toISOString();
         return pub;
@@ -439,7 +481,11 @@ export function createTokenService(opts = {}) {
      */
     async countLive(userId) {
       const rows = await holder.store.listByUser(String(userId));
-      return rows.filter((row) => liveness(row) === 'ok').length;
+      let live = 0;
+      for (const row of rows) {
+        if (liveness(await ensurePairedAt(row)) === 'ok') live += 1;
+      }
+      return live;
     },
   };
 }
