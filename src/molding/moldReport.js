@@ -1,17 +1,25 @@
 /**
  * One molding report for the pane, the spreadsheet, and the agent commands.
  *
- * Geometry is measured here. Money uses the existing quote and tooling
- * functions when the caller passes a priced catalog. The public resin
- * library has no density and no price, so those estimates stay empty
- * instead of inventing a number. Press tonnage is `requiredTonnage` on the
+ * Geometry is measured here. With no priced catalog, mass is volume times
+ * the published resin density, tooling is the published rate card, and part
+ * price is material plus press time plus tooling divided by quantity. A
+ * missing density, price, area, or wall stays empty. When the caller passes
+ * a priced catalog, mass, aluminum and steel tooling, and the part price
+ * still come from that catalog. Press tonnage is `requiredTonnage` on the
  * measured projected area. A ranked vendor quote still sizes the press from
  * the bounding-box footprint.
  */
 
+import { resinEconomics } from '../../backend/db/models/moldingResinSeed.js';
 import { PART_QUOTE_CONSTANTS, rankMoldingQuotes, requiredTonnage } from './partQuote.js';
 import { solidVolumeCm3 } from './solidVolume.js';
 import { TOOLING_CONSTANTS, footprintFromBox, toolingCounts, toolingEstimate } from './toolingEstimate.js';
+import {
+  REPORT_PRICE_FORMULAS,
+  REPORT_TOOLING_CARD,
+  publishedPartQuote,
+} from './toolingRateCard.js';
 
 export const REPORT_QUANTITIES = Object.freeze([25, 100, 1000, 5000, 10000]);
 export const DEFAULT_REPORT_QUANTITY = 1000;
@@ -186,13 +194,45 @@ function densityOf(catalog, grade) {
   return match ? finite(match.densityGCm3) : null;
 }
 
-function assumptionsOf(cavityCount, rates) {
+function publishedAssumptions(resin, quote, maxWallMm) {
+  const card = REPORT_TOOLING_CARD;
+  return {
+    resin: resin ? {
+      grade: resin.grade,
+      densityGCm3: resin.densityGCm3,
+      usdPerKg: resin.usdPerKg,
+      densitySource: resin.densitySource,
+      densityAsOf: resin.densityAsOf,
+      priceSource: resin.priceSource,
+      priceAsOf: resin.priceAsOf,
+    } : null,
+    card: {
+      asOf: card.asOf,
+      source: card.source,
+      baseMoldUsd: card.baseMoldUsd,
+      referenceAreaMm2: card.referenceAreaMm2,
+      minSizeFactor: card.minSizeFactor,
+      sideActionAdderUsd: card.sideActionAdderUsd,
+      machineRateUsdPerHour: card.machineRateUsdPerHour,
+      fillS: card.fillS,
+      kCoolSPerMm2: card.kCoolSPerMm2,
+      mechS: card.mechS,
+    },
+    formulas: REPORT_PRICE_FORMULAS,
+    sizeFactor: quote?.sizeFactor ?? null,
+    maxWallMm: maxWallMm ?? null,
+    cavityNote: 'The published card prices one cavity. cavityCount is not a control and does not scale this card.',
+  };
+}
+
+function assumptionsOf(cavityCount, rates, published) {
   const used = {};
   if (rates) {
     for (const field of RATE_FIELDS) {
       if (rates[field] != null) used[field] = rates[field];
     }
   }
+  const hasPartnerRates = Object.keys(used).length > 0;
   return {
     cavityPressureMpa: PART_QUOTE_CONSTANTS.cavityPressureMpa,
     newtonPerTon: PART_QUOTE_CONSTANTS.newtonPerTon,
@@ -206,9 +246,11 @@ function assumptionsOf(cavityCount, rates) {
     shotLow: PART_QUOTE_CONSTANTS.shotLow,
     shotHigh: PART_QUOTE_CONSTANTS.shotHigh,
     cavityCount,
-    rates: Object.keys(used).length ? used : null,
-    ratesNote: Object.keys(used).length ? null : 'No tooling rate card was loaded.',
+    rates: hasPartnerRates ? used : null,
+    ratesNote: hasPartnerRates || published ? null : 'No tooling rate card was loaded.',
     tonnageNote: 'Press tonnage is requiredTonnage of the measured projected area. A ranked vendor quote still gates each press on the bounding-box footprint times the cavity count.',
+    priceSource: null,
+    published,
   };
 }
 
@@ -276,80 +318,139 @@ export function buildMoldReport(input = {}) {
     pressTons: tons == null ? null : round6(tons),
     toolingAluminumUsd: null,
     toolingSteelUsd: null,
+    toolingUsd: null,
+    materialUsd: null,
+    pressUsd: null,
+    cycleS: null,
     partUsd: null,
     totalUsd: null,
     metal: null,
   };
 
-  const density = densityOf(input.catalog, grade);
-  if (density != null && volumeCm3 != null) {
-    estimates.massKg = round6((volumeCm3 * density) / 1000);
-  } else {
-    notes.mass = 'The resin library has no density, so part mass is not computed.';
-  }
-
   const rates = rateCardOf(input.catalog);
   const counts = toolingCounts(input.analysis);
   const footprint = pos ? footprintFromBox(boundsOf(pos), pull) : null;
-  if (rates && counts && footprint && finite(counts.maxWallMm) > 0) {
-    const tooling = toolingEstimate({
-      rates,
-      footprint,
-      partingLengthMm: counts.partingLengthMm,
-      slideCount: counts.slideCount,
-      lifterCount: counts.lifterCount,
-      pinCount: counts.pinCount,
-      sleeveCount: counts.sleeveCount,
-      maxWallMm: counts.maxWallMm,
-      flowLengthMm: null,
-      cavityCount,
-    });
-    if (tooling?.error) notes.tooling = tooling.error.message;
-    else {
-      estimates.toolingAluminumUsd = tooling.aluminum.totalUsd;
-      estimates.toolingSteelUsd = tooling.steel.totalUsd;
-    }
-  } else {
-    notes.tooling = 'No tooling rate card was loaded, so the tooling estimate is not computed.';
-  }
+  const maxWallMm = finite(counts?.maxWallMm) ?? finite(input.analysis?.wall?.max);
+  let priceSource = null;
+  let published = null;
 
-  let price = null;
-  if (input.catalog && footprint && volumeCm3 && counts && finite(counts.maxWallMm) > 0) {
-    const ranked = rankMoldingQuotes({
-      quantity,
-      cavityCount,
-      grade,
-      part: {
+  if (input.catalog) {
+    const density = densityOf(input.catalog, grade);
+    if (density != null && volumeCm3 != null) {
+      estimates.massKg = round6((volumeCm3 * density) / 1000);
+    } else {
+      notes.mass = 'The resin library has no density, so part mass is not computed.';
+    }
+    if (rates && counts && footprint && finite(counts.maxWallMm) > 0) {
+      const tooling = toolingEstimate({
+        rates,
         footprint,
-        volumeCm3,
-        maxWallMm: counts.maxWallMm,
         partingLengthMm: counts.partingLengthMm,
         slideCount: counts.slideCount,
         lifterCount: counts.lifterCount,
         pinCount: counts.pinCount,
         sleeveCount: counts.sleeveCount,
+        maxWallMm: counts.maxWallMm,
         flowLengthMm: null,
-      },
-      partners: input.catalog.partners,
-      machines: input.catalog.machines,
-      resins: input.catalog.resins,
-      rates: Array.isArray(input.catalog.rates) ? input.catalog.rates : [input.catalog.rates].filter(Boolean),
-    });
-    if (ranked?.error) notes.price = ranked.error.message;
-    else price = priceFromVendors(ranked.vendors, quantity);
-    if (!price && !notes.price) notes.price = 'No press fits this part.';
-  } else if (input.ranked && !input.ranked.error) {
-    price = priceFromVendors(input.ranked.vendors, quantity);
-    if (!price) notes.price = 'No press fits this part.';
+        cavityCount,
+      });
+      if (tooling?.error) notes.tooling = tooling.error.message;
+      else {
+        estimates.toolingAluminumUsd = tooling.aluminum.totalUsd;
+        estimates.toolingSteelUsd = tooling.steel.totalUsd;
+      }
+    } else {
+      notes.tooling = 'No tooling rate card was loaded, so the tooling estimate is not computed.';
+    }
+    let price = null;
+    let pricedFromRank = false;
+    if (footprint && volumeCm3 && counts && finite(counts.maxWallMm) > 0) {
+      const ranked = rankMoldingQuotes({
+        quantity,
+        cavityCount,
+        grade,
+        part: {
+          footprint,
+          volumeCm3,
+          maxWallMm: counts.maxWallMm,
+          partingLengthMm: counts.partingLengthMm,
+          slideCount: counts.slideCount,
+          lifterCount: counts.lifterCount,
+          pinCount: counts.pinCount,
+          sleeveCount: counts.sleeveCount,
+          flowLengthMm: null,
+        },
+        partners: input.catalog.partners,
+        machines: input.catalog.machines,
+        resins: input.catalog.resins,
+        rates: Array.isArray(input.catalog.rates) ? input.catalog.rates : [input.catalog.rates].filter(Boolean),
+      });
+      if (ranked?.error) notes.price = ranked.error.message;
+      else price = priceFromVendors(ranked.vendors, quantity);
+      if (!price && !notes.price) notes.price = 'No press fits this part.';
+    } else if (input.ranked && !input.ranked.error) {
+      pricedFromRank = true;
+      price = priceFromVendors(input.ranked.vendors, quantity);
+      if (!price) notes.price = 'No press fits this part.';
+    } else {
+      notes.price = 'No partner catalog is loaded, so the part price is not computed.';
+    }
+    if (price) {
+      estimates.partUsd = price.perPartUsd;
+      estimates.totalUsd = price.totalUsd;
+      estimates.metal = price.metal;
+      notes.price = null;
+      priceSource = pricedFromRank ? 'vendor' : 'catalog';
+    }
   } else {
-    notes.price = 'No partner catalog is loaded, so the part price is not computed.';
+    const resin = resinEconomics(grade);
+    const quote = publishedPartQuote({
+      volumeCm3,
+      densityGCm3: resin?.densityGCm3,
+      usdPerKg: resin?.usdPerKg,
+      projectedAreaMm2: projected,
+      sideActionCount,
+      maxWallMm,
+      quantity,
+    });
+    published = publishedAssumptions(resin, quote, maxWallMm);
+    if (quote.massKg != null) estimates.massKg = quote.massKg;
+    else if (!(volumeCm3 > 0)) notes.mass = 'Part volume is missing, so part mass is not computed.';
+    else notes.mass = 'This grade has no density in the resin table, so part mass is not computed.';
+
+    if (quote.toolingUsd != null) estimates.toolingUsd = quote.toolingUsd;
+    else notes.tooling = 'Projected area is missing, so the tooling estimate is not computed.';
+
+    estimates.materialUsd = quote.materialUsd;
+    estimates.pressUsd = quote.pressUsd;
+    estimates.cycleS = quote.cycleS;
+    if (quote.partUsd != null) {
+      estimates.partUsd = quote.partUsd;
+      estimates.totalUsd = quote.totalUsd;
+      priceSource = 'published';
+    } else if (input.ranked && !input.ranked.error) {
+      const price = priceFromVendors(input.ranked.vendors, quantity);
+      if (price) {
+        estimates.partUsd = price.perPartUsd;
+        estimates.totalUsd = price.totalUsd;
+        estimates.metal = price.metal;
+        priceSource = 'vendor';
+      } else {
+        notes.price = 'No press fits this part.';
+      }
+    } else if (!(volumeCm3 > 0)) {
+      notes.price = 'Part volume is missing, so the part price is not computed.';
+    } else if (!resin || !(finite(resin.densityGCm3) > 0) || finite(resin.usdPerKg) == null) {
+      notes.price = 'This grade has no density and price in the resin table, so the part price is not computed.';
+    } else if (quote.toolingUsd == null) {
+      notes.price = 'Projected area is missing, so the part price is not computed.';
+    } else {
+      notes.price = 'Max wall is missing, so press time and the part price are not computed.';
+    }
   }
-  if (price) {
-    estimates.partUsd = price.perPartUsd;
-    estimates.totalUsd = price.totalUsd;
-    estimates.metal = price.metal;
-    notes.price = null;
-  }
+
+  const assumptions = assumptionsOf(cavityCount, rates, published);
+  assumptions.priceSource = priceSource;
 
   return {
     framing: 'Mold report',
@@ -366,6 +467,6 @@ export function buildMoldReport(input = {}) {
     },
     estimates,
     notes,
-    assumptions: assumptionsOf(cavityCount, rates),
+    assumptions,
   };
 }

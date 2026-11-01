@@ -100,6 +100,23 @@ positive integer. Changing resin or quantity sends a new quote request and
 rebuilds the estimates. There is no separate quote button. Opening the report
 clears the other molding tools, and opening one of those clears the report.
 
+With no priced catalog, the same rebuild fills three numbers from data files.
+Part mass is volume (cm³) times the grade's density (g/cm³), in kilograms.
+The density and the USD per kilogram live on each row of
+`backend/db/models/moldingResinSeed.js`, with a source and an as-of date.
+A grade that is not in that table stays blank. Tooling is
+`toolingFromCard` in `src/molding/toolingRateCard.js`: a base mold cost times
+`max(minSizeFactor, projected area / reference area)`, plus a per-side-action
+adder. Part price is material cost plus press time at the card's machine
+rate plus that tooling divided by the selected quantity, including a custom
+quantity. Press time is the aluminum uncooled cycle (fill, plus k times max
+wall squared, plus the mechanical seconds). A missing projected area or max
+wall is named in the report and is not replaced with a guess. A priced
+catalog, when the caller passes one, still prices mass, aluminum and steel
+tooling, and the part price from that catalog. The spreadsheet and
+`mold_dfm` / `mold_quote` return the same object, including the rates,
+sources, and formulas.
+
 ## Resin suggestions
 
 The quote request still computes heuristic fill flags. The report pane does

@@ -12,15 +12,30 @@ function cell(value) {
   return value;
 }
 
+function cardText(card) {
+  if (!card) return '';
+  return Object.entries(card)
+    .filter(([key]) => key !== 'source')
+    .map(([key, value]) => `${key}=${value}`)
+    .join('; ');
+}
+
 function rowsOf(report) {
   const geometry = report?.geometry || {};
   const estimates = report?.estimates || {};
   const notes = report?.notes || {};
   const assumptions = report?.assumptions || {};
+  const published = assumptions.published || null;
+  const resin = published?.resin || null;
+  const formulas = published?.formulas || null;
   const rates = assumptions.rates;
   const rateText = rates
     ? Object.entries(rates).map(([key, value]) => `${key}=${value}`).join('; ')
-    : (assumptions.ratesNote || '');
+    : cardText(published?.card);
+  const rateNote = rates
+    ? (assumptions.ratesNote || '')
+    : (published?.card?.source || assumptions.ratesNote || '');
+  const priceNote = notes.price || formulas?.part || '';
   return [
     ['Field', 'Value', 'Note'],
     ['Volume (cm3)', cell(geometry.volumeCm3), ''],
@@ -31,13 +46,29 @@ function rowsOf(report) {
     ['Below threshold', cell(geometry.draft?.below), geometry.draft ? `${geometry.draft.belowPositive} positive, ${geometry.draft.belowNegative} negative` : ''],
     ['Resin', cell(report?.grade), ''],
     ['Quantity', cell(report?.quantity), ''],
-    ['Part mass (kg)', cell(estimates.massKg), cell(notes.mass)],
+    ['Part mass (kg)', cell(estimates.massKg), cell(notes.mass) || formulas?.mass || ''],
     ['Press size (t)', cell(estimates.pressTons), cell(assumptions.tonnageNote)],
+    ['Tooling estimate (USD)', cell(estimates.toolingUsd), cell(notes.tooling) || formulas?.tooling || ''],
     ['Tooling estimate, aluminum (USD)', cell(estimates.toolingAluminumUsd), cell(notes.tooling)],
     ['Tooling estimate, steel (USD)', cell(estimates.toolingSteelUsd), cell(notes.tooling)],
-    ['Part price (USD)', cell(estimates.partUsd), cell(notes.price)],
+    ['Material (USD)', cell(estimates.materialUsd), formulas?.material || ''],
+    ['Press share (USD)', cell(estimates.pressUsd), formulas?.press || ''],
+    ['Cycle (s)', cell(estimates.cycleS), formulas?.cycle || ''],
+    ['Size factor', cell(published?.sizeFactor), 'max(minSizeFactor, projectedAreaMm2 / referenceAreaMm2)'],
+    ['Part price (USD)', cell(estimates.partUsd), cell(priceNote)],
     ['Total (USD)', cell(estimates.totalUsd), cell(notes.price)],
     ['Price metal', cell(estimates.metal), ''],
+    ['Price path', cell(assumptions.priceSource), published?.cavityNote || ''],
+    ['Resin density (g/cm3)', cell(resin?.densityGCm3), cell(resin?.densitySource)],
+    ['Resin density as of', cell(resin?.densityAsOf), ''],
+    ['Resin price (USD/kg)', cell(resin?.usdPerKg), cell(resin?.priceSource)],
+    ['Resin price as of', cell(resin?.priceAsOf), ''],
+    ['Mass formula', cell(formulas?.mass), ''],
+    ['Tooling formula', cell(formulas?.tooling), ''],
+    ['Cycle formula', cell(formulas?.cycle), ''],
+    ['Press formula', cell(formulas?.press), ''],
+    ['Material formula', cell(formulas?.material), ''],
+    ['Part price formula', cell(formulas?.part), ''],
     ['Cavity count', cell(assumptions.cavityCount), 'Not shown in the report. The quote uses 1 unless a caller sets it.'],
     ['Clamp pressure (MPa)', cell(assumptions.cavityPressureMpa), ''],
     ['Newton per ton', cell(assumptions.newtonPerTon), ''],
@@ -50,7 +81,7 @@ function rowsOf(report) {
     ['Runner fraction', cell(assumptions.runnerFraction), ''],
     ['Shot window low', cell(assumptions.shotLow), ''],
     ['Shot window high', cell(assumptions.shotHigh), ''],
-    ['Rates', rateText, cell(assumptions.ratesNote)],
+    ['Rates', rateText, cell(rateNote)],
   ];
 }
 

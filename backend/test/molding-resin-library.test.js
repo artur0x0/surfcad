@@ -127,6 +127,7 @@ describe('molding resin library', () => {
     const abs = listed.body.resins.find((row) => row.grade === 'ABS');
     assert.equal(abs.tensileModulusMpa, 2300);
     assert.equal(abs.usdPerKg, undefined);
+    assert.equal(abs.densityGCm3, undefined);
     assert.equal(abs.partnerId, undefined);
     assert.equal(prices.rows.length, 0);
     assert.equal(materials.rows.length, 0);
