@@ -17,8 +17,14 @@
  *     (raw union of that body + tool collapses to fewer components). Bodies
  *     it does not touch stay separate. No touched body → the tool becomes a
  *     body of its own, the same as a disjoint union does today.
+ *     A tool that only touches (a frame split into boxes along an edge, or a
+ *     solid up to 0.001 mm off the face) does not boolean-join and used to
+ *     stay a 12-triangle body. When the boxes meet but do not
+ *     overlap, merge-on nudges that tool into the host by at most WELD_EPS
+ *     and unions again. `{ merge: false }` is not nudged.
  * A receiver that is one body, or whose bodies do not overlap, takes the
- * original method untouched, so every single-body script is bit-identical.
+ * original method. A boolean that already joins, and a tool that does not
+ * meet the host, stay bit-identical.
  *
  * A closed shell decomposes into the filled outer hull plus a negative-volume
  * cavity. That cavity is the inner shell of the void, not a second body.
@@ -92,6 +98,14 @@ const INHERIT_RUNS = [
 ];
 
 const OVERLAP_EPS = 1e-6;
+
+/**
+ * A tool this close, whose boxes meet but do not overlap, is nudged into the
+ * host so a frame's leftover box does not stay its own body. A real gap
+ * larger than this stays separate. 0.001 mm is below modeling tolerance and
+ * above the float gap that leaves a cube sitting on a face unmerged.
+ */
+const WELD_EPS = 1e-3;
 
 /** Run count of a mesh, and how many of those runs own at least one triangle. */
 export function meshRunCounts(mesh) {
@@ -501,6 +515,63 @@ export function installSeparateBodies(module) {
     return res;
   };
 
+  // Nudge `tool` toward `targetBox` on axes where the two only meet, so a
+  // later boolean overlaps. Axes that already overlap by more than eps are
+  // left alone. The far faces stay put: one shifted copy is unioned back,
+  // which keeps a hole open (a convex hull would fill it).
+  const fattenToward = (tool, targetBox, eps) => {
+    const box = boxOf(tool);
+    const delta = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      const overlap = Math.min(box.max[k], targetBox.max[k]) - Math.max(box.min[k], targetBox.min[k]);
+      if (overlap > eps) continue;
+      const toolMid = (box.min[k] + box.max[k]) / 2;
+      const tgtMid = (targetBox.min[k] + targetBox.max[k]) / 2;
+      delta[k] = toolMid >= tgtMid ? -eps : eps;
+    }
+    if (delta[0] === 0 && delta[1] === 0 && delta[2] === 0) return tool;
+    // Union with one shifted copy. A convex hull would fill a frame's hole
+    // and turn the lip into a solid plate.
+    const moved = tool.translate(delta);
+    let thicker = null;
+    try { thicker = rawAdd.call(tool, moved); } catch (_) { thicker = null; }
+    del(moved);
+    return thicker || tool;
+  };
+
+  // Tool components that merely touch `selfBox` become overlapping copies.
+  // Returns `other` itself when nothing needed a nudge.
+  const sealTool = (selfBox, other) => {
+    const parts = logicalBodies(other, module);
+    if (!parts) {
+      const box = boxOf(other);
+      if (!boxesMeet(selfBox, box, WELD_EPS) || boxesOverlap(selfBox, box)) return other;
+      return fattenToward(other, selfBox, WELD_EPS);
+    }
+    let changed = false;
+    const out = [];
+    for (const part of parts) {
+      const box = boxOf(part);
+      if (boxesMeet(selfBox, box, WELD_EPS) && !boxesOverlap(selfBox, box)) {
+        const fat = fattenToward(part, selfBox, WELD_EPS);
+        if (fat !== part) {
+          changed = true;
+          del(part);
+          out.push(fat);
+          continue;
+        }
+      }
+      out.push(part);
+    }
+    if (!changed) {
+      for (const part of out) if (part !== other) del(part);
+      return other;
+    }
+    const composed = Manifold.compose(out);
+    for (const part of out) del(part);
+    return composed;
+  };
+
   const mergeAdd = (self, other) => {
     const split = overlappingBodies(self, module);
     if (!split) return rawAdd.call(self, other);
@@ -547,6 +618,26 @@ export function installSeparateBodies(module) {
     return res;
   };
 
+  // Face contact already boolean-joins and must stay bit-identical. A tool
+  // that only meets the host (an edge, or a gap within WELD_EPS) and comes
+  // back still separate is sealed and unioned once more.
+  const weldMerge = (self, other) => {
+    const selfBox = boxOf(self);
+    const otherBox = boxOf(other);
+    if (!boxesMeet(selfBox, otherBox, WELD_EPS) || boxesOverlap(selfBox, otherBox)) {
+      return mergeAdd(self, other);
+    }
+    const plain = mergeAdd(self, other);
+    const before = componentCount(self, module) + componentCount(other, module);
+    if (componentCount(plain, module) < before) return plain;
+    const sealed = sealTool(selfBox, other);
+    if (sealed === other) return plain;
+    del(plain);
+    const welded = mergeAdd(self, sealed);
+    del(sealed);
+    return welded;
+  };
+
   // The per-body paths already noted a composed result (the sum over the
   // decomposed copies, which is the multiplication the guard watches);
   // keep the larger of that and the plain two-input sum.
@@ -560,7 +651,7 @@ export function installSeparateBodies(module) {
       return Manifold.compose([this, other]);
     }
     if (!isSolid(other)) return rawAdd.call(this, other);
-    return noteBoth(this, other, mergeAdd(this, other));
+    return noteBoth(this, other, weldMerge(this, other));
   };
   proto.subtract = function subtract(other) {
     return noteBoth(this, other, perBodyCut(this, other, rawSubtract));
