@@ -3,6 +3,8 @@
 ## 0.3.4 - 2026-10-31
 
 - CLI login: unknown commands and bad flags print an error plus usage on stderr and exit non-zero. A 429 shows the server's `retryAfterSec` as `try again in N s`. Device-code login stops at the code's `expiresAt` with a stale/expired message. The copied join prompt rewrites plain http on a LAN host to `http://localhost:<port>`.
+- Remote / join-code sessions: `set_status` and `reply_to_user` keep transport errors instead of rewriting them as `not_paired`, await the send, and deliver `agent.*` over the open WebSocket or HTTPS `/agent/prompts`. The `not_paired` hint names `npx surfcad-mcp login --code`.
+- Mold command copy in `data/commands.json`: drop the zero-draft class; vertical walls take a labelled neighbour's core/cavity role (`mold_fit`, `mold_parting`).
 
 ## 0.3.3 - 2026-10-31
 
