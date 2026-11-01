@@ -255,9 +255,7 @@ test('pairing toasts are transient and a reload grace is not a disconnect', () =
   assert.equal(shouldToastAgentConnected({
     dialogWasOpen: true, dialogOpen: true, connected: true,
   }), false);
-  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'up' }), true);
   assert.equal(shouldToastAgentDisconnect({ wasLive: true }), true);
-  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'grace' }), false);
-  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'pending' }), false);
-  assert.equal(shouldToastAgentDisconnect({ wasLive: false, report: 'down' }), false);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: false }), false);
+  assert.equal(shouldToastAgentDisconnect({}), false);
 });

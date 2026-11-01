@@ -98,7 +98,7 @@ async function composerBox(page) {
     const cr = cam.getBoundingClientRect();
     const pr = prompt.getBoundingClientRect();
     const ar = actions.getBoundingClientRect();
-    const cs = getComputedStyle(input);
+    const cs = window.getComputedStyle(input);
     return {
       inputLeft: ir.left,
       inputRight: ir.right,

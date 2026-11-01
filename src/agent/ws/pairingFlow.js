@@ -165,15 +165,13 @@ export function shouldToastAgentConnected(input = {}) {
 }
 
 /**
- * A live session dropped. The reload grace (`pending` / `grace`) is not a drop:
- * a Safari reload must not flash "Agent disconnected".
+ * A live session dropped. Pairing passes `wasLive` only. A Safari reload
+ * never sets that flag, so the grace window does not flash this toast.
  *
- * @param {{ wasLive?: boolean, report?: string }} [input]
+ * @param {{ wasLive?: boolean }} [input]
  */
 export function shouldToastAgentDisconnect(input = {}) {
-  if (input.wasLive !== true) return false;
-  if (input.report === 'grace' || input.report === 'pending') return false;
-  return true;
+  return input.wasLive === true;
 }
 
 /**

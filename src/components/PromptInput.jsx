@@ -28,8 +28,12 @@ import {
 import { AGENT_PROMPT_MAX_CHARS, sendAgentPromptText } from '../agent/agentPromptStub.js';
 import {
   AGENT_PROMPT_SEND_TIMEOUT_MS,
+  clearAcceptedPrompt,
+  emptyPromptFlight,
   promptDraftText,
+  restorePromptDraft,
   shouldClearPromptOnSend,
+  stepPromptFlight,
 } from '../agent/agentPromptSend.js';
 import { shouldOpenAgentChatOnConnect, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { featureSheetEditLift, isTouchEditDevice } from '../utils/featureFieldEdit.js';
@@ -247,6 +251,27 @@ export default function PromptInput({
   const pendingDraftRef = useRef(null);
   const sentTextRef = useRef(null);
   const sendTimerRef = useRef(null);
+  const flightRef = useRef(emptyPromptFlight());
+  const commitFlight = useCallback((flight) => {
+    flightRef.current = flight;
+    pendingIdRef.current = flight.pendingId;
+    sentTextRef.current = flight.sent;
+    pendingDraftRef.current = flight.draft;
+  }, []);
+  const applyPromptEffect = useCallback((effect) => {
+    if (effect.input?.op === 'restore') {
+      setInput((cur) => restorePromptDraft(cur, effect.input.text));
+    } else if (effect.input?.op === 'clear') {
+      setInput((cur) => clearAcceptedPrompt(cur, effect.input.text));
+    }
+    if (effect.shot?.op === 'restore') {
+      setShot((cur) => cur || effect.shot.shot);
+      setShotOn(true);
+    } else if (effect.shot?.op === 'clear') {
+      setShot(null);
+      setShotOn(false);
+    }
+  }, []);
   const pressHandledRef = useRef(false);
   const [fieldFocused, setFieldFocused] = useState(false);
   const adjustHeight = useCallback(() => {
@@ -297,31 +322,18 @@ export default function PromptInput({
       onAck(event) {
         if (!event || typeof event !== 'object') return;
         syncAckRef.current = event;
-        if (pendingIdRef.current && event.id !== pendingIdRef.current) return;
+        const stepped = stepPromptFlight(flightRef.current, {
+          type: 'ack',
+          id: event.id,
+          delivery: event.delivery,
+        });
+        if (stepped.ignore) return;
+        commitFlight(stepped.flight);
         if (sendTimerRef.current != null) {
           clearTimeout(sendTimerRef.current);
           sendTimerRef.current = null;
         }
-        const draft = pendingDraftRef.current;
-        const same = draft && draft.id === event.id;
-        if (event.delivery === 'failed') {
-          if (sentTextRef.current?.id === event.id) sentTextRef.current = null;
-          if (same) {
-            pendingDraftRef.current = null;
-            setInput((cur) => (typeof cur === 'string' && cur.trim() ? cur : draft.text));
-            if (draft.shot) {
-              setShot((cur) => cur || draft.shot);
-              setShotOn(true);
-            }
-          }
-        } else if (sentTextRef.current?.id === event.id) {
-          const text = sentTextRef.current.text;
-          sentTextRef.current = null;
-          if (same) pendingDraftRef.current = null;
-          setInput((cur) => (cur === text || !(typeof cur === 'string' && cur.trim()) ? '' : cur));
-          setShot(null);
-          setShotOn(false);
-        }
+        applyPromptEffect(stepped);
         setAck(event);
         dispatchTyping({ type: 'ack', id: event.id, delivery: event.delivery });
       },
@@ -331,7 +343,7 @@ export default function PromptInput({
         else dispatchTyping({ type: 'activity' });
       },
     });
-  }, [dispatchTyping, transport, visible]);
+  }, [applyPromptEffect, commitFlight, dispatchTyping, transport, visible]);
 
   useEffect(() => {
     const open = shouldOpenAgentChatOnConnect(wasLiveRef.current, liveSession);
@@ -375,14 +387,14 @@ export default function PromptInput({
     dispatchTyping({ type: 'disconnect' });
     dispatchChat({ type: 'disconnect' });
     setAck(null);
-    pendingIdRef.current = null;
+    commitFlight(stepPromptFlight(flightRef.current, { type: 'disconnect' }).flight);
     // The agent is gone: the next session starts open.
     clearFolded();
     setFolded(false);
     setFoldSettled(false);
     setUnread(false);
     return undefined;
-  }, [agentGone, dispatchTyping, holding, visible]);
+  }, [agentGone, commitFlight, dispatchTyping, holding, visible]);
 
   // Agent-owned feature cards stay closed for the whole run, in either mode.
   useEffect(() => {
@@ -522,9 +534,9 @@ export default function PromptInput({
       if (sync && sync.id === sent?.id && sync.delivery === 'failed') setAck(sync);
       return sent?.ok ? { ok: false, reason: sync?.error || 'failed', id: sent.id } : sent;
     }
-    pendingIdRef.current = sent.id;
-    pendingDraftRef.current = { id: sent.id, text: trimmed, shot };
-    sentTextRef.current = { id: sent.id, text: trimmed };
+    commitFlight(stepPromptFlight(flightRef.current, {
+      type: 'sent', id: sent.id, text: trimmed, shot,
+    }).flight);
     dispatchTyping({ type: 'sent', id: sent.id });
     dispatchChat({
       type: 'sent',
@@ -540,20 +552,16 @@ export default function PromptInput({
     const sentId = sent.id;
     sendTimerRef.current = setTimeout(() => {
       sendTimerRef.current = null;
-      if (pendingIdRef.current !== sentId) return;
-      setAck({ delivery: 'failed', error: 'timeout', id: sentId });
+      const timed = stepPromptFlight(flightRef.current, { type: 'timeout', id: sentId });
+      if (timed.ignore) return;
+      commitFlight(timed.flight);
+      setAck(timed.ack);
       dispatchTyping({ type: 'ack', id: sentId, delivery: 'failed' });
-      const draft = pendingDraftRef.current;
-      if (!draft || draft.id !== sentId) return;
-      pendingDraftRef.current = null;
-      setInput((cur) => (typeof cur === 'string' && cur.trim() ? cur : draft.text));
-      if (draft.shot) {
-        setShot((cur) => cur || draft.shot);
-        setShotOn(true);
-      }
+      applyPromptEffect(timed);
+      void transport?.cancel?.(sentId);
     }, AGENT_PROMPT_SEND_TIMEOUT_MS);
     return sent;
-  }, [clearSendTimer, discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
+  }, [applyPromptEffect, clearSendTimer, commitFlight, discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
     const id = pendingIdRef.current;

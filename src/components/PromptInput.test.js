@@ -71,7 +71,10 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /promptDraftText\(/);
   assert.match(SRC, /shouldClearPromptOnSend\(/);
   assert.match(SRC, /AGENT_PROMPT_SEND_TIMEOUT_MS/);
-  assert.match(SRC, /error: 'timeout'/);
+  assert.match(SRC, /stepPromptFlight\(flightRef\.current, \{ type: 'timeout', id: sentId \}\)/);
+  assert.match(SRC, /setAck\(timed\.ack\)/);
+  assert.match(SRC, /void transport\?\.cancel\?\.\(sentId\)/);
+  assert.match(SRC, /type: 'ack'/);
   assert.match(SRC, /error: 'send_failed'/);
   assert.match(SRC, /onPointerDown=\{keepFieldFocus\}/);
   assert.match(SRC, /onPointerUp=\{onActionPointerUp\}/);
