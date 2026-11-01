@@ -87,6 +87,9 @@ export default function PromptInput({
     promptTransport,
     agentChatOpen = false,
     closeAgentChat,
+    chatHold = null,
+    agentGone = false,
+    rememberChatOpen,
   } = useAgentBridgeHost();
   const demoAllowed = agentPromptDemoAllowed(promptEnv);
   const demo = useMemo(
@@ -95,15 +98,21 @@ export default function PromptInput({
   );
   const liveSession = shouldUseLiveAgentPrompt({ paired, link });
   const wasLiveRef = useRef(false);
+  const holding = chatHold != null;
+  // A reload restore paints the saved shell before the socket. Skip the first
+  // connect unfold so a collapsed chat stays collapsed.
+  const preserveFoldRef = useRef(chatHold != null);
+  const sawLiveRef = useRef(false);
 
   const stubRef = useRef(undefined);
   if (stubRef.current === undefined) {
     stubRef.current = createAgentPrompt(undefined, promptEnv);
   }
   // Paired (or still-connected) sessions use the real transport in DEV and
-  // prod. The echo stub is DEV-only and only when nothing is paired.
+  // prod. The echo stub is DEV-only and only when nothing is paired. A
+  // reload hold is not paired, so it must not fall through to the stub.
   const transport = transportProp
-    || (liveSession ? promptTransport : stubRef.current)
+    || (liveSession ? promptTransport : (holding || agentGone ? null : stubRef.current))
     || null;
   const sessionVisible = shouldShowAgentPrompt({
     paired,
@@ -114,7 +123,11 @@ export default function PromptInput({
     demoAllowed,
   });
   // Phone: the bot button opens the same chat. Desktop and the demo pin stay up.
-  const shown = sessionVisible && (!isMobile || Boolean(demo) || agentChatOpen);
+  // A reload hold paints that same shell immediately. `visible` stays the
+  // live session so a hold is not treated as a connected agent.
+  const shown = (sessionVisible && (!isMobile || Boolean(demo) || agentChatOpen))
+    || (holding && (!isMobile || agentChatOpen))
+    || (agentGone && agentChatOpen);
   const visible = sessionVisible;
 
   const seed = demoSeed(demo?.state);
@@ -145,7 +158,8 @@ export default function PromptInput({
   // Folded (desktop): the prompt slides away and a chevron at the bottom
   // brings it back as it was. Remembered per agent session.
   const foldable = !isMobile;
-  const foldedInitially = (seed.folded === true) || (foldable && readFolded());
+  const foldedInitially = (seed.folded === true)
+    || (foldable && (chatHold != null ? chatHold.open !== true : readFolded()));
   const [folded, setFolded] = useState(foldedInitially);
   // Hidden only after the slide (or immediately when we mount already folded).
   const [foldSettled, setFoldSettled] = useState(foldedInitially);
@@ -230,13 +244,41 @@ export default function PromptInput({
     const open = shouldOpenAgentChatOnConnect(wasLiveRef.current, liveSession);
     wasLiveRef.current = liveSession;
     if (!open) return;
+    if (preserveFoldRef.current) {
+      preserveFoldRef.current = false;
+      return;
+    }
     clearFolded();
     setFolded(false);
     setFoldSettled(false);
   }, [liveSession]);
 
   useEffect(() => {
-    if (visible) return undefined;
+    if (chatHold == null && !wasLiveRef.current) preserveFoldRef.current = false;
+  }, [chatHold]);
+
+  useEffect(() => {
+    if (!agentGone) return undefined;
+    setAck({ delivery: 'failed', error: 'not_paired' });
+    setFolded(false);
+    setFoldSettled(false);
+    return undefined;
+  }, [agentGone]);
+
+  useEffect(() => {
+    if (!visible || agentGone) return undefined;
+    setAck((prev) => (prev?.error === 'not_paired' ? null : prev));
+    return undefined;
+  }, [agentGone, visible]);
+
+  useEffect(() => {
+    if (visible) {
+      sawLiveRef.current = true;
+      return undefined;
+    }
+    // The pre-socket gap is not a disconnect. Wiping the fold here is the
+    // collapse flicker. Wait until a session was actually on screen.
+    if (holding || agentGone || !sawLiveRef.current) return undefined;
     dispatchTyping({ type: 'disconnect' });
     dispatchChat({ type: 'disconnect' });
     setAck(null);
@@ -247,7 +289,7 @@ export default function PromptInput({
     setFoldSettled(false);
     setUnread(false);
     return undefined;
-  }, [dispatchTyping, visible]);
+  }, [agentGone, dispatchTyping, holding, visible]);
 
   // Agent-owned feature cards stay closed for the whole run, in either mode.
   useEffect(() => {
@@ -293,16 +335,18 @@ export default function PromptInput({
     if (!foldable) return { ok: false, reason: 'not_foldable' };
     setFolded(true);
     writeFolded(true);
+    rememberChatOpen?.(false);
     return { ok: true, folded: true };
-  }, [foldable]);
+  }, [foldable, rememberChatOpen]);
 
   const unfoldPrompt = useCallback(() => {
     setFolded(false);
     setFoldSettled(false);
     setUnread(false);
     writeFolded(false);
+    rememberChatOpen?.(true);
     return { ok: true, folded: false };
-  }, []);
+  }, [rememberChatOpen]);
 
   useEffect(() => {
     if (!folded) {

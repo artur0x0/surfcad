@@ -9,6 +9,7 @@ import {
   syncAnalyticsIdentity,
 } from '../utils/analytics';
 import { withAnalyticsConsent } from '../utils/analyticsConsentAuth';
+import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 
 const AuthContext = createContext(null);
 
@@ -121,7 +122,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout error:', error);
     }
-    
+    forgetAgentChatSession();
     setUser(null);
     setGuest(null);
     setIsAuthenticated(false);
