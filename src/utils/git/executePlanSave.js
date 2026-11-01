@@ -29,7 +29,7 @@ import { isV2SurfId } from './surfId.js';
 import { writeVaultCommit } from './writeVaultCommit.js';
 import { SAVE_QUEUED_COPY } from './workingSidecar.js';
 
-export const SAVE_CONFLICT_COPY = 'These files also changed on the remote. Nothing was written. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.';
+export const SAVE_CONFLICT_COPY = 'These files also changed on the remote. Nothing was written. Go back, Get latest, Create a new branch, or Overwrite. Go back changes nothing. Get latest does not write git.';
 export const SAVE_REFUSED_SUFFIX = ' Nothing was written.';
 export const SAVE_PENDING_COPY = SAVE_QUEUED_COPY;
 
@@ -809,7 +809,7 @@ async function saveMineToNewBranch({
   }
   const fromSha = prepared.branchTip?.tipSha || prepared.remoteSha;
   if (!fromSha) {
-    return refused('Save mine to a new branch needs a last-commit tip.');
+    return refused('Create a new branch needs a last-commit tip.');
   }
   const stamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const next = `save-${stamp.toString(36)}`;
@@ -895,7 +895,7 @@ export async function executePlanSaveConflictChoice({
     status: 'error',
     code: 'bad_args',
     error: 'Unknown conflict action',
-    message: 'Overwrite, Get latest, Save mine to a new branch, or Dismiss.',
+    message: 'Go back, Get latest, Create a new branch, or Overwrite.',
   };
 }
 

@@ -96,7 +96,7 @@ test('git_branch_switch on v2 opens by assembly id, not leftover folder name', (
 });
 
 test('git_branch_switch same-branch is a no-op and does not demand confirm', () => {
-  const sw = sliceFn('async agentGitBranchSwitch({ branch, confirm })', 'async agentGitBranchDelete({ branch })');
+  const sw = sliceFn('async agentGitBranchSwitch({ branch, confirm, choice })', 'async agentGitBranchDelete({ branch })');
   assert.match(sw, /target === gitWorkingBranch\(\)/);
   const confirm = sw.slice(sw.indexOf('target === gitWorkingBranch()'), sw.indexOf('sourceDirty'));
   assert.match(confirm, /return handleSwitchBranch\(target\)/);

@@ -97,6 +97,7 @@ Defined in `src/index.css`. Keep the set small.
 | `text-muted-on-splash-dark` | `--brand-grey-on-navy` | dark loading gate |
 | `font-ui` | system UI stack | every chrome surface |
 | `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons |
+| `surface-danger` | `--chrome-danger` (hover `--chrome-danger-hover`) | `text-on-dark`; danger controls. Dark surface. Body contrast 5.88:1 |
 | `text-success` | `--chrome-success` (hover `--chrome-success-hover`) | outline Send / camera-on on a dark glass card |
 | `surface-quiet` | `--chrome-border` (hover `--chrome-background`) | `text-on-dark`; Deny / secondary icon buttons |
 | `tool-toggle` | idle rail toggle: Tailwind `text-blue-600`, hover `bg-gray-100`, active `bg-blue-100` | light right rail. Blue icon. Not a dark surface |

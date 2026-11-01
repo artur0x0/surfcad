@@ -288,9 +288,9 @@ After success: set `BranchTip.tipSha` to the new sha; replace this `AssemblyComm
 | Agent `git_save` after consent | same |
 | Overwrite (Save / main-moved conflict) | re-plan against current remote tip, then same write, `baseSha = remote tip` |
 | Get latest | **not a git write** — replace WC conflicting files from the remote tip (§2.9) |
-| Save mine to a new branch | create branch from `branchTip.tipSha` (or merge base), write planned files, switch |
+| Create a new branch | create branch from `branchTip.tipSha` (or merge base), write planned files, switch. Save-conflict only |
 | Upgrade vault | remote-bytes layout commit (§4.3); if WC is dirty, a normal Save follows under the same confirm (two commits) |
-| Explicit branch create / switch / delete | branch APIs; dirty switch needs `confirm: true` |
+| Explicit branch create / switch / delete | branch APIs; dirty switch needs `confirm: true`. Use local and Use remote do not write git |
 | Explicit delete-assembly / delete-repo | own plan + `writeVaultCommit` / GitHub delete; confirms stay |
 | Move to Git | first Save of a local assembly (creates vault if needed) |
 
@@ -298,20 +298,34 @@ After success: set `BranchTip.tipSha` to the new sha; replace this `AssemblyComm
 
 Per-part Save / Add to Repo: same planner, same write (full diff of this assembly). No second commit API. **No per-part overwrite.**
 
-### 2.9 Conflict (file-level; Save or “main moved”)
+### 2.9 Conflict (file-level)
 
-The four-button dialog opens when §2.5 step 1 finds an overlap **or** when the user opens the read-only **main moved** notice on focus. `online` never opens it and never flushes. The notice itself offers the same choices.
+Two dialogs. They do not replace each other. `online` never opens either and never flushes.
+
+**Branch switch.** Before the branch or the working copy changes, a **dirty** v2 working copy whose files differ from the target branch opens one dialog. A clean switch loads that branch and opens nothing (including when the outbox is behind the tip). Switch does not run the outbox hold and does not run the main-moved check.
+
+Copy: “There is a conflict between your local files and files in the repository on the branch you are switching to. What would you like to do?”
+
+| Button | Meaning |
+| --- | --- |
+| **Go back** | No branch change. Working copy and remote stay as they are. Not an agent tool. |
+| **Use local** | Point the session at the target branch and keep the working-copy files. **No git write.** Agent: `git_branch_switch { choice: "use_local", confirm: true }`. |
+| **Use remote** | Load the target branch into the working copy. **No git write.** Styled danger. Agent: `git_branch_switch { choice: "use_remote", confirm: true }`. |
+
+`confirm: true` without `choice` does not pick Use remote. The result is `conflict` with `model: "branch-switch"`. A later Save uses the save dialog below when `BranchTip` is behind the remote and the planned files overlap.
+
+**Save or “main moved”.** This dialog opens when §2.5 step 1 finds an overlap **or** when the user opens the read-only **main moved** notice on focus. It does not open because a branch switch ran.
 
 **Conflicting files.** On Save: `planned files ∩ compare.files`. On the main-moved notice: this assembly’s `.surf.json` and/or its part files that appear in `compare(branchTip.tipSha, remoteTip)`.
 
 | Button | Meaning |
 | --- | --- |
-| **Overwrite** | “My changed files win.” Re-plan against the **current remote tip** just before the forced write (`baseSha = remote tip`). Local bytes for planned paths; other remote files stay. Not per-part. Agent: `git_force_overwrite` + `confirm: true`. |
+| **Go back** | No write. Close the dialog. Working copy unchanged. Not an agent tool (was Dismiss). |
 | **Get latest** | Replace the WC’s **conflicting files** (assembly file and/or part files) from the remote tip. Rebuild `AssemblyCommit` and `BranchTip` from that tip. **Never writes git.** Destructive: agents need `confirm: true` (`git_behind_resolve { action: "reload" }`). The UI confirms if the WC has unsaved changes to those files; if those files are clean, no extra UI confirm. |
-| **Save mine to a new branch** | Write the planned files on a new branch and switch. Agent: `git_behind_resolve { action: "branch" }` + `confirm: true`. |
-| **Dismiss** | No write. Close the dialog. WC unchanged. |
+| **Create a new branch** | Write the planned files on a new branch and switch. Agent: `git_behind_resolve { action: "branch" }` + `confirm: true`. |
+| **Overwrite** | “My changed files win.” Re-plan against the **current remote tip** just before the forced write (`baseSha = remote tip`). Local bytes for planned paths; other remote files stay. Not per-part. Agent: `git_force_overwrite` + `confirm: true`. |
 
-No “Overwrite main” / “Keep mine” labels. No per-part overwrite chrome.
+The upgrade-conflict dialog keeps its own labels. Opening or reloading while the outbox is behind the tip still uses the legacy hold (Stay on branch / Open on GitHub / Overwrite main). No per-part overwrite chrome.
 
 ### 2.10 Offline, seed, missing part
 
@@ -366,7 +380,7 @@ A git write of vault content happens only when:
 1. The user clicks Save, or
 2. The agent calls `git_save { message }` after write consent, or
 3. The user confirms **Upgrade vault** / the agent calls `git_upgrade_vault { confirm: true }` after consent (layout commit of remote bytes; a dirty WC then gets a normal Save under the same confirmation), or
-4. The user confirms **Overwrite** / **Save mine to a new branch** from the Save-conflict or main-moved dialog (agent: `git_force_overwrite` / `git_behind_resolve { action: "branch" }` + `confirm: true`).
+4. The user confirms **Overwrite** / **Create a new branch** from the Save-conflict or main-moved dialog (agent: `git_force_overwrite` / `git_behind_resolve { action: "branch" }` + `confirm: true`). Use local and Use remote on a branch switch are not Saves.
 
 **Get latest** is not a git write. It still needs `confirm: true` for agents (`git_behind_resolve { action: "reload" }`).
 
@@ -378,10 +392,10 @@ No other tool may `commitFiles`, push, `createRepo`, seed, enqueue, or flush —
 | `git_upgrade_vault` | Yes — one commit of **remote** bytes to v2 + deletes. `confirm: true`. Consent. If the WC is dirty, the host then runs a normal Save (second commit) under that same confirmation. |
 | `git_add_to_repo` | Alias of `git_save`. Prefer `git_save`. |
 | `git_list_branches` | Read only. |
-| `git_branch_create` / `switch` / `delete` | Branch APIs only. Switch while dirty and delete need `confirm: true`. Create switches when clean (or with confirm if dirty). |
+| `git_branch_create` / `switch` / `delete` | Branch APIs only. Switch while dirty and delete need `confirm: true`. A file conflict returns `conflict` and does not switch until `choice` is `use_local` or `use_remote` (neither writes git). Create switches when clean (or with confirm if dirty). |
 | `git_force_overwrite` | Destructive; `confirm: true`. Overwrite as §2.9. |
 | `git_behind_resolve { action: "reload" }` | **Get latest.** Not a git write. Destructive; `confirm: true`. Replaces WC conflicting files from the remote tip; rebuilds lastCommit. |
-| `git_behind_resolve { action: "branch" }` | Destructive; `confirm: true`. **Save mine to a new branch.** `action: "keep"` is **removed** (Dismiss is not a tool). |
+| `git_behind_resolve { action: "branch" }` | Destructive; `confirm: true`. **Create a new branch** (save-time git write). `action: "keep"` is **removed** (Go back is not a tool). |
 | `git_move_to_repo` | First Save of a **local** assembly. Consent. |
 | Everything else | Working copy only. |
 
@@ -456,7 +470,7 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `consent_pending` | Real-repo write; Allow dialog up | Wait `retry_after_ms`, same call |
 | `real_repo_blocked` | Headless or session Deny | Tell the user; do not loop |
 | `confirm_required` | Destructive git without `confirm: true` | Ask the user; only then pass `confirm: true` |
-| `conflict` / `repo-moved` | Save (or main-moved) and compare overlaps planned files | `git_force_overwrite`, `git_behind_resolve { action: "reload" }` (Get latest), or `{ action: "branch" }` with confirm; or stop (Dismiss) |
+| `conflict` / `repo-moved` | Save (or main-moved) and compare overlaps planned files, or a dirty branch switch whose files differ from the target (`model: "branch-switch"`) | Save: `git_force_overwrite`, `git_behind_resolve { action: "reload" }` (Get latest), or `{ action: "branch" }` with confirm; or stop (Go back). Switch: `git_branch_switch` with `choice` `use_local` or `use_remote` and confirm; or stop (Go back). Neither switch choice writes git |
 | `pending_save` | Offline plan waiting | Tell the user to Save again when online |
 | `unknown_save` | `git_save_status` with a `save_id` no save in this tab ran past the budget with, or one that finished over 10 minutes ago | `git_save` again if the save is still wanted |
 | `feature_failed` | Kernel/script error | Same text the UI shows (T16 — MCP batch; contract still requires it) |
@@ -479,7 +493,7 @@ Never return a generic `"Feature failed"` as the only message. Never pass `confi
 | `create_part` leaving active ids on the old part | Atomic activate |
 | `set_script` / `insert_*` without `part_id` | Require `part_id` |
 | `git_add_to_repo` as a second commit shape | `git_save` |
-| `git_behind_resolve` keep; per-part overwrite | Overwrite / Get latest / Save mine to a new branch / Dismiss |
+| `git_behind_resolve` keep; per-part overwrite | Save: Go back / Get latest / Create a new branch / Overwrite. Switch: Go back / Use local / Use remote |
 | `online` flushing | Never |
 | Tip-vs-tip conflict | File-level compare of **this** Save’s paths |
 | Auto layout/id migrate commits | Explicit Upgrade vault only |
@@ -561,7 +575,7 @@ After the sequence below is green:
 - Per-part overwrite chrome; `git_behind_resolve` `keep`
 - README name index (never added)
 
-**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); v2 list/open; consent modal; conflict UI (Overwrite / Get latest / Save mine to a new branch / Dismiss); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
+**Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); v2 list/open; consent modal; conflict UI (Save: Go back / Get latest / Create a new branch / Overwrite; switch: Go back / Use local / Use remote); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
 
 **Keep only until PR 10:** `src/utils/git/legacyVault/` (reader + Upgrade). Then delete it.
 
@@ -580,7 +594,7 @@ Each PR has tests, keeps CI green, does not touch `src/fea/**` or `surfcad-fea/*
 | **4** | **Upgrade vault** inside `legacyVault/` + `git_upgrade_vault` (confirm). One commit of **remote** bytes → v2 + deletes. Dirty WC → normal Save as a second commit under the same confirm. Delete README only if it matches a known old seed. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | Remote tree is v2; WC edits land only in commit 2; no write on load; upgrade plan only exported from `legacyVault/` |
 | **5** | `writeVaultCommit` + adapter spy (allowlist shrinks). Seed without README index; seed-retry if createRepo succeeded. | S | Harness exists; seed retry unit |
 | **6** | Pure `planSave` + unit tests for the **12 cases** (§7). No moves. Shared-part adopt. Delete-from-repo reference rule. File-level compare input. | M | Tests pass; not wired |
-| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI: Overwrite / Get latest / Save mine to a new branch / Dismiss (Save and main-moved). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
+| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI as shipped then: Overwrite / Get latest / Save mine to a new branch / Dismiss (Save and main-moved). Button labels are now §2.9 (Go back / Get latest / Create a new branch / Overwrite, plus the separate branch-switch dialog). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
 | **8** | Agent contract: `part_id` / `assembly_id` only — **no `path` field or alias**; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side; `parts` / `list_assemblies` have no `path` |
 | **9** | Delete dead APIs: path planning, `planRenameVaultPartPath`, `gitRename`, `gitAssemblyRename`, outbox write path, dual-id helpers. Goldens expect WC-only then `git_save`. | M | Spy allowlist = `writeVaultCommit` + tests + Upgrade |
 | **10** | **Delete legacy reader + Upgrade vault once Artur confirms his vault is upgraded.** Remove the isolated module and every call site. After this, a v1 vault shows **unsupported vault version**. | S | `legacyVault/` gone; v1 open → `unsupported_vault_version`; no Upgrade UI or `git_upgrade_vault` |
@@ -673,7 +687,7 @@ T7 / T8 / T9 are MCP-batch product work; §3 already requires `assembly_id`, `un
 
 ## 11. Open questions
 
-**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Conflict dialog (Save and the main-moved notice) is **Overwrite / Get latest / Save mine to a new branch / Dismiss**; Get latest never writes git; no per-part overwrite. MCP: `part_id` / `assembly_id` only — no `path` arg or result field. Names shown as written. Legacy reader + Upgrade are temporary (`src/utils/git/legacyVault/`); after PR 10 a v1 vault is **unsupported vault version**.
+**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Save and the main-moved notice are **Go back / Get latest / Create a new branch / Overwrite**. A dirty branch switch whose files differ from the target is a separate dialog, **Go back / Use local / Use remote**, shown once before anything changes; none of those three write git. Get latest never writes git; no per-part overwrite. MCP: `part_id` / `assembly_id` only — no `path` arg or result field. Names shown as written. Legacy reader + Upgrade are temporary (`src/utils/git/legacyVault/`); after PR 10 a v1 vault is **unsupported vault version**.
 
 1. Header is a separate `// @name <display>` line under `// @surf-id`.
 2. Upgrade is a pure layout migration of the **remote** bytes in one commit. If the WC has edits, a normal Save runs right after under the same confirmation (two commits).

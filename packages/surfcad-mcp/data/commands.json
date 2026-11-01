@@ -27164,7 +27164,7 @@
     },
     {
       "name": "git_behind_resolve",
-      "description": "Conflict / main-moved choice. action reload = Get latest (not a git write). action branch = Save mine to a new branch. Both require confirm: true. action keep is removed (Dismiss is not a tool). No path argument. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Save-conflict choice. action reload = Get latest (not a git write). action branch = Create a new branch (save-time git write). Both require confirm: true. action keep is removed (Go back is not a tool). No path argument. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -27178,7 +27178,7 @@
               "reload",
               "branch"
             ],
-            "description": "reload = Get latest (no git write). branch = Save mine to a new branch. keep is removed."
+            "description": "reload = Get latest (no git write). branch = Create a new branch (save-time git write). keep is removed."
           },
           "confirm": {
             "type": "boolean",
@@ -27274,7 +27274,7 @@
     },
     {
       "name": "git_branch_switch",
-      "description": "Switch vault branch; confirm when the working copy is dirty. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
+      "description": "Switch vault branch. confirm: true when the working copy is dirty. A dirty v2 copy whose files differ from the target returns status conflict (model branch-switch) and does not switch, even with confirm: true. choice use_local keeps the working copy on that branch; choice use_remote loads the target. Both need confirm: true and neither writes git. Go back is not a tool. Takes return: \"status\" | \"summary\" | \"full\" (MCP default \"status\": status.script is omitted; \"summary\" adds status.features; \"full\" echoes the script).",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -27285,9 +27285,17 @@
           "branch": {
             "type": "string"
           },
+          "choice": {
+            "type": "string",
+            "enum": [
+              "use_local",
+              "use_remote"
+            ],
+            "description": "Branch-switch conflict choice. use_local keeps the working copy. use_remote loads the target. Neither writes git. Both require confirm: true. Omit to preview; a file conflict returns status conflict and does not switch."
+          },
           "confirm": {
             "type": "boolean",
-            "description": "Required true when the working copy has uncommitted changes"
+            "description": "Required true when the working copy has uncommitted changes, and for choice use_local or use_remote"
           },
           "return": {
             "type": "string",
@@ -27307,6 +27315,7 @@
       "errors": [
         "bad_args",
         "confirm_required",
+        "conflict",
         "git_blocked",
         "consent_pending",
         "real_repo_blocked",
@@ -27319,7 +27328,9 @@
       "immediate": false,
       "uiEntry": [
         "data-git-branches",
-        "data-git-branch-confirm"
+        "data-git-branch-confirm",
+        "data-git-branch-switch-use-local",
+        "data-git-branch-switch-use-remote"
       ],
       "example": {
         "branch": "main"

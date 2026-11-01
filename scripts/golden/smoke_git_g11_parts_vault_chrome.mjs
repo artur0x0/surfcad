@@ -178,6 +178,7 @@ console.log('\ngit G11 — Open browse + insert parts');
 
 console.log('\ngit G11 — UI wiring (PartFeed + App + architecture)');
 const feed = readFileSync(new URL('../../src/components/PartFeed.jsx', import.meta.url), 'utf8');
+const branchList = readFileSync(new URL('../../src/components/BranchPaneList.jsx', import.meta.url), 'utf8');
 const vaultDlg = readFileSync(new URL('../../src/components/VaultPickerDialog.jsx', import.meta.url), 'utf8');
 const choiceDlg = readFileSync(new URL('../../src/components/OpenAssemblyChoiceDialog.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../../src/App.jsx', import.meta.url), 'utf8');
@@ -189,8 +190,10 @@ ok('title chip → pane actions', /data-assembly-branch=""/.test(feed)
   && /data-git-branches=""/.test(feed) && /data-git-branch-pane=""/.test(feed)
   && /data-git-branch-action="create"/.test(feed)
   && /data-git-dialog-header/.test(vaultDlg)
-  && /data-git-branch-action="delete"/.test(feed)
-  && /data-git-branch-action="merge"/.test(feed)
+  && /data-git-branch-action="delete"/.test(branchList)
+  && /data-git-branch-action="merge"/.test(branchList)
+  && /GitMerge/.test(branchList)
+  && !/data-git-branch-pane-toolbar/.test(feed)
   && !/data-git-branch-dropdown/.test(feed)
   && !/data-git-branch-section/.test(feed));
 ok('desktop branch chip in parts list header', /data-parts-ribbon-branch/.test(feed)
@@ -248,7 +251,7 @@ ok('Open pane live search filters client index', /data-git-open-search/.test(fee
   && /filterVaultPartItems/.test(feed)
   && /query: ''/.test(feed));
 ok('delete confirm + protected', /data-git-branch-delete-confirm/.test(feed)
-  && /data-git-branch-delete-warn/.test(feed) && /protected/.test(feed));
+  && /data-git-branch-delete-warn/.test(feed) && /protected/.test(branchList));
 ok('App wires create/delete/merge/squash/insert/browse', /handleCreateBranch/.test(app)
   && /handleDeleteBranch/.test(app) && /handleMergeBranch/.test(app)
   && /handleSquashMerge/.test(app) && /squashMergeVaultBranch\(/.test(app)
@@ -261,8 +264,8 @@ ok('App wires create/delete/merge/squash/insert/browse', /handleCreateBranch/.te
   && /onBranchUiClose=\{handleBranchUiClose\}/.test(app)
   && /githubCompareUrl\(/.test(app) && /window\.open\(url/.test(app));
 ok('branch create optimistic pending row', /pending: true/.test(feed)
-  && /data-git-branch-pending/.test(feed)
-  && /data-git-branch-pending-spinner/.test(feed));
+  && /data-git-branch-pending/.test(branchList)
+  && /data-git-branch-pending-spinner/.test(branchList));
 ok('Create branch refreshes pane with ensureBranch',
   /ensureBranch:/.test(feed) && /refreshBranchPane\(/.test(feed)
   && /result\.status === 'created'/.test(feed));

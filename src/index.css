@@ -24,6 +24,9 @@
      and ≥3:1 on hover (emerald-500 hover was ~2.5:1). */
   --chrome-success: 4 120 87; /* emerald-700 #047857 */
   --chrome-success-hover: 5 150 105; /* emerald-600 #059669 */
+  /* Danger control. chrome-text on red-700 is 5.88:1; red-600 is under 4.5:1. */
+  --chrome-danger: 185 28 28; /* red-700 #b91c1c */
+  --chrome-danger-hover: 153 27 27; /* red-800 #991b1b */
   /* Safe-area insets as tokens. Goldens override these on <html> to
      emulate a notch. They are 0 in Safari while the toolbars are showing,
      so they are not the sample margin below. */
@@ -469,6 +472,16 @@ textarea {
   }
   .surface-success:focus-visible {
     outline: 2px solid rgb(var(--chrome-success-hover));
+    outline-offset: 2px;
+  }
+  .surface-danger {
+    background-color: rgb(var(--chrome-danger));
+  }
+  .surface-danger:hover {
+    background-color: rgb(var(--chrome-danger-hover));
+  }
+  .surface-danger:focus-visible {
+    outline: 2px solid rgb(var(--chrome-danger-hover));
     outline-offset: 2px;
   }
   /* Outline / icon success (Send, camera-on). Pair with a dark surface. */

@@ -148,9 +148,9 @@ Results are compact JSON. Every tool whose result carries `status` (the model-ch
 | `git_upgrade_vault` | `{ confirm: true }` | One-time v1 layout upgrade. `confirm: true` required. |
 | `git_list_branches` | `{}` | Branches and the current one (read-only). |
 | `git_branch_create` | `{ name }` | Create a branch. Switches when the working copy is clean. |
-| `git_branch_switch` | `{ branch, confirm? }` | Switch branch; `confirm: true` when the working copy is dirty. |
+| `git_branch_switch` | `{ branch, confirm?, choice? }` | Switch branch; `confirm: true` when the working copy is dirty. A file conflict returns `conflict` and does not switch. `choice` `use_local` or `use_remote` (both `confirm: true`) does not write git. |
 | `git_branch_delete` | `{ branch, confirm: true }` | Delete a branch. |
-| `git_behind_resolve` | `{ action, confirm: true }` | `reload` is Get latest (no git write). `branch` saves mine to a new branch. No path argument. |
+| `git_behind_resolve` | `{ action, confirm: true }` | `reload` is Get latest (no git write). `branch` is Create a new branch (a save-time git write). No path argument. |
 | `git_force_overwrite` | `{ confirm: true }` | Overwrite the overlapping remote files. |
 
 ### Geometry engine crashes
