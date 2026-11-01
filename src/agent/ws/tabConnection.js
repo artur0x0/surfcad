@@ -222,7 +222,7 @@ export function createAgentBridgeTabConnection(opts) {
   attachCommandDispatch(transport, {
     call,
     onActivity(activity) {
-      emitPrompt({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: activity.hold });
+      emitPrompt({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: activity.hold, command: activity.command });
     },
   });
 

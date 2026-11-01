@@ -153,19 +153,24 @@ export function agentDisconnectToastCopy(reason, fallback = AGENT_DISCONNECTED_T
 }
 
 /**
- * Phone chat hides on a prompt that just started, and again on each
- * progress update. Desktop fold is separate.
- * @param {{ isMobile?: boolean, promptStarted?: boolean, progressEdge?: boolean }} [input]
- * @returns {'prompt' | 'progress' | null}
+ * Phone chat hides on a prompt that just started, on each progress update,
+ * and when the session state enters working (the agent started changing
+ * the model, with or without a prompt). Desktop fold is separate.
+ * @param {{ isMobile?: boolean, promptStarted?: boolean, progressEdge?: boolean, workingEdge?: boolean }} [input]
+ * @returns {'prompt' | 'progress' | 'working' | null}
  */
 export function mobileChatHideReason(input = {}) {
   if (input.isMobile !== true) return null;
   if (input.progressEdge === true) return 'progress';
+  if (input.workingEdge === true) return 'working';
   if (input.promptStarted === true) return 'prompt';
   return null;
 }
 
-/** How long a progress update keeps the phone spinner after the frame. */
+/**
+ * How long a progress update keeps the spinner after the frame. The same
+ * window as the session idle time (`AGENT_SESSION_IDLE_MS`).
+ */
 export const AGENT_PROGRESS_RECENT_MS = 60_000;
 
 /**

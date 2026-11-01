@@ -14,6 +14,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
 import { agentBridgeRingLabel, agentBridgeRingState } from '../agent/ws/agentBridgeChrome.js';
+import { subscribeAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 import { profileInitials } from '../utils/profileInitials.js';
 import { useAgentBridgeHost } from './AgentBridgeHost';
@@ -45,6 +46,11 @@ export default function ProfileChip({
     ? 'spinning'
     : (session.offerReconnect ? 'reconnect' : 'idle');
   const view = chipView({ phase, motion });
+  // While the paired agent is working (a prompt in flight, or a build it
+  // started on its own) the avatar is a spinner, like the phone bot button.
+  const [agentWorking, setAgentWorking] = useState(false);
+  useEffect(() => subscribeAgentPromptWorking(setAgentWorking), []);
+  const spinning = view.spinner || agentWorking;
   const signedIn = session.githubConnected;
   const reauth = session.needsReconnect;
   const canClear = typeof onClearLocalCadData === 'function';
@@ -181,10 +187,11 @@ export default function ProfileChip({
         type="button"
         data-profile-chip=""
         data-profile-chip-variant={variant}
-        data-profile-chip-state={view.spinner ? 'spinning' : (view.reconnect ? 'reconnect' : view.auth)}
+        data-profile-chip-state={spinning ? 'spinning' : (view.reconnect ? 'reconnect' : view.auth)}
         data-profile-initials={label || (signedIn ? 'user' : 'out')}
         data-profile-auth={view.auth}
-        aria-busy={view.spinner ? 'true' : 'false'}
+        data-profile-agent-working={agentWorking ? '1' : '0'}
+        aria-busy={spinning ? 'true' : 'false'}
         aria-expanded={showPanel ? (panelOpen ? 'true' : 'false') : undefined}
         aria-haspopup={showPanel ? 'dialog' : undefined}
         onClick={handleClick}
@@ -193,7 +200,7 @@ export default function ProfileChip({
         aria-label={title}
         className={shell}
       >
-        {view.spinner ? (
+        {spinning ? (
           <Loader2 size={iconSize} className="animate-spin" aria-hidden="true" data-profile-spinner="" />
         ) : label ? (
           <span className="select-none" aria-hidden="true">{label}</span>

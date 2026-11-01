@@ -82,7 +82,18 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /useModalViewport\(/);
   assert.match(SRC, /data-agent-prompt-actions=""/);
   assert.match(SRC, /dispatchTyping\(\{ type: 'disconnect' \}\)/);
-  assert.match(SRC, /const responding = typingShown\(typing\);/);
+  assert.match(SRC, /const responding = typingShown\(typing\) \|\| sessionReplies;/);
+  // Session-level state (no prompt needed): the tab's own model-changing
+  // calls, status and progress frames, and one idle timer.
+  assert.match(SRC, /sessionReducer\(sessionRef\.current, \{ at: Date\.now\(\), \.\.\.event \}\)/);
+  assert.match(SRC, /dispatchSession\(\{ type: 'command', mutates: true \}\)/);
+  assert.match(SRC, /dispatchSession\(\{ type: 'progress' \}\)/);
+  assert.match(SRC, /dispatchSession\(\{ type: 'status', state: event\?\.mode \}\)/);
+  assert.match(SRC, /dispatchSession\(\{ type: 'tick' \}\)/);
+  assert.match(SRC, /sessionIdleAt\(session, AGENT_SESSION_IDLE_MS\)/);
+  assert.match(SRC, /mobileChatHideReason\(\{ isMobile, workingEdge: started \}\)/);
+  assert.match(SRC, /const agentBusy = pending \|\| sessionBusy\(session\);/);
+  assert.doesNotMatch(SRC, /progressUntil/);
   assert.doesNotMatch(SRC, /setWorking\(/);
   assert.doesNotMatch(SRC, /setStreaming\(/);
 });
@@ -258,4 +269,23 @@ test('a session note renders as text, including markup', async () => {
   assert.doesNotMatch(markup, /<b>hello<\/b>/);
   assert.doesNotMatch(markup, /<img[\s>]/);
   assert.equal(markup.includes(AGENT_PROMPT_SESSION_NOTE), false);
+});
+
+test('a working session with no prompt collapses the chat, disables the field, and keeps Send (nothing to Stop)', async () => {
+  ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
+  const html = renderPrompt('?agentPromptDemo=1&agentPromptState=session-working');
+  assert.match(html, /data-agent-session-state="working"/);
+  assert.match(html, /data-agent-prompt-state="working"/);
+  assert.match(html, /data-agent-prompt-working="1"/);
+  assert.match(html, /agent-prompt-spinner/);
+  assert.match(html, /Agent is working\.\.\./);
+  assert.match(html, /data-agent-prompt-input="" disabled=""/);
+  // The chat is collapsed and there is no prompt to stop.
+  assert.doesNotMatch(html, /data-agent-reply=""/);
+  assert.doesNotMatch(html, /data-agent-prompt-stop=""/);
+  assert.match(html, /data-agent-prompt-send="" aria-label="Send" disabled=""/);
+  // The idle demo has none of that.
+  const idle = renderPrompt('?agentPromptDemo=1&agentPromptState=idle');
+  assert.match(idle, /data-agent-session-state="idle"/);
+  assert.doesNotMatch(idle, /Agent is working/);
 });
