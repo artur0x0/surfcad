@@ -38,7 +38,7 @@ test('handleGitCommit resolves a missing layout before routing and never guesses
 test('ensureDocVaultLayout reads the vault and writes nothing', () => {
   const fn = sliceFn('const ensureDocVaultLayout = async', 'const handleGitCommit = async');
   assert.match(fn, /ensureGitVault\(\{ create: false \}\)/);
-  assert.match(fn, /detectVaultLayout\(/);
+  assert.match(fn, /checkVaultVersion\(/);
   assert.match(fn, /NO_REPO_YET_COPY/);
   assert.match(fn, /vaultLayoutFromDetection\(detected\)/);
   assert.doesNotMatch(fn, /flushGitOps|enqueueGit|commitFiles|writeVaultCommit|executePlanSave|ensureGitVault\(\{\s*create:\s*true/);

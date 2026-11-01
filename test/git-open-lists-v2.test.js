@@ -191,7 +191,7 @@ test('v2 Open search matches the name, the id, and a parent assembly', async () 
   assert.deepEqual(asm.map((a) => a.id), [BIKE]);
 });
 
-test('a v1 tree still lists folders by name; a mixed tree lists both without doubling parts', async () => {
+test('a version-1 marker is not browsed', async () => {
   const gh = createMockGithubAdapter({ login: 'artur' });
   const repo = gh._seedRepo({
     name: 'surfcad-vault',
@@ -204,16 +204,12 @@ test('a v1 tree still lists folders by name; a mixed tree lists both without dou
       [partIdPath(FRAME)]: script(FRAME, 'Frame'),
     },
   });
-  const browse = await listVaultBrowseItems(gh, { owner: repo.owner, name: repo.name }, 'main');
-  assert.deepEqual(browse.assemblies.map((a) => a.name), ['Gearbox', 'Hubless Bike']);
-  assert.deepEqual(browse.parts.map((p) => p.path).sort(), [
-    'assemblies/Gearbox/Lid.js', 'parts/Bracket.js', partIdPath(FRAME),
-  ].sort());
-  const rows = vaultOpenPartRows(browse.parts, { currentAssembly: 'Gearbox', inDoc: [] });
-  assert.equal(rows.find((r) => r.path === 'parts/Bracket.js').name, 'Bracket');
-  assert.equal(rows.find((r) => r.id === FRAME).name, 'Frame');
-  const groups = groupVaultOpenPartRows(rows, { currentAssembly: 'Gearbox' });
-  assert.deepEqual(groups.map((g) => g.label), ['Gearbox', 'Hubless Bike', LOOSE_PARTS_LABEL]);
+  const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
+  await assert.rejects(
+    () => listVaultBrowseItems(gh, { owner: repo.owner, name: repo.name }, 'main'),
+    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
+  );
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
 });
 
 test('an assembly file that cannot be read fails the index instead of listing ids', async () => {

@@ -52,8 +52,7 @@ test('buildDirtyState sets unsaved from pendingSave', () => {
   assert.equal(buildDirtyState({ pendingSave: true }).pendingSave, true);
 });
 
-test('buildDirtyState omits upgradeRequired unless it is true', () => {
+test('buildDirtyState does not carry an upgrade flag', () => {
   assert.equal('upgradeRequired' in buildDirtyState({}), false);
-  assert.equal('upgradeRequired' in buildDirtyState({ upgradeRequired: false }), false);
-  assert.equal(buildDirtyState({ upgradeRequired: true }).upgradeRequired, true);
+  assert.equal('upgradeRequired' in buildDirtyState({ upgradeRequired: true }), false);
 });

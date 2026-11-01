@@ -23,13 +23,10 @@ test('a local working copy lists only the open assembly', () => {
   assert.deepEqual(assemblyRows({}), []);
 });
 
-test('legacy folders are listed by name with no id, deduped case-insensitively', () => {
-  const rows = assemblyRows({ v2: [{ id: A, name: 'New' }], legacyNames: ['Bracket', 'bracket', ' Old Mount '], open: null });
-  assert.deepEqual(rows, [
-    { id: A, name: 'New', open: false },
-    { id: null, name: 'Bracket', legacy: true, open: false },
-    { id: null, name: 'Old Mount', legacy: true, open: false },
-  ]);
+test('name-only folder rows are not listed', () => {
+  const rows = assemblyRows({ v2: [{ id: A, name: 'New' }], open: null });
+  assert.deepEqual(rows, [{ id: A, name: 'New', open: false }]);
+  assert.equal(rows.some((row) => row.legacy || row.id == null), false);
 });
 
 test('a v2 row without a name falls back to its id, and duplicates collapse', () => {

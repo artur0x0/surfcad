@@ -8,23 +8,31 @@ import test from 'node:test';
 import { fileWrite } from '../../utils/git/githubAdapterInterface.js';
 import { createMockGithubAdapter } from '../../utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../../utils/git/vault.js';
-import { assemblyFilePath, assemblyPartPath } from '../../utils/git/vaultLayout.js';
-import { stringifySurfJson } from '../../utils/git/surfJson.js';
+import { assemblyIdPath, partIdPath, partMeshIdPath } from '../../utils/git/idPaths.js';
 import { listVaultAssemblies, openVaultAssembly } from '../../utils/git/gitWorkspace.js';
 import { resolveAssemblyOpenName } from './openAssemblyName.js';
 import { cacheVaultReads } from './vaultReadCache.js';
 
-const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
-const HOUSING = assemblyPartPath('Housing', 'Pin');
+const GEARBOX = '2026-10-22-05-00-00-0001-aa01';
+const HOUSING_ID = '2026-10-22-05-00-00-0002-bb02';
+const BRACKET = '2026-10-22-05-00-00-0003-cc03';
+const PIN = '2026-10-22-05-00-00-0004-dd04';
 const SEED_SCRIPT = 'return Manifold.cube([10,10,10], true);';
+const MARKER = `${JSON.stringify({ kind: 'surfcad-vault', version: 2 }, null, 2)}\n`;
 
-function assemblyDoc(name, partPath, partName) {
-  return {
-    source: 'git',
+function assemblyFile(id, name, partId, partName) {
+  return `${JSON.stringify({
+    format: 'surfcad.assembly',
+    version: 2,
+    id,
     name,
-    activeId: partPath,
-    parts: [{ id: partPath, name: partName, visible: true, order: 0 }],
-  };
+    activeId: partId,
+    parts: [{ id: partId, name: partName, visible: true, order: 0 }],
+  }, null, 2)}\n`;
+}
+
+function partFile(id, name) {
+  return `// @surf-id ${id}\n// @name ${name}\n${SEED_SCRIPT}\n`;
 }
 
 async function seedVault() {
@@ -35,10 +43,11 @@ async function seedVault() {
     message: 'seed',
     baseSha: vault.headSha,
     files: [
-      fileWrite(assemblyFilePath('Gearbox'), stringifySurfJson(assemblyDoc('Gearbox', BRACKET, 'Bracket'))),
-      fileWrite(BRACKET, SEED_SCRIPT),
-      fileWrite(assemblyFilePath('Housing'), stringifySurfJson(assemblyDoc('Housing', HOUSING, 'Pin'))),
-      fileWrite(HOUSING, SEED_SCRIPT),
+      fileWrite('surfcad.json', MARKER),
+      fileWrite(assemblyIdPath(GEARBOX), assemblyFile(GEARBOX, 'Gearbox', BRACKET, 'Bracket')),
+      fileWrite(partIdPath(BRACKET), partFile(BRACKET, 'Bracket')),
+      fileWrite(assemblyIdPath(HOUSING_ID), assemblyFile(HOUSING_ID, 'Housing', PIN, 'Pin')),
+      fileWrite(partIdPath(PIN), partFile(PIN, 'Pin')),
     ],
   });
   return { gh, repo: vault.repo, seedSha: seed.sha };
@@ -65,7 +74,7 @@ function countReads(adapter) {
 
 async function listThenOpen(adapter, repo, headSha) {
   const names = await listVaultAssemblies(adapter, repo, 'main');
-  const opened = await openVaultAssembly(adapter, repo, 'Gearbox', {
+  const opened = await openVaultAssembly(adapter, repo, GEARBOX, {
     branch: 'main',
     headSha,
   });
@@ -75,7 +84,7 @@ async function listThenOpen(adapter, repo, headSha) {
 test('a cached name lookup adds no tree or marker read beyond the open itself', async () => {
   const openOnly = await seedVault();
   const openCounts = countReads(openOnly.gh);
-  await openVaultAssembly(openCounts.wrapped, openOnly.repo, 'Gearbox', {
+  await openVaultAssembly(openCounts.wrapped, openOnly.repo, GEARBOX, {
     branch: 'main',
     headSha: openOnly.seedSha,
   });
@@ -93,10 +102,9 @@ test('a cached name lookup adds no tree or marker read beyond the open itself', 
   assert.equal(listed.opened.doc.name, 'Gearbox');
   assert.equal(plainListed.names.length, 2);
 
-  // Uncached lookup is the pre-fix cost: one marker read and two tree
-  // listings on top of the open (detect + the second list).
+  // Uncached lookup reads the marker and the tree once more than the open.
   assert.equal(plainCounts.counts.surfcad, openCounts.counts.surfcad + 1);
-  assert.equal(plainCounts.counts.listTree, openCounts.counts.listTree + 2);
+  assert.equal(plainCounts.counts.listTree, openCounts.counts.listTree + 1);
 
   // Cached lookup reuses those reads. It does not add one.
   assert.equal(cachedCounts.counts.surfcad, openCounts.counts.surfcad);
@@ -283,14 +291,14 @@ test('a tip that moves between the lookup and the open uses the new tree', async
   assert.deepEqual(names, ['Gearbox', 'Housing']);
   assert.equal(counts.listTree, 1);
 
-  const meshPath = 'assemblies/Gearbox/Bracket.mesh';
+  const meshPath = partMeshIdPath(BRACKET);
   const moved = await seeded.gh.commitFiles(seeded.repo, {
     branch: 'main',
     message: 'push a mesh',
     baseSha: tip,
     files: [
-      fileWrite(BRACKET, 'return 9;\n'),
-      fileWrite(meshPath, 'mesh'),
+      fileWrite(partIdPath(BRACKET), `// @surf-id ${BRACKET}\n// @name Bracket\nreturn 9;\n`),
+      fileWrite(meshPath, Uint8Array.from([1, 2, 3])),
     ],
   });
   const stale = await cached.listTree(seeded.repo, 'main');
@@ -300,12 +308,12 @@ test('a tip that moves between the lookup and the open uses the new tree', async
   const live = await cached.getBranch(seeded.repo, 'main');
   assert.equal(live.sha, moved.sha);
   assert.notEqual(live.sha, tip);
-  const opened = await openVaultAssembly(cached, seeded.repo, 'Gearbox', {
+  const opened = await openVaultAssembly(cached, seeded.repo, GEARBOX, {
     branch: 'main',
     headSha: live.sha,
   });
   assert.ok(Object.values(opened.scripts).some((text) => String(text).includes('return 9')));
-  assert.ok(opened.assets[meshPath] instanceof Uint8Array);
+  assert.ok(opened.assets[meshPath]?.bytes instanceof Uint8Array);
   assert.equal(counts.listTree, 2);
   assert.equal(counts.surfcad, 2);
 });

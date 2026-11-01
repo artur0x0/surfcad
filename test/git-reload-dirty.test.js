@@ -8,8 +8,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { createMockGithubAdapter, MOCK_GITHUB_STORE_KEY, peekMockVaultName } from '../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../src/utils/git/vault.js';
-import { assemblyFilePath, assemblyPartPath } from '../src/utils/git/vaultLayout.js';
-import { stringifySurfJson } from '../src/utils/git/surfJson.js';
+import { assemblyIdPath } from '../src/utils/git/idPaths.js';
 import { mintSurfId, showAddToRepo, withSurfId } from '../src/utils/git/surfId.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
 import {
@@ -18,12 +17,10 @@ import {
   gitDirtyLiveScript,
   isAssemblyDirty,
   isWorkspaceDirty,
-  openVaultAssembly,
 } from '../src/utils/git/gitWorkspace.js';
 
 const ASM = 'ReloadBox';
-const BODY = assemblyPartPath(ASM, 'Body');
-const LID = assemblyPartPath(ASM, 'Lid');
+const ASM_ID = mintSurfId({ now: new Date('2026-10-17T12:00:02.000Z'), rand: 'eeee' });
 const BODY_ID = mintSurfId({ now: new Date('2026-10-17T12:00:00.000Z'), rand: 'cccc' });
 const LID_ID = mintSurfId({ now: new Date('2026-10-17T12:00:01.000Z'), rand: 'dddd' });
 const BODY_TEXT = withSurfId('return Manifold.cube([20, 20, 10], true);\n', BODY_ID);
@@ -31,43 +28,40 @@ const LID_TEXT = withSurfId('return Manifold.cube([20, 20, 2], true);\n', LID_ID
 
 function doc(activeId = BODY_ID) {
   return {
-    source: 'git',
+    format: 'surfcad.assembly',
+    version: 2,
+    id: ASM_ID,
     name: ASM,
     activeId,
     parts: [
-      { id: BODY_ID, path: BODY, name: 'Body', visible: true, order: 0, surfId: BODY_ID },
-      { id: LID_ID, path: LID, name: 'Lid', visible: true, order: 1, surfId: LID_ID },
+      { id: BODY_ID, name: 'Body', visible: true, order: 0 },
+      { id: LID_ID, name: 'Lid', visible: true, order: 1 },
     ],
   };
 }
 
-async function seed() {
-  const gh = createMockGithubAdapter({ login: 'agent', persist: false });
-  const vault = await findOrCreateVault(gh);
-  const committed = await gh.commitFiles(vault.repo, {
+function seed() {
+  const scripts = { [BODY_ID]: BODY_TEXT, [LID_ID]: LID_TEXT };
+  const live = { ...doc(), source: 'git' };
+  const baseline = captureBaseline({
+    assemblyPath: assemblyIdPath(ASM_ID),
+    assemblyName: ASM,
+    doc: live,
+    scripts,
     branch: 'main',
-    message: 'seed',
-    baseSha: vault.headSha,
-    files: [
-      fileWrite(assemblyFilePath(ASM), stringifySurfJson(doc())),
-      fileWrite(BODY, BODY_TEXT),
-      fileWrite(LID, LID_TEXT),
-    ],
+    headSha: 'abc',
   });
-  const opened = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-  });
-  return { gh, opened };
+  return { opened: { doc: live, scripts, baseline, assemblyPath: baseline.assemblyPath } };
 }
 
 test('showAddToRepo uses the repo path, not the stable part id', () => {
-  assert.equal(showAddToRepo({ id: BODY_ID, path: BODY }), false);
-  assert.equal(showAddToRepo({ id: BODY_ID, path: BODY, isSynced: true }), false);
-  assert.equal(showAddToRepo({ id: BODY_ID, path: BODY, isSynced: false }), true);
+  const path = 'assemblies/ReloadBox/Body.js';
+  assert.equal(showAddToRepo({ id: BODY_ID, path }), false);
+  assert.equal(showAddToRepo({ id: BODY_ID, path, isSynced: true }), false);
+  assert.equal(showAddToRepo({ id: BODY_ID, path, isSynced: false }), true);
   assert.equal(showAddToRepo({ id: BODY_ID }), true);
-  assert.equal(showAddToRepo({ id: BODY }), false);
-  assert.equal(showAddToRepo({ id: BODY, path: BODY }), false);
+  assert.equal(showAddToRepo({ id: path }), false);
+  assert.equal(showAddToRepo({ id: path, path }), false);
 });
 
 test('gitDirtyLiveScript ignores the unseeded empty editor buffer', () => {
@@ -183,7 +177,7 @@ test('mock adapter restores the vault from sessionStorage across a new instance'
       branch: 'main',
       message: 'keep',
       baseSha: vault.headSha,
-      files: [fileWrite(assemblyFilePath(ASM), stringifySurfJson(doc()))],
+      files: [fileWrite(assemblyIdPath(ASM_ID), `${JSON.stringify(doc(), null, 2)}\n`)],
     });
     assert.equal(peekMockVaultName(), 'playtest-git-h12-vault');
     assert.ok(mem.get(MOCK_GITHUB_STORE_KEY));
@@ -191,7 +185,7 @@ test('mock adapter restores the vault from sessionStorage across a new instance'
     const second = createMockGithubAdapter({ login: 'persist-user', persist: true });
     const again = await second.getRepo(vault.repo);
     assert.equal(again?.name, 'playtest-git-h12-vault');
-    const file = await second.readFile(vault.repo, assemblyFilePath(ASM), 'main');
+    const file = await second.readFile(vault.repo, assemblyIdPath(ASM_ID), 'main');
     assert.ok(file?.content.includes(ASM));
   } finally {
     if (previous === undefined) delete globalThis.sessionStorage;

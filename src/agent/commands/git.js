@@ -6,8 +6,6 @@ import {
   realRepoBlockedError,
 } from '../gitAgent.js';
 import { NO_ARGS_SCHEMA } from '../registry.js';
-import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from '../../utils/git/upgradeVaultEnabled.js';
-
 /** How long the in-app consent modal stays up. Bridge calls never wait on it. */
 export const AGENT_GIT_CONSENT_TIMEOUT_MS = 120_000;
 
@@ -224,33 +222,22 @@ export const gitSaveStatusCommand = Object.freeze({
 
 export const gitUpgradeVaultCommand = Object.freeze({
   name: 'git_upgrade_vault',
-  uiEntry: ['data-git-upgrade-confirm', 'data-git-upgrade-vault'],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
     properties: {
-      confirm: { type: 'boolean', description: 'Must be true' },
+      confirm: {
+        type: 'boolean',
+        description: 'Must be true when a vault upgrade step is registered for this version. The current version returns already_upgraded without it.',
+      },
     },
   }),
   example: { confirm: true },
-  checkArgs(args) {
-    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
-    if (gate) return gate;
+  checkArgs() {
     return null;
   },
   async run(ctx, args) {
-    const gate = requireDestructiveConfirm(args, 'git_upgrade_vault');
-    if (gate) return { error: gate };
-    if (!upgradeVaultEnabled(ctx?.upgradeVaultEnv)) {
-      return {
-        error: {
-          code: UPGRADE_UNAVAILABLE.code,
-          message: UPGRADE_UNAVAILABLE.message,
-          hint: UPGRADE_UNAVAILABLE.hint,
-        },
-      };
-    }
-    return hostGit(ctx, 'agentGitUpgradeVault', { confirm: true }, { commandName: 'git_upgrade_vault' });
+    return hostGit(ctx, 'agentGitUpgradeVault', { confirm: args?.confirm === true }, { commandName: 'git_upgrade_vault' });
   },
 });
 

@@ -148,19 +148,19 @@ test('pin: opening a three-part assembly with three meshes on the mock is 3 + pa
   const s = timings.last();
   assert.equal(s.op, 'open');
   assert.equal(s.ok, true);
-  // readFile(assembly) 1, then the part scripts in parallel, listTree 1 for
-  // the mesh shas, one readBlob per mesh in parallel (PR 1 pinned
-  // listTree + readBlob per mesh), then getBranch for the tip.
+  // readFile(marker) for the version check, readFile(assembly), then the
+  // part scripts in parallel, listTree 1 for the mesh shas, one readBlob
+  // per mesh in parallel, then getBranch for the tip.
   const PARTS = 3;
   const MESHES = 3;
   assert.deepEqual(s.byMethod, {
-    readFile: { n: 1 + PARTS, ms: s.byMethod.readFile.ms, failed: 0 },
+    readFile: { n: 2 + PARTS, ms: s.byMethod.readFile.ms, failed: 0 },
     listTree: { n: 1, ms: s.byMethod.listTree.ms, failed: 0 },
     readBlob: { n: MESHES, ms: s.byMethod.readBlob.ms, failed: 0 },
     getBranch: { n: 1, ms: s.byMethod.getBranch.ms, failed: 0 },
   });
-  assert.equal(s.calls, 3 + PARTS + MESHES);
-  assert.equal(s.calls, 9, 'PR 1 pinned 12');
+  assert.equal(s.calls, 4 + PARTS + MESHES);
+  assert.equal(s.calls, 10, 'version check reads the marker; the open itself was pinned at 9');
   assert.equal(peak, 3, 'the three scripts (and the three meshes) are read at the same time');
 });
 

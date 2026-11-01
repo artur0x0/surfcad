@@ -143,10 +143,10 @@ Results are compact JSON. Every tool whose result carries `status` (the model-ch
 | `insert_part` | `{ part_id?, assembly_id?, copy?, instance?, position? }` | Insert by reference (same ids). `copy: true` mints a new id. `instance: true` adds another placement; `position` is a rough block-out. A position on an unjointed row in a multi-part assembly adds `warning` `unjointed_part`. No git write. |
 | `delete_part` | `{ part_id, scope, confirm? }` | `scope: "assembly"` drops the row and does not commit. `scope: "repo"` deletes `parts/<id>.js` in one commit after `confirm: true` and returns the assemblies that use the part. A failed scan is `delete_refused`. |
 | `delete_assembly` | `{ assembly_id, confirm: true, delete_parts? }` | Delete that assembly whether it is open or not. `confirm: true` required. A committed assembly is one commit; a never-saved open assembly leaves the working copy only. |
-| `git_save` | `{ message }` | The vault write. `consent_pending` while Allow is up. `pending_save` if offline. `upgrade_required` on a legacy vault. `conflict` / `repo-moved` when a remote edit overlaps. |
+| `git_save` | `{ message }` | The vault write. `consent_pending` while Allow is up. `pending_save` if offline. `unsupported_vault_version` when the vault marker is not the current format. `conflict` / `repo-moved` when a remote edit overlaps. |
 | `git_add_to_repo` | `{ message }` | Alias of `git_save`. Prefer `git_save`. |
 | `git_move_to_repo` | `{ vault_name? }` | First Save of a local assembly. Consent on a real repo. |
-| `git_upgrade_vault` | `{ confirm: true }` | One-time v1 layout upgrade. `confirm: true` required. |
+| `git_upgrade_vault` | `{ confirm: true }` | Generic vault-format upgrade. Current version returns `already_upgraded`. An older version with no registered step returns `unsupported_vault_version`. `confirm: true` is required only when a step is registered. |
 | `git_list_branches` | `{}` | Branches and the current one (read-only). |
 | `git_branch_create` | `{ name }` | Create a branch. Switches when the working copy is clean. |
 | `git_branch_switch` | `{ branch, confirm?, choice? }` | Switch branch; `confirm: true` when the working copy is dirty. A file conflict returns `conflict` and does not switch. `choice` `use_local` or `use_remote` (both `confirm: true`) does not write git. |

@@ -129,7 +129,7 @@ Finish each stage across the whole assembly before starting the next, and take a
 
 A save is many GitHub round trips. When it is still running after about 20 s, `git_save` answers `{ status: "running", saveId }` and the save keeps going; poll `git_save_status { save_id }` until it answers the save result (`committed` with `sha`, `clean`, or the error). The bridge is free for other calls meanwhile.
 
-`git_save` errors pass through unchanged ([git-save-model.md §3.7](../git-save-model.md#37-error-contract)): `consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`, `save_on_main`.
+`git_save` errors pass through unchanged ([git-save-model.md §3.7](../git-save-model.md#37-error-contract)): `consent_pending`, `pending_save`, `unsupported_vault_version`, `conflict`, `repo-moved`, `save_on_main`.
 
 `dirty.unsaved` is working copy vs the last AssemblyCommit (survives reload; rename / hide / remove count; changing `activeId` does not). `dirty.pendingSave` is an offline plan waiting for a second Save.
 
@@ -138,7 +138,7 @@ Assembly and part lifecycle:
 - `rename_part` `{ part_id, name }` / `rename_assembly` `{ assembly_id, name }` change the display name only (`moved: false`). The next Save writes the same `parts/<id>.js` / `assemblies/<id>.surf.json`.
 - `delete_part` `{ part_id, scope: "assembly" | "repo", confirm? }`: `assembly` drops the row and does not commit. `repo`, after `confirm: true`, deletes `parts/<id>.js` in one commit and returns `assemblies` naming every other assembly that uses the part. A failed scan is `delete_refused` and writes nothing. Those other assemblies are not rewritten.
 - `delete_assembly` `{ assembly_id, confirm: true, delete_parts? }` deletes that assembly whether it is open or not. After confirm, a committed assembly is one commit that deletes `assemblies/<id>.surf.json`. `delete_parts` also deletes `parts/<id>.js` when no other assembly on the branch references that id. A never-saved open assembly is removed from the working copy only. The result lists assemblies that use its parts. Nothing is written until `confirm: true`.
-- `list_assemblies` returns what the Open picker shows, as `[{ id, name, open }]`: saved assemblies, the open working copy (also before its first Save, and in local mode), and on a legacy vault its name-only folders as `{ id: null, name, legacy: true }` (no opaque id until `git_upgrade_vault`).
+- `list_assemblies` returns what the Open picker shows, as `[{ id, name, open }]`: saved v2 assemblies and the open working copy (also before its first Save, and in local mode). An older or unknown vault version is `unsupported_vault_version` and is not listed.
 
 ## `confirm: true`
 
@@ -147,7 +147,7 @@ Assembly and part lifecycle:
 - `delete_feature` on the feature that declares `part` while later code still uses `part` (the base feature). The refusal carries `details.featureId` and `details.dependents` (count of later features). With `confirm: true` the block is deleted, the later features fail (`ok: false`, `status.runState: "failed"`), and the result adds a `warning` string. Deleting the only feature, or one that does not declare `part`, needs no confirm.
 - `delete_part` with `scope: "repo"`
 - `delete_assembly`
-- `git_upgrade_vault`
+- `git_upgrade_vault` when an upgrade step is registered for that vault version (`confirm: true`). On the current version it returns `{ status: "already_upgraded" }` without confirm. With no step, an older version returns `unsupported_vault_version` and nothing is written.
 - `git_behind_resolve` (`action: "reload"` = Get latest, `action: "branch"` = Create a new branch, a save-time git write)
 - `git_branch_switch` when the working copy is dirty. A file conflict returns `conflict` and does not switch; pass `choice: "use_local"` or `"use_remote"` with `confirm: true` (neither writes git)
 - `git_branch_delete`
@@ -176,7 +176,7 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `consent_pending` | Real-repo write while the consent dialog is up. Nothing was written. Ask the user to click **Allow**, then retry the same call (`details.retry_after_ms`). |
 | `real_repo_blocked` | Real-repo write that cannot get consent: headless / automation, or the user denied this session. Tell the user; do not loop. |
 | `pending_save` | Offline planned write. Ask the user to Save again when online. |
-| `upgrade_required` | `git_save` on a legacy vault. `git_upgrade_vault { confirm: true }` after the user agrees (on a v2 vault it returns `{ status: "already_upgraded" }`, no commit). |
+| `unsupported_vault_version` | The vault marker is not the current format and no upgrade step is registered. Nothing was opened or written. `git_upgrade_vault` on the current version returns `{ status: "already_upgraded" }`. |
 | `conflict` / `repo-moved` | A remote edit overlaps this Save. `git_force_overwrite`, or `git_behind_resolve` `{ action: "reload" \| "branch", confirm: true }`, or stop. |
 | `git_only` / `git_blocked` | Vault-only tool (e.g. `open_assembly`, `open_part`, `insert_part`) with no vault, or git is unavailable. `git_move_to_repo` or stay local. |
 | `not_ready` | `paint_open` waited 1.5 s and paint mode is still closed. `details.reason` is `prompt_working` or `mode_not_ready`; `details.retryable` is true. Retry `paint_open`. |

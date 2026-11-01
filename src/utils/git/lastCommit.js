@@ -7,8 +7,6 @@
  * missing or corrupt row is empty, not a throw.
  *
  * files keys are f(id) paths (assemblyIdPath / partIdPath / partMeshIdPath).
- * v1 blob paths arrive as blobSources from the legacy reader — import that
- * module directly so lastCommit never loads upgrade.js (cycle).
  */
 import { normalizeRepoPath, partDefinitionId } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
@@ -18,7 +16,6 @@ import {
   partIdPath,
   partMeshIdPath,
 } from './idPaths.js';
-import { lastCommitBlobSources } from './legacyVault/reader.js';
 import { isV2SurfId } from './surfId.js';
 
 export const LAST_COMMIT_SCHEMA_VERSION = 1;
@@ -537,7 +534,6 @@ export function scheduleLastCommitFromApp({
       store,
       assemblyId,
       headSha: opened?.baseline?.headSha || tip,
-      blobSources: lastCommitBlobSources(opened),
       persistBranchTip: plan.persistBranchTip,
       persistAssemblyCommit: plan.persistAssemblyCommit,
       liveSession,

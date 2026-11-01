@@ -18,8 +18,8 @@ import { partRowGitChrome } from '../../src/utils/git/gitAssemblyRename.js';
 import { showAddToRepo } from '../../src/utils/git/surfId.js';
 import { markPartsSynced } from '../../src/utils/git/surfIdMigration.js';
 import {
-  dirtyPartIds, isAssemblyDirty, isPartDirty, isWorkspaceDirty,
-  listVaultAssemblies, listAddableVaultParts, openVaultAssembly, readVaultPart,
+  captureBaseline, dirtyPartIds, isAssemblyDirty, isPartDirty, isWorkspaceDirty,
+  listVaultAssemblies, listAddableVaultParts, readVaultPart,
   resolveNewPartPath, suggestNewPartPath,
 } from '../../src/utils/git/gitWorkspace.js';
 import {
@@ -74,20 +74,38 @@ const seed = await gh.commitFiles(vault.repo, {
     fileWrite(assemblyPartPath('Gearbox', 'Spare'), 'return Manifold.cube([1,1,1], true);'),
   ],
 });
-eq('list assemblies', await listVaultAssemblies(gh, vault.repo, 'main'), ['Cover', 'Gearbox']);
 eq('listAssemblies on tree', listAssemblies(await gh.listTree(vault.repo, 'main')), ['Cover', 'Gearbox']);
+let refused = null;
+try {
+  await listVaultAssemblies(gh, vault.repo, 'main');
+} catch (err) {
+  refused = err;
+}
+ok('a version-1 folder vault is not listed', refused?.code === 'unsupported_vault_version', refused?.message || '');
 
-console.log('\ngit G2 — open loads parts by path');
-const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', {
-  branch: 'main', headSha: seed.sha,
-});
+console.log('\ngit G2 — folder save still tracks dirty from the committed doc');
+const folderScripts = {
+  [assemblyPartPath('Gearbox', 'Bracket')]: 'return Manifold.cube([10,10,10], true);',
+  [sharedPartPath('M3 bolt')]: 'return Manifold.cylinder(6, 1.5, 1.5, 24);',
+};
+const opened = {
+  doc: gearbox,
+  scripts: folderScripts,
+  baseline: captureBaseline({
+    assemblyPath: assemblyFilePath('Gearbox'),
+    assemblyName: 'Gearbox',
+    doc: gearbox,
+    scripts: folderScripts,
+    branch: 'main',
+    headSha: seed.sha,
+  }),
+};
 eq('opened name', opened.doc.name, 'Gearbox');
 eq('opened source', opened.doc.source, 'git');
-eq('opened part paths', opened.doc.parts.map((p) => p.path), [
+eq('opened part ids', opened.doc.parts.map((p) => p.id), [
   assemblyPartPath('Gearbox', 'Bracket'),
   sharedPartPath('M3 bolt'),
 ]);
-ok('opened part ids are stable', opened.doc.parts.every((p) => p.id && p.id !== p.path));
 eq('bracket script', opened.scripts[opened.doc.parts[0].id],
   'return Manifold.cube([10,10,10], true);');
 eq('shared bolt script', opened.scripts[opened.doc.parts[1].id],
@@ -176,19 +194,30 @@ console.log('\ngit G2 — Add to Repo (instant single-part commit)');
   const ASM = assemblyFilePath('Gearbox');
   const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
   const NEWP = assemblyPartPath('Gearbox', 'NewLocal');
+  const seedDoc = {
+    source: 'git', name: 'Gearbox', activeId: BRACKET,
+    parts: [{ id: BRACKET, name: 'Bracket', visible: true, order: 0 }],
+  };
+  const seedScripts = { [BRACKET]: 'return Manifold.cube([10,10,10], true);' };
   const seed = await gh.commitFiles(vault.repo, {
     branch: 'main', message: 'seed', baseSha: vault.headSha,
     files: [
-      fileWrite(ASM, stringifySurfJson({
-        source: 'git', name: 'Gearbox', activeId: BRACKET,
-        parts: [{ id: BRACKET, name: 'Bracket', visible: true, order: 0 }],
-      })),
-      fileWrite(BRACKET, 'return Manifold.cube([10,10,10], true);'),
+      fileWrite(ASM, stringifySurfJson(seedDoc)),
+      fileWrite(BRACKET, seedScripts[BRACKET]),
     ],
   });
-  const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', {
-    branch: 'main', headSha: seed.sha,
-  });
+  const opened = {
+    doc: seedDoc,
+    scripts: seedScripts,
+    baseline: captureBaseline({
+      assemblyPath: ASM,
+      assemblyName: 'Gearbox',
+      doc: seedDoc,
+      scripts: seedScripts,
+      branch: 'main',
+      headSha: seed.sha,
+    }),
+  };
   const doc = {
     ...opened.doc,
     parts: [
@@ -233,6 +262,11 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
       { id: GAMMA, name: 'Gamma', visible: true, order: 2, path: GAMMA_PATH },
     ],
   };
+  const seedScripts = {
+    [ALPHA]: ALPHA_TEXT,
+    [BETA]: BETA_TEXT,
+    [GAMMA]: GAMMA_TEXT,
+  };
   const seed = await gh.commitFiles(vault.repo, {
     branch: 'main', message: 'seed trio', baseSha: vault.headSha,
     files: [
@@ -242,9 +276,18 @@ console.log('\ngit G2 — Save that adds a part leaves untouched sibling rows cl
       fileWrite(GAMMA_PATH, GAMMA_TEXT),
     ],
   });
-  const opened = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main', headSha: seed.sha,
-  });
+  const opened = {
+    doc: seedDoc,
+    scripts: seedScripts,
+    baseline: captureBaseline({
+      assemblyPath: assemblyFilePath(ASM),
+      assemblyName: ASM,
+      doc: seedDoc,
+      scripts: seedScripts,
+      branch: 'main',
+      headSha: seed.sha,
+    }),
+  };
   const alphaId = opened.doc.parts.find((part) => part.name === 'Alpha')?.id;
   const gammaId = opened.doc.parts.find((part) => part.name === 'Gamma')?.id;
   const liveDoc = {

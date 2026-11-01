@@ -19,7 +19,6 @@ import {
   dirtyPartIds,
   isPartDirty,
   isWorkspaceDirty,
-  openVaultAssembly,
 } from '../src/utils/git/gitWorkspace.js';
 import { stringifySurfJson } from '../src/utils/git/surfJson.js';
 import {
@@ -260,10 +259,23 @@ describe('assembly Save that adds a part', () => {
         fileWrite(GAMMA_PATH, GAMMA_TEXT),
       ],
     });
-    const opened = await openVaultAssembly(gh, vault.repo, TRIO, {
-      branch: 'main',
-      headSha: seeded.sha,
-    });
+    const scripts = {
+      [ALPHA]: ALPHA_TEXT,
+      [BETA]: BETA_TEXT,
+      [GAMMA]: GAMMA_TEXT,
+    };
+    const opened = {
+      doc,
+      scripts,
+      baseline: captureBaseline({
+        assemblyPath: assemblyFilePath(TRIO),
+        assemblyName: TRIO,
+        doc,
+        scripts,
+        branch: 'main',
+        headSha: seeded.sha,
+      }),
+    };
     const gamma = opened.doc.parts.find((part) => part.name === 'Gamma');
     const alpha = opened.doc.parts.find((part) => part.name === 'Alpha');
     const beta = opened.doc.parts.find((part) => part.name === 'Beta');

@@ -45,7 +45,7 @@ We've shipped stale amber dots more than once (most recently #614, fixed in #621
 `handleGitCommit` routes on `isV2PlanSaveDoc(doc)`, which needs `vaultLayout: 'v2'`, and PartFeed enables Save from the same field. A git document without it fell through to the v1 writer: `git_save` on an assembly made with the Parts strip's **+ › Assembly** on a v2 vault landed `assemblies/<Name>/.surf.json` plus `assemblies/<Name>/<Part>.js`, which the v2 reader never lists, and the Save button read "Nothing to save" with every part unsaved (MVP-1 step 1, `golden:assembly-save-child-parts`).
 
 - **Stamp at birth.** Every seed (`handleNewAssembly`, `seedOpenAssembly`, `seedAgentAssembly`) takes its layout from `newAssemblyVaultLayout(source, currentDoc)` in `src/utils/git/docVaultLayout.js`. Do not build a git document without it.
-- **Heal the rest from the vault.** A document persisted before the stamp, or a local one that went git on connect, is stamped by `ensureDocVaultLayout` (`detectVaultLayout`; no repo yet is v2) on connect and again before Save. Save fails closed when the vault cannot be read; it never guesses the v1 writer.
+- **Heal the rest from the vault.** A document persisted before the stamp, or a local one that went git on connect, is stamped by `ensureDocVaultLayout` (`checkVaultVersion`; no repo yet, or the current marker, is v2; an older or unknown marker is `legacy` so Save returns `unsupported_vault_version`) on connect and again before Save. Save fails closed when the vault cannot be read; it never guesses the v1 writer.
 - **Test:** make an assembly with + › Assembly, build parts, Save once; the commit is `assemblies/<id>.surf.json` plus `parts/<id>.js` for every part, and the strip is clean.
 
 ## 8. Count the round trips

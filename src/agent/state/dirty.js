@@ -7,7 +7,6 @@
  *   legacyCleanup?: boolean,
  *   undoStackDirty?: boolean,
  *   editedSinceLoad?: Iterable<string>,
- *   upgradeRequired?: boolean,
  *   pendingSave?: boolean,
  *   unsaved?: boolean,
  * }} input
@@ -31,7 +30,6 @@ export function buildDirtyState(input = {}) {
     editedSinceLoad,
     pendingSave,
   };
-  if (input.upgradeRequired === true) out.upgradeRequired = true;
   if (undoStackDirty) out.undoStackDirty = true;
   return out;
 }

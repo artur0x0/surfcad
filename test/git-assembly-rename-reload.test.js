@@ -14,7 +14,7 @@ import {
   firstCommitBaseline,
 } from '../src/utils/git/gitCommit.js';
 import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
-import { assemblyFilePath, assemblyPartPath } from '../src/utils/git/vaultLayout.js';
+import { assemblyFilePath } from '../src/utils/git/vaultLayout.js';
 import {
   emptyWorkingSidecar,
   recordRenameFrom,
@@ -66,46 +66,13 @@ test('assembly rename, then reload (no baseline), then Save moves once', async (
 
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, 'Asm2', { branch: 'main' }),
-    /Assembly not found/,
+    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
   );
-  const opened = await openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' });
-  assert.equal(opened.baseline.assemblyName, 'Asm');
-  assert.equal(commitsOn(gh).length, writesAfterSave, 'reload writes nothing');
-
-  const head = (await gh.getBranch(vault.repo, 'main')).sha;
-  const broken = await assembleCommitFiles(gh, vault.repo, {
-    doc: renamed,
-    scripts: first.scripts,
-    baseline: firstCommitBaseline({ headSha: head }),
-  });
-  assert.equal(
-    (broken.files || []).some((file) => file.path === assemblyFilePath('Asm') && file.delete),
-    false,
-    'first-commit baseline after a rename leaves the old assembly',
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' }),
+    (err) => err?.code === 'unsupported_vault_version',
   );
-
-  const planned = await assembleCommitFiles(gh, vault.repo, {
-    doc: renamed,
-    scripts: first.scripts,
-    baseline: opened.baseline,
-    message: 'Save 2',
-  });
-  assert.equal(planned.status, 'ready');
-  assert.ok(planned.files.some((file) => file.path === assemblyFilePath('Asm2') && !file.delete));
-  assert.ok(planned.files.some((file) => file.path === assemblyPartPath('Asm2', 'Keep') && !file.delete));
-  assert.ok(planned.files.some((file) => file.path === assemblyFilePath('Asm') && file.delete));
-  assert.ok(planned.files.some((file) => file.path === assemblyPartPath('Asm', 'Keep') && file.delete));
-
-  const second = await commitWorkspace(gh, vault.repo, {
-    doc: renamed,
-    scripts: first.scripts,
-    baseline: opened.baseline,
-    message: 'Save 2',
-  });
-  assert.equal(second.status, 'committed', second.error);
-  assert.equal(commitsOn(gh).length, writesAfterSave + 1, 'one commit on Save');
-  assert.ok(await gh.readFile(vault.repo, assemblyFilePath('Asm2'), 'main'));
-  assert.equal(await gh.readFile(vault.repo, assemblyFilePath('Asm'), 'main'), null);
+  assert.equal(commitsOn(gh).length, writesAfterSave, 'a refused open writes nothing');
 });
 
 test('App stores renameFrom and reseeds by the old vault name', () => {

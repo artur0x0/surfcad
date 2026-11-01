@@ -13,7 +13,7 @@ import { assemblyFilePath, assemblyPartPath, sharedPartPath } from '../../src/ut
 import { stringifySurfJson, parseSurfJson } from '../../src/utils/git/surfJson.js';
 import { readSurfId, stripSurfId } from '../../src/utils/git/surfId.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
-import { openVaultAssembly, isWorkspaceDirty } from '../../src/utils/git/gitWorkspace.js';
+import { captureBaseline, isWorkspaceDirty, openVaultAssembly } from '../../src/utils/git/gitWorkspace.js';
 import {
   assembleCommitFiles, buildCommitFiles, commitBranchName, commitWorkspace, detectCommitBase,
   forceMergeCommit, firstCommitBaseline,
@@ -35,28 +35,45 @@ const BRACKET = assemblyPartPath('Gearbox', 'Bracket');
 const BOLT = sharedPartPath('M3 bolt');
 const SPARE = assemblyPartPath('Gearbox', 'Spare');
 const ASM = assemblyFilePath('Gearbox');
+const BRACKET_ID = '2026-10-22-05-00-00-0003-cc03';
+const BOLT_ID = '2026-10-22-05-00-00-0004-dd04';
 const DAY = new Date(2026, 9, 6, 9, 30);
 
 async function seedVault() {
   const gh = createMockGithubAdapter({ login: 'artur' });
   const vault = await findOrCreateVault(gh);
   const doc = {
-    source: 'git', name: 'Gearbox', activeId: BRACKET,
+    source: 'git', name: 'Gearbox', activeId: BRACKET_ID,
     parts: [
-      { id: BRACKET, name: 'Bracket', visible: true, order: 0 },
-      { id: BOLT, name: 'M3 bolt', visible: true, order: 1 },
+      { id: BRACKET_ID, path: BRACKET, name: 'Bracket', visible: true, order: 0 },
+      { id: BOLT_ID, path: BOLT, name: 'M3 bolt', visible: true, order: 1 },
     ],
+  };
+  const scripts = {
+    [BRACKET_ID]: 'return Manifold.cube([10,10,10], true);',
+    [BOLT_ID]: 'return Manifold.cylinder(6, 1.5, 1.5, 24);',
   };
   const seed = await gh.commitFiles(vault.repo, {
     branch: 'main', message: 'seed', baseSha: vault.headSha,
     files: [
       fileWrite(ASM, stringifySurfJson(doc)),
-      fileWrite(BRACKET, 'return Manifold.cube([10,10,10], true);'),
-      fileWrite(BOLT, 'return Manifold.cylinder(6, 1.5, 1.5, 24);'),
+      fileWrite(BRACKET, scripts[BRACKET_ID]),
+      fileWrite(BOLT, scripts[BOLT_ID]),
       fileWrite(SPARE, 'return Manifold.cube([1,1,1], true);'),
     ],
   });
-  const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', { branch: 'main', headSha: seed.sha });
+  const opened = {
+    doc,
+    scripts,
+    baseline: captureBaseline({
+      assemblyPath: ASM,
+      assemblyName: 'Gearbox',
+      doc,
+      scripts,
+      branch: 'main',
+      headSha: seed.sha,
+    }),
+  };
   return { gh, repo: vault.repo, opened, seedSha: seed.sha };
 }
 const commitsOn = (gh, branch) => gh._log.filter((e) => e.op === 'commitFiles' && e.branch === branch);
@@ -202,9 +219,15 @@ console.log('\ngit G3 — first commit of a new assembly (no Open)');
   ok('one commit writes all kettle parts + assembly', committed.status === 'committed'
     && committed.files.includes(BODY) && committed.files.includes(LID) && committed.files.includes(HANDLE),
   JSON.stringify(committed.files));
-  const reopened = await openVaultAssembly(gh, vault.repo, 'Widget');
-  const body = partByPath(reopened.doc, P);
-  eq('reopens from vault', reopened.scripts[body.id], 'return Manifold.cube([5,5,5], true);');
+  let reopenErr = null;
+  try {
+    await openVaultAssembly(gh, vault.repo, 'Widget');
+  } catch (err) {
+    reopenErr = err;
+  }
+  ok('a folder vault is not reopened', reopenErr?.code === 'unsupported_vault_version', reopenErr?.message || '');
+  const bodyGit = (await gh.readFile(vault.repo, P, 'main')).content;
+  eq('committed body stays on the tip', stripSurfId(bodyGit), 'return Manifold.cube([5,5,5], true);');
   ok('clean vs new baseline', !isWorkspaceDirty(doc, { [P]: 'return Manifold.cube([5,5,5], true);' }, res.baseline));
   // Null baseline head (post-OAuth, no Open yet) must resolve tip — not throw
   // "main moved: head …, base null" or falsely return branched.

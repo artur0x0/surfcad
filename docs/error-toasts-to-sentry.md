@@ -36,7 +36,7 @@ Every report gets a `category` tag. Use the catch site, not the message text.
 | --- | --- |
 | `script` | The user’s CAD script failed while running (syntax, thrown script error, feature skip, broken contour ref). |
 | `geometry` | Kernel or viewer failure that is not the script: Manifold not ready, cross-section apply, puzzle volume-fallback. |
-| `git` | Vault, save, branch, rename sync, upgrade, add-to-repo. |
+| `git` | Vault, save, branch, rename sync, add-to-repo. |
 | `assembly` | Open, create, or delete-assembly sync. |
 | `export` | Import and download, including the STEP sign-in gate on the import toast. |
 | `agent` | Reserved. Pairing has no error toast today. |
@@ -79,9 +79,6 @@ Line and column for script errors already exist on the thrown value when the wor
 | `handleV2PlanSave` catch, only when the error is file-too-large, carries `err.toast`, or is vault-tree unavailable | `git` |
 | `handleGitCommit` catch, same three cases | `git` |
 | `adoptSyncResult` — `not_a_vault` | `git` |
-| `handleUpgradeVault` — upgraded working copy did not persist | `git` |
-| `handleUpgradeVault` — `PersistCrash` | `git` |
-| `handleUpgradeConflict` — persist incomplete | `git` |
 | `handleSaveOnNewBranch` — save did not commit | `git` |
 | `handleSaveOnNewBranch` catch | `git` |
 | `handleRenameAssembly` — name already taken | `git` |

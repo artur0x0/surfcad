@@ -39,21 +39,27 @@ const renamed = { ...first.doc, name: 'Asm2' };
 const sidecar = recordRenameFrom(emptyWorkingSidecar(), first.baseline.assemblyName);
 ok('sidecar keeps the old vault name', sidecar.renameFrom === 'Asm');
 
-let reseed = 'ok';
+let reseed = null;
 try {
   await openVaultAssembly(gh, vault.repo, 'Asm2', { branch: 'main' });
 } catch (err) {
-  reseed = err.message;
+  reseed = err;
 }
-ok('reload by the new name misses the tip', /Assembly not found/.test(reseed), reseed);
-const opened = await openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' });
-ok('reload by renameFrom finds the tip', opened.baseline.assemblyName === 'Asm');
+ok('reload by the new name is refused', reseed?.code === 'unsupported_vault_version', reseed?.message || '');
+let oldOpen = null;
+try {
+  await openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' });
+} catch (err) {
+  oldOpen = err;
+}
+ok('reload by the old folder name is refused', oldOpen?.code === 'unsupported_vault_version', oldOpen?.message || '');
 ok('reload writes nothing', gh._log.filter((row) => row.op === 'commitFiles').length === writesAfterSave);
+ok('the tip still has the old assembly file', !!(await gh.readFile(vault.repo, assemblyFilePath('Asm'), 'main')));
 
 const planned = await assembleCommitFiles(gh, vault.repo, {
   doc: renamed,
   scripts: first.scripts,
-  baseline: opened.baseline,
+  baseline: first.baseline,
   message: 'Save 2',
 });
 ok('save is ready', planned.status === 'ready');
@@ -69,7 +75,7 @@ ok('one save writes the new folder and deletes the old files', JSON.stringify(ki
 const second = await commitWorkspace(gh, vault.repo, {
   doc: renamed,
   scripts: first.scripts,
-  baseline: opened.baseline,
+  baseline: first.baseline,
   message: 'Save 2',
 });
 ok('second save is one commit', second.status === 'committed');

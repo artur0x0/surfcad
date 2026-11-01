@@ -84,7 +84,6 @@ const READ_HANDLERS = [
   'handleListVaultAssemblies',
   'handleOpenV2VaultAssembly',
   'handleUpgradeVault',
-  'handleUpgradeConflict',
 ];
 
 test('App defaults ensureGitVault to create:false; only Save paths pass create:true', () => {

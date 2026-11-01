@@ -411,9 +411,6 @@ const PartFeed = forwardRef(function PartFeed({
   canCommit = false,
   onGitCommit = null,
   vaultLayout = null,
-  upgradeAvailable = false,
-  onUpgradeVault = null,
-  onUpgradeConflict = null,
   onOverwriteMain = null,
   // G4 pull/conflicts
   behindPartIds = null,
@@ -797,10 +794,6 @@ const PartFeed = forwardRef(function PartFeed({
 
   const startCommit = () => {
     if (source !== 'git' || !canCommit) return;
-    if (vaultLayout === 'legacy' && upgradeAvailable) {
-      setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '', upgrading: true });
-      return;
-    }
     setCommitFlow({ stage: 'message', draft: '', result: null, error: '' });
   };
 
@@ -1234,51 +1227,6 @@ const PartFeed = forwardRef(function PartFeed({
   useEffect(() => {
     if (assemblyRenameFlow) assemblyRenameInputRef.current?.focus();
   }, [assemblyRenameFlow]);
-
-  const runUpgrade = async () => {
-    setCommitFlow({ stage: 'busy', draft: '', result: { phase: 'upgrade' }, error: '', upgrading: true });
-    const result = (await onUpgradeVault?.()) || { status: 'error', error: 'Upgrade unavailable' };
-    if (result.status === 'conflict' && result.phase === 'save') {
-      setCommitFlow({ stage: 'upgrade-conflict', draft: '', result, error: '' });
-      return;
-    }
-    if (result.status === 'error' || result.status === 'conflict') {
-      setCommitFlow({
-        stage: 'error',
-        draft: '',
-        result,
-        error: result.error || result.message || 'Upgrade failed',
-      });
-      return;
-    }
-    setCommitFlow({ stage: 'done', draft: '', result, error: '' });
-  };
-
-  const runUpgradeConflict = async (action) => {
-    if (action === 'dismiss') {
-      closeCommit();
-      return;
-    }
-    const prior = commitFlow?.result || null;
-    setCommitFlow({ stage: 'busy', draft: '', result: prior, error: '', upgrading: true });
-    const result = (await onUpgradeConflict?.({
-      action,
-      files: prior?.files,
-      paths: prior?.paths,
-      message: prior?.message,
-      tipSha: prior?.tipSha || prior?.upgradeSha || null,
-    })) || { status: 'error', error: 'Action unavailable' };
-    if (result.status === 'error' || result.status === 'conflict') {
-      setCommitFlow({
-        stage: 'error',
-        draft: '',
-        result: prior,
-        error: result.error || result.message || 'Could not resolve',
-      });
-      return;
-    }
-    setCommitFlow({ stage: 'done', draft: '', result, error: '' });
-  };
 
     const runPlanSaveConflict = async (action) => {
       if (action === 'dismiss') {
@@ -2085,9 +2033,7 @@ const PartFeed = forwardRef(function PartFeed({
                 data-git-save=""
                 data-git-dirty={sourceDirty ? 'true' : 'false'}
                 disabled={!canCommit}
-                title={vaultLayout === 'legacy' && upgradeAvailable
-                  ? 'Upgrade vault to v2'
-                  : (canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save')}
+                title={canCommit ? `Save (commit) to ${currentBranch || 'main'}` : 'Nothing to save'}
                 aria-label="Save"
                 onClick={startCommit}
               >
@@ -2134,21 +2080,6 @@ const PartFeed = forwardRef(function PartFeed({
                       >
                         Rename assembly
                       </button>
-                      {vaultLayout === 'legacy' && upgradeAvailable ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          data-assembly-upgrade-menu=""
-                          data-ui-action="data-git-upgrade-vault"
-                          className="block w-full px-3 py-1.5 text-left text-xs text-chrome-text hover:bg-white/10"
-                          onClick={() => {
-                            setSaveMenuOpen(false);
-                            setCommitFlow({ stage: 'upgrade', draft: '', result: null, error: '', upgrading: true });
-                          }}
-                        >
-                          Upgrade vault
-                        </button>
-                      ) : null}
                     </div>
                   )}
                 </>
@@ -2567,83 +2498,15 @@ const PartFeed = forwardRef(function PartFeed({
       {commitFlow && typeof document !== 'undefined' && (
         <VaultPickerDialog
           title={(
-            commitFlow.stage === 'upgrade' || commitFlow.stage === 'upgrade-conflict'
-          ) ? 'Upgrade vault'
-            : (
               commitFlow.stage === 'ask-force'
               || commitFlow.stage === 'save-conflict'
               || (commitFlow.result?.syncHold && (commitFlow.stage === 'busy' || commitFlow.stage === 'error'))
             ) ? 'Conflict with main' : 'Save to repo'}
           labelledBy="git-commit-title"
-          dataAttr={commitFlow.stage === 'upgrade' || commitFlow.stage === 'upgrade-conflict' ? 'upgrade' : 'commit'}
+          dataAttr="commit"
           onClose={commitFlow.stage === 'busy' ? undefined : closeCommit}
           footer={(
             <div className="mt-4 flex flex-wrap justify-end gap-2" data-git-commit-stage={commitFlow.stage}>
-              {commitFlow.stage === 'upgrade' && (
-                <>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
-                    onClick={closeCommit}
-                    data-ui-action="data-git-upgrade-dismiss"
-                    data-git-upgrade-dismiss=""
-                  >
-                    Dismiss
-                  </button>
-                  {upgradeAvailable ? (
-                    <button
-                      type="button"
-                      data-ui-action="data-git-upgrade-confirm"
-                      data-git-upgrade-confirm=""
-                      data-git-upgrade-vault=""
-                      className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-success"
-                      onClick={() => { void runUpgrade(); }}
-                    >
-                      Upgrade vault
-                    </button>
-                  ) : null}
-                </>
-              )}
-              {commitFlow.stage === 'upgrade-conflict' && (
-                <>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
-                    onClick={() => { void runUpgradeConflict('dismiss'); }}
-                    data-ui-action="data-git-upgrade-dismiss"
-                    data-git-upgrade-dismiss=""
-                  >
-                    Dismiss
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
-                    data-ui-action="data-git-behind-reload"
-                    data-git-behind-reload=""
-                    onClick={() => { void runUpgradeConflict('reload'); }}
-                  >
-                    Get latest
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs font-ui text-on-dark surface-quiet"
-                    data-ui-action="data-git-behind-branch"
-                    data-git-behind-branch=""
-                    onClick={() => { void runUpgradeConflict('branch'); }}
-                  >
-                    Save mine to a new branch
-                  </button>
-                  <button
-                    type="button"
-                    data-ui-action="data-git-conflict-overwrite"
-                    data-git-conflict-overwrite=""
-                    className="rounded-md px-3 py-1.5 text-xs font-ui font-medium text-on-dark surface-quiet"
-                    onClick={() => { void runUpgradeConflict('overwrite'); }}
-                  >
-                    Overwrite
-                  </button>
-                </>
-              )}
               {commitFlow.stage === 'save-conflict' && (
                 <>
                   <button
@@ -2739,26 +2602,6 @@ const PartFeed = forwardRef(function PartFeed({
             </div>
           )}
         >
-          {commitFlow.stage === 'upgrade' && (
-            <div data-git-upgrade-prompt="" className="font-ui text-on-dark">
-              {upgradeAvailable ? (
-                <p className="text-xs">
-                  This vault still uses the old folder layout. Upgrade rewrites the remote to the v2 id layout in one commit. A dirty working copy is saved as a second commit under this confirmation. Older SurfCAD builds cannot open a v2 vault. Dismiss writes nothing. Never runs on load.
-                </p>
-              ) : (
-                <p className="text-xs">
-                  This vault still uses the old folder layout. Save does not write the v1 tree. Upgrade vault is not available in this build yet, so nothing was written. Dismiss closes this prompt. Local edits stay in the working copy.
-                </p>
-              )}
-            </div>
-          )}
-          {commitFlow.stage === 'upgrade-conflict' && (
-            <div data-git-upgrade-conflict="" className="font-ui text-on-dark">
-              <p className="text-xs">
-                The vault is already v2. The follow-up Save overlaps files changed on the remote. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.
-              </p>
-            </div>
-          )}
           {commitFlow.stage === 'save-conflict' && (
             <div data-git-save-conflict="" className="font-ui text-on-dark">
               <p className="text-xs">
@@ -2791,13 +2634,7 @@ const PartFeed = forwardRef(function PartFeed({
             </>
           )}
           {commitFlow.stage === 'busy' && (
-            upgradeAvailable && (
-              commitFlow.upgrading
-              || commitFlow.result?.phase === 'upgrade'
-              || commitFlow.result?.phase === 'save'
-            )
-              ? <p className="text-xs text-muted-on-dark font-ui" data-git-dialog-loading="">Upgrading…</p>
-              : <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>
+            <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>
           )}
           {commitFlow.stage === 'ask-force' && (
             <div

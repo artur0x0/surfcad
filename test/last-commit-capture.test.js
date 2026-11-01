@@ -8,15 +8,10 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
-import { findOrCreateVault } from '../src/utils/git/vault.js';
 import { createSyncStore } from '../src/utils/git/syncStore.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
-import { assemblyFilePath, assemblyPartPath } from '../src/utils/git/vaultLayout.js';
-import { stringifySurfJson } from '../src/utils/git/surfJson.js';
 import { mintSurfId } from '../src/utils/git/surfId.js';
 import { assemblyIdPath, partIdPath, partMeshIdPath } from '../src/utils/git/idPaths.js';
-import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
-import { lastCommitBlobSources } from '../src/utils/git/legacyVault/index.js';
 import {
   createAssemblyOpenController,
   runTrackedAssemblyOpen,
@@ -61,23 +56,6 @@ function v2Json() {
 
 function v2Text() {
   return `${JSON.stringify(v2Json(), null, 2)}\n`;
-}
-
-function v1Doc() {
-  const path = assemblyPartPath('Gearbox', 'Bracket');
-  return {
-    source: 'git',
-    name: 'Gearbox',
-    activeId: PART_ID,
-    parts: [{
-      id: PART_ID,
-      path,
-      name: 'Bracket',
-      visible: true,
-      order: 0,
-      surfId: PART_ID,
-    }],
-  };
 }
 
 function wrapWrites(adapter) {
@@ -335,62 +313,6 @@ test('capture on a v2 tip stores BranchTip + AssemblyCommit hashes', async () =>
   assert.equal(files['README.md'], undefined);
   assert.deepEqual(store.getBranchTip(repo, 'main'), captured.branchTip);
   assert.deepEqual(store.getAssemblyCommit(repo, 'main', ASM_ID), captured.assemblyCommit);
-});
-
-test('v1 capture keys files by f(id) from lastCommitBlobSources', async () => {
-  const gh = createMockGithubAdapter({ login: 'artur' });
-  const vault = await findOrCreateVault(gh);
-  const doc = v1Doc();
-  const script = `// @surf-id ${PART_ID}\n// @name Bracket\nreturn 1;\n`;
-  const asmPath = assemblyFilePath('Gearbox');
-  const partPath = assemblyPartPath('Gearbox', 'Bracket');
-  const meshPath = partPath.replace(/\.js$/i, '.mesh');
-  await gh.commitFiles(vault.repo, {
-    branch: 'main',
-    message: 'seed gearbox',
-    baseSha: vault.headSha,
-    files: [
-      fileWrite(asmPath, stringifySurfJson(doc)),
-      fileWrite(partPath, script),
-      fileWrite(meshPath, new Uint8Array([9, 8, 7])),
-    ],
-  });
-  const writesBefore = gh._log.filter((row) => row.op === 'commitFiles').length;
-  const store = createSyncStore({ persist: false });
-  await store.ready();
-  wrapWrites(gh);
-
-  const opened = await openVaultAssembly(gh, vault.repo, 'Gearbox', { branch: 'main' });
-  assert.ok(opened.doc?.id, 'PR 2 mints an assembly id');
-  const sources = lastCommitBlobSources(opened);
-  assert.equal(sources[assemblyIdPath(opened.doc.id)], opened.assemblyPath);
-  assert.equal(sources[partIdPath(PART_ID)], partPath);
-  assert.equal(sources[partMeshIdPath(PART_ID)], meshPath);
-
-  const first = await captureLastCommit({
-    adapter: gh,
-    repo: vault.repo,
-    branch: 'main',
-    store,
-    assemblyId: opened.doc.id,
-    headSha: opened.baseline.headSha,
-    blobSources: sources,
-    persistBranchTip: true,
-    now: NOW,
-  });
-  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore);
-  assert.equal(first.branchTip.tipSha, opened.baseline.headSha);
-  assert.equal(first.assemblyCommit.assemblyId, opened.doc.id);
-  assert.equal(first.assemblyCommit.json, null, 'v1 committed json is not stored as v2');
-  const files = first.assemblyCommit.files;
-  assert.equal(files[asmPath], undefined);
-  assert.equal(files[partPath], undefined);
-  assert.ok(files[assemblyIdPath(opened.doc.id)]?.contentHash);
-  assert.ok(files[partIdPath(PART_ID)]?.contentHash);
-  assert.ok(files[partMeshIdPath(PART_ID)]?.contentHash);
-
-  const restored = store.getAssemblyCommit(vault.repo, 'main', opened.doc.id);
-  assert.deepEqual(restored.files, first.assemblyCommit.files);
 });
 
 test('path-less capture does not throw and does not guess the tree', async () => {
