@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { createManualClock } from '../agent/clock.js';
+import { TOKEN_TTL_MS } from '../agent/limits.js';
 import { createMongoTokenStore, createMemoryTokenStore, createTokenService, hashToken } from '../agent/tokens.js';
 
 const USER_A = 'a'.repeat(24);
@@ -34,6 +35,9 @@ function fakeModel() {
       const matched = () => docs.filter((doc) => {
         if (query.userId && String(doc.userId) !== String(query.userId)) return false;
         if (query.revokedAt === null && doc.revokedAt) return false;
+        if (Object.prototype.hasOwnProperty.call(query, 'sessionKey') && doc.sessionKey !== query.sessionKey) {
+          return false;
+        }
         return true;
       });
       const chain = {
@@ -47,6 +51,9 @@ function fakeModel() {
       const hits = docs.filter((doc) => {
         if (filter.userId && String(doc.userId) !== String(filter.userId)) return false;
         if (filter.revokedAt === null && doc.revokedAt) return false;
+        if (Object.prototype.hasOwnProperty.call(filter, 'sessionKey') && doc.sessionKey !== filter.sessionKey) {
+          return false;
+        }
         return true;
       });
       for (const doc of hits) Object.assign(doc, update.$set);
@@ -104,6 +111,27 @@ describe('agent token hashes', () => {
     assert.ok((await tokens.list('user-a'))[0].revokedAt);
   });
 
+  test('sign-out revokes one session and leaves an unmarked token', async () => {
+    const { tokens, store } = memoryService();
+    const iphone = 'ab'.repeat(32);
+    const desktop = 'cd'.repeat(32);
+    const phone = await tokens.issue({ userId: 'user-a', label: 'phone', sessionKey: iphone });
+    const desk = await tokens.issue({ userId: 'user-a', label: 'desk', sessionKey: desktop });
+    const old = await tokens.issue({ userId: 'user-a', label: 'old', sessionKey: 'raw-session-id' });
+    assert.equal(store.dump()[0].sessionKey, iphone);
+    assert.equal(store.dump()[2].sessionKey, null);
+    const listed = JSON.stringify(await tokens.list('user-a'));
+    assert.equal(listed.includes(iphone), false);
+    assert.equal(listed.includes('sessionKey'), false);
+    const ids = await tokens.revokeBySession('user-a', iphone);
+    assert.deepEqual(ids, [phone.id]);
+    assert.equal(await tokens.authenticate(phone.token), null);
+    assert.equal((await tokens.authenticate(desk.token)).userId, 'user-a');
+    assert.equal((await tokens.authenticate(old.token)).userId, 'user-a');
+    assert.equal(await tokens.countLive('user-a'), 2);
+    assert.deepEqual(await tokens.revokeBySession('user-a', 'raw-session-id'), []);
+  });
+
   test('revokeAll drops every live token for that account only', async () => {
     const { tokens } = memoryService();
     const first = await tokens.issue({ userId: 'user-a', label: 'laptop' });
@@ -115,6 +143,77 @@ describe('agent token hashes', () => {
     assert.equal(await tokens.authenticate(second.token), null);
     assert.equal((await tokens.authenticate(other.token)).userId, 'user-b');
     assert.deepEqual(await tokens.revokeAll('user-a'), []);
+  });
+
+  test('use does not extend a 7 day pairing', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    assert.equal(TOKEN_TTL_MS, 7 * DAY);
+    const { clock, store, tokens } = memoryService(TOKEN_TTL_MS);
+    const issued = await tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const expiresAt = store.dump()[0].expiresAt;
+    assert.equal(Date.parse(expiresAt) - clock.now(), TOKEN_TTL_MS);
+    clock.advance(TOKEN_TTL_MS - 1);
+    await tokens.markUsed(await tokens.authenticate(issued.token));
+    assert.equal(store.dump()[0].expiresAt, expiresAt);
+    assert.equal((await tokens.inspect(issued.token)).status, 'ok');
+    clock.advance(1);
+    assert.equal((await tokens.inspect(issued.token)).status, 'expired');
+    assert.equal(store.dump()[0].expiresAt, expiresAt);
+    assert.equal(await tokens.authenticate(issued.token), null);
+  });
+
+  test('a stored 90-day expiry is capped at 7 days from issue', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const start = 1_700_000_000_000;
+    const clock = createManualClock(start);
+    const store = createMemoryTokenStore();
+    const raw = Buffer.alloc(32, 9).toString('base64url');
+    const created = start - 2 * DAY;
+    await store.insert({
+      id: 'legacy',
+      userId: 'user-a',
+      tokenHash: hashToken(raw),
+      label: 'legacy',
+      createdAt: new Date(created).toISOString(),
+      expiresAt: new Date(created + 90 * DAY).toISOString(),
+      revokedAt: null,
+      lastUsedAt: null,
+    });
+    const tokens = createTokenService({ store, now: () => clock.now() });
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), created + TOKEN_TTL_MS);
+    assert.equal(Date.parse(store.dump()[0].expiresAt), created + 90 * DAY);
+    clock.advance(created + TOKEN_TTL_MS - start);
+    assert.equal((await tokens.inspect(raw)).status, 'expired');
+    assert.equal(Date.parse(store.dump()[0].expiresAt), created + 90 * DAY);
+  });
+
+  test('a token with no pairing time is capped at 7 days from the first check', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const start = 1_700_000_000_000;
+    const clock = createManualClock(start);
+    const store = createMemoryTokenStore();
+    const raw = Buffer.alloc(32, 4).toString('base64url');
+    await store.insert({
+      id: 'undated',
+      userId: 'user-a',
+      tokenHash: hashToken(raw),
+      label: 'undated',
+      createdAt: null,
+      expiresAt: new Date(start + 90 * DAY).toISOString(),
+      revokedAt: null,
+      lastUsedAt: null,
+    });
+    const tokens = createTokenService({ store, now: () => clock.now() });
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse(String(store.dump()[0].createdAt)), start);
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), start + TOKEN_TTL_MS);
+    clock.advance(DAY);
+    assert.equal((await tokens.inspect(raw)).status, 'ok');
+    assert.equal(Date.parse((await tokens.list('user-a'))[0].expiresAt), start + TOKEN_TTL_MS);
+    clock.advance(TOKEN_TTL_MS - DAY);
+    assert.equal((await tokens.inspect(raw)).status, 'expired');
+    assert.equal(Date.parse(String(store.dump()[0].expiresAt)), start + 90 * DAY);
   });
 
   test('an expired token is rejected', async () => {
@@ -157,5 +256,13 @@ describe('agent token hashes', () => {
     assert.deepEqual(ids, [again.id]);
     assert.equal(await tokens.authenticate(again.token), null);
     assert.equal((await tokens.authenticate(spare.token)).userId, USER_B);
+    const hashed = 'ab'.repeat(32);
+    const scoped = await tokens.issue({ userId: USER_A, label: 'scoped', sessionKey: hashed });
+    const unmarked = await tokens.issue({ userId: USER_A, label: 'unmarked' });
+    assert.equal(model.docs.at(-2).sessionKey, hashed);
+    assert.equal(model.docs.at(-1).sessionKey, null);
+    assert.deepEqual(await tokens.revokeBySession(USER_A, hashed), [scoped.id]);
+    assert.equal(await tokens.authenticate(scoped.token), null);
+    assert.equal((await tokens.authenticate(unmarked.token)).userId, USER_A);
   });
 });

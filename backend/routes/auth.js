@@ -29,7 +29,12 @@ import {
 } from '../auth/guestConvert.js';
 import { recordRegisterIp, registerIpWait } from '../auth/registerCooldown.js';
 import { persistAfterAgentRevoke } from '../agent/credentialRevoke.js';
-import { closeUserTabSockets, revokeUserAgentAccess } from '../agent/install.js';
+import {
+  closeSessionTabSockets,
+  closeUserTabSockets,
+  revokeSessionAgentAccess,
+  revokeUserAgentAccess,
+} from '../agent/install.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 import { isAdmin } from '../middleware/requireAdmin.js';
 
@@ -431,25 +436,33 @@ router.post('/login', async (req, res, next) => {
 
 /**
  * POST /api/auth/logout
- * Logout current user
+ * End this browser session and revoke only the agent tokens it approved.
+ * Tokens paired from another session, and tokens with no recorded session,
+ * stay. Password change and account deletion still revoke the whole account.
+ * Revoke runs before the session is destroyed so a failure can be retried,
+ * and before this session's tab sockets close so they still receive the frame.
  */
-router.post('/logout', (req, res) => {
+router.post('/logout', async (req, res) => {
   const userId = req.user?._id ?? req.user?.id;
+  const sessionId = req.sessionID;
+  try {
+    if (userId != null) await revokeSessionAgentAccess(userId, sessionId);
+  } catch (err) {
+    console.error('[Auth] Logout agent revoke error:', err);
+    return res.status(500).json({ error: 'Logout failed' });
+  }
   req.logout((err) => {
     if (err) {
       console.error('[Auth] Logout error:', err);
       return res.status(500).json({ error: 'Logout failed' });
     }
-    
+
     req.session.destroy((destroyErr) => {
       if (destroyErr) {
         console.error('[Auth] Session destroy error:', destroyErr);
       }
       res.clearCookie('surfcad.sid');
-      // Agent tokens are separate devices. Connected agents, surfcad-mcp
-      // logout, a password change, account delete, or credentialsRevokedAt
-      // revoke them. Signing out of the site does not.
-      if (userId != null) closeUserTabSockets(userId);
+      if (userId != null) closeSessionTabSockets(userId, sessionId);
       return res.json({ success: true });
     });
   });

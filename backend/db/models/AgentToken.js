@@ -44,6 +44,15 @@ const agentTokenSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  /**
+   * SHA-256 of the browser session that approved this pairing.
+   * Not the session id and not the session secret. Missing on tokens
+   * issued before this field existed; sign-out does not revoke those.
+   */
+  sessionKey: {
+    type: String,
+    default: null,
+  },
 }, {
   collection: 'agentTokens',
   versionKey: false,

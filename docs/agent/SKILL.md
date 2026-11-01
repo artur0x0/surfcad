@@ -164,7 +164,8 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `pair_pending` | Waiting for the user to click Allow in SurfCAD. |
 | `tab_asleep` | Remote relay: no SurfCAD tab answered. The message is `SurfCAD tab is asleep`. Open the tab in Chrome and retry. |
 | `too_many_pending` | Remote relay: the message is `Too many commands are waiting`. Wait for the tab to finish, then retry. |
-| `token_revoked` | The saved login was revoked or expired (socket close 4001). Run `npx surfcad-mcp login` again. |
+| `token_revoked` | The saved login was revoked (socket close 4001, reason `token revoked`). Run `npx surfcad-mcp login` again. |
+| `expired` | Agent pairing expired, get a new join code. Run `npx surfcad-mcp login` with that code. |
 | `client_update_required` | This surfcad-mcp is too old. The handshake says `please update surfcad-mcp`. Update, then login again. |
 | `unknown_part` / `unknown_assembly` | Id not in the open document / vault, or a path or name was passed. Call `parts` or `list_assemblies` and retry with a listed id. |
 | `part_mismatch` | `part_id` is not the active part. `set_active_part` first, or pass the active id. |

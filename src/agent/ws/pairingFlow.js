@@ -138,6 +138,7 @@ export const AGENT_DISCONNECT_REASON_COPY = Object.freeze({
   inactive: 'Agent disconnected: inactive for 10 min',
   closed: 'Agent ended the session',
   revoked: 'Agent access revoked',
+  expired: 'Agent pairing expired: pair again with a new code',
 });
 
 /**

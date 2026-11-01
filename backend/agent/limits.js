@@ -35,8 +35,14 @@ export const COMMAND_LIMIT = 60;
 
 export const COMMAND_WINDOW_MS = 60 * 1000;
 
-/** Agent tokens expire after this unless revoked sooner. */
-export const TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+/**
+ * Absolute lifetime of an agent pairing, measured from issue (`createdAt`).
+ * Use does not extend it. A token stored with a longer `expiresAt` is
+ * capped to this window from `createdAt`. A token with no `createdAt` is
+ * capped to 7 days from the first check, and that time is stored so the
+ * window does not slide. Join codes stay at `JOIN_TTL_MS` (10 minutes).
+ */
+export const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** In-memory command results are dropped after this if nobody reads them. */
 export const RESULT_RETENTION_MS = 2 * 60 * 1000;

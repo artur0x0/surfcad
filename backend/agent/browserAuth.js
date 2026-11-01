@@ -1,13 +1,14 @@
 import { ServerResponse } from 'node:http';
 import passport from 'passport';
 import { enforceCredentialRevocation } from '../auth/session.js';
+import { hashApprovingSession } from './sessionKey.js';
 
 /**
  * Run the same session and passport stack a normal request uses, against
  * the WebSocket upgrade. The fake response is never flushed.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('express').RequestHandler} sessionMiddleware
- * @returns {Promise<{ id: string } | null>}
+ * @returns {Promise<{ id: string, sessionKey: string | null } | null>}
  */
 export function authenticateBrowserUpgrade(req, sessionMiddleware) {
   const res = new ServerResponse(req);
@@ -24,7 +25,10 @@ export function authenticateBrowserUpgrade(req, sessionMiddleware) {
             if (!req.isAuthenticated?.() || !req.user) return resolve(null);
             const id = req.user._id ?? req.user.id;
             if (id == null) return resolve(null);
-            return resolve({ id: String(id) });
+            return resolve({
+              id: String(id),
+              sessionKey: hashApprovingSession(req.sessionID),
+            });
           });
         });
       });

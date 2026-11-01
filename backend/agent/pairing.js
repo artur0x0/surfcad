@@ -423,7 +423,7 @@ export function createPairingService(opts) {
     },
 
     /**
-     * @param {{ userCode?: string, userId: string, ip?: string }} fields
+     * @param {{ userCode?: string, userId: string, ip?: string, sessionKey?: string | null }} fields
      */
     async approve(fields) {
       const gate = takeEntry(fields.userId, fields.ip || 'unknown');
@@ -440,6 +440,7 @@ export function createPairingService(opts) {
         label,
         machine: record.machine,
         city: record.city,
+        sessionKey: fields.sessionKey,
       });
       record.status = 'approved';
       record.userId = String(fields.userId);

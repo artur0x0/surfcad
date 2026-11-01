@@ -3,10 +3,7 @@ import {
   checkAgentHandshakeVersion,
   readCommandRequest,
 } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
-import {
-  AGENT_SOCKET_CLOSE_CODE,
-  TOKEN_REVOKED_REASON,
-} from './agentSockets.js';
+import { forgetExpiredPairing } from './expirePairing.js';
 import {
   approvePage,
   codeFormPage,
@@ -17,6 +14,8 @@ import {
 import { approvalFetchAllowed, browserReadAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
+import { revokeOneAgentToken } from './revokeToken.js';
+import { hashApprovingSession } from './sessionKey.js';
 import { sessionMessageProblem } from './sessionMessage.js';
 
 /**
@@ -247,7 +246,10 @@ export function createAgentRouter(deps) {
     if (rejectBrowser(req, res, true)) return undefined;
     const user = userFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const result = deps.joinCodes.create({ userId: user.id });
+    const result = deps.joinCodes.create({
+      userId: user.id,
+      sessionKey: hashApprovingSession(req.sessionID),
+    });
     if (!result.ok) {
       if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
       const status = result.error === 'rate_limited' ? 429 : 503;
@@ -365,6 +367,7 @@ export function createAgentRouter(deps) {
         userCode,
         userId: user.id,
         ip: req.ip,
+        sessionKey: hashApprovingSession(req.sessionID),
       });
       if (html) clearClaimedCode(req);
       if (!result.ok) {
@@ -427,13 +430,14 @@ export function createAgentRouter(deps) {
   router.delete('/tokens/self', async (req, res, next) => {
     try {
       if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
-      const revoked = await deps.tokens.revoke(auth.userId, auth.id);
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
+      const { auth } = live;
+      const revoked = await revokeOneAgentToken(deps, auth.userId, auth.id, {
+        heldPrompts: 'account',
+        dropPresence: true,
+      });
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(auth.id, auth.userId);
-      deps.agentSockets.closeToken(auth.id, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
-      deps.registry.dropAgentPresence(auth.userId);
       logRelay({ event: 'token-revoke', userId: auth.userId });
       return res.json({ ok: true });
     } catch (error) {
@@ -448,11 +452,11 @@ export function createAgentRouter(deps) {
       const user = userFromRequest(req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const tokenId = String(req.params.id);
-      const revoked = await deps.tokens.revoke(user.id, tokenId);
+      const revoked = await revokeOneAgentToken(deps, user.id, tokenId, {
+        heldPrompts: 'account',
+        dropPresence: true,
+      });
       if (!revoked) return res.status(404).json({ error: 'not_found' });
-      deps.registry.abortToken(tokenId, user.id);
-      deps.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
-      deps.registry.dropAgentPresence(user.id);
       logRelay({ event: 'token-revoke', userId: user.id });
       return res.json({ ok: true });
     } catch (error) {
@@ -484,8 +488,8 @@ export function createAgentRouter(deps) {
 
   router.post('/commands', async (req, res, next) => {
     try {
-      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
-      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
       const { auth, epoch } = live;
       const bytes = messageByteLength(req.body);
       if (bytes > deps.maxMessageBytes) {
@@ -531,8 +535,9 @@ export function createAgentRouter(deps) {
 
   router.get('/commands/:id/events', async (req, res, next) => {
     try {
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
+      const { auth } = live;
       if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
       const timeout = clampTimeout(req.query.timeout);
       res.status(200);
@@ -545,8 +550,9 @@ export function createAgentRouter(deps) {
       res.flushHeaders?.();
       const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout, auth.id);
       if (!result || result.status === 'revoked') {
-        const error = result?.status === 'revoked' ? 'unauthorized' : 'not_found';
-        res.write(`event: error\ndata: ${JSON.stringify({ error })}\n\n`);
+        const error = result?.status === 'revoked' ? await authErrorCode(deps, auth) : 'not_found';
+        const sseError = error === 'Authentication required' ? 'unauthorized' : error;
+        res.write(`event: error\ndata: ${JSON.stringify({ error: sseError })}\n\n`);
         return res.end();
       }
       if (result.status === 'pending') {
@@ -562,13 +568,16 @@ export function createAgentRouter(deps) {
 
   router.get('/commands/:id', async (req, res, next) => {
     try {
-      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
-      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
+      const { auth } = live;
       if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
       const timeout = clampTimeout(req.query.timeout);
       const result = await deps.registry.wait(auth.userId, String(req.params.id), timeout, auth.id);
       if (!result) return res.status(404).json({ error: 'not_found' });
-      if (result.status === 'revoked') return res.status(401).json({ error: 'Authentication required' });
+      if (result.status === 'revoked') {
+        return res.status(401).json({ error: await authErrorCode(deps, auth) });
+      }
       if (result.status === 'pending') {
         return res.json({ id: String(req.params.id), status: 'pending' });
       }
@@ -584,8 +593,8 @@ export function createAgentRouter(deps) {
     let timeout = 0;
     let status = 'error';
     try {
-      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
-      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
       const { auth, epoch } = live;
       if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
       if (!deps.registry.noteAgentSeen(auth.userId, { clearHold: true, epoch })) {
@@ -599,9 +608,13 @@ export function createAgentRouter(deps) {
         timeoutMs: timeout,
       });
       const result = await deps.registry.waitPrompts(auth.userId, timeout, auth.id);
-      if (!result || result.status === 'revoked') {
+      if (!result) {
         status = 'revoked';
         return res.status(401).json({ error: 'Authentication required' });
+      }
+      if (result.status === 'revoked') {
+        status = 'revoked';
+        return res.status(401).json({ error: await authErrorCode(deps, auth) });
       }
       status = Array.isArray(result.messages) && result.messages.length > 0 ? 'messages' : 'empty';
       return res.json({ messages: result.messages });
@@ -621,8 +634,8 @@ export function createAgentRouter(deps) {
 
   router.post('/prompts', async (req, res, next) => {
     try {
-      const live = await authenticateLiveAgent(deps, readBearer(req.get('authorization')));
-      if (!live) return res.status(401).json({ error: 'Authentication required' });
+      const live = await requireLiveAgent(deps, req, res);
+      if (!live) return undefined;
       const { auth, epoch } = live;
       const bytes = messageByteLength(req.body);
       if (bytes > deps.maxMessageBytes) {
@@ -679,21 +692,57 @@ function clampTimeout(value) {
 /**
  * Authenticate, then re-check the token. The presence epoch is captured
  * before that second check so a revoke in between cannot be cleared.
- * Does not stamp last-seen.
+ * An expired pairing is `{ error: 'expired' }` and drops presence.
+ * Does not stamp last-seen. Writes the 401 and returns null on failure.
  * @param {{
  *   tokens: {
- *     authenticate: (raw: string | null) => Promise<{ userId: string, id: string, tokenHash: string } | null>,
+ *     inspect: (raw: string | null) => Promise<{
+ *       status: 'ok' | 'revoked' | 'expired' | 'missing',
+ *       auth: { userId: string, id: string, tokenHash: string } | null,
+ *     }>,
  *     status: (tokenHash: string) => Promise<'ok' | 'revoked' | 'expired' | 'missing'>,
  *   },
- *   registry: { presenceEpoch: (userId: string) => number },
+ *   registry: {
+ *     presenceEpoch: (userId: string) => number,
+ *     abortToken: (tokenId: string, userId: string) => void,
+ *     expireAgentPairing: (userId: string) => void,
+ *   },
+ *   agentSockets?: { closeToken: (tokenId: string, code: number, reason: string) => number },
  * }} deps
- * @param {string | null} raw
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
  */
-async function authenticateLiveAgent(deps, raw) {
-  const auth = await deps.tokens.authenticate(raw);
-  if (!auth) return null;
-  const epoch = deps.registry.presenceEpoch(auth.userId);
+async function requireLiveAgent(deps, req, res) {
+  const found = await deps.tokens.inspect(readBearer(req.get('authorization')));
+  if (found.status === 'expired') {
+    forgetExpiredPairing(deps, found.auth);
+    res.status(401).json({ error: 'expired' });
+    return null;
+  }
+  if (found.status !== 'ok' || !found.auth) {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  const epoch = deps.registry.presenceEpoch(found.auth.userId);
+  const live = await deps.tokens.status(found.auth.tokenHash);
+  if (live === 'expired') {
+    forgetExpiredPairing(deps, found.auth);
+    res.status(401).json({ error: 'expired' });
+    return null;
+  }
+  if (live !== 'ok') {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  return { auth: found.auth, epoch };
+}
+
+/**
+ * A wait aborted after the request was accepted. Expiry is distinct from revoke.
+ * @param {{ tokens: { status: (tokenHash: string) => Promise<string> } }} deps
+ * @param {{ tokenHash: string }} auth
+ */
+async function authErrorCode(deps, auth) {
   const live = await deps.tokens.status(auth.tokenHash);
-  if (live !== 'ok') return null;
-  return { auth, epoch };
+  return live === 'expired' ? 'expired' : 'Authentication required';
 }

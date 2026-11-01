@@ -121,16 +121,19 @@ export function createMemoryTabRegistry(opts = {}) {
   /**
    * Presence only. Not sent from registerTab, so a tab that just joined
    * does not look like a command frame. `reason` is set only when the
-   * agent goes offline: inactive, closed, or revoked.
+   * agent goes offline: inactive, closed, revoked, or expired.
    * @param {string} userId
    * @param {boolean} connected
-   * @param {'inactive' | 'closed' | 'revoked'} [reason]
+   * @param {'inactive' | 'closed' | 'revoked' | 'expired'} [reason]
    */
   function notifyTabs(userId, connected, reason) {
     const found = users.get(String(userId));
     if (!found) return;
     const frame = { type: 'agent', v: 1, connected: connected === true };
-    if (!frame.connected && (reason === 'inactive' || reason === 'closed' || reason === 'revoked')) {
+    if (
+      !frame.connected
+      && (reason === 'inactive' || reason === 'closed' || reason === 'revoked' || reason === 'expired')
+    ) {
       frame.reason = reason;
     }
     for (const tab of found.tabs.values()) {
@@ -723,6 +726,45 @@ export function createMemoryTabRegistry(opts = {}) {
       if (!row.announced) return;
       row.announced = false;
       notifyTabs(key, false, 'revoked');
+    },
+
+    /**
+     * One browser session's tokens were revoked and another pairing is
+     * still live. Tabs hear reason revoked, then stay present for the
+     * other pairing. The epoch is not bumped and presence is not held
+     * down, so the surviving token's next call still clears a hold.
+     * @param {string} userId
+     */
+    notePartialRevoke(userId) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      if (row.heldDown || !row.announced) return;
+      notifyTabs(key, false, 'revoked');
+      if (row.at == null || clock.now() - row.at >= presenceTtlMs) {
+        row.announced = false;
+        cancelPresenceTimer(row);
+        return;
+      }
+      notifyTabs(key, true);
+    },
+
+    /**
+     * Pairing expiry. Offline immediately, reason expired. A revoke that
+     * already holds this account is left alone. A later hello on a
+     * still-valid token can return; a check that captured this epoch cannot.
+     * @param {string} userId
+     */
+    expireAgentPairing(userId) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      if (row.heldDown) return;
+      row.epoch += 1;
+      row.heldDown = true;
+      row.at = null;
+      cancelPresenceTimer(row);
+      if (!row.announced) return;
+      row.announced = false;
+      notifyTabs(key, false, 'expired');
     },
 
     /**

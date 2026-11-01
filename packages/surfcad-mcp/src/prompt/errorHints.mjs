@@ -182,6 +182,7 @@ export const ERROR_HINTS = Object.freeze({
   tab_asleep: { hint: 'Open SurfCAD in Chrome and keep that tab open, then retry this call.' },
   too_many_pending: { hint: 'Wait for the SurfCAD tab to finish the commands already in flight, then retry.' },
   token_revoked: { hint: 'Run npx surfcad-mcp login and approve the new code in SurfCAD.' },
+  expired: { hint: 'The pairing expired, get a new join code in SurfCAD, then run npx surfcad-mcp login again.' },
   client_update_required: { hint: 'This surfcad-mcp is too old for the agent server. Update the package, then run npx surfcad-mcp login again.' },
   prompts_need_websocket: { hint: 'The agent WebSocket is not open. A paired session still sends status over HTTPS; retry the call. If it keeps failing, reconnect where the agent server allows wss.' },
   relay_unavailable: { hint: 'The local relay is not running: start surfcad-mcp normally (it owns the relay) or set SURFCAD_AGENT_BRIDGE_WS_URL.', guide: PAIRING_GUIDE },

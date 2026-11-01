@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { TOKEN_TTL_MS } from './limits.js';
+import { storedApprovingSession } from './sessionKey.js';
 
 /**
  * @param {string} raw
@@ -94,6 +95,40 @@ export function createMemoryTokenStore() {
       return ids;
     },
     /**
+     * Revoke live tokens issued from one browser session. A row with no
+     * session key is left alone. `sessionKey` must be the stored hash.
+     * @param {string} userId
+     * @param {string} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      const key = storedApprovingSession(sessionKey);
+      if (!key) return [];
+      const ids = [];
+      const when = new Date().toISOString();
+      for (const row of byId.values()) {
+        if (String(row.userId) !== String(userId) || row.revokedAt) continue;
+        if (row.sessionKey !== key) continue;
+        row.revokedAt = when;
+        ids.push(String(row.id));
+      }
+      return ids;
+    },
+    /**
+     * Freeze a missing pairing time so a 7-day cap does not slide.
+     * A row that already has `createdAt` is left alone.
+     * @param {string} tokenHash
+     * @param {string} when
+     * @returns {Promise<string | null>}
+     */
+    async stampCreatedAt(tokenHash, when) {
+      const row = byHash.get(tokenHash);
+      if (!row) return null;
+      if (row.createdAt) return /** @type {string} */ (row.createdAt);
+      row.createdAt = when;
+      return when;
+    },
+    /**
      * @param {string} tokenHash
      * @param {string} when
      */
@@ -132,6 +167,7 @@ export function createMongoTokenStore(model) {
         expiresAt: row.expiresAt,
         revokedAt: row.revokedAt,
         lastUsedAt: row.lastUsedAt,
+        sessionKey: row.sessionKey || null,
       });
       return { ...row, id: String(doc._id) };
     },
@@ -151,6 +187,7 @@ export function createMongoTokenStore(model) {
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
         lastUsedAt: doc.lastUsedAt ?? null,
+        sessionKey: doc.sessionKey ?? null,
       };
     },
     /** @param {string} userId */
@@ -168,6 +205,7 @@ export function createMongoTokenStore(model) {
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
         lastUsedAt: doc.lastUsedAt ?? null,
+        sessionKey: doc.sessionKey ?? null,
       }));
     },
     /**
@@ -191,6 +229,35 @@ export function createMongoTokenStore(model) {
       if (ids.length === 0) return [];
       await model.updateMany({ userId, revokedAt: null }, { $set: { revokedAt: new Date() } });
       return ids;
+    },
+    /**
+     * @param {string} userId
+     * @param {string} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      const key = storedApprovingSession(sessionKey);
+      if (!key) return [];
+      const docs = await model.find({ userId, revokedAt: null, sessionKey: key }).select('_id').lean();
+      const ids = docs.map((doc) => String(doc._id));
+      if (ids.length === 0) return [];
+      await model.updateMany(
+        { userId, revokedAt: null, sessionKey: key },
+        { $set: { revokedAt: new Date() } },
+      );
+      return ids;
+    },
+    /**
+     * @param {string} tokenHash
+     * @param {string} when
+     * @returns {Promise<string | Date | null>}
+     */
+    async stampCreatedAt(tokenHash, when) {
+      const doc = await model.findOne({ tokenHash }).lean();
+      if (!doc) return null;
+      if (doc.createdAt) return doc.createdAt;
+      await model.updateOne({ tokenHash }, { $set: { createdAt: new Date(when) } });
+      return when;
     },
     /**
      * @param {string} tokenHash
@@ -223,6 +290,50 @@ export function createTokenService(opts = {}) {
   async function rowByHash(tokenHash) {
     const row = await holder.store.findByHash(tokenHash);
     if (!row || !hashesMatch(String(row.tokenHash), tokenHash)) return null;
+    return ensurePairedAt(row);
+  }
+
+  /**
+   * @param {unknown} value
+   * @returns {number}
+   */
+  function instantMs(value) {
+    if (value instanceof Date) {
+      const n = value.getTime();
+      return Number.isFinite(n) ? n : NaN;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const n = Date.parse(String(value ?? ''));
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  /**
+   * Absolute expiry. A stored `expiresAt` longer than `ttlMs` from
+   * `createdAt` (the pairing time) is capped. A missing pairing time is
+   * capped at `now + ttlMs` after `ensurePairedAt` freezes `createdAt`.
+   * @param {Record<string, unknown>} row
+   * @returns {number}
+   */
+  function effectiveExpiryMs(row) {
+    const stored = instantMs(row.expiresAt);
+    const created = instantMs(row.createdAt);
+    const cap = Number.isFinite(created) ? created + ttlMs : now() + ttlMs;
+    if (Number.isFinite(stored)) return Math.min(stored, cap);
+    return cap;
+  }
+
+  /**
+   * @param {Record<string, unknown> | null} row
+   */
+  async function ensurePairedAt(row) {
+    if (!row || Number.isFinite(instantMs(row.createdAt))) return row;
+    const stamped = new Date(now()).toISOString();
+    if (typeof holder.store.stampCreatedAt === 'function') {
+      const saved = await holder.store.stampCreatedAt(String(row.tokenHash), stamped);
+      row.createdAt = saved || stamped;
+    } else {
+      row.createdAt = stamped;
+    }
     return row;
   }
 
@@ -233,8 +344,28 @@ export function createTokenService(opts = {}) {
   function liveness(row) {
     if (!row) return 'missing';
     if (row.revokedAt) return 'revoked';
-    if (new Date(String(row.expiresAt)).getTime() <= now()) return 'expired';
+    if (effectiveExpiryMs(row) <= now()) return 'expired';
     return 'ok';
+  }
+
+  /**
+   * @param {string | undefined | null} raw
+   * @returns {Promise<{ status: 'ok' | 'revoked' | 'expired' | 'missing', auth: { userId: string, id: string, tokenHash: string, label: string } | null }>}
+   */
+  async function inspect(raw) {
+    if (typeof raw !== 'string' || raw.length < 32) return { status: 'missing', auth: null };
+    const tokenHash = hashToken(raw);
+    const row = await rowByHash(tokenHash);
+    if (!row) return { status: 'missing', auth: null };
+    return {
+      status: liveness(row),
+      auth: {
+        userId: String(row.userId),
+        id: String(row.id),
+        tokenHash,
+        label: String(row.label || ''),
+      },
+    };
   }
 
   return {
@@ -243,7 +374,14 @@ export function createTokenService(opts = {}) {
       holder.store = store;
     },
     /**
-     * @param {{ userId: string, label: string, machine?: string, city?: string | null, ip?: string | null }} fields
+     * @param {{
+     *   userId: string,
+     *   label: string,
+     *   machine?: string,
+     *   city?: string | null,
+     *   ip?: string | null,
+     *   sessionKey?: string | null,
+     * }} fields
      * @returns {Promise<{ token: string, id: string }>}
      */
     async issue(fields) {
@@ -261,6 +399,7 @@ export function createTokenService(opts = {}) {
         machine: typeof fields.machine === 'string' ? fields.machine : '',
         city: typeof fields.city === 'string' && fields.city ? fields.city : null,
         ip: typeof fields.ip === 'string' && fields.ip ? fields.ip : null,
+        sessionKey: storedApprovingSession(fields.sessionKey),
         createdAt: new Date(now()).toISOString(),
         expiresAt: new Date(now() + ttlMs).toISOString(),
         revokedAt: null,
@@ -273,17 +412,16 @@ export function createTokenService(opts = {}) {
      * @param {string | undefined | null} raw
      */
     async authenticate(raw) {
-      if (typeof raw !== 'string' || raw.length < 32) return null;
-      const tokenHash = hashToken(raw);
-      const row = await rowByHash(tokenHash);
-      if (!row || liveness(row) !== 'ok') return null;
-      return {
-        userId: String(row.userId),
-        id: String(row.id),
-        tokenHash,
-        label: String(row.label || ''),
-      };
+      const found = await inspect(raw);
+      if (found.status !== 'ok') return null;
+      return found.auth;
     },
+    /**
+     * Same lookup as authenticate, including a dead token, so a caller can
+     * tell expired from revoked. Does not slide `expiresAt`.
+     * @param {string | undefined | null} raw
+     */
+    inspect,
     /**
      * Re-check a socket that already authenticated. `ok` is the only state
      * that may run another command.
@@ -294,14 +432,24 @@ export function createTokenService(opts = {}) {
       if (typeof tokenHash !== 'string' || tokenHash.length === 0) return 'missing';
       return liveness(await rowByHash(tokenHash));
     },
-    /** @param {{ tokenHash: string }} auth */
+    /**
+     * Records `lastUsedAt` only. The pairing expiry stays at issue time
+     * plus the absolute TTL.
+     * @param {{ tokenHash: string }} auth
+     */
     async markUsed(auth) {
       await holder.store.touch(auth.tokenHash, new Date(now()).toISOString());
     },
     /** @param {string} userId */
     async list(userId) {
       const rows = await holder.store.listByUser(String(userId));
-      return rows.map((row) => publicToken(row));
+      const ready = [];
+      for (const row of rows) ready.push(await ensurePairedAt(row));
+      return ready.map((row) => {
+        const pub = publicToken(row);
+        pub.expiresAt = new Date(effectiveExpiryMs(row)).toISOString();
+        return pub;
+      });
     },
     /**
      * @param {string} userId
@@ -316,6 +464,28 @@ export function createTokenService(opts = {}) {
      */
     async revokeAll(userId) {
       return holder.store.revokeAll(String(userId));
+    },
+    /**
+     * Live tokens whose stored session hash matches. Missing hashes stay.
+     * @param {string} userId
+     * @param {string | null} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      if (!sessionKey) return [];
+      return holder.store.revokeBySession(String(userId), sessionKey);
+    },
+    /**
+     * @param {string} userId
+     * @returns {Promise<number>}
+     */
+    async countLive(userId) {
+      const rows = await holder.store.listByUser(String(userId));
+      let live = 0;
+      for (const row of rows) {
+        if (liveness(await ensurePairedAt(row)) === 'ok') live += 1;
+      }
+      return live;
     },
   };
 }

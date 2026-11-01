@@ -13,7 +13,9 @@ import {
 import {
   asRemoteError,
   clientUpdateError,
+  authErrorFromBody,
   pairingLostError,
+  tokenExpiredError,
   tokenRevokedError,
 } from '../errors.mjs';
 import { PAIR_MSG } from '../relayMessages.mjs';
@@ -44,15 +46,30 @@ function openAuthorizedSocket(wsUrl, token) {
     };
     ws.once('unexpected-response', (_req, res) => {
       const status = res.statusCode || 0;
-      res.resume();
-      if (status === 401) {
-        fail(tokenRevokedError());
-        return;
-      }
-      fail(Object.assign(new Error(`WebSocket upgrade failed (${status})`), {
-        code: 'ws_blocked',
-        statusCode: status,
-      }));
+      const chunks = [];
+      const failStatus = (json) => {
+        if (status === 401) {
+          fail(authErrorFromBody(json));
+          return;
+        }
+        fail(Object.assign(new Error(`WebSocket upgrade failed (${status})`), {
+          code: 'ws_blocked',
+          statusCode: status,
+        }));
+      };
+      res.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      res.on('error', () => failStatus(null));
+      res.on('end', () => {
+        let json = null;
+        try {
+          json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch {
+          json = null;
+        }
+        failStatus(json);
+      });
     });
     ws.once('error', (error) => {
       const errno = error && typeof error === 'object' ? error.code : '';
@@ -295,7 +312,7 @@ export class RemoteSession {
       } catch (err) {
         this.#dropSocket();
         const code = err && typeof err === 'object' ? err.code : '';
-        if (code === 'token_revoked' || code === 'client_update_required') {
+        if (code === 'token_revoked' || code === 'expired' || code === 'client_update_required') {
           // Stay 'pairing' so a later tool call reaches `call()` and surfaces this error.
           this.#state = 'pairing';
           throw err;
@@ -440,7 +457,7 @@ export class RemoteSession {
       this.#transport = null;
       this.#state = 'pairing';
       this.#connecting = null;
-      const err = tokenRevokedError();
+      const err = why.trim() === 'token expired' ? tokenExpiredError() : tokenRevokedError();
       if (hello) hello.reject(err);
       this.#failPending(err);
       return;
@@ -518,7 +535,7 @@ export class RemoteSession {
         } catch (err) {
           if (generation !== this.#promptPull) return;
           const code = err && typeof err === 'object' ? err.code : '';
-          if (code === 'token_revoked' || code === 'client_update_required') return;
+          if (code === 'token_revoked' || code === 'expired' || code === 'client_update_required') return;
           await new Promise((resolve) => {
             const timer = setTimeout(resolve, 400);
             if (typeof timer.unref === 'function') timer.unref();
@@ -548,7 +565,11 @@ export class RemoteSession {
       if (ac.signal.aborted) return [];
       throw Object.assign(new Error('Could not reach the SurfCAD agent server.'), { code: 'unreachable' });
     }
-    if (res.status === 401) throw tokenRevokedError();
+    if (res.status === 401) {
+      let json = null;
+      try { json = await res.json(); } catch { json = null; }
+      throw authErrorFromBody(json);
+    }
     if (!res.ok) {
       try { await res.body?.cancel?.(); } catch { /* noop */ }
       throw Object.assign(new Error(`Prompt pull failed (${res.status})`), { code: 'bridge_error' });
@@ -607,7 +628,7 @@ export class RemoteSession {
     if (!res.ok) {
       let json = null;
       try { json = await res.json(); } catch { json = null; }
-      if (res.status === 401) throw tokenRevokedError();
+      if (res.status === 401) throw authErrorFromBody(json);
       const code = typeof json?.error === 'string' && json.error ? json.error : 'bridge_error';
       const message = typeof json?.message === 'string' && json.message
         ? json.message
