@@ -92,3 +92,5 @@ Error toasts should be reported to Sentry with a category tag. The crash boundar
 ## UI rules (summary; the style guide wins)
 
 Use the shared classes from [docs/ui-style-guide.md](docs/ui-style-guide.md). Never put dark text on dark chrome. Meet WCAG AA. User-facing copy names Chrome, never Edge. A new color starts as a token, then becomes a class. Desktop and mobile are separate JSX trees in `src/App.jsx`, so change both ([docs/ui-map.md](docs/ui-map.md)).
+
+New toasts follow the Toasts section of docs/ui-style-guide.md.

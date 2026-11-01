@@ -1,7 +1,8 @@
 /**
  * Agent session toasts plus the other shared cards, at phone width.
  * The connected and disconnected cards are the production component.
- * The other cards are here so a shared padding change cannot shrink them.
+ * The other cards are here so every single-line toast can be checked
+ * against Deleted, and the stacked error can be checked on its first row.
  */
 import React, { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -57,7 +58,7 @@ function Shot() {
           onReconnect={() => note('reconnect')}
         />
         <div className={STACKED} data-toast-sample="notice">
-          <ErrorPopup tone="success" onDismiss={() => {}} className="px-4 py-2">
+          <ErrorPopup tone="success" onDismiss={() => {}}>
             Saved Branch
           </ErrorPopup>
         </div>
@@ -67,7 +68,6 @@ function Shot() {
             onDismiss={() => {}}
             onUndo={() => {}}
             canUndo
-            className="px-3 py-2"
           >
             Pick at least one edge.
           </ErrorPopup>
@@ -85,7 +85,6 @@ function Shot() {
             onDismiss={() => {}}
             onUndo={() => {}}
             canUndo
-            className="p-3"
           >
             The script failed.
           </ErrorPopup>

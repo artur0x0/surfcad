@@ -17574,7 +17574,6 @@ const Viewport = forwardRef(({
             }}
             onUndo={onUndo}
             canUndo={canUndo}
-            className="p-3"
           >
             {executionError}
           </ErrorPopup>
@@ -18464,7 +18463,7 @@ const Viewport = forwardRef(({
             onDismiss={() => setEdgeModeToast(null)}
             onUndo={edgeModeToast.undo ? onUndo : undefined}
             canUndo={canUndo}
-            className="px-3 py-2 pointer-events-auto"
+            className="pointer-events-auto"
           >
             {edgeModeToast.text}
           </ErrorPopup>
@@ -18510,7 +18509,7 @@ const Viewport = forwardRef(({
             onUndo={contourToast.sketch ? undoContourSketch : (contourToast.undo ? onUndo : undefined)}
             canUndo={contourToast.sketch ? contourUndoDepth > 0 : canUndo}
             roomy={!!contourToast.deleted}
-            className={contourToast.deleted ? 'pointer-events-auto' : 'px-3 py-2 pointer-events-auto'}
+            className="pointer-events-auto"
           >
             {contourToast.text}
           </ErrorPopup>
@@ -18527,7 +18526,7 @@ const Viewport = forwardRef(({
             onDismiss={() => setFilletScrapNotice(null)}
             onUndo={onUndo}
             canUndo={canUndo}
-            className="px-3 py-2 pointer-events-auto"
+            className="pointer-events-auto"
           >
             {filletScrapNotice}
           </ErrorPopup>
@@ -18542,7 +18541,7 @@ const Viewport = forwardRef(({
             onDismiss={() => setFilletToast(null)}
             onUndo={filletToast.undo ? onUndo : undefined}
             canUndo={canUndo}
-            className="px-3 py-2 pointer-events-auto"
+            className="pointer-events-auto"
           >
             {filletToast.text}
           </ErrorPopup>
@@ -18557,7 +18556,7 @@ const Viewport = forwardRef(({
             onDismiss={() => setShellToast(null)}
             onUndo={shellToast.undo ? onUndo : undefined}
             canUndo={canUndo}
-            className="px-3 py-2 pointer-events-auto"
+            className="pointer-events-auto"
           >
             {shellToast.text}
           </ErrorPopup>

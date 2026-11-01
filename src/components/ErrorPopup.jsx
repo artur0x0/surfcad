@@ -10,9 +10,10 @@ import { X } from 'lucide-react';
  * two-line card (label, then description) whose width comes from the
  * portal, not from the message.
  *
- * The inline card's default inset is `--toast-pad` (`toast-card`). The
- * tint and the blur live on `.toast-glass`, behind the words, so a 44px
- * hit target can hang outside the card. See docs/ui-style-guide.md.
+ * Every toast uses the Deleted card's metrics (height, insets, pill, X).
+ * Those live on `.toast-card` and are not set per call. The tint and the
+ * blur live on `.toast-glass`, behind the words, so a 44px hit target can
+ * hang outside the card. See the Toasts section of docs/ui-style-guide.md.
  */
 // Same glass card as the mode chips in docs/ui-style-guide.md. Not a rounded pill.
 const TONE = {
@@ -72,7 +73,7 @@ export default function ErrorPopup({
   const actions = (
     <div
       data-error-actions=""
-      className={`flex items-center shrink-0 pointer-events-auto ${roomy ? 'gap-4' : layout === 'stacked' ? 'gap-5' : 'gap-1'}`}
+      className="toast-actions flex items-center shrink-0 pointer-events-auto"
     >
       {action}
       {typeof onUndo === 'function' && (
@@ -81,11 +82,7 @@ export default function ErrorPopup({
           data-error-undo=""
           onClick={handleUndo}
           disabled={!canUndo}
-          className={roomy
-            ? `min-w-[44px] border-0 px-3 py-0 rounded-md bg-white/15 hover:bg-white/25
-              disabled:opacity-40 disabled:pointer-events-none font-semibold`
-            : `px-2 py-0.5 rounded-md bg-white/15 hover:bg-white/25
-              disabled:opacity-40 disabled:pointer-events-none font-semibold`}
+          className="rounded-md bg-white/15 hover:bg-white/25 disabled:opacity-40 disabled:pointer-events-none font-semibold"
           title="Undo"
           aria-label="Undo"
         >
@@ -97,13 +94,11 @@ export default function ErrorPopup({
           type="button"
           data-error-dismiss=""
           onClick={onDismiss}
-          className={roomy
-            ? 'inline-flex min-w-[44px] items-center justify-center rounded-md border-0 px-0 py-0 text-white/80 hover:text-white'
-            : 'text-white/80 hover:text-white'}
+          className="text-white/80 hover:text-white"
           title="Dismiss"
           aria-label="Dismiss"
         >
-          <X size={roomy ? 18 : 14} />
+          <X size={18} />
         </button>
       )}
     </div>
@@ -116,7 +111,6 @@ export default function ErrorPopup({
     toneStyle.text,
     'text-xs font-sans font-medium shadow-lg rounded-lg',
     layout === 'stacked' ? 'w-full' : '',
-    roomy ? 'flex items-center px-3 py-0' : '',
     className,
   ].filter(Boolean).join(' ');
   const roomyStyle = roomy && roomyMinPx ? { minHeight: `${roomyMinPx}px` } : undefined;
@@ -146,11 +140,11 @@ export default function ErrorPopup({
       >
         {glass}
         <div className="relative z-[1] w-full min-w-0">
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-bold text-left">{title}</div>
+          <div className="toast-first-row flex items-center justify-between" data-error-popup-row="">
+            <div className="font-bold text-left min-w-0">{title}</div>
             {actions}
           </div>
-          <div className="text-left mt-1 break-words">{children}</div>
+          <div data-error-popup-body="" className="text-left break-words">{children}</div>
         </div>
       </div>
     );
