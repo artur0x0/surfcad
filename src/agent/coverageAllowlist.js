@@ -8,7 +8,11 @@
  */
 
 export const COVERAGE_ALLOWLIST = Object.freeze([
-  Object.freeze({ id: 'data-mold-tools-toggle', reason: 'Molding tools drawer trigger. Opens the flyout; the six tools already have commands.' }),
+  Object.freeze({ id: 'data-mold-tools-toggle', reason: 'Molding tools drawer trigger. Opens the flyout; the four tools already have commands.' }),
+  Object.freeze({ id: 'data-mold-report-resin', reason: 'Report resin menu. Agents set the same grade through mold_dfm and mold_quote.' }),
+  Object.freeze({ id: 'data-mold-report-quantity', reason: 'Report quantity presets. Agents set the same quantity through mold_dfm and mold_quote.' }),
+  Object.freeze({ id: 'data-mold-report-custom', reason: 'Report custom quantity. Agents set the same quantity through mold_dfm and mold_quote.' }),
+  Object.freeze({ id: 'data-mold-report-export', reason: 'Downloads the open report as .xlsx. Agents read that same report from mold_dfm and mold_quote.' }),
   Object.freeze({ id: 'data-sm-unit-toggle', reason: 'Sheet metal display mm|in toggle (display chrome only).' }),
   Object.freeze({ id: 'data-game-exit', reason: 'Game mode exit to CAD (out of harness scope).' }),
   Object.freeze({ id: 'data-game-undo', reason: 'Game toolbar undo (out of harness scope).' }),

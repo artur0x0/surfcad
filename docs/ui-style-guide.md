@@ -252,9 +252,9 @@ those utilities on the button yourself. `surface-success` is the solid
 dark green Allow control. It is not a rail toggle. The wash is a light
 surface, so the button does not take `text-on-dark` or `text-on-light`.
 
-Wall thickness, core and cavity, mold draft, DFM, and the
-budgetary quote are not a column on that rail. Side actions are part of
-core and cavity, not their own flyout button. Those tools sit in the Molding
+Wall thickness, core and cavity, mold draft, and the report
+are not a column on that rail. Side actions are part of core and cavity,
+not their own flyout button. Those tools sit in the Molding
 tools flyout (`data-mold-tools-popup`), opened by `data-mold-tools-toggle`.
 Each tool calls `toolToggleClass(on)`. The trigger calls it while the
 flyout is open or any of those tools is on. The flyout is the view-snap

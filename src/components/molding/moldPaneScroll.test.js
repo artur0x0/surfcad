@@ -20,8 +20,7 @@ const PANES = [
   ['src/components/molding/WallLegend.jsx', 'data-wall-legend'],
   ['src/components/molding/PartingLegend.jsx', 'data-parting-legend'],
   ['src/components/molding/MoldDraftLegend.jsx', 'data-mold-draft-legend'],
-  ['src/components/molding/DfmReportPanel.jsx', 'data-mold-dfm-report'],
-  ['src/components/molding/MoldQuotePanel.jsx', 'data-mold-quote-panel'],
+  ['src/components/molding/MoldReportPanel.jsx', 'data-mold-report'],
 ];
 
 test('mold pane gestures stop wheel, touch, and pointer without cancelling scroll', () => {
@@ -119,8 +118,7 @@ test('each molding pane renders the scroll container and its last control', asyn
   const { default: WallLegend } = await importJsx(new URL('./WallLegend.jsx', import.meta.url));
   const { default: PartingLegend } = await importJsx(new URL('./PartingLegend.jsx', import.meta.url));
   const { default: MoldDraftLegend } = await importJsx(new URL('./MoldDraftLegend.jsx', import.meta.url));
-  const { default: DfmReportPanel } = await importJsx(new URL('./DfmReportPanel.jsx', import.meta.url));
-  const { default: MoldQuotePanel } = await importJsx(new URL('./MoldQuotePanel.jsx', import.meta.url));
+  const { default: MoldReportPanel } = await importJsx(new URL('./MoldReportPanel.jsx', import.meta.url));
 
   const wall = renderToStaticMarkup(React.createElement(WallLegend, {
     legend: { css: 'linear-gradient(black, white)', thinMm: 1, nominalMm: 2, thickMm: 4 },
@@ -167,66 +165,45 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(draft, /data-mold-draft-legend/);
   assert.match(draft, /data-mold-pane-end/);
 
-  const dfm = renderToStaticMarkup(React.createElement(DfmReportPanel, {
+  const report = renderToStaticMarkup(React.createElement(MoldReportPanel, {
     report: {
-      framing: 'Budgetary analysis',
-      disclaimer: 'Not a binding supplier DFM.',
-      fitLabel: 'OK',
-      undercutCount: 0,
-      pull: [0, 0, 1],
-      pullSource: 'search',
-      wall: { nominalKnown: true, nominal: 2, nominalMethod: 'median', thinCount: 0, thickCount: 0, max: 3 },
-      draft: { violationCount: 0, minDeg: 1, minDraftDeg: 2 },
-      sideActions: { slideCount: 0, lifterCount: 0, groups: [] },
-      ejectors: { pinCount: 1, sleeveCount: 0 },
-      naming: { stamped: false, note: 'Face names are not available.' },
+      framing: 'Mold report',
+      disclaimer: 'Budgetary, not binding.',
+      grade: 'PC/ABS',
+      quantity: 1000,
+      geometry: { volumeCm3: 0.8, projectedAreaMm2: 400, sideActionCount: 1 },
+      estimates: { pressTons: 2.04 },
+      notes: { mass: 'The resin library has no density, so part mass is not computed.' },
     },
-  }));
-  assert.match(dfm, /data-mold-dfm-report/);
-  assert.match(dfm, /mold-results-section/);
-  assert.doesNotMatch(dfm, /wall-legend-anchor/);
-  assert.match(dfm, /data-mold-pane-end/);
-  assert.match(dfm, /Face names are not available/);
-
-  const quote = renderToStaticMarkup(React.createElement(MoldQuotePanel, {
-    state: {
-      quantity: 10,
-      cavityCount: 1,
+    resins: [{ grade: 'ABS' }, { grade: 'PC/ABS' }],
+    quoteState: {
       status: 'ready',
       selected: 'North shop',
-      quote: {
-        framing: 'Budgetary quote',
-        disclaimer: 'Budgetary, not binding.',
-        vendors: [{
-          anonLabel: 'North shop',
-          region: 'US',
-          machineCount: 2,
-          aluminumUsd: 1.5,
-          steelUsd: 3,
-          range: { lowUsd: 10, highUsd: 20 },
-          steelCheaperAt: 500,
-          grade: 'ABS',
-          grades: [{ grade: 'ABS', usdPerKg: 2 }],
-        }],
-      },
+      quote: { vendors: [{ anonLabel: 'North shop' }] },
       reviewPayable: true,
       reviewFeeUsd: 49,
     },
-    onQuantity() {},
-    onCavity() {},
     onGrade() {},
-    onSelect() {},
+    onQuantity() {},
+    onExport() {},
     onFirmQuote() {},
     onHumanReview() {},
     onPayReview() {},
   }));
-  assert.match(quote, /data-mold-quote-panel/);
-  assert.match(quote, /mold-results-section/);
-  assert.doesNotMatch(quote, /wall-legend-anchor/);
-  assert.match(quote, /data-mold-pay-review/);
-  assert.match(quote, /data-mold-pane-end/);
-  const payAt = quote.indexOf('data-mold-pay-review');
-  const endAt = quote.indexOf('data-mold-pane-end');
+  assert.match(report, /data-mold-report/);
+  assert.match(report, /mold-results-section/);
+  assert.doesNotMatch(report, /wall-legend-anchor/);
+  assert.match(report, /data-mold-report-break/);
+  assert.match(report, /0\.800 cm/);
+  assert.match(report, /400\.00 mm/);
+  assert.match(report, /data-mold-report-field="sides"/);
+  assert.match(report, /PC\/ABS/);
+  assert.match(report, /data-mold-report-quantity="1000"/);
+  assert.match(report, /no density/);
+  assert.match(report, /data-mold-pay-review/);
+  assert.match(report, /data-mold-pane-end/);
+  const payAt = report.indexOf('data-mold-pay-review');
+  const endAt = report.indexOf('data-mold-pane-end');
   assert.ok(payAt > 0 && endAt > payAt);
 
   const { default: MoldResultsPane } = await importJsx(new URL('./MoldResultsPane.jsx', import.meta.url));

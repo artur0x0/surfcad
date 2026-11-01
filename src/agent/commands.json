@@ -2534,7 +2534,7 @@
     },
     {
       "name": "mold_fit",
-      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters. Each group has an escape direction and an area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. A wall within 0.5° of vertical is not a side action. That split is a heuristic. count, slideCount, and lifterCount are the numbers the DFM report and the quote read. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
+      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters. Each group has an escape direction and an area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. A wall within 0.5° of vertical is not a side action. That split is a heuristic. count, slideCount, and lifterCount are the numbers the mold report reads. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2786,14 +2786,23 @@
     },
     {
       "name": "mold_dfm",
-      "description": "Show or hide the budgetary DFM report for the active part, in the part local frame. on true reads the mold-analysis result and lists fit, pull, wall nominal, thin and thick counts, draft violations, side-action counts, and ejector-pin and sleeve counts. The report says Budgetary analysis and is not a binding supplier DFM. It does not paint a skin and it does not include a price. Stamped meshes list a few parting-line names. An imported mesh says face names are not available. Draft, side actions, and ejectors stay labeled heuristic. on false closes the panel. Omit on to toggle. Read-only.",
+      "description": "Show or hide the mold report for the active part, in the part local frame. on true measures volume, projected area along the pull, and the side-action count, then returns part mass, press tonnage, tooling, and part price for grade and quantity. The same function fills the pane and the spreadsheet. The resin default is PC/ABS. Mass, tooling dollars, and part price stay empty when no priced catalog is loaded. Press tonnage is the required tonnage of the measured projected area. The report says Mold report and Budgetary, not binding. It does not paint a skin. Opening it clears the other molding tools. on false closes the panel. Omit on to toggle. Read-only.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "on": {
             "type": "boolean",
-            "description": "true shows the budgetary DFM report. false closes it. Omit to toggle."
+            "description": "true shows the mold report. false closes it. Omit to toggle."
+          },
+          "grade": {
+            "type": "string",
+            "description": "Resin grade from the public library. Omit to keep the current grade. The default is PC/ABS."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Parts to price. Omit to keep the current quantity. The default is 1000."
           }
         }
       },
@@ -2812,19 +2821,21 @@
       "immediate": true,
       "uiEntry": "data-mold-dfm",
       "example": {
-        "on": true
+        "on": true,
+        "grade": "PC/ABS",
+        "quantity": 1000
       }
     },
     {
       "name": "mold_quote",
-      "description": "Show or hide the budgetary molding quote for the active part. on true measures the mesh and asks the server to rank anonymized vendors. The panel says Budgetary, not binding. It lists aluminum and steel unit cost, the part-plus-tooling range, and the quantity where steel becomes cheaper. quantity and cavityCount recompute that quote. grade picks a resin from the selected vendor. The server sets the price. on false closes the panel. Omit on to toggle. It does not paint a skin and it does not place an order. Read-only.",
+      "description": "Show or hide the mold report for the active part. This is the same report as mold_dfm. on true measures the mesh and returns volume, projected area, side-action count, and the estimates for grade, quantity, and cavityCount. cavityCount stays in the costing call. It is not a control in the pane. A ranked vendor quote can fill the part price. Mass and tooling stay empty unless a priced catalog was passed into the shared compute. on false closes the panel. Omit on to toggle. It does not paint a skin and it does not place an order. Read-only.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "on": {
             "type": "boolean",
-            "description": "true shows the budgetary quote. false closes it. Omit to toggle."
+            "description": "true shows the mold report. false closes it. Omit to toggle."
           },
           "quantity": {
             "type": "integer",
@@ -2859,9 +2870,10 @@
       "confirm": false,
       "group": "measure",
       "immediate": true,
-      "uiEntry": "data-mold-quote",
+      "uiEntry": "data-mold-dfm",
       "example": {
         "on": true,
+        "grade": "PC/ABS",
         "quantity": 1000
       }
     },

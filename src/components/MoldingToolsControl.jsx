@@ -15,7 +15,6 @@ import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
   ArrowUpFromLine,
-  ClipboardList,
   Factory,
   Receipt,
   SquareSplitHorizontal,
@@ -36,25 +35,20 @@ const MoldingToolsControl = ({
   moldDraftActive = false,
   moldDraftPending = false,
   onMoldDraftToggle = null,
-  showDfm = false,
-  dfmActive = false,
-  dfmPending = false,
-  onDfmToggle = null,
-  showQuote = false,
-  quoteActive = false,
-  quotePending = false,
-  onQuoteToggle = null,
+  showReport = false,
+  reportActive = false,
+  reportPending = false,
+  onReportToggle = null,
   /** Initial open state. The rail leaves this unset; tests pass true. */
   defaultOpen = false,
 }) => {
   const [open, setOpen] = useState(!!defaultOpen);
-  const anyShown = showWall || showParting || showMoldDraft || showDfm || showQuote;
+  const anyShown = showWall || showParting || showMoldDraft || showReport;
   if (!anyShown) return null;
   const anyOn = (showWall && (wallActive || wallPending))
     || (showParting && (partingActive || partingPending))
     || (showMoldDraft && (moldDraftActive || moldDraftPending))
-    || (showDfm && (dfmActive || dfmPending))
-    || (showQuote && (quoteActive || quotePending));
+    || (showReport && (reportActive || reportPending));
   const toolState = (active, pending) => (pending ? 'pending' : (active ? 'on' : 'off'));
 
   return (
@@ -116,34 +110,18 @@ const MoldingToolsControl = ({
               <ArrowUpFromLine size={20} />
             </button>
           )}
-          {showDfm && (
+          {showReport && (
             <button
               type="button"
-              onClick={() => pressMoldTool(setOpen, onDfmToggle)}
-              className={toolToggleClass(dfmActive || dfmPending)}
-              title={dfmPending ? 'Computing DFM report' : (dfmActive ? 'Hide DFM report' : 'Show DFM report')}
-              aria-label={dfmPending ? 'Computing DFM report' : (dfmActive ? 'Hide DFM report' : 'Show DFM report')}
-              aria-pressed={!!dfmActive}
-              aria-busy={dfmPending || undefined}
+              onClick={() => pressMoldTool(setOpen, onReportToggle)}
+              className={toolToggleClass(reportActive || reportPending)}
+              title={reportPending ? 'Computing report' : (reportActive ? 'Hide report' : 'Show report')}
+              aria-label={reportPending ? 'Computing report' : (reportActive ? 'Hide report' : 'Show report')}
+              aria-pressed={!!reportActive}
+              aria-busy={reportPending || undefined}
               data-mold-dfm=""
-              data-mold-dfm-state={toolState(dfmActive, dfmPending)}
+              data-mold-dfm-state={toolState(reportActive, reportPending)}
               data-ui-action="data-mold-dfm"
-            >
-              <ClipboardList size={20} />
-            </button>
-          )}
-          {showQuote && (
-            <button
-              type="button"
-              onClick={() => pressMoldTool(setOpen, onQuoteToggle)}
-              className={toolToggleClass(quoteActive || quotePending)}
-              title={quotePending ? 'Computing budgetary quote' : (quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote')}
-              aria-label={quotePending ? 'Computing budgetary quote' : (quoteActive ? 'Hide budgetary quote' : 'Show budgetary quote')}
-              aria-pressed={!!quoteActive}
-              aria-busy={quotePending || undefined}
-              data-mold-quote=""
-              data-mold-quote-state={toolState(quoteActive, quotePending)}
-              data-ui-action="data-mold-quote"
             >
               <Receipt size={20} />
             </button>

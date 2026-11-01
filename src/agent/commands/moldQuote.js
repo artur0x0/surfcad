@@ -1,6 +1,6 @@
 /**
- * Show or hide the budgetary molding quote. The viewport handler reads the
- * active part and asks the server to price it. `on: false` closes the panel.
+ * Show or hide the mold report. Same compute as mold_dfm, plus cavityCount.
+ * The viewport handler reads the active part. `on: false` closes the panel.
  * It does not paint a skin and it does not place an order.
  */
 
@@ -10,7 +10,7 @@ const SCHEMA = Object.freeze({
   properties: {
     on: {
       type: 'boolean',
-      description: 'true shows the budgetary quote. false closes it. Omit to toggle.',
+      description: 'true shows the mold report. false closes it. Omit to toggle.',
     },
     quantity: {
       type: 'integer',
@@ -32,9 +32,9 @@ const SCHEMA = Object.freeze({
 
 export const moldQuoteCommand = Object.freeze({
   name: 'mold_quote',
-  uiEntry: 'data-mold-quote',
+  uiEntry: 'data-mold-dfm',
   schema: SCHEMA,
-  example: { on: true, quantity: 1000 },
+  example: { on: true, grade: 'PC/ABS', quantity: 1000 },
   immediate: true,
   run(ctx, args) {
     const show = ctx.moldQuote;
