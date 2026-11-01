@@ -108,9 +108,11 @@ export function dfmReport(analysis) {
       minDeg: finite(draft.minDeg) ?? 1,
       violationCount: finite(draft.violationCount) ?? 0,
       minDraftDeg: roundTo(draft.minDraftDeg, 1),
-      positiveAbove: bucketCount(draft.positiveAbove),
-      positiveBelow: bucketCount(draft.positiveBelow),
+      positive: bucketCount(draft.positive),
       negative: bucketCount(draft.negative),
+      below: bucketCount(draft.below),
+      belowPositive: bucketCount(draft.below?.positive),
+      belowNegative: bucketCount(draft.below?.negative),
     },
     sideActions: {
       heuristic: true,

@@ -85,12 +85,11 @@
   --agent-prompt-desktop-width: min(640px, calc(100% - 12rem));
   --agent-prompt-mobile-width: min(16rem, calc(100% - 9.5rem));
   --agent-prompt-rest-bottom: var(--agent-prompt-desktop-bottom);
-  /* Signed mold draft. Positive is one blue ramp (dark when the wall clears
-     the threshold, lighter when it does not). Negative is orange with a
-     dark hatch, so a back-draft is not red versus green. */
-  --mold-draft-above: 30 58 138; /* #1e3a8a */
-  --mold-draft-below: 59 130 246; /* #3b82f6 */
-  --mold-draft-negative: 234 88 12; /* #ea580c */
+  /* Below-T mold draft. Same red-400 as .feature-failed-ring. The dark
+     stripe keeps the needs-work class from depending on hue alone.
+     Positive ≥ T and Negative ≥ T reuse the cavity and core colours;
+     those channels are set on the legend from PARTING_ROLE_RGB. */
+  --mold-draft-needs-work: 248 113 113; /* #f87171 */
   --mold-draft-hatch: 15 23 42; /* #0f172a */
 }
 
@@ -538,16 +537,16 @@ textarea {
   .mold-pull-choice[aria-pressed="true"] {
     background-color: rgb(var(--chrome-text) / 0.16);
   }
-  .mold-draft-swatch-above {
-    background-color: rgb(var(--mold-draft-above));
-  }
-  .mold-draft-swatch-below {
-    background-color: rgb(var(--mold-draft-below));
+  .mold-draft-swatch-positive {
+    background-color: rgb(var(--mold-draft-positive));
   }
   .mold-draft-swatch-negative {
+    background-color: rgb(var(--mold-draft-negative));
+  }
+  .mold-draft-swatch-needs-work {
     background-image: repeating-linear-gradient(
       -45deg,
-      rgb(var(--mold-draft-negative)) 0 3px,
+      rgb(var(--mold-draft-needs-work)) 0 3px,
       rgb(var(--mold-draft-hatch)) 3px 5px
     );
   }

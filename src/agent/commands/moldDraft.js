@@ -3,8 +3,11 @@
  * handler paints the active part. `on: false` removes the skin so face
  * paint and the part colour show again. This is not CAD draft mode.
  *
- * Positive draft opens along the pull. Negative draft is back-draft.
- * A wall at 0° is positive and below the threshold. There is no zero-draft flag.
+ * Positive draft opens along the pull. Negative draft closes along the pull.
+ * Positive ≥ T uses the cavity colour. Negative ≥ T uses the core colour.
+ * |draft| below T is the needs-work hatch, and that class still reports
+ * its sign. A wall at 0° is Below T and its sign stays positive.
+ * There is no zero-draft flag.
  */
 
 const SCHEMA = Object.freeze({
@@ -17,7 +20,7 @@ const SCHEMA = Object.freeze({
     },
     threshold: {
       type: 'number',
-      description: 'Draft threshold in degrees, greater than 0 and at most 90. The pane offers 0.5, 1, 2, 3, and 5. Default is 1. A side wall at or above this angle is positive above. From 0 up to the threshold is positive below. Negative is back-draft. Omit to keep the current threshold. A change rebuckets the stored field and does not measure the mesh again.',
+      description: 'Draft threshold in degrees, greater than 0 and at most 90. The pane offers 0.5, 1, 2, 3, and 5. Default is 1. At or above this angle, positive draft is Positive ≥ T and negative draft is Negative ≥ T. Absolute draft below this angle is Below T, and the sign is still reported. Omit to keep the current threshold. A change rebuckets the stored field and does not measure the mesh again.',
     },
   },
 });

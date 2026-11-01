@@ -10,9 +10,14 @@ test('mold_draft forwards on and threshold and returns the signed counts', () =>
       return {
         on: true,
         threshold: 1,
-        positiveAbove: { count: 8, area: 1048 },
-        positiveBelow: { count: 0, area: 0 },
-        negative: { count: 0, area: 0 },
+        positive: { count: 8, area: 1048 },
+        negative: { count: 1, area: 40 },
+        below: {
+          count: 2,
+          area: 12,
+          positive: { count: 1, area: 8 },
+          negative: { count: 1, area: 4 },
+        },
         violations: 0,
         minDeg: 1,
         pins: 0,
@@ -22,8 +27,9 @@ test('mold_draft forwards on and threshold and returns the signed counts', () =>
   };
   const out = moldDraftCommand.run(ctx, { on: true, threshold: 1 });
   assert.deepEqual(seen, [{ on: true, threshold: 1 }]);
-  assert.equal(out.result.positiveAbove.count, 8);
-  assert.equal(out.result.negative.count, 0);
+  assert.equal(out.result.positive.count, 8);
+  assert.equal(out.result.negative.count, 1);
+  assert.equal(out.result.below.negative.count, 1);
   assert.equal(out.result.pins, 0);
   assert.equal(out.error, undefined);
 });

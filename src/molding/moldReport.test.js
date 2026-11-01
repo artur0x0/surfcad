@@ -180,8 +180,11 @@ test('plate, tray, cup, snap hook, and through hole report their own geometry', 
   assert.equal(plateReport.geometry.projectedAreaMm2, 400);
   assert.equal(plateReport.geometry.sideActionCount, 0);
   assert.equal(plateReport.geometry.draft.minDeg, 1);
-  assert.equal(typeof plateReport.geometry.draft.positiveAbove, 'number');
+  assert.equal(plateReport.geometry.draft.positive, 0);
   assert.equal(plateReport.geometry.draft.negative, 0);
+  assert.ok(plateReport.geometry.draft.below > 0);
+  assert.equal(plateReport.geometry.draft.belowPositive, plateReport.geometry.draft.below);
+  assert.equal(plateReport.geometry.draft.belowNegative, 0);
   assert.equal(plateReport.estimates.massKg, null);
   assert.match(plateReport.notes.mass, /density/);
   assert.equal(plateReport.estimates.toolingAluminumUsd, null);
@@ -325,6 +328,10 @@ test('the workbook round-trips geometry, resin, quantity, estimates, and assumpt
   assert.equal(value('Volume (cm3)')[1], 0.8);
   assert.equal(value('Projected area along pull (mm2)')[1], 400);
   assert.equal(value('Side actions')[1], 0);
+  assert.equal(value('Positive ≥ threshold')[1], '');
+  assert.equal(value('Negative ≥ threshold')[1], '');
+  assert.equal(value('Below threshold')[1], '');
+  assert.equal(value('Below threshold')[2], '');
   assert.equal(value('Resin')[1], 'PC/ABS');
   assert.equal(value('Quantity')[1], 100);
   assert.equal(value('Part mass (kg)')[1], '');

@@ -68,12 +68,14 @@ function bucketCount(bucket) {
 
 /** Signed draft counts for the report row. Null when the analysis has no signed field. */
 function draftOf(moldDraft) {
-  if (!moldDraft || moldDraft.positiveAbove == null) return null;
+  if (!moldDraft || moldDraft.positive == null) return null;
   return {
     minDeg: finite(moldDraft.minDeg) ?? 1,
-    positiveAbove: bucketCount(moldDraft.positiveAbove) ?? 0,
-    positiveBelow: bucketCount(moldDraft.positiveBelow) ?? 0,
+    positive: bucketCount(moldDraft.positive) ?? 0,
     negative: bucketCount(moldDraft.negative) ?? 0,
+    below: bucketCount(moldDraft.below) ?? 0,
+    belowPositive: bucketCount(moldDraft.below?.positive) ?? 0,
+    belowNegative: bucketCount(moldDraft.below?.negative) ?? 0,
   };
 }
 
