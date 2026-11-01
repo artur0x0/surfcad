@@ -52,12 +52,7 @@ const CrossSectionPanel = forwardRef(({
   partingActive = false,
   partingPending = false,
   onPartingToggle = null,
-  /** Side actions. Inspection group, immediately after core and cavity. Hidden in game. */
-  showSideActions = false,
-  sideActionsActive = false,
-  sideActionsPending = false,
-  onSideActionsToggle = null,
-  /** Mold draft and ejector hints. Inspection group, immediately after side actions. Hidden in game. */
+  /** Mold draft and ejector hints. Inspection group, immediately after core and cavity. Hidden in game. */
   showMoldDraft = false,
   moldDraftActive = false,
   moldDraftPending = false,
@@ -565,10 +560,6 @@ const handleButtonClick = () => {
           partingActive={partingActive}
           partingPending={partingPending}
           onPartingToggle={onPartingToggle}
-          showSideActions={showSideActions}
-          sideActionsActive={sideActionsActive}
-          sideActionsPending={sideActionsPending}
-          onSideActionsToggle={onSideActionsToggle}
           showMoldDraft={showMoldDraft}
           moldDraftActive={moldDraftActive}
           moldDraftPending={moldDraftPending}

@@ -16,6 +16,19 @@ test('mold_parting forwards on and returns the face counts', () => {
   assert.equal(out.result.lines, 2);
 });
 
+test('mold_parting forwards a side-action group', () => {
+  const seen = [];
+  const ctx = {
+    moldParting: (args) => {
+      seen.push(args);
+      return { on: true, sideActions: { count: 1, selected: 0 } };
+    },
+  };
+  const out = moldPartingCommand.run(ctx, { group: 0 });
+  assert.deepEqual(seen, [{ on: undefined, group: 0 }]);
+  assert.equal(out.result.sideActions.selected, 0);
+});
+
 test('mold_parting toggles when on is omitted and reports a missing handler', () => {
   const seen = [];
   const ctx = {

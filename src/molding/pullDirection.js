@@ -693,7 +693,7 @@ function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candid
     bodies: bodyReport(positions, indices, regions),
     wall,
     parting,
-    sideActions: groupSideActions(regions, pull),
+    sideActions: groupSideActions(regions, pull, tris),
     moldDraft: analyzeMoldDraft(tris, pull, wall),
   };
 }

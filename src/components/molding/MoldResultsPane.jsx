@@ -1,6 +1,6 @@
 /**
- * One molding results pane. Pull, core and cavity, wall thickness, side
- * actions, mold draft, the DFM report, and the quote render as sections
+ * One molding results pane. Pull, core and cavity, wall thickness,
+ * mold draft, the DFM report, and the quote render as sections
  * inside it. The card is the feature-sheet shell. Its left and width are
  * the same rail measure the feature card uses, so the pane stays out of
  * both toolbars. Phone height and gestures stay on `mold-analysis-pane`.

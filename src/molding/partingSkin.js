@@ -18,6 +18,7 @@ import {
 } from 'three';
 import { makeFaceSkinMaterial } from '../utils/faceColorSkin.js';
 import { PARTING_LINE_RGB, PARTING_ROLE_RGB } from './parting.js';
+import { SIDE_ACTION_FACE_RGB, SIDE_ACTION_HIGHLIGHT_RGB } from './sideActions.js';
 
 /** Above paint (2), under the wall skin (2.4) and the stress skin (2.5). */
 export const PARTING_SKIN_RENDER_ORDER = 2.35;
@@ -48,7 +49,31 @@ function restorePaintSkin(host) {
   if (paint) paint.visible = saved.visible;
 }
 
-function buildGeometry(geometry, parting) {
+function sidePaint(sideActions, selectedId) {
+  const map = new Map();
+  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+  for (const group of groups) {
+    if (selectedId != null && group.id === selectedId) continue;
+    for (const t of group.triangles || []) map.set(t, SIDE_ACTION_FACE_RGB);
+  }
+  for (const group of groups) {
+    if (!(selectedId != null && group.id === selectedId)) continue;
+    for (const t of group.triangles || []) map.set(t, SIDE_ACTION_HIGHLIGHT_RGB);
+  }
+  return map;
+}
+
+function sideStamp(sideActions, selectedId) {
+  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+  const parts = [selectedId == null ? '' : String(selectedId)];
+  for (const group of groups) {
+    const ids = group.triangles || [];
+    parts.push(group.id, ids.length, ids[0] ?? '', ids[ids.length - 1] ?? '');
+  }
+  return parts.join(',');
+}
+
+function buildGeometry(geometry, parting, sideActions, selectedId) {
   const index = geometry?.index?.array;
   const src = geometry?.attributes?.position?.array;
   if (!index?.length || !src?.length) return null;
@@ -61,11 +86,12 @@ function buildGeometry(geometry, parting) {
     if (!(sample?.index >= 0 && sample.index < triangles)) continue;
     if (sample.role === 'core' || sample.role === 'cavity') roleOf[sample.index] = sample.role;
   }
+  const paintedSide = sidePaint(sideActions, selectedId);
   const positions = new Float32Array(triangles * 9);
   const colors = new Float32Array(triangles * 9);
   let w = 0;
   for (let t = 0; t < triangles; t++) {
-    const rgb = PARTING_ROLE_RGB[roleOf[t]] || PARTING_ROLE_RGB.cavity;
+    const rgb = paintedSide.get(t) || PARTING_ROLE_RGB[roleOf[t]] || PARTING_ROLE_RGB.cavity;
     for (let k = 0; k < 3; k++) {
       const vi = index[t * 3 + k] * 3;
       positions[w] = src[vi] || 0;
@@ -138,8 +164,8 @@ export function detachPartingSkin(host) {
   restorePaintSkin(host);
 }
 
-/** Draw `parting.triangles` on this mesh. A missing classification removes the skin. */
-export function syncPartingSkin(host, parting) {
+/** Draw `parting.triangles` on this mesh. Side-action faces use a third colour. */
+export function syncPartingSkin(host, parting, sideActions = null, selectedId = null) {
   if (!host || !parting?.counts) {
     detachPartingSkin(host);
     return null;
@@ -154,12 +180,13 @@ export function syncPartingSkin(host, parting) {
     parting.neutralDeg,
     parting.areas?.core || 0,
     parting.areas?.cavity || 0,
+    sideStamp(sideActions, selectedId),
   ].join('|');
   if (host.userData?.partingStamp === stamp && host.userData.partingSkin) {
     hidePaintSkin(host);
     return host.userData.partingSkin;
   }
-  const painted = buildGeometry(host.geometry, parting);
+  const painted = buildGeometry(host.geometry, parting, sideActions, selectedId);
   detachPartingSkin(host);
   if (!painted) return null;
   const material = makeFaceSkinMaterial(hostSide(host));

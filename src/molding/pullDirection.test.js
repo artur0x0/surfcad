@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { dfmReport } from './dfmReport.js';
+import { directionClears } from './sideActions.js';
+import { toolingCounts } from './toolingEstimate.js';
 import {
   analyzePullDirection,
   analyzeWallOnly,
   moldFitScore,
+  openMoldQuery,
   MOLD_DIRECTION_DEDUP_DEG,
   MOLD_UNDERCUT_TIE_FLOOR_MM2,
 } from './pullDirection.js';
@@ -366,10 +370,25 @@ test('a snap hook keeps a principal pull and reports the lip undercut', () => {
   assert.equal(result.undercutCount, 1);
   assert.equal(result.undercutArea, 12);
   assert.equal(result.sideActions.count, 1);
-  assert.equal(result.sideActions.slideCount, 0);
-  assert.equal(result.sideActions.lifterCount, 1);
-  assert.equal(result.sideActions.groups[0].area, 12);
-  assert.deepEqual(result.sideActions.groups[0].pull, [0, 0, -1]);
+  assert.equal(result.sideActions.slideCount, 1);
+  assert.equal(result.sideActions.lifterCount, 0);
+  const group = result.sideActions.groups[0];
+  assert.equal(group.area, 12);
+  assert.equal(group.clear, true);
+  const aligned = Math.abs(
+    result.pull[0] * group.pull[0] + result.pull[1] * group.pull[1] + result.pull[2] * group.pull[2],
+  );
+  assert.ok(aligned < 0.2);
+  const tris = openMoldQuery(mesh).prepared.tris;
+  assert.equal(directionClears(tris, group.triangles, group.pull), true);
+  assert.equal(directionClears(tris, group.triangles, result.pull), false);
+  assert.equal(directionClears(tris, group.triangles, result.pull.map((n) => -n)), false);
+  const report = dfmReport(result);
+  const counts = toolingCounts(result);
+  assert.equal(report.sideActions.slideCount, 1);
+  assert.equal(report.sideActions.lifterCount, 0);
+  assert.equal(counts.slideCount, report.sideActions.slideCount);
+  assert.equal(counts.lifterCount, report.sideActions.lifterCount);
   assert.ok(result.undercutArea <= MOLD_UNDERCUT_TIE_FLOOR_MM2);
   const chosen = result.candidates.find((row) => row.pull[0] === 0 && row.pull[1] === 0 && row.pull[2] === 1);
   assert.equal(chosen.principal, true);

@@ -14,7 +14,6 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const MOLD_MARKERS = [
   'data-wall-heatmap',
   'data-mold-parting',
-  'data-mold-side-actions',
   'data-mold-draft',
   'data-mold-dfm',
   'data-mold-quote',
@@ -72,7 +71,6 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     showAnalyze: true,
     showWall: true,
     showParting: true,
-    showSideActions: true,
     showMoldDraft: true,
     showDfm: true,
     showQuote: true,
@@ -83,7 +81,6 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     onMeasurementToggle: () => {},
     onWallToggle: () => {},
     onPartingToggle: () => {},
-    onSideActionsToggle: () => {},
     onMoldDraftToggle: () => {},
     onDfmToggle: () => {},
     onQuoteToggle: () => {},
@@ -110,6 +107,7 @@ test('the molding drawer replaces the rail column and the triad', async () => {
   assert.match(open, /aria-label="Molding tools"/);
   const popup = open.slice(open.indexOf('data-mold-tools-popup'), open.indexOf('data-mold-tools-toggle'));
   for (const marker of MOLD_MARKERS) assert.match(popup, new RegExp(marker));
+  assert.doesNotMatch(popup, /data-mold-side-actions/);
   assert.match(popup, /data-wall-heatmap-state="on"/);
   assert.match(open, /aria-expanded="true"/);
 
@@ -117,7 +115,6 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     ...show,
     showWall: false,
     showParting: false,
-    showSideActions: false,
     showMoldDraft: false,
     showDfm: false,
     showQuote: false,
@@ -135,7 +132,6 @@ test('a molding tool press closes the drawer before it toggles the pane', () => 
   for (const name of [
     'onWallToggle',
     'onPartingToggle',
-    'onSideActionsToggle',
     'onMoldDraftToggle',
     'onDfmToggle',
     'onQuoteToggle',
