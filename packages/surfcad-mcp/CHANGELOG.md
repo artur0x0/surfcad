@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3 - 2026-10-31
+
+- `login --code ABCD-EFGH` redeems a one-time join code from SurfCAD Connect Agent (Safari, iOS, or phone-width). Writes the token the same way device-code login does and does not print it. Resume after reload is server/UI only.
+
 ## 0.3.2 - 2026-10-25
 
 - `set_status` tells the tab which phase the prompt is in. `responding` (alias `typing`): you are reading or writing an answer; the chat stays open with bouncing dots. `building` (alias `working`): you are creating or editing geometry; the chat collapses and the field shows "Agent is working...". Call `set_status { state: "building" }` only once you have everything you need and are actually creating or editing geometry. Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. A partial reply does not leave building; the final reply, Stop, or a disconnect does. No activity for 15 minutes, while responding or building, shows the stall notice and leaves Stop up. The notice says "No activity from the agent for 15 min — it may have stalled". It does not set idle. The result `state` is the tab value (`responding` and `typing` are `typing`; `building` and `working` are `working`). Legacy form of `state`: `working: true` is building, `working: false` is idle. Joints work while a prompt is responding or building, so `joint_create` does not need `set_status` idle. `list_commands` with no args lists every tool this server registers, including the MCP-only tools (`pair`, `guide`, `list_helpers`, `reply_to_user`, `set_status`, and the other prompt tools) in the `agent` group.
