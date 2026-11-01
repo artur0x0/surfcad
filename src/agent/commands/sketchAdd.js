@@ -13,7 +13,10 @@ export const sketchAddCommand = Object.freeze({
       width: { type: 'number' },
       height: { type: 'number' },
       centered: { type: 'boolean' },
-      radius: { type: 'number' },
+      radius: {
+        type: 'number',
+        description: 'Circle or polygon radius, or a rectangle corner radius (also params.cornerRadius). At most half the shorter side.',
+      },
       segments: { type: 'number' },
       polygon_preset: { type: 'string' },
       polygonPreset: { type: 'string', description: 'Alias for polygon_preset' },

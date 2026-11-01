@@ -314,6 +314,203 @@ export function contourFromPolyline(uvs) {
   return assignSeq({ points, lines, arcs: [], dimensions: [], constraints: [], polyline: true });
 }
 
+/**
+ * Corner radius on a rectangle. `cornerRadius` wins when only one is set.
+ * Both set to the same number is one radius. Neither set is a sharp corner.
+ */
+export function rectangleCornerRadius(params) {
+  const p = params || {};
+  const hasCorner = p.cornerRadius != null && p.cornerRadius !== '';
+  const hasRadius = p.radius != null && p.radius !== '';
+  if (!hasCorner && !hasRadius) return 0;
+  const corner = hasCorner ? Number(p.cornerRadius) : null;
+  const radius = hasRadius ? Number(p.radius) : null;
+  if (hasCorner && !Number.isFinite(corner)) fail('cornerRadius must be a finite number');
+  if (hasRadius && !Number.isFinite(radius)) fail('radius must be a finite number');
+  if (corner != null && radius != null && Math.abs(corner - radius) > 1e-6) {
+    fail('rectangle radius and cornerRadius disagree');
+  }
+  const r = corner != null ? corner : radius;
+  if (r < 0) fail('corner radius must be >= 0');
+  return r;
+}
+
+function tangentSide(a, b, center) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const signed = ((center[0] - a[0]) * (-dy) + (center[1] - a[1]) * dx) / len;
+  return signed >= 0 ? 1 : -1;
+}
+
+/**
+ * Rectangle with rounded corners. `radius` must be > 0 and at most half
+ * the shorter side. Below that limit the profile is four lines and four
+ * quarter arcs. Equal to half of one side, that side's lines drop out and
+ * the caps are semicircles. Equal to both halves, it is a circle.
+ */
+export function contourFromRoundedRectangle(width, height, radius, centered = true) {
+  const w = num(width, 'width');
+  const h = num(height, 'height');
+  const r = num(radius, 'radius');
+  if (!(w > 0) || !(h > 0)) fail('width and height must be > 0');
+  if (!(r > 0)) fail('radius must be > 0');
+  const limit = Math.min(w, h) / 2;
+  if (r > limit + 1e-9) {
+    fail(`corner radius ${r} is larger than half the shorter side (${limit})`);
+  }
+  const x0 = centered ? -w / 2 : 0;
+  const y0 = centered ? -h / 2 : 0;
+  const x1 = x0 + w;
+  const y1 = y0 + h;
+  const horiz = w - 2 * r;
+  const vert = h - 2 * r;
+  const sliver = 1e-8;
+  if (horiz <= sliver && vert <= sliver) {
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    return assignSeq({
+      points: [{ id: 'p0', at: [cx, cy] }],
+      lines: [],
+      arcs: [{ id: 'a0', center: 'p0', radius: r, full: true, sweep: 'ccw', segments: 64 }],
+      dimensions: [{ id: 'd0', kind: 'radius', arc: 'a0', value: r }],
+      constraints: [{ id: 'k0', kind: 'fix', items: ['p0'], at: { p0: [cx, cy] } }],
+    });
+  }
+
+  const segs = [];
+  const line = (a, b) => segs.push({ kind: 'line', a, b });
+  const arc = (center, start, end) => segs.push({ kind: 'arc', center, start, end });
+  if (horiz > sliver && vert > sliver) {
+    const A = [x0 + r, y0];
+    const B = [x1 - r, y0];
+    const C = [x1, y0 + r];
+    const D = [x1, y1 - r];
+    const E = [x1 - r, y1];
+    const F = [x0 + r, y1];
+    const G = [x0, y1 - r];
+    const H = [x0, y0 + r];
+    line(A, B);
+    arc([x1 - r, y0 + r], B, C);
+    line(C, D);
+    arc([x1 - r, y1 - r], D, E);
+    line(E, F);
+    arc([x0 + r, y1 - r], F, G);
+    line(G, H);
+    arc([x0 + r, y0 + r], H, A);
+  } else if (horiz <= sliver) {
+    const cx = x0 + r;
+    const rb = [x1, y0 + r];
+    const rt = [x1, y1 - r];
+    const lt = [x0, y1 - r];
+    const lb = [x0, y0 + r];
+    line(rb, rt);
+    arc([cx, y1 - r], rt, lt);
+    line(lt, lb);
+    arc([cx, y0 + r], lb, rb);
+  } else {
+    const cy = y0 + r;
+    const bl = [x0 + r, y0];
+    const br = [x1 - r, y0];
+    const tr = [x1 - r, y1];
+    const tl = [x0 + r, y1];
+    line(bl, br);
+    arc([x1 - r, cy], br, tr);
+    line(tr, tl);
+    arc([x0 + r, cy], tl, bl);
+  }
+
+  const points = [];
+  const pointId = new Map();
+  const pid = (at) => {
+    const key = `${at[0].toFixed(6)},${at[1].toFixed(6)}`;
+    const hit = pointId.get(key);
+    if (hit) return hit;
+    const id = `p${points.length}`;
+    points.push({ id, at: [at[0], at[1]] });
+    pointId.set(key, id);
+    return id;
+  };
+  const lines = [];
+  const arcs = [];
+  const constraints = [];
+  const dimensions = [];
+  let ki = 0;
+  let di = 0;
+  const built = segs.map((seg) => {
+    if (seg.kind === 'line') {
+      const id = `e${lines.length}`;
+      const a = pid(seg.a);
+      const b = pid(seg.b);
+      lines.push({ id, a, b });
+      const dx = seg.b[0] - seg.a[0];
+      const dy = seg.b[1] - seg.a[1];
+      constraints.push({
+        id: `k${ki}`,
+        kind: Math.abs(dy) <= Math.abs(dx) ? 'horizontal' : 'vertical',
+        items: [id],
+      });
+      ki += 1;
+      return { ...seg, id };
+    }
+    const id = `a${arcs.length}`;
+    const center = pid(seg.center);
+    const start = pid(seg.start);
+    const end = pid(seg.end);
+    arcs.push({
+      id, center, start, end, radius: r, sweep: 'ccw', full: false,
+    });
+    dimensions.push({ id: `d${di}`, kind: 'radius', arc: id, value: r });
+    di += 1;
+    constraints.push({ id: `k${ki}`, kind: 'coincident', items: [start, id] });
+    ki += 1;
+    constraints.push({ id: `k${ki}`, kind: 'coincident', items: [end, id] });
+    ki += 1;
+    return { ...seg, id };
+  });
+  for (let i = 0; i < built.length; i += 1) {
+    const cur = built[i];
+    if (cur.kind !== 'arc') continue;
+    const prev = built[(i + built.length - 1) % built.length];
+    const next = built[(i + 1) % built.length];
+    for (const side of [prev, next]) {
+      if (side.kind !== 'line') continue;
+      constraints.push({
+        id: `k${ki}`,
+        kind: 'tangent',
+        items: [side.id, cur.id],
+        side: tangentSide(side.a, side.b, cur.center),
+      });
+      ki += 1;
+    }
+  }
+  const anchor = built[0].kind === 'line' ? built[0].a : built[0].start;
+  const anchorId = pid(anchor);
+  constraints.push({
+    id: `k${ki}`,
+    kind: 'fix',
+    items: [anchorId],
+    at: { [anchorId]: [anchor[0], anchor[1]] },
+  });
+  const lengthAxis = new Set();
+  for (const seg of built) {
+    if (seg.kind !== 'line') continue;
+    const dx = seg.b[0] - seg.a[0];
+    const dy = seg.b[1] - seg.a[1];
+    const axis = Math.abs(dy) <= Math.abs(dx) ? 'h' : 'v';
+    if (lengthAxis.has(axis)) continue;
+    lengthAxis.add(axis);
+    dimensions.push({
+      id: `d${di}`,
+      kind: 'length',
+      edge: seg.id,
+      value: Math.hypot(dx, dy),
+    });
+    di += 1;
+  }
+  return assignSeq({ points, lines, arcs, dimensions, constraints });
+}
+
 /** Axis-aligned rectangle in UV. Centered uses the origin. Fully defined. */
 export function contourFromRectangle(width, height, centered = true) {
   const w = num(width, 'width');

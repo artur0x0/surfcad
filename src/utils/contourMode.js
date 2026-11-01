@@ -107,8 +107,10 @@ import {
   promoteContourState,
   revertLiveDimension,
   selectContourGesture,
+  contourFromTool,
   toggleContourPick,
 } from './contourGesture.js';
+import { rectangleCornerRadius } from './contourSolve.js';
 import { hasFeatureBlock, lastFeatureBlock } from './featureBlockId.js';
 
 /** Palette ids that enter contour mode instead of one-shot insert. */
@@ -844,6 +846,14 @@ export function applySketchAdd(state, tool, params = {}, { inset = false } = {})
   if (tool === 'arc' || tool === 'dimension' || tool === 'constraints') {
     return { ok: true, state: armContourGesture(state, tool), appended: false };
   }
+  if (tool === 'rectangle' && params && !params.contour && !params.centers) {
+    try {
+      const corner = rectangleCornerRadius(params);
+      if (corner > 0) contourFromTool('rectangle', params);
+    } catch (err) {
+      return { ok: false, message: err.message || String(err) };
+    }
+  }
   const hole = isHoleEntry(state.entry);
   const explicitContour = !!(params && Object.prototype.hasOwnProperty.call(params, 'contour'));
   const closed = incomingClosedProfile(tool, params);
@@ -892,6 +902,9 @@ export function toolToProfileParams(tool, params = {}) {
   if (p.contour) return { profileType: 'contour', contour: p.contour };
   const origin = Array.isArray(p.origin) ? p.origin : null;
   if (kind === 'rectangle') {
+    if (rectangleCornerRadius(p) > 0) {
+      return { profileType: 'contour', contour: contourFromTool(tool, p) };
+    }
     return {
       profileType: 'rectangle',
       width: p.width,

@@ -13,6 +13,8 @@ import {
   contourFromPolygon,
   contourFromPolyline,
   contourFromRectangle,
+  contourFromRoundedRectangle,
+  rectangleCornerRadius,
   roundContourCorner,
   solveContour,
 } from './contourSolve.js';
@@ -139,7 +141,12 @@ export function contourFromTool(tool, params = {}) {
   const kind = drawnProfileTool(tool, p);
   if (kind === 'polyline') return contourFromPolyline(p.points || []);
   let spec;
-  if (kind === 'rectangle') spec = contourFromRectangle(p.width, p.height, p.centered !== false);
+  if (kind === 'rectangle') {
+    const corner = rectangleCornerRadius(p);
+    spec = corner > 0
+      ? contourFromRoundedRectangle(p.width, p.height, corner, p.centered !== false)
+      : contourFromRectangle(p.width, p.height, p.centered !== false);
+  }
   else if (kind === 'polygon') spec = contourFromPolygon(p.polygonPreset || 'hexagon', p.radius);
   else spec = contourFromCircle(p.radius, p.segments ?? 64);
   return translateBuiltContour(spec, p.origin);
