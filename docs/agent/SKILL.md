@@ -146,8 +146,8 @@ Assembly and part lifecycle:
 - `delete_part` with `scope: "repo"`
 - `delete_assembly`
 - `git_upgrade_vault`
-- `git_behind_resolve` (`action: "reload"` = Get latest, `action: "branch"` = Save mine to a new branch)
-- `git_branch_switch` when the working copy is dirty
+- `git_behind_resolve` (`action: "reload"` = Get latest, `action: "branch"` = Create a new branch, a save-time git write)
+- `git_branch_switch` when the working copy is dirty. A file conflict returns `conflict` and does not switch; pass `choice: "use_local"` or `"use_remote"` with `confirm: true` (neither writes git)
 - `git_branch_delete`
 - `git_force_overwrite`
 

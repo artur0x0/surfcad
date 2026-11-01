@@ -280,7 +280,7 @@ export const gitBehindResolveCommand = Object.freeze({
       action: {
         type: 'string',
         enum: ['reload', 'branch'],
-        description: 'reload = Get latest (no git write). branch = Save mine to a new branch. keep is removed.',
+        description: 'reload = Get latest (no git write). branch = Create a new branch (save-time git write). keep is removed.',
       },
       confirm: { type: 'boolean', description: 'Must be true.' },
     },
@@ -329,16 +329,26 @@ export const gitBranchCreateCommand = Object.freeze({
 
 export const gitBranchSwitchCommand = Object.freeze({
   name: 'git_branch_switch',
-  uiEntry: ['data-git-branches', 'data-git-branch-confirm'],
+  uiEntry: [
+    'data-git-branches',
+    'data-git-branch-confirm',
+    'data-git-branch-switch-use-local',
+    'data-git-branch-switch-use-remote',
+  ],
   schema: Object.freeze({
     type: 'object',
     additionalProperties: false,
     required: ['branch'],
     properties: {
       branch: { type: 'string' },
+      choice: {
+        type: 'string',
+        enum: ['use_local', 'use_remote'],
+        description: 'Branch-switch conflict choice. use_local keeps the working copy. use_remote loads the target. Neither writes git. Both require confirm: true. Omit to preview; a file conflict returns status conflict and does not switch.',
+      },
       confirm: {
         type: 'boolean',
-        description: 'Required true when the working copy has uncommitted changes',
+        description: 'Required true when the working copy has uncommitted changes, and for choice use_local or use_remote',
       },
     },
   }),
@@ -347,12 +357,19 @@ export const gitBranchSwitchCommand = Object.freeze({
     if (!args?.branch || typeof args.branch !== 'string') {
       return { code: 'bad_args', message: 'git_branch_switch needs branch' };
     }
+    if (args.choice != null && args.choice !== 'use_local' && args.choice !== 'use_remote') {
+      return { code: 'bad_args', message: 'git_branch_switch choice must be use_local or use_remote' };
+    }
+    if (args.choice === 'use_local' || args.choice === 'use_remote') {
+      return requireDestructiveConfirm(args, `git_branch_switch ${args.choice}`);
+    }
     return null;
   },
   async run(ctx, args) {
     return hostGit(ctx, 'agentGitBranchSwitch', {
       branch: args.branch,
       confirm: args?.confirm === true,
+      choice: args.choice,
     }, { commandName: 'git_branch_switch' });
   },
 });

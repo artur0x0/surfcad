@@ -17,6 +17,8 @@ import OpenAssemblyChoiceDialog from './OpenAssemblyChoiceDialog';
 import DeleteAssemblyDialog, { AssemblyOpenList } from './DeleteAssemblyDialog';
 import ProfileChip from './ProfileChip';
 import VaultPickerDialog from './VaultPickerDialog';
+import BranchPaneList from './BranchPaneList';
+import BranchSwitchConflictChoices from './BranchSwitchConflictChoices';
 import GithubSaveAccessNotice from './GithubSaveAccessNotice';
 import { useAuthState } from '../hooks/useAuthState';
 import { useCartChrome } from '../hooks/useCart';
@@ -420,6 +422,7 @@ const PartFeed = forwardRef(function PartFeed({
   onBehindChoice = null,
   // G5/G11 branch view
   currentBranch = '',
+  defaultBranch = 'main',
   onListBranches = null,
   onSwitchBranch = null,
   onCreateBranch = null,
@@ -475,8 +478,11 @@ const PartFeed = forwardRef(function PartFeed({
   const pathInputRef = useRef(null);
   // G3 commit flow: null | { stage: 'message'|'busy'|'ask-force'|'done'|'error', ... }
   const [commitFlow, setCommitFlow] = useState(null);
+  // Branch-switch conflict is its own dialog. While it is open, the outbox
+  // hold and the save-conflict effect must not replace it.
+  const [switchConflict, setSwitchConflict] = useState(null);
   useEffect(() => {
-    if (!syncConflict) return;
+    if (!syncConflict || switchConflict) return;
     setCommitFlow({
       stage: 'ask-force',
       draft: '',
@@ -489,16 +495,16 @@ const PartFeed = forwardRef(function PartFeed({
       },
       error: '',
     });
-  }, [syncConflict]);
+  }, [syncConflict, switchConflict]);
   useEffect(() => {
-    if (!planSaveConflict) return;
+    if (!planSaveConflict || switchConflict) return;
     setCommitFlow({
       stage: 'save-conflict',
       draft: '',
       result: planSaveConflict,
       error: '',
     });
-  }, [planSaveConflict]);
+  }, [planSaveConflict, switchConflict]);
   const commitInputRef = useRef(null);
   // G4 conflict choice: null | { path, kind: 'part'|'assembly', name, stage, error, result }
   const [conflictFlow, setConflictFlow] = useState(null);
@@ -1035,8 +1041,44 @@ const PartFeed = forwardRef(function PartFeed({
     }));
   };
 
+  const openSwitchConflict = (result, name) => {
+    onSyncConflictClear?.();
+    onPlanSaveConflictClear?.();
+    setBranchFlow(null);
+    setCommitFlow(null);
+    setSwitchConflict({
+      branch: result?.branch || name,
+      fromBranch: result?.fromBranch || currentBranch,
+      paths: result?.paths || [],
+      message: result?.message || '',
+      error: '',
+      busy: false,
+    });
+  };
+
   const requestSwitchBranch = (name) => {
     if (!name || name === currentBranch) return;
+    void beginSwitchBranch(name);
+  };
+
+  const beginSwitchBranch = async (name) => {
+    if (vaultLayout === 'v2' && sourceDirty) {
+      const result = (await onSwitchBranch?.(name, { preview: true }))
+        || { status: 'error', error: 'Switch unavailable' };
+      if (result.status === 'conflict' && result.model === 'branch-switch') {
+        openSwitchConflict(result, name);
+        return;
+      }
+      if (result.status === 'error') {
+        setBranchFlow((prev) => ({
+          ...(prev || { items: [], loading: false }),
+          stage: 'error',
+          error: result.error || 'Switch failed',
+          pending: name,
+        }));
+        return;
+      }
+    }
     if (sourceDirty) {
       setBranchFlow((prev) => ({
         ...(prev || { items: [], loading: false, error: '' }),
@@ -1058,6 +1100,10 @@ const PartFeed = forwardRef(function PartFeed({
       pending: target,
     }));
     const result = (await onSwitchBranch?.(target)) || { status: 'error', error: 'Switch unavailable' };
+    if (result.status === 'conflict' && result.model === 'branch-switch') {
+      openSwitchConflict(result, target);
+      return;
+    }
     if (result.status === 'switched' || result.status === 'same') {
       setBranchFlow(null);
       return;
@@ -1068,6 +1114,29 @@ const PartFeed = forwardRef(function PartFeed({
       error: result.error || 'Switch failed',
       pending: target,
     }));
+  };
+
+  const resolveSwitchConflict = async (choice) => {
+    if (!switchConflict || switchConflict.busy) return;
+    if (choice === 'go_back') {
+      setSwitchConflict(null);
+      return;
+    }
+    if (choice !== 'use_local' && choice !== 'use_remote') return;
+    const branch = switchConflict.branch;
+    setSwitchConflict((prev) => (prev ? { ...prev, busy: true, error: '' } : prev));
+    const result = (await onSwitchBranch?.(branch, { choice }))
+      || { status: 'error', error: 'Switch unavailable' };
+    if (result.status === 'switched' || result.status === 'same') {
+      setSwitchConflict(null);
+      setBranchFlow(null);
+      return;
+    }
+    setSwitchConflict((prev) => (prev ? {
+      ...prev,
+      busy: false,
+      error: result.error || 'Switch failed',
+    } : prev));
   };
 
   const runCreateBranch = async () => {
@@ -2584,7 +2653,7 @@ const PartFeed = forwardRef(function PartFeed({
                     data-ui-action="data-git-save-dismiss"
                     data-git-save-dismiss=""
                   >
-                    Dismiss
+                    Go back
                   </button>
                   <button
                     type="button"
@@ -2602,7 +2671,7 @@ const PartFeed = forwardRef(function PartFeed({
                     data-git-behind-branch=""
                     onClick={() => { void runPlanSaveConflict('branch'); }}
                   >
-                    Save mine to a new branch
+                    Create a new branch
                   </button>
                   <button
                     type="button"
@@ -2695,7 +2764,7 @@ const PartFeed = forwardRef(function PartFeed({
               <p className="text-xs">
                 {commitFlow.result?.error
                   || commitFlow.result?.message
-                  || 'These files also changed on the remote. Nothing was written. Overwrite, Get latest, Save mine to a new branch, or Dismiss. Get latest does not write git.'}
+                  || 'These files also changed on the remote. Nothing was written. Go back, Get latest, Create a new branch, or Overwrite. Go back changes nothing. Get latest does not write git.'}
               </p>
             </div>
           )}
@@ -2904,6 +2973,25 @@ const PartFeed = forwardRef(function PartFeed({
         </VaultPickerDialog>
       )}
 
+      {switchConflict && typeof document !== 'undefined' && (
+        <VaultPickerDialog
+          title={`Conflict with ${switchConflict.branch || 'main'}`}
+          labelledBy="git-branch-switch-title"
+          dataAttr="branch-switch-conflict"
+          onClose={switchConflict.busy ? undefined : () => { void resolveSwitchConflict('go_back'); }}
+        >
+          <BranchSwitchConflictChoices
+            busy={switchConflict.busy}
+            onGoBack={() => { void resolveSwitchConflict('go_back'); }}
+            onUseLocal={() => { void resolveSwitchConflict('use_local'); }}
+            onUseRemote={() => { void resolveSwitchConflict('use_remote'); }}
+          />
+          {switchConflict.error ? (
+            <p className="mt-2 font-ui text-ui-sm text-on-dark" data-git-branch-switch-error="">{switchConflict.error}</p>
+          ) : null}
+        </VaultPickerDialog>
+      )}
+
       {branchFlow && (
         branchFlow.stage === 'confirm'
         || branchFlow.stage === 'busy'
@@ -3081,18 +3169,6 @@ const PartFeed = forwardRef(function PartFeed({
           )}
           {branchFlow.stage === 'pane' && (
             <div data-git-branch-pane="">
-              {(currentBranch || 'main') !== 'main' ? (
-                <div className="mb-2 flex items-center gap-2" data-git-branch-pane-toolbar="">
-                  <button
-                    type="button"
-                    data-git-branch-action="merge"
-                    className="rounded-md bg-blue-600/80 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-500"
-                    onClick={() => { void startMergeFromPane(); }}
-                  >
-                    Merge
-                  </button>
-                </div>
-              ) : null}
               {branchFlow.loading && (
                 <p className="text-xs text-chrome-secondary" data-git-branch-loading="">Loading…</p>
               )}
@@ -3108,53 +3184,14 @@ const PartFeed = forwardRef(function PartFeed({
                 </p>
               )}
               {!branchFlow.loading && (branchFlow.items || []).length > 0 && (
-                <ul className="max-h-56 space-y-1 overflow-y-auto rail-scroll list-scroll" data-git-branch-dialog-list="">
-                  {(branchFlow.items || []).map((b) => {
-                    const current = !!b.current || b.name === currentBranch;
-                    const creating = !!b.pending;
-                    const canDelete = b.name !== 'main' && !current && !creating;
-                    return (
-                      <li key={b.name} className="flex items-center gap-1" data-git-branch-pending={creating ? 'true' : undefined}>
-                        <button
-                          type="button"
-                          data-git-branch-row={b.name}
-                          data-git-branch-current={current ? 'true' : 'false'}
-                          disabled={current || creating}
-                          className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
-                            current
-                              ? 'bg-blue-600/20 text-blue-200'
-                              : 'text-chrome-text hover:bg-white/10'
-                          } disabled:cursor-default`}
-                          onClick={() => requestSwitchBranch(b.name)}
-                        >
-                          <span className="truncate font-mono">{b.name}</span>
-                          {creating ? (
-                            <Loader2 size={14} className="shrink-0 animate-spin text-sky-300" data-git-branch-pending-spinner="" />
-                          ) : current ? (
-                            <span className="shrink-0 text-[9px] uppercase tracking-wide text-blue-300" data-git-branch-marker="">
-                              current
-                            </span>
-                          ) : null}
-                        </button>
-                        {canDelete ? (
-                          <button
-                            type="button"
-                            data-git-branch-action="delete"
-                            data-git-branch-delete-row={b.name}
-                            title={`Delete ${b.name}`}
-                            aria-label={`Delete branch ${b.name}`}
-                            className="shrink-0 rounded p-1 text-gray-500 hover:bg-red-500/15 hover:text-red-300"
-                            onClick={() => requestDeleteBranch(b.name)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        ) : (
-                          <span className="w-6 shrink-0 text-center text-[9px] text-gray-600" title={creating ? 'creating' : 'protected'}>·</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <BranchPaneList
+                  items={branchFlow.items}
+                  currentBranch={currentBranch}
+                  defaultBranch={defaultBranch}
+                  onSwitch={requestSwitchBranch}
+                  onDelete={requestDeleteBranch}
+                  onMerge={startMergeFromPane}
+                />
               )}
             </div>
           )}

@@ -1126,7 +1126,7 @@ export const COMMAND_META = {
     mutates: true,
   },
   git_behind_resolve: {
-    description: 'Conflict / main-moved choice. action reload = Get latest (not a git write). action branch = Save mine to a new branch. Both require confirm: true. action keep is removed (Dismiss is not a tool). No path argument.',
+    description: 'Save-conflict choice. action reload = Get latest (not a git write). action branch = Create a new branch (save-time git write). Both require confirm: true. action keep is removed (Go back is not a tool). No path argument.',
     result: { type: 'object', additionalProperties: true },
     errors: ['bad_args', 'confirm_required', 'conflict', 'repo-moved', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
@@ -1140,9 +1140,9 @@ export const COMMAND_META = {
     mutates: true,
   },
   git_branch_switch: {
-    description: 'Switch vault branch; confirm when the working copy is dirty.',
+    description: 'Switch vault branch. confirm: true when the working copy is dirty. A dirty v2 copy whose files differ from the target returns status conflict (model branch-switch) and does not switch, even with confirm: true. choice use_local keeps the working copy on that branch; choice use_remote loads the target. Both need confirm: true and neither writes git. Go back is not a tool.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'confirm_required', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'confirm_required', 'conflict', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,

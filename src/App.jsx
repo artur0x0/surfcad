@@ -428,6 +428,11 @@ import {
   SAVE_CONFLICT_COPY,
 } from './utils/git';
 import { docNeedsVaultLayout, newAssemblyVaultLayout, vaultLayoutFromDetection } from './utils/git/docVaultLayout.js';
+import {
+  BRANCH_SWITCH_CONFLICT_COPY,
+  planBranchSwitchChoice,
+  previewV2BranchSwitch,
+} from './utils/git/branchSwitchConflict.js';
 import { titleFocusPartId } from './utils/titleFocus.js';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
@@ -606,6 +611,8 @@ const App = () => {
   const gitSyncRef = useRef(null);
   const flushGitSyncRef = useRef(async () => ({ status: 'idle' }));
   const gitCheckGenRef = useRef(0);
+  /** Same dirty flag the Parts chrome uses. Set after `sourceDirty` each render. */
+  const sourceDirtyRef = useRef(false);
   /** G7: GitHub App Client ID (from /api/config or VITE_) + connected flag. */
   const [githubClientId, setGithubClientId] = useState(() => resolveGithubClientId());
   const [githubConnected, setGithubConnected] = useState(() => hasGithubToken());
@@ -4399,7 +4406,7 @@ const App = () => {
    * pending user renames. Never enqueue or flush a git write — load/open
    * are read-only.
    */
-  const adoptVaultOpening = async (opened, vault) => {
+  const adoptVaultOpening = async (opened, vault, { surfaceConflict = true } = {}) => {
     const store = gitSync();
     const branch = opened.baseline?.branch || gitWorkingBranch();
     for (const hit of opened.identities?.cached || []) {
@@ -4579,7 +4586,7 @@ const App = () => {
     const stored = store.getLastSyncedSha(vault.repo, branch);
     const held = queued.length > 0 && !!(stored && head && stored !== head);
     if (!queued.length && head) await store.setLastSyncedSha(vault.repo, head, branch);
-    if (held) {
+    if (held && surfaceConflict) {
       setSyncConflict({
         status: 'conflict',
         syncHold: true,
@@ -4892,12 +4899,52 @@ const App = () => {
   };
 
   /**
+   * Keep the working-copy scripts and point the session at `branchName`.
+   * Does not commit, push, or replace scripts.
+   */
+  const keepLocalBranch = async (branchName) => {
+    const current = gitWorkingBranch();
+    try {
+      const vault = await ensureGitVault({ create: false });
+      const git = gitAdapterRef.current;
+      const tip = (await git.getBranch(vault.repo, branchName))?.sha || null;
+      if (!tip) return { status: 'error', error: `Branch not found: ${branchName}` };
+      const planned = planBranchSwitchChoice('use_local', {
+        currentBranch: current,
+        targetBranch: branchName,
+        localScripts: partScriptsRef.current,
+        baseline: gitBaselineRef.current,
+        headSha: tip,
+      });
+      rememberGitBaseline(planned.baseline);
+      setSyncConflict(null);
+      setPlanSaveConflict(null);
+      rememberGitBehind(null, { showToast: false, resetResolved: true });
+      setGitBehindToast(null);
+      return {
+        status: 'switched',
+        branch: branchName,
+        choice: 'use_local',
+        writesGit: false,
+        baseline: planned.baseline,
+      };
+    } catch (err) {
+      return gitOpCatchResult(err, 'Could not switch branch');
+    }
+  };
+
+  /**
    * G5: switch working branch — reload the open assembly from that tip.
-   * Dirty working copy is replaced (PartFeed confirms first when dirty).
+   * A dirty v2 copy whose files differ from the target is previewed first
+   * (`preview: true`) and does not change the branch. Use local retargets
+   * the baseline and keeps the working copy. Use remote loads the target.
+   * Neither writes git. Switch does not open the outbox hold or the
+   * save-conflict dialog. Create and merge call this without `preview`
+   * and still load.
    * v2 opens by assembly id (openV2Assembly). leftover switchVaultBranch
    * opens by folder name and throws UnsupportedVaultLayoutError on v2.
    */
-  const handleSwitchBranch = async (branchName) => {
+  const handleSwitchBranch = async (branchName, { choice, preview = false } = {}) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
@@ -4906,13 +4953,55 @@ const App = () => {
     if (!branchName || branchName === current) {
       return { status: 'same', branch: current };
     }
+    const choiceName = choice === 'use_local' || choice === 'use_remote' ? choice : null;
+    if (choiceName === 'use_local') {
+      if (!isV2PlanSaveDoc(doc)) {
+        return { status: 'error', error: 'Use local is only available on a v2 vault' };
+      }
+      return keepLocalBranch(branchName);
+    }
+    if (preview) {
+      if (isV2PlanSaveDoc(doc) && sourceDirtyRef.current) {
+        try {
+          const live = liveEditorScript(doc);
+          const scripts = { ...partScriptsRef.current };
+          if (live.liveId && typeof live.liveScript === 'string') scripts[live.liveId] = live.liveScript;
+          const found = await previewV2BranchSwitch({
+            adapter: gitAdapterRef.current,
+            repo: gitVaultRef.current?.repo,
+            doc,
+            scripts,
+            targetBranch: branchName,
+            sourceDirty: true,
+          });
+          if (found.conflict) {
+            setSyncConflict(null);
+            setPlanSaveConflict(null);
+            return {
+              status: 'conflict',
+              model: 'branch-switch',
+              code: 'conflict',
+              branch: branchName,
+              fromBranch: current,
+              paths: found.paths,
+              message: BRANCH_SWITCH_CONFLICT_COPY,
+              choices: ['go_back', 'use_local', 'use_remote'],
+              writesGit: false,
+            };
+          }
+        } catch (err) {
+          return gitOpCatchResult(err, 'Could not switch branch');
+        }
+      }
+      return { status: 'ok', branch: branchName, conflict: false, writesGit: false };
+    }
     if (isV2PlanSaveDoc(doc)) {
       const id = doc.id;
       try {
         const opened = await openAssemblyTrackedRef.current({
           id,
           branch: branchName,
-          retry: () => { void handleSwitchBranch(branchName); },
+          retry: () => { void handleSwitchBranch(branchName, { choice: choiceName || undefined }); },
           load: async ({ progress, signal }) => {
             refreshGenRef.current += 1;
             const vault = await ensureGitVault({ create: false });
@@ -4931,7 +5020,7 @@ const App = () => {
               name: loaded.doc?.name,
               total: loaded.doc?.parts?.length || 0,
             });
-            const adopted = await adoptVaultOpening(loaded, vault);
+            const adopted = await adoptVaultOpening(loaded, vault, { surfaceConflict: false });
             if (!signal()) return null;
             await scheduleLastCommitFromApp({
               adapter: git,
@@ -4948,7 +5037,8 @@ const App = () => {
             });
             rememberGitBehind(null, { showToast: false, resetResolved: true });
             setGitBehindToast(null);
-            void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
+            setSyncConflict(null);
+            setPlanSaveConflict(null);
             const saved = adopted.saved;
             const keep = historyKeepKeys(saved.parts);
             for (const key of Object.keys(partHistoriesRef.current)) {
@@ -4970,7 +5060,7 @@ const App = () => {
       const opened = await openAssemblyTrackedRef.current({
         folder: name,
         branch: branchName,
-        retry: () => { void handleSwitchBranch(branchName); },
+        retry: () => { void handleSwitchBranch(branchName, { choice: choiceName || undefined }); },
         load: async ({ progress, signal }) => {
           refreshGenRef.current += 1;
           const vault = await ensureGitVault({ create: false });
@@ -4985,12 +5075,13 @@ const App = () => {
             },
           );
           if (!signal()) return null;
-          const adopted = await adoptVaultOpening(loaded, vault);
+          const adopted = await adoptVaultOpening(loaded, vault, { surfaceConflict: false });
           if (!signal()) return null;
           const saved = adopted.saved;
           rememberGitBehind(null, { showToast: false, resetResolved: true });
           setGitBehindToast(null);
-          void checkGitRemoteBehind({ showToast: true, reason: 'branch-switch' });
+          setSyncConflict(null);
+          setPlanSaveConflict(null);
           const keep = historyKeepKeys(saved.parts);
           for (const key of Object.keys(partHistoriesRef.current)) {
             if (key !== '__game__' && !keep.has(key)) delete partHistoriesRef.current[key];
@@ -11022,6 +11113,7 @@ const App = () => {
       || compared.assemblyDirty === true
       || compared.pendingSave === true;
   }
+  sourceDirtyRef.current = !!sourceDirty;
   const behindMarkers = (
     assemblyDoc?.source === 'git' && gitBehind
   ) ? remainingBehindMarkers(gitBehind, gitBehindResolved) : { assemblyBehind: false, partIds: [], any: false };
@@ -12009,22 +12101,43 @@ const App = () => {
       if (!branchName) return { status: 'error', error: 'Branch name required' };
       return handleCreateBranch(branchName);
     },
-    async agentGitBranchSwitch({ branch, confirm }) {
+    async agentGitBranchSwitch({ branch, confirm, choice }) {
       const target = String(branch || '').trim();
       if (!target) return { status: 'error', error: 'Branch required' };
-      // Already on this branch: no reload, nothing discarded — confirm is
-      // only for a dirty *switch* that would replace the working copy.
-      if (target === gitWorkingBranch()) {
-        return handleSwitchBranch(target);
+      const picked = choice === 'use_local' || choice === 'use_remote' ? choice : null;
+      if (choice != null && choice !== '' && !picked) {
+        return {
+          status: 'error',
+          code: 'bad_args',
+          error: 'git_branch_switch choice must be use_local or use_remote',
+        };
       }
-      if (sourceDirty && confirm !== true) {
+      if (picked && confirm !== true) {
         return {
           status: 'error',
           code: 'confirm_required',
-          error: 'git_branch_switch requires confirm: true while the working copy has uncommitted changes',
+          error: 'git_branch_switch requires confirm: true for use_local and use_remote',
         };
       }
-      return handleSwitchBranch(target);
+      // Already on this branch: no reload, nothing discarded — confirm is
+      // only for a dirty *switch* that would replace the working copy.
+      if (target === gitWorkingBranch() && !picked) {
+        return handleSwitchBranch(target);
+      }
+      // A file conflict is its own result. confirm: true does not pick
+      // Use remote. Go back is not a tool.
+      if (!picked && sourceDirty && target !== gitWorkingBranch()) {
+        const found = await handleSwitchBranch(target, { preview: true });
+        if (found?.status === 'conflict' && found?.model === 'branch-switch') return found;
+        if (confirm !== true) {
+          return {
+            status: 'error',
+            code: 'confirm_required',
+            error: 'git_branch_switch requires confirm: true while the working copy has uncommitted changes',
+          };
+        }
+      }
+      return handleSwitchBranch(target, picked ? { choice: picked } : {});
     },
     async agentGitBranchDelete({ branch }) {
       const target = String(branch || '').trim();
@@ -12756,6 +12869,7 @@ const App = () => {
       currentBranch={assemblyDoc?.source === 'git' ? (gitBaseline?.branch || 'main') : ''}
       onListBranches={handleListBranches}
       onSwitchBranch={handleSwitchBranch}
+      defaultBranch={gitVaultRef.current?.defaultBranch || 'main'}
       onCreateBranch={handleCreateBranch}
       onDeleteBranch={handleDeleteBranch}
       onMergeBranch={handleMergeBranch}
