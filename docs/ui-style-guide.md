@@ -159,6 +159,18 @@ while focused on a touch device, `featureSheetEditLift` plus `useModalViewport`
 (the feature-card keyboard lift) so the field stays on screen. Camera and Send
 are at least 44px on the row under the field.
 
+**Phone agent chat tail.** On a phone the open agent chat is one speech
+bubble. A small obtuse triangle (`data-agent-prompt-tail`) sits on the
+bottom edge and points down at the horizontal centre of the stage pill's
+Bot button (`data-agent-chat-open`). The tip stops a few pixels short of
+the button so the bubble reads as floating. The outline is a single path
+around the box and the tail: `surface-glass` fills both, and the stroke
+is `--agent-prompt-border`. There is no hairline across the tail base.
+The tail's horizontal place is measured from that button, including after
+a resize, a rotation, and when the keyboard lifts the field. Desktop has
+no tail. Those are the same tokens in light and dark. Do not paint the
+tail with its own hex or a Tailwind colour utility.
+
 **Focused fields and selects.** A focused text field or select stays
 readable, and iOS Safari does not zoom the page.
 
@@ -446,47 +458,66 @@ Errors use this same glass card. They are not a blue rounded pill.
 - **`ErrorPopup.jsx`** — `rounded-lg`, `surface-glass-chip`, and a tinted border
   (`border-red-400/70`, `border-amber-400/70`, or `border-cyan-400/70`).
 - Undo stays on the card when there is history to pop.
-- Notice toasts (repo saved, upload notice) are the same
-  card at one width: wrapper `w-[calc(100%-1.5rem)] max-w-md`, card
-  `px-4 py-2`. They never shrink to the text.
+- Notice toasts (repo saved, upload notice) are the same card at one width:
+  wrapper `w-[calc(100%-1.5rem)] max-w-md`. They never shrink to the text.
+  Padding comes from the Toasts section, not from the call site.
 - Soft-fail toasts are portaled at `fixed top-16 left-1/2 z-50` so they sit
   above the feature strip and the left rail.
 - The execution-error toast is one card for every message: `fixed top-16
   inset-x-3 z-50` (most of the viewport width, the same card on desktop). It
-  does not shrink to the text. The first line is the word `Error`, left
-  justified, with Undo and the dismiss X right justified and a wider gap
-  between those two controls. The description is the second line.
+  does not shrink to the text. The first line is the word `Error`, and the
+  description wraps below it. That first line follows the Toasts section.
 
-### Toast padding, height, and hit area
+### Toasts
 
-Inline toasts share one card (`ErrorPopup`). The default inset is
-`--toast-pad` (4px) on every side, from `toast-card` in `src/index.css`.
-The message sits in from the left edge and is vertically centred with the
-actions. A caller that passes its own padding keeps it: notice cards use
-`px-4 py-2`, soft-fail cards use `px-3 py-2`, the roomy delete card uses
-`py-0`, and the stacked execution card uses `p-3`. Those utilities win
-over `toast-card`.
+This is the standard for every new toast. Use `ErrorPopup` and the shared
+classes (`toast-card`, `toast-action`, `toast-first-row`). Do not pass
+padding utilities (`px-*`, `py-*`, `p-*`) on a toast. Colours come from the
+existing `ErrorPopup` tones (`error`, `scrap`, `warn`, `amber`, `success`,
+`cyan`, `banner`): a tinted `bg-*-950/80` border and light text. Do not add
+a toast colour.
 
-Disconnect, Reconnect, Undo, and the dismiss X use that same inset, so the
-gap from the controls to the top, right, and bottom edges of the card is
-even. The default gap between those controls is `gap-1` (4px), the same
-as `--toast-pad`. The roomy card keeps `gap-4`. The stacked card keeps
-`gap-5`.
+The numbers are the rendered Deleted card (`roomy`), locked as tokens on
+`:root` in `src/index.css`. The rules are unlayered so a utility cannot
+override them.
 
-The agent session card (Agent connected / Agent disconnected) is one text
-line plus that inset and the 1px border: about half the previous card,
-which grew to the 44px `min-h` on Disconnect and Reconnect. The visual
-control stays inside the shorter card (`toast-action` and the dismiss
-box are 16px).
+Single-line card:
 
-The hit target stays 44×44 (`--toast-hit`). A `::before` on each action
+- Height is **40px** (`--toast-height`), including the 1px border. The
+  message is vertically centred.
+- Text left inset is **12px** (`--toast-inset-x`). Vertical padding is 0;
+  the row is centred in the 40px card.
+- The message fills the leftover width. The minimum gap from the message
+  to the action group is **8px** (`--toast-text-gap`). A shorter string
+  leaves more space in front of the pill. The X does not slide left when
+  there is no pill: its right inset stays 12px.
+- The action pill (Undo, Disconnect, Reconnect) is **16px** tall
+  (`--toast-pill-height`), at least **44px** wide, with **12px** of
+  horizontal padding (`--toast-pill-pad-x`). Undo renders at 56×16.
+- The gap between the pill and the X is **16px** (`--toast-action-gap`).
+- The dismiss control is **44×18px** (`--toast-x-box` by `--toast-x-size`).
+  The icon is 18×18 and centred in that box, so the glyph sits 13px in
+  from each side of the button and **25px** from the card's inner right
+  edge (12px padding + 13px). The button's own right inset is **12px**.
+- Top inset, from the outer top of the card: the 18px X starts at **11px**
+  (10px below the 1px border). The 16px pill starts at **12px**. Both are
+  centred on the row.
+
+Multi-line errors (`layout="stacked"`, for example the title `Error` and
+the body "The script failed.") keep the body. The first row is **38px**
+tall, the 40px card minus the 1px border on each side, and it uses the
+same pill size, the same 16px gap between pill and X, the same 44×18 X,
+the same 12px right inset, and the same top inset. The body wraps below
+that row. The card's bottom padding is 12px, and the card grows with the
+body.
+
+The hit target is **44×44** (`--toast-hit`). A `::before` on each action
 button covers the control and grows to 44px. It is anchored at the
-button's left edge, so a narrow X grows to the right and outside the
-card, not into the neighbouring control. A label that is already wider
-than 44px (Disconnect, Reconnect, Undo) keeps that width and only grows
-the hit taller. The blur lives on `.toast-glass`, a sibling behind the
-words. `surface-glass-chip` clips overflow, so the hit is not a child of
-that layer.
+button's left edge, so a narrow control grows to the right, not into the
+control beside it. A label already wider than 44px keeps that width and
+only grows the hit taller. The blur lives on `.toast-glass`, a sibling
+behind the words. `surface-glass-chip` clips overflow, so the hit is not
+a child of that layer.
 
 ### Placement
 

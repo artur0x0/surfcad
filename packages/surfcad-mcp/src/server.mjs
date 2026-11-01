@@ -22,6 +22,7 @@ import {
 } from './bridge/relayServer.mjs';
 import { RelaySession } from './relay.mjs';
 import { resolveAgentName, resolveServerUrl } from './remote/config.mjs';
+import { handleRemoteStdinEnd, installRemoteProcessExitLogs } from './remote/processExit.mjs';
 import { RemoteSession } from './remote/session.mjs';
 import { readSavedLogin } from './remote/tokenStore.mjs';
 import { waitForPairing } from './pairWait.mjs';
@@ -444,9 +445,9 @@ async function runRemoteMcpServer(options) {
     });
   }
 
+  installRemoteProcessExitLogs();
   const onStdinClosed = () => {
-    remote.disconnect();
-    setTimeout(() => process.exit(0), 0).unref();
+    handleRemoteStdinEnd(remote);
   };
   process.stdin.once('end', onStdinClosed);
 

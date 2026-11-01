@@ -85,11 +85,19 @@
   /* The pane grows to about six lines of reply, then scrolls inside. */
   --agent-prompt-max-reply: min(200px, 40vh);
   --agent-prompt-max-reply-mobile: min(160px, 32vh);
-  /* Shared ErrorPopup inset. A 16px line + this pad on each side + the 1px
-     border is about half the old agent toast (44px button + 1px border
-     each side = 46px). The tap target stays --toast-hit and is not the
-     card height. See docs/ui-style-guide.md. */
-  --toast-pad: 4px;
+  /* Shared toast. Measured from the Deleted card. See the Toasts
+     section of docs/ui-style-guide.md. The 40px height is the one-line
+     row (18px dismiss) plus the 1px border, doubled, with the row
+     centred. Side inset is the text's left inset and the X button's
+     right inset. */
+  --toast-height: 40px;
+  --toast-inset-x: 12px;
+  --toast-text-gap: 8px;
+  --toast-pill-height: 16px;
+  --toast-pill-pad-x: 12px;
+  --toast-action-gap: 16px;
+  --toast-x-size: 18px;
+  --toast-x-box: 44px;
   --toast-hit: 44px;
   --agent-prompt-desktop-bottom: 48px;
   --agent-prompt-mobile-bottom: 56px;
@@ -102,6 +110,86 @@
      those channels are set on the legend from PARTING_ROLE_RGB. */
   --mold-draft-needs-work: 248 113 113; /* #f87171 */
   --mold-draft-hatch: 15 23 42; /* #0f172a */
+}
+
+/* Toast metrics. Unlayered so a caller's px/py/p utilities cannot override
+   them. Colours stay on the tone classes in ErrorPopup. See docs/ui-style-guide.md. */
+.toast-card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: var(--toast-height);
+  padding: 0 var(--toast-inset-x);
+}
+/* Frost + tint sit on a sibling behind the words. surface-glass-chip's
+   backdrop-filter clips overflow to the radius, which would eat a hit
+   target that hangs outside the card. */
+.toast-glass {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+[data-error-popup] [data-error-popup-row],
+[data-error-popup] .toast-first-row {
+  column-gap: var(--toast-text-gap);
+}
+/* First line of a multi-line error: the Deleted card's content box, so the
+   pill and X sit on the same insets. The description follows this row. */
+[data-error-popup][data-error-layout="stacked"] {
+  align-items: stretch;
+  padding-bottom: var(--toast-inset-x);
+}
+[data-error-popup] .toast-first-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  min-height: calc(var(--toast-height) - 2px);
+}
+[data-error-popup] [data-error-actions] {
+  column-gap: var(--toast-action-gap);
+}
+[data-error-popup] [data-error-undo],
+[data-error-popup] .toast-action {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--toast-x-box);
+  height: var(--toast-pill-height);
+  padding: 0 var(--toast-pill-pad-x);
+  border: 0;
+  border-radius: 0.375rem;
+  line-height: var(--toast-pill-height);
+  font-size: 12px;
+}
+[data-error-popup] [data-error-dismiss] {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--toast-x-box);
+  min-width: var(--toast-x-box);
+  height: var(--toast-x-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  line-height: 1;
+}
+/* 44×44 hit. Anchored at the button's left so it grows outward, not into
+   the control beside it. A label already wider than 44px keeps that width. */
+[data-error-popup] [data-error-actions] > button {
+  position: relative;
+}
+[data-error-popup] [data-error-actions] > button::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: max(100%, var(--toast-hit));
+  height: var(--toast-hit);
+  transform: translateY(-50%);
 }
 
 /* html and body share the viewport ground. Safari 26 uses that color
@@ -462,62 +550,6 @@ textarea {
     }
   }
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
-  /* Default inset for ErrorPopup. Utilities (px-4 py-2, roomy py-0, stacked
-     p-3) still win, so those cards keep their own padding. */
-  .toast-card {
-    padding: var(--toast-pad);
-  }
-  /* Frost + tint sit on a sibling behind the words. surface-glass-chip's
-     backdrop-filter clips overflow to the radius, which would eat a hit
-     target that hangs outside the shorter card. */
-  .toast-glass {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    overflow: hidden;
-  }
-  /* Disconnect / Reconnect. 12px type, one-line box. The 44px hit is the
-     ::before below, so the card stays one line tall. */
-  [data-error-popup] .toast-action {
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 1rem;
-    padding: 0 0.5rem;
-    border: 0;
-    border-radius: 0.375rem;
-    line-height: 1rem;
-    font-size: 12px;
-  }
-  /* Dismiss X on the short card. The roomy delete card keeps its own 44px box. */
-  [data-error-popup]:not([data-error-roomy]) [data-error-dismiss] {
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1rem;
-    height: 1rem;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    line-height: 1;
-  }
-  /* 44×44 hit. Anchored at the button's left so a narrow X grows outward,
-     into the card padding and past the card, not into the control beside it.
-     A wide label (Disconnect, Undo) is already ≥44px, so the hit matches it. */
-  [data-error-popup] [data-error-actions] > button {
-    position: relative;
-  }
-  [data-error-popup] [data-error-actions] > button::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 0;
-    width: max(100%, var(--toast-hit));
-    height: var(--toast-hit);
-    transform: translateY(-50%);
-  }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }
   /* Join code on the server-relay Connect Agent screen. 32px is large text. */
@@ -823,6 +855,72 @@ textarea {
   .agent-prompt--compact {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
+  }
+  /* Phone speech bubble. The glass fill is one clipped shape (box + tail)
+     and the stroke is that same path, so the outline does not cross the
+     tail base. Desktop keeps the rectangular border and shadow. */
+  .agent-prompt.agent-prompt--compact {
+    overflow: visible;
+    border: none;
+    background-color: transparent;
+    box-shadow: none;
+  }
+  .agent-prompt-face {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    border-radius: var(--agent-prompt-radius);
+    overflow: hidden;
+  }
+  .agent-prompt-tail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] {
+    visibility: hidden;
+  }
+  .agent-prompt-bubble-shadow,
+  .agent-prompt-bubble-fill {
+    position: absolute;
+    inset: 0;
+  }
+  .agent-prompt-bubble-shadow {
+    z-index: 0;
+    background: rgb(0 0 0 / 0.28);
+    transform: translateY(6px);
+    filter: blur(9px);
+  }
+  .agent-prompt-bubble-fill {
+    z-index: 0;
+  }
+  .agent-prompt-bubble-stroke {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: visible;
+    pointer-events: none;
+    color: rgb(var(--agent-prompt-border));
+  }
+  .agent-prompt-bubble-stroke path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .agent-prompt-tail-tip {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
   }
   .agent-prompt--away {
     transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));

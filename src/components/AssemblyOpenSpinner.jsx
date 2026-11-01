@@ -43,7 +43,6 @@ export function AssemblyOpenFailureToast({ message, onRetry = null, onDismiss = 
       <ErrorPopup
         tone="banner"
         onDismiss={onDismiss}
-        className="px-4 py-2"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <span data-assembly-open-toast-msg="">{message}</span>

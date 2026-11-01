@@ -12943,7 +12943,6 @@ const App = () => {
           <ErrorPopup
             tone="warn"
             onDismiss={() => { if (!repoMovedBusy) setRepoMoved(null); }}
-            className="px-4 py-2"
           >
             <div className="flex flex-col items-start gap-2">
               <span data-repo-moved-msg="">{REPO_MOVED_WARNING}</span>
@@ -12964,7 +12963,6 @@ const App = () => {
           <ErrorPopup
             tone="success"
             onDismiss={() => setRepoSaved(null)}
-            className="px-4 py-2"
           >
             {repoSavedMessage(repoSaved.branch)}
           </ErrorPopup>
@@ -13443,7 +13441,6 @@ const App = () => {
                 onDismiss={() => setGameError(null)}
                 onUndo={handleUndo}
                 canUndo={canUndo()}
-                className="px-4 py-2"
               >
                 {gameError}
               </ErrorPopup>
@@ -13456,7 +13453,6 @@ const App = () => {
                 onDismiss={() => setUploadError(null)}
                 onUndo={handleUndo}
                 canUndo={canUndo()}
-                className="px-4 py-2"
               >
                 Upload Error: {uploadError}
               </ErrorPopup>
@@ -13467,7 +13463,6 @@ const App = () => {
               <ErrorPopup
                 tone="warn"
                 onDismiss={() => setUploadNotice(null)}
-                className="px-4 py-2"
               >
                 {uploadNotice}
               </ErrorPopup>
@@ -13809,7 +13804,6 @@ const App = () => {
                 onDismiss={() => setGameError(null)}
                 onUndo={handleUndo}
                 canUndo={canUndo()}
-                className="px-4 py-2"
               >
                 {gameError}
               </ErrorPopup>
@@ -13822,7 +13816,6 @@ const App = () => {
                 onDismiss={() => setUploadError(null)}
                 onUndo={handleUndo}
                 canUndo={canUndo()}
-                className="px-4 py-2"
               >
                 Upload Error: {uploadError}
               </ErrorPopup>
@@ -13833,7 +13826,6 @@ const App = () => {
               <ErrorPopup
                 tone="warn"
                 onDismiss={() => setUploadNotice(null)}
-                className="px-4 py-2"
               >
                 {uploadNotice}
               </ErrorPopup>
