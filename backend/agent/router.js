@@ -571,6 +571,25 @@ export function createAgentRouter(deps) {
     }
   });
 
+  router.post('/prompts', async (req, res, next) => {
+    try {
+      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
+      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      const bytes = messageByteLength(req.body);
+      if (bytes > deps.maxMessageBytes) {
+        return res.status(413).json({ error: 'Message exceeds the size cap' });
+      }
+      const type = req.body && typeof req.body.type === 'string' ? req.body.type : '';
+      if (!type.startsWith('agent.')) return res.status(400).json({ error: 'bad_call' });
+      deps.registry.forwardToTabs(auth.userId, req.body);
+      await deps.tokens.markUsed(auth);
+      logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
+      return res.status(202).json({ ok: true });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   return router;
 }
 

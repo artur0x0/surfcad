@@ -20,7 +20,7 @@ export function formatBridgeError(err) {
 export function notPairedError() {
   return {
     code: 'not_paired',
-    message: 'Not paired to a SurfCAD tab. Set SURFCAD_PAIRING_CODE or call the pair tool, then click Allow in the app.',
+    message: 'Not paired to a SurfCAD tab. Set SURFCAD_PAIRING_CODE or call the pair tool and click Allow, or run npx surfcad-mcp login --code with the join code.',
     hint: pairingEnvHint(),
   };
 }
@@ -44,7 +44,7 @@ export function pairPendingError() {
 }
 
 export function pairingEnvHint() {
-  return 'Copy the 8-character code from SurfCAD → Local agent → Show pairing code.';
+  return 'Copy the 8-character code from SurfCAD → Local agent → Show pairing code, or run npx surfcad-mcp login --code with the join code.';
 }
 
 export function tabAsleepError() {

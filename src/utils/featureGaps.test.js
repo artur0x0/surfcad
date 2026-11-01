@@ -23,6 +23,19 @@ const SCRIPT = [
   'return part;',
 ].join('\n');
 
+test('featureGapLine emits a long gap and why in full', () => {
+  const gap = `flange lip ${'along the rim '.repeat(20)}`.trim();
+  const why = `the shell helper ${'does not add a lip '.repeat(20)}`.trim();
+  assert.ok(gap.length > 200);
+  assert.ok(why.length > 200);
+  const line = featureGapLine(gap, why);
+  assert.equal(line, `// FEATURE-GAP: ${gap} | ${why}`);
+  assert.equal(line.includes('\n'), false);
+  const rows = parseFeatureGaps(`${line}\nreturn part;`);
+  assert.equal(rows[0].gap, gap);
+  assert.equal(rows[0].why, why);
+});
+
 test('featureGapLine writes the fixed format and keeps it on one line', () => {
   assert.equal(featureGapLine('sweep along 3D path', 'extrude only goes straight'), '// FEATURE-GAP: sweep along 3D path | extrude only goes straight');
   assert.equal(featureGapLine('', ''), '// FEATURE-GAP: unspecified | not stated');

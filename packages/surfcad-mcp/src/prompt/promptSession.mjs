@@ -189,13 +189,43 @@ export function createPromptSession(options) {
     for (const resolve of list) resolve();
   }
 
-  function emit(payload) {
+  function asSendError(err) {
+    const code = err && typeof err === 'object' && typeof err.code === 'string' && err.code
+      ? err.code
+      : 'not_paired';
+    const message = err instanceof Error && err.message ? err.message : 'Not paired';
+    const out = err instanceof Error ? err : new Error(message);
+    if (!out.message) out.message = message;
+    out.code = code;
+    if (err && typeof err === 'object' && typeof err.hint === 'string' && !out.hint) out.hint = err.hint;
+    return out;
+  }
+
+  /**
+   * @param {object} payload
+   * @param {{ required?: boolean }} [opts]
+   * A required send keeps the transport's error (a connected remote session
+   * is not rewritten as not_paired). Advisory sends stay quiet.
+   */
+  function emit(payload, { required = false } = {}) {
+    let result;
     try {
-      send(payload);
-      return true;
-    } catch {
+      result = send(payload);
+    } catch (err) {
+      if (required) throw asSendError(err);
       return false;
     }
+    if (result && typeof result.then === 'function') {
+      const pending = Promise.resolve(result).then(() => true);
+      if (!required) {
+        pending.catch(() => {});
+        return true;
+      }
+      return pending.catch((err) => {
+        throw asSendError(err);
+      });
+    }
+    return true;
   }
 
   function clearIdle() {
@@ -256,8 +286,9 @@ export function createPromptSession(options) {
    * @param {string | null | undefined} id
    * @param {boolean} force
    * @param {string} [label]
+   * @param {boolean} [required]
    */
-  function emitState(state, id, force, label) {
+  function emitState(state, id, force, label, required = false) {
     const next = state !== 'idle';
     if (!force && agentState === state && !stalled) {
       if (next) armIdle();
@@ -269,7 +300,7 @@ export function createPromptSession(options) {
     const msg = { type: PAIR_MSG.AGENT_STATUS, v: 1, working: next, state };
     if (typeof id === 'string' && id) msg.id = id;
     if (typeof label === 'string' && label) msg.label = label.slice(0, 120);
-    const sent = emit(msg);
+    const sent = emit(msg, { required: required === true });
     if (next) armIdle();
     else clearIdle();
     return sent;
@@ -642,22 +673,26 @@ export function createPromptSession(options) {
       text,
       ts: new Date(now()).toISOString(),
       final: isFinal,
-    });
+    }, { required: true });
+    const finish = () => {
+      if (isFinal) {
+        queue = queue.filter((item) => item.kind === 'cancel' || item.id !== inReplyTo);
+        states.set(inReplyTo, 'replied');
+        emitStatus(false, inReplyTo, true);
+      } else if (agentState === 'working') {
+        // Building stays until the final reply. A partial reply only refreshes the stall window.
+        workedEpoch = promptEpoch;
+        noteActivity();
+      } else {
+        // A streamed reply while responding keeps the dots and restarts the window.
+        workedEpoch = promptEpoch;
+        emitState('typing', inReplyTo, false);
+      }
+      return { id: inReplyTo, final: isFinal };
+    };
+    if (sent && typeof sent.then === 'function') return sent.then(finish);
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
-    if (isFinal) {
-      queue = queue.filter((item) => item.kind === 'cancel' || item.id !== inReplyTo);
-      states.set(inReplyTo, 'replied');
-      emitStatus(false, inReplyTo, true);
-    } else if (agentState === 'working') {
-      // Building stays until the final reply. A partial reply only refreshes the stall window.
-      workedEpoch = promptEpoch;
-      noteActivity();
-    } else {
-      // A streamed reply while responding keeps the dots and restarts the window.
-      workedEpoch = promptEpoch;
-      emitState('typing', inReplyTo, false);
-    }
-    return { id: inReplyTo, final: isFinal };
+    return finish();
   }
 
   /**
@@ -691,9 +726,11 @@ export function createPromptSession(options) {
       return { ok: false, error: 'cancelled' };
     }
     workedEpoch = promptEpoch;
-    const sent = emitState(state, id || lastId, true, typeof args.label === 'string' ? args.label : undefined);
+    const sent = emitState(state, id || lastId, true, typeof args.label === 'string' ? args.label : undefined, true);
+    const payload = { working: state !== 'idle', state };
+    if (sent && typeof sent.then === 'function') return sent.then(() => payload);
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
-    return { working: state !== 'idle', state };
+    return payload;
   }
 
   /**

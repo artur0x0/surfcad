@@ -428,6 +428,32 @@ test('clear drops the queue, the webhook, and an in-flight POST', async () => {
   assert.equal(JSON.stringify(sent).includes('secret prompt'), false);
 });
 
+test('set_status keeps a transport error instead of rewriting it as not_paired', async () => {
+  const session = createPromptSession({
+    send() {
+      throw Object.assign(new Error('prompts need the socket'), { code: 'prompts_need_websocket' });
+    },
+  });
+  assert.throws(
+    () => session.setStatus({ state: 'building' }),
+    (err) => err.code === 'prompts_need_websocket' && err.code !== 'not_paired',
+  );
+});
+
+test('set_status waits for an async send and returns the tab state', async () => {
+  const sent = [];
+  const session = createPromptSession({
+    send(payload) {
+      return Promise.resolve().then(() => { sent.push(payload); });
+    },
+  });
+  const result = await session.setStatus({ state: 'building' });
+  assert.deepEqual(result, { working: true, state: 'working' });
+  assert.equal(sent.at(-1).type, 'agent.status');
+  assert.equal(sent.at(-1).state, 'working');
+  assert.equal(sent.at(-1).working, true);
+});
+
 test('a reply without a paired socket is not_paired', async () => {
   const session = createPromptSession({
     send(payload) {
