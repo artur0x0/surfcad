@@ -107,23 +107,14 @@ test('Allow/Deny copy uses shared surface/text classes, not black on dark surfac
   assert.doesNotMatch(SRC, /text-chrome-text-secondary/);
 });
 
-test('popup auto-closes when connected and the toast lives 5 s with an X', () => {
+test('popup auto-closes when connected, with no Agent connected banner or toast', () => {
   assert.match(SRC, /shouldClosePairingDialogOnConnect/);
-  assert.match(SRC, /setToastOpen\(true\)/);
-  assert.match(SRC, /AGENT_CONNECTED_TOAST_MS/);
-  assert.match(SRC, /data-agent-bridge-connected-toast=""/);
-  assert.match(SRC, /AGENT_CONNECTED_TOAST_COPY/);
-  assert.match(SRC, /onDismiss=\{\(\) => setToastOpen\(false\)\}/);
-});
-
-test('connected toast is the shared toast card size: max-w-md wrapper, px-4 py-2 padding, green', () => {
-  const toast = SRC.match(/data-agent-bridge-connected-toast=""[\s\S]*?<\/ErrorPopup>/)?.[0] ?? '';
-  const wrapper = SRC.match(/className="([^"]*)"\s*\n\s*data-agent-bridge-connected-toast=""/)?.[1] ?? '';
-  const wrapperClasses = wrapper.split(/\s+/);
-  assert.ok(wrapperClasses.includes('w-[calc(100%-1.5rem)]'), `wrapper width class missing in "${wrapper}"`);
-  assert.ok(wrapperClasses.includes('max-w-md'), `wrapper max-w-md missing in "${wrapper}"`);
-  assert.match(toast, /tone="success"/);
-  assert.match(toast, /className="px-4 py-2"/);
+  assert.match(SRC, /setFlowOpen\(false\)/);
+  assert.doesNotMatch(SRC, /setToastOpen/);
+  assert.doesNotMatch(SRC, /data-agent-bridge-connected-toast/);
+  assert.doesNotMatch(SRC, /data-agent-connected-banner/);
+  assert.doesNotMatch(SRC, /data-agent-connected-disconnect/);
+  assert.doesNotMatch(SRC, /AGENT_CONNECTED_TOAST/);
 });
 
 test('connection ring is a wrap sibling with a glow, not a rotated child of the glass chip', () => {
@@ -167,14 +158,12 @@ test('Connect agent is an inline plug-icon menu row, not a big emerald button', 
   assert.doesNotMatch(connectBlock, /shadow-md/);
 });
 
-test('the connected banner shell does not take clicks outside the card', () => {
-  const open = SRC.indexOf('data-agent-connected-banner=""');
-  assert.ok(open > 0);
-  const shell = SRC.slice(Math.max(0, open - 220), open);
-  assert.match(shell, /pointer-events-none/);
-  const card = SRC.slice(open, open + 900);
-  assert.match(card, /pointer-events-auto/);
-  assert.match(card, /data-ui-action="data-agent-connected-disconnect"/);
+test('Disconnect stays in the profile menu and the pairing dialog', () => {
+  assert.match(SRC, /<AgentBridgeDisconnectMenuItem onDisconnect=\{disconnectFromUser\} \/>/);
+  assert.match(SRC, /data-ui-action="data-agent-bridge-disconnect"/);
+  assert.match(SRC, /onClick=\{disconnectFromUser\}/);
+  assert.doesNotMatch(SRC, /data-agent-connected-banner/);
+  assert.doesNotMatch(SRC, /data-agent-connected-disconnect/);
 });
 
 test('menu and dialog Disconnect are hidden until the agent is paired', () => {

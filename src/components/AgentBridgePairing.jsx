@@ -38,8 +38,6 @@ import {
 } from '../agent/ws/relayPreference.js';
 import { createServerTabConnection } from '../agent/ws/serverTabConnection.js';
 import {
-  AGENT_CONNECTED_TOAST_COPY,
-  AGENT_CONNECTED_TOAST_MS,
   disposePairingHost,
   isCurrentPairingConnection,
   isRelayTabConnected,
@@ -61,8 +59,7 @@ import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
 import AgentBridgeDisconnectMenuItem from './AgentBridgeDisconnectMenuItem.jsx';
 import AgentBridgePairingDialog from './AgentBridgePairingDialog.jsx';
-import ErrorPopup from './ErrorPopup.jsx';
-import { approvalPopupPortalTarget, approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
+import { approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
 
 /**
  * Local WebSocket pairing for MCP / stdio clients (M1). Shown only when the
@@ -116,7 +113,6 @@ export default function AgentBridgePairing({
   const [link, setLink] = useState(null);
   const [joinLatched, setJoinLatched] = useState(false);
   const [joinId, setJoinId] = useState('');
-  const [toastOpen, setToastOpen] = useState(false);
   const [popupFallback, setPopupFallback] = useState(false);
   const [usingServer, setUsingServer] = useState(false);
   const [serverUnreachable, setServerUnreachable] = useState(false);
@@ -207,7 +203,6 @@ export default function AgentBridgePairing({
       setState('paired');
       setLink('connected');
       setFlowOpen(false);
-      setToastOpen(true);
       if (typeof window !== 'undefined') clearStoredJoin(window.sessionStorage);
       setJoinCode('');
     } else if (dropped) {
@@ -321,7 +316,6 @@ export default function AgentBridgePairing({
     if (!flowOpen) return;
     if (joinLatched || shouldClosePairingDialogOnConnect({ paired: state === 'paired', link })) {
       setFlowOpen(false);
-      setToastOpen(true);
     }
   }, [state, link, flowOpen, joinLatched]);
 
@@ -330,12 +324,6 @@ export default function AgentBridgePairing({
       setFlowOpen(true);
     }
   }, [issue]);
-
-  useEffect(() => {
-    if (!toastOpen) return undefined;
-    const id = setTimeout(() => setToastOpen(false), AGENT_CONNECTED_TOAST_MS);
-    return () => clearTimeout(id);
-  }, [toastOpen]);
 
   const copyText = useCallback(async (text, key) => {
     const ok = await copyTextWithFallback(text);
@@ -993,48 +981,6 @@ export default function AgentBridgePairing({
     <AgentBridgeDisconnectMenuItem onDisconnect={disconnectFromUser} />
   ) : null;
 
-  const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
-  const showConnectedBanner = shouldShowAgentBridgeDisconnect({ paired, link: visibleLink });
-  const bannerPortal = showConnectedBanner && bodyTarget
-    ? createPortal(
-      <div
-        className="pointer-events-none fixed inset-x-0 top-0 z-[145] flex justify-center px-3 py-2"
-        data-agent-connected-banner=""
-        style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top, 0px))' }}
-      >
-        <div className="pointer-events-auto flex w-full max-w-md items-center justify-between gap-3 rounded-md px-3 py-2 surface-success font-ui">
-          <span className="text-ui-sm font-semibold text-on-dark">Agent connected</span>
-          <button
-            type="button"
-            className="rounded-md px-2.5 py-1 text-ui-xs font-ui text-on-dark surface-quiet"
-            onClick={disconnectFromUser}
-            data-ui-action="data-agent-connected-disconnect"
-          >
-            Disconnect
-          </button>
-        </div>
-      </div>,
-      bodyTarget,
-    )
-    : null;
-  const toastPortal = toastOpen && bodyTarget
-    ? createPortal(
-      <div
-        className="fixed top-16 left-1/2 z-[140] w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2"
-        data-agent-bridge-connected-toast=""
-      >
-        <ErrorPopup
-          tone="success"
-          onDismiss={() => setToastOpen(false)}
-          className="px-4 py-2"
-        >
-          {AGENT_CONNECTED_TOAST_COPY}
-        </ErrorPopup>
-      </div>,
-      bodyTarget,
-    )
-    : null;
-
   const serverDialogBody = (
     <div className="space-y-3" data-agent-bridge-server="">
       {joinNotice ? (
@@ -1086,8 +1032,6 @@ export default function AgentBridgePairing({
     return (
       <>
         {dialog}
-        {bannerPortal}
-        {toastPortal}
         {uiTarget ? createPortal(menuBody, uiTarget) : null}
       </>
     );
@@ -1097,8 +1041,6 @@ export default function AgentBridgePairing({
     return (
       <>
         {dialog}
-        {bannerPortal}
-        {toastPortal}
         {menuBody}
       </>
     );
@@ -1107,8 +1049,6 @@ export default function AgentBridgePairing({
   return (
     <>
       {dialog}
-      {bannerPortal}
-      {toastPortal}
       <div
         className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"
         data-agent-bridge-pairing=""

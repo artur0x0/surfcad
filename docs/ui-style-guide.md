@@ -418,10 +418,9 @@ Errors use this same glass card. They are not a blue rounded pill.
 - **`ErrorPopup.jsx`** — `rounded-lg`, `surface-glass-chip`, and a tinted border
   (`border-red-400/70`, `border-amber-400/70`, or `border-cyan-400/70`).
 - Undo stays on the card when there is history to pop.
-- Notice toasts (repo saved, upload notice, **Agent connected**) are the same
+- Notice toasts (repo saved, upload notice) are the same
   card at one width: wrapper `w-[calc(100%-1.5rem)] max-w-md`, card
-  `px-4 py-2`. They never shrink to the text. The Agent connected toast is the
-  green (`success`) tone and dismisses itself after 5 s.
+  `px-4 py-2`. They never shrink to the text.
 - Soft-fail toasts are portaled at `fixed top-16 left-1/2 z-50` so they sit
   above the feature strip and the left rail.
 - The execution-error toast is one card for every message: `fixed top-16

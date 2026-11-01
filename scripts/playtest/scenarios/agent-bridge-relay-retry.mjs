@@ -168,6 +168,35 @@ async function dismissPairingDialog(page) {
   await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'hidden', timeout: 5000 });
 }
 
+async function assertProfileDisconnectVisible(page, { width, height }) {
+  await page.setViewportSize({ width, height });
+  await waitForInnerWidth(page, width);
+  await ensureProfilePanelClosed(page);
+  await page.locator('[data-profile-chip]').filter({ visible: true }).first().click();
+  await page.waitForSelector('[data-ui-action="data-agent-bridge-disconnect"]', {
+    state: 'visible',
+    timeout: 10000,
+  });
+  assert.equal(await page.locator('[data-agent-connected-banner]').count(), 0);
+  assert.equal(await page.locator('[data-agent-bridge-connected-toast]').count(), 0);
+  await ensureProfilePanelClosed(page);
+}
+
+async function disconnectFromProfileMenu(page, { width, height }) {
+  await page.setViewportSize({ width, height });
+  await waitForInnerWidth(page, width);
+  await ensureProfilePanelClosed(page);
+  await page.locator('[data-profile-chip]').filter({ visible: true }).first().click();
+  await page.click('[data-ui-action="data-agent-bridge-disconnect"]');
+  await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', {
+    state: 'hidden',
+    timeout: 10000,
+  });
+  await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
+  assert.equal(await page.locator('[data-agent-connected-banner]').count(), 0);
+  assert.equal(await page.locator('[data-agent-bridge-connected-toast]').count(), 0);
+}
+
 async function assertConnectAgentClosesMenuAt(page, { width, height }) {
   await page.setViewportSize({ width, height });
   await waitForInnerWidth(page, width);
@@ -323,18 +352,13 @@ export async function run(ctx) {
     await peerPromise;
     await session.call('status');
     await page.waitForSelector('[data-agent-bridge-dialog]', { state: 'hidden', timeout: 15000 });
-    await page.waitForSelector('[data-agent-bridge-connected-toast]', { timeout: 15000 });
     await page.waitForSelector('[data-agent-bridge-connection-ring="connected"]', { timeout: 15000 });
     const ringCount = await page.locator('[data-agent-bridge-connection-ring="connected"]').count();
     assert.ok(ringCount >= 1, `expected at least one connected ring, got ${ringCount}`);
-    await shot(page, shotDir, 'pairing-toast-1280.png');
     await shot(page, shotDir, 'pairing-ring-1280.png');
     await page.setViewportSize({ width: 390, height: 844 });
-    await shot(page, shotDir, 'pairing-toast-390.png');
     await shot(page, shotDir, 'pairing-ring-390.png');
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.locator('[data-agent-bridge-connected-toast] [data-error-dismiss]').click();
-    await page.waitForSelector('[data-agent-bridge-connected-toast]', { state: 'hidden', timeout: 5000 });
     await page.waitForFunction(
       /* eslint-disable no-undef */
       () => !document.querySelector('[data-profile-panel]'),
@@ -394,6 +418,8 @@ export async function run(ctx) {
       }
     }
     assert.ok(recovered, 'session.call should succeed after the relay returns');
+    await assertProfileDisconnectVisible(page, { width: 1280, height: 800 });
+    await disconnectFromProfileMenu(page, { width: 390, height: 844 });
   } finally {
     try { session.disconnect(); } catch { /* gone */ }
     await stopMcpRelay(relayProc);

@@ -37,8 +37,8 @@ export function approvalPopupReducer(state, action) {
 }
 
 /**
- * Pairing dialog, Allow/Deny, and the connected toast portal onto document.body
- * so they survive the profile menu closing. The socket stays on AgentBridgeHost.
+ * Pairing dialog and Allow/Deny portal onto document.body so they survive
+ * the profile menu closing. The socket stays on AgentBridgeHost.
  *
  * @param {{ body?: { nodeType?: number } | null } | null | undefined} doc
  */
@@ -60,7 +60,6 @@ export function shouldDismissProfilePanelOnPointer(event, panelEl) {
   if (typeof target.closest === 'function') {
     if (target.closest('[data-agent-bridge-approval]')) return false;
     if (target.closest('[data-agent-bridge-dialog]')) return false;
-    if (target.closest('[data-agent-bridge-connected-toast]')) return false;
     if (target.closest('[data-git-dialog="account"]')) return false;
     if (target.closest('[data-profile-account-pane]')) return false;
   }
