@@ -9,6 +9,7 @@ import { createAgentPromptTransport } from './agentPromptTransport.js';
 import { shouldShowAgentBridgeDisconnect } from './ws/pairingFlow.js';
 import { PAIR_MSG } from './ws/relayMessages.js';
 import { modeFromStatus } from './agentPromptTyping.js';
+import { commandMutates } from './returnMode.js';
 import {
   AGENT_PROMPT_STALL_MS,
   agentPromptStallMinutes,
@@ -50,6 +51,9 @@ export function createLiveAgentPromptTransport(api) {
  * Add `onState(cb)` to a transport: the agent's mode (typing | working |
  * idle) from the status message's `state`, or from the legacy `working`
  * boolean. The adapter itself only forwards the boolean and is not edited.
+ * `onActivity(cb)` carries `agent.activity` frames: the agent's own (an
+ * `id`), and the tab's bridge calls (`hold` true then false, plus
+ * `command` and `mutates` so a model change can drive the session state).
  *
  * @param {{ onReply: Function, onWorking: Function, onAck: Function } | null} transport
  * @param {{ subscribe: Function }} bridge
@@ -74,6 +78,12 @@ export function withAgentState(transport, bridge) {
         const event = { id: typeof msg.id === 'string' ? msg.id : null };
         if (msg.hold === true) event.hold = true;
         else if (msg.hold === false) event.hold = false;
+        // A bridge call the tab is running: the name says whether it
+        // changes the model, which is the session-level working signal.
+        if (typeof msg.command === 'string' && msg.command) {
+          event.command = msg.command;
+          event.mutates = commandMutates(msg.command);
+        }
         for (const cb of [...activityListeners]) {
           try { cb(event); } catch { /* listener threw */ }
         }

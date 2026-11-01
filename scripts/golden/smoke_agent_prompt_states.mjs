@@ -85,6 +85,10 @@ const snapshot = (page) => page.evaluate(() => {
     inputDisabled: !!document.querySelector('[data-agent-prompt-input]')?.disabled,
     inputValue: document.querySelector('[data-agent-prompt-input]')?.value || '',
     stop: !!document.querySelector('[data-agent-prompt-stop]'),
+    sendDisabled: !!document.querySelector('[data-agent-prompt-send]')?.disabled,
+    session: prompt?.getAttribute('data-agent-session-state'),
+    avatarSpinning: document.querySelector('[data-profile-chip-variant="viewport"]')?.getAttribute('data-profile-chip-state') === 'spinning'
+      && document.querySelector('[data-profile-chip-variant="viewport"]')?.getAttribute('data-profile-agent-working') === '1',
     dismissX: !!document.querySelector('[data-agent-prompt-dismiss]'),
     fold: rect('[data-agent-prompt-fold]'),
     unfold: rect('[data-agent-prompt-unfold]'),
@@ -169,6 +173,27 @@ attachConsentPresetToBrowser(browser);
   const after = await snapshot(page);
   check('Stop clears the indicators and goes back to idle', after.state === 'idle' && !after.spinner && !after.dots && !after.stop, JSON.stringify({ state: after.state, spinner: after.spinner, dots: after.dots }));
   check('after Stop the conversation is back', after.pane);
+  await page.close();
+}
+
+// 2b. Working with no prompt (an agent-started build, or a prompt read by an
+// earlier one-shot process): the same collapsed chrome, the avatar spins,
+// and there is nothing to Stop.
+{
+  const { page, errors } = await openState(browser, 'session-working');
+  const s = await snapshot(page);
+  check('session working: session attribute', s.session === 'working', JSON.stringify(s.session));
+  check('session working: state attribute is working', s.state === 'working', JSON.stringify(s.state));
+  check('session working: the chat history collapses', !s.pane && !s.dots, JSON.stringify({ pane: s.pane }));
+  check('session working: the field shows the spinner and "Agent is working"', s.spinner && /Agent is working/.test(s.workingText) && s.inputDisabled, s.workingText);
+  check('session working: no Stop, Send is disabled', !s.stop && s.sendDisabled, JSON.stringify({ stop: s.stop, sendDisabled: s.sendDisabled }));
+  check('session working: the profile avatar is a spinner', s.avatarSpinning);
+  check('session working: the chevron badge shows working when folded', (await (async () => {
+    await page.click('[data-agent-prompt-fold]');
+    await page.waitForTimeout(400);
+    return snapshot(page);
+  })()).badge === 'working');
+  check('session working: no page errors', errors.length === 0, errors.join(' | '));
   await page.close();
 }
 

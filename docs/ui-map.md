@@ -128,6 +128,25 @@ on the first model-changing tool. Listing parts, faces, edges, or transforms,
 working. The final reply, Stop, or disconnect goes to idle. Stop is available
 in both. No activity for 15 minutes in either state shows the stall notice and
 leaves Stop available.
+**Session state (no prompt needed)** (`data-agent-session-state`:
+`working` | `replying` | `idle`, `src/agent/agentSessionState.js`): what the
+paired agent is doing when no prompt from this chat is pending, such as a
+build it started from its MCP host, or a prompt read by an earlier one-shot
+`surfcad-mcp` process. It lives in the tab, so a fresh process per tool call
+keeps nothing and still shows. Inputs: a bridge command this tab runs that
+changes the model (`mutates` in the catalog) enters or refreshes `working`; a
+read never does. `agent.status` (an explicit `set_status`, or the process
+entering building) sets the state at once, with or without a prompt id.
+`agent.progress` is `working`. A final reply or a session note is `idle`; a
+partial reply is `replying`. No activity for 60 s (`AGENT_SESSION_IDLE_MS`)
+returns to `idle`; so do Stop, `close_session`, and disconnect. While the
+session is `working` with no prompt, the prompt shows the same collapsed chrome
+as the working prompt state (chat collapsed, spinner and "Agent is working...",
+field disabled), Send stays but is disabled (there is no prompt to Stop), the
+phone chat hides on that edge, the phone bot button spins, and the profile
+avatar (`data-profile-agent-working="1"`, `data-profile-chip-state="spinning"`)
+is a spinner. `replying` keeps the chat open with the dots. DEV
+`?agentPromptDemo=1&agentPromptState=session-working` pins it.
 **Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
 "Hide agent prompt") hangs from the prompt's bottom edge as a 44 × 28 pill tab,
 centred, drawn behind the prompt (`z-index` 19 under the prompt's 20) with its

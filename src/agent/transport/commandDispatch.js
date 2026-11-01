@@ -14,12 +14,14 @@ import {
  * @param {{
  *   call: (command: string, args: Record<string, unknown>) => Promise<{ ok?: boolean, result?: unknown, error?: { code?: string, message?: string } }>,
  *   send: (message: object) => void,
- *   onActivity?: (activity: { hold: boolean }) => void,
+ *   onActivity?: (activity: { hold: boolean, command: string }) => void,
  * }} opts
  */
 export function dispatchCommand(request, opts) {
   const { call, send, onActivity } = opts;
-  onActivity?.({ hold: true });
+  // The command name rides along so the page can tell a model change
+  // (the agent is working) from a read.
+  onActivity?.({ hold: true, command: request.command });
   return run();
 
   async function run() {
@@ -41,7 +43,7 @@ export function dispatchCommand(request, opts) {
         error: { code: 'internal', message: String(err?.message || err) },
       }));
     } finally {
-      onActivity?.({ hold: false });
+      onActivity?.({ hold: false, command: request.command });
     }
   }
 }
@@ -58,7 +60,7 @@ export function dispatchCommand(request, opts) {
  * }} transport
  * @param {{
  *   call: (command: string, args: Record<string, unknown>) => Promise<{ ok?: boolean, result?: unknown, error?: { code?: string, message?: string } }>,
- *   onActivity?: (activity: { hold: boolean }) => void,
+ *   onActivity?: (activity: { hold: boolean, command: string }) => void,
  * }} opts
  */
 export function attachCommandDispatch(transport, opts) {

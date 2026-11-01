@@ -16,6 +16,16 @@ import {
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { pendingShown, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
+import {
+  AGENT_SESSION_IDLE_MS,
+  sessionBusy,
+  sessionIdleAt,
+  sessionPromptMode,
+  sessionReducer,
+  sessionReplying,
+  sessionSeed,
+  sessionWorking,
+} from '../agent/agentSessionState.js';
 import { createPromptWatch, stepPromptWatch } from '../agent/agentPromptWatch.js';
 import { clearFolded, foldBadge, readFolded, stateAnnouncement, writeFolded } from '../agent/agentPromptFold.js';
 import { conversationReducer, conversationSeed, stickToBottom } from '../agent/agentPromptConversation.js';
@@ -37,7 +47,6 @@ import {
   stepPromptFlight,
 } from '../agent/agentPromptSend.js';
 import {
-  AGENT_PROGRESS_RECENT_MS,
   mobileChatHideReason,
   shouldOpenAgentChatOnConnect,
   shouldShowAgentBridgeDisconnect,
@@ -135,6 +144,10 @@ function demoSeed(state) {
   if (state === 'agent-working') {
     return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, mode: 'working', working: true, shotOn: false, streaming: false };
   }
+  if (state === 'session-working') {
+    // No prompt in flight: the agent is changing the model on its own.
+    return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, working: false, shotOn: false, streaming: false, session: 'working' };
+  }
   if (state === 'folded') {
     return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, working: false, shotOn: false, streaming: false, folded: true };
   }
@@ -229,11 +242,31 @@ export default function PromptInput({
     setTyping(next);
   }, []);
   dispatchTypingRef.current = dispatchTyping;
+  // Session-level state: what the agent is doing with or without a prompt
+  // (agentSessionState.js). Fed by the tab's own bridge calls, the agent's
+  // status and progress frames, and one idle timer. It lives in the tab, so
+  // a fresh MCP process per tool call and an agent-started build both show.
+  const [session, setSession] = useState(() => sessionSeed(seed.session));
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const dispatchSession = useCallback((event) => {
+    const next = sessionReducer(sessionRef.current, { at: Date.now(), ...event });
+    if (next === sessionRef.current) return;
+    sessionRef.current = next;
+    setSession(next);
+  }, []);
   // Two agent states: typing keeps the chat open with the dots; working
   // collapses the chat and shows the spinner in the field.
   const mode = typing.mode;
-  const working = workingShown(typing);
   const pending = pendingShown(typing);
+  // With no prompt in flight the session state drives the same chrome:
+  // working collapses the chat and disables the field (nothing to Stop),
+  // replying shows the dots.
+  const sessionOnly = !pending && sessionBusy(session);
+  const sessionWorks = sessionOnly && sessionWorking(session);
+  const sessionReplies = sessionOnly && sessionReplying(session);
+  const effectiveMode = pending ? mode : sessionPromptMode(session);
+  const working = workingShown(typing) || sessionWorks;
   // Folded (desktop): the prompt slides away and a chevron at the bottom
   // brings it back as it was. Remembered per agent session.
   const foldable = !isMobile;
@@ -315,15 +348,17 @@ export default function PromptInput({
       onReply(msg) {
         if (!msg || typeof msg !== 'object') return;
         const text = typeof msg.text === 'string' ? msg.text : '';
-        const session = msg.session === true;
-        dispatchChat({ type: 'reply', id: session ? undefined : msg.id, text, session });
-        if (session) {
+        const note = msg.session === true;
+        dispatchChat({ type: 'reply', id: note ? undefined : msg.id, text, session: note });
+        if (note) {
+          dispatchSession({ type: 'reply' });
           if (foldedRef.current) setUnread(true);
           setAnnounce('Agent replied');
           return;
         }
         // A reply is activity. A final one closes; a partial one restarts the deadline.
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
+        dispatchSession({ type: 'reply', final: msg.final === true });
         if (msg.final === true) {
           if (foldedRef.current) setUnread(true);
           setAnnounce('Agent replied');
@@ -335,6 +370,9 @@ export default function PromptInput({
           onState(event) {
             if (event?.stalled) dispatchTyping({ type: 'stall' });
             else dispatchTyping({ type: 'state', state: event?.mode });
+            // With or without a prompt id: an explicit set_status, or the
+            // process entering building on a model change, is the session state.
+            if (!event?.stalled) dispatchSession({ type: 'status', state: event?.mode });
           },
         }
         : {
@@ -364,9 +402,12 @@ export default function PromptInput({
         if (event?.hold === true) dispatchTyping({ type: 'hold', on: true });
         else if (event?.hold === false) dispatchTyping({ type: 'hold', on: false });
         else dispatchTyping({ type: 'activity' });
+        // A bridge call this tab is running that changes the model: the
+        // agent is working, prompt or not. A read is not a state change.
+        if (event?.hold === true && event.mutates === true) dispatchSession({ type: 'command', mutates: true });
       },
     });
-  }, [applyPromptEffect, commitFlight, dispatchTyping, transport, visible]);
+  }, [applyPromptEffect, commitFlight, dispatchSession, dispatchTyping, transport, visible]);
 
   useEffect(() => {
     const open = shouldOpenAgentChatOnConnect(wasLiveRef.current, liveSession);
@@ -387,11 +428,12 @@ export default function PromptInput({
 
   useEffect(() => {
     if (!agentGone) return undefined;
+    dispatchSession({ type: 'closed' });
     setAck({ delivery: 'failed', error: 'not_paired' });
     setFolded(false);
     setFoldSettled(false);
     return undefined;
-  }, [agentGone]);
+  }, [agentGone, dispatchSession]);
 
   useEffect(() => {
     if (!visible || agentGone) return undefined;
@@ -408,6 +450,7 @@ export default function PromptInput({
     // collapse flicker. Wait until a session was actually on screen.
     if (holding || agentGone || !sawLiveRef.current) return undefined;
     dispatchTyping({ type: 'disconnect' });
+    dispatchSession({ type: 'disconnect' });
     dispatchChat({ type: 'disconnect' });
     setAck(null);
     commitFlight(stepPromptFlight(flightRef.current, { type: 'disconnect' }).flight);
@@ -417,34 +460,42 @@ export default function PromptInput({
     setFoldSettled(false);
     setUnread(false);
     return undefined;
-  }, [agentGone, commitFlight, dispatchTyping, holding, visible]);
+  }, [agentGone, commitFlight, dispatchSession, dispatchTyping, holding, visible]);
 
-  // A progress frame keeps the spinner briefly after it arrives. The text
-  // on that frame is never read.
-  const [progressUntil, setProgressUntil] = useState(0);
-  const progressRecent = progressUntil > Date.now();
+  // A progress frame is the working signal. The text on that frame is never read.
   useEffect(() => {
     if (typeof transport?.onProgress !== 'function') return undefined;
     return transport.onProgress(() => {
-      setProgressUntil(Date.now() + AGENT_PROGRESS_RECENT_MS);
+      dispatchSession({ type: 'progress' });
       if (mobileChatHideReason({ isMobile, progressEdge: true })) closeAgentChat?.();
     });
-  }, [closeAgentChat, isMobile, transport]);
+  }, [closeAgentChat, dispatchSession, isMobile, transport]);
+  // One timer for the session window: no activity for AGENT_SESSION_IDLE_MS is idle.
   useEffect(() => {
-    if (!(progressUntil > Date.now())) return undefined;
-    const timer = setTimeout(() => setProgressUntil(0), progressUntil - Date.now());
+    const due = sessionIdleAt(session, AGENT_SESSION_IDLE_MS);
+    if (due == null) return undefined;
+    const timer = setTimeout(() => dispatchSession({ type: 'tick' }), Math.max(0, due - Date.now()));
     return () => clearTimeout(timer);
-  }, [progressUntil]);
+  }, [dispatchSession, session]);
   const wasPendingRef = useRef(false);
   useEffect(() => {
     const started = pending === true && wasPendingRef.current !== true;
     wasPendingRef.current = pending === true;
     if (mobileChatHideReason({ isMobile, promptStarted: started })) closeAgentChat?.();
   }, [closeAgentChat, isMobile, pending]);
+  // The phone chat also hides when the session enters working: the agent
+  // started changing the model, prompt or not.
+  const wasSessionWorkingRef = useRef(false);
+  useEffect(() => {
+    const on = sessionWorking(session);
+    const started = on && !wasSessionWorkingRef.current;
+    wasSessionWorkingRef.current = on;
+    if (mobileChatHideReason({ isMobile, workingEdge: started })) closeAgentChat?.();
+  }, [closeAgentChat, isMobile, session]);
 
   // Agent-owned feature cards stay closed for the whole run, in either mode.
-  // Progress without a prompt uses the same spinner as a prompt in flight.
-  const agentBusy = pending || progressRecent;
+  // A busy session without a prompt uses the same spinner as a prompt in flight.
+  const agentBusy = pending || sessionBusy(session);
   useEffect(() => {
     setAgentPromptWorking(agentBusy);
     return () => {
@@ -478,11 +529,11 @@ export default function PromptInput({
       setAnnounce(agentPromptStallCopy());
       return undefined;
     }
-    const text = stateAnnouncement(mode);
+    const text = stateAnnouncement(effectiveMode);
     if (text) setAnnounce(text);
-    else if (mode === 'idle') setAnnounce((prev) => (prev === 'Agent replied' ? prev : ''));
+    else if (effectiveMode === 'idle') setAnnounce((prev) => (prev === 'Agent replied' ? prev : ''));
     return undefined;
-  }, [mode, typing.stalled]);
+  }, [effectiveMode, typing.stalled]);
 
   const foldPrompt = useCallback(() => {
     if (!foldable) return { ok: false, reason: 'not_foldable' };
@@ -616,9 +667,10 @@ export default function PromptInput({
     if (typeof transport?.cancel === 'function') void transport.cancel(id);
     setAgentPromptWorking(false);
     dispatchTyping({ type: 'stop' });
+    dispatchSession({ type: 'stop' });
     setAnnounce('');
     return { ok: true };
-  }, [dispatchTyping, transport]);
+  }, [dispatchSession, dispatchTyping, transport]);
 
   // Dismiss: on desktop it folds the prompt (the history stays); on mobile,
   // where the fold has not landed, it hides the pane as before.
@@ -681,7 +733,7 @@ export default function PromptInput({
     });
   }, [dismissReply, foldPrompt, sendText, stopAgent, toggleShot, unfoldPrompt, visible]);
 
-  const responding = typingShown(typing);
+  const responding = typingShown(typing) || sessionReplies;
   // Working collapses the chat so the viewport is visible; typing keeps it.
   const showReply = shown && !working && (responding || (!chat.hidden && chat.messages.length > 0));
   const lastKey = chat.messages.length ? chat.messages[chat.messages.length - 1].key : '';
@@ -754,7 +806,7 @@ export default function PromptInput({
     }
   };
 
-  const badge = foldBadge({ mode, unread });
+  const badge = foldBadge({ mode: effectiveMode, unread });
   const hiddenAway = featurePopupOpen || folded;
 
   return (
@@ -768,7 +820,8 @@ export default function PromptInput({
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}
-      data-agent-prompt-state={pending ? mode : 'idle'}
+      data-agent-prompt-state={effectiveMode}
+      data-agent-session-state={session.mode}
       data-agent-prompt-folded={folded ? '1' : '0'}
       data-agent-prompt-shot={shotCue ? '1' : '0'}
       data-agent-prompt-away={featurePopupOpen ? '1' : '0'}
@@ -976,7 +1029,7 @@ export default function PromptInput({
               data-ui-action="data-agent-prompt-send"
               data-agent-prompt-send=""
               aria-label="Send"
-              disabled={overLimit}
+              disabled={overLimit || sessionWorks}
             >
               <Send size={18} aria-hidden />
             </button>
@@ -992,7 +1045,7 @@ export default function PromptInput({
         onClick={foldPrompt}
         data-ui-action="data-agent-prompt-fold"
         data-agent-prompt-fold=""
-        data-agent-prompt-state={pending ? mode : 'idle'}
+        data-agent-prompt-state={effectiveMode}
         aria-label="Hide agent prompt"
         tabIndex={featurePopupOpen || folded ? -1 : 0}
         aria-hidden={featurePopupOpen || folded ? true : undefined}
@@ -1008,7 +1061,7 @@ export default function PromptInput({
         data-ui-action="data-agent-prompt-unfold"
         data-agent-prompt-unfold=""
         data-agent-prompt-badge={badge}
-        data-agent-prompt-state={pending ? mode : 'idle'}
+        data-agent-prompt-state={effectiveMode}
         aria-label={badge === 'unread' ? 'Show agent prompt, new reply' : (badge ? `Show agent prompt, agent is ${badge}` : 'Show agent prompt')}
       >
         <ChevronUp size={16} aria-hidden />

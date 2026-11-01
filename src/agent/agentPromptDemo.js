@@ -23,6 +23,9 @@ export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'agent-working',
   'folded',
   'session-note',
+  // The agent is changing the model with no prompt in flight (an
+  // agent-started build, or a prompt read by an earlier one-shot process).
+  'session-working',
 ]);
 
 export const AGENT_PROMPT_TYPED = [
