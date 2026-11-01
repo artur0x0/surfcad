@@ -261,3 +261,17 @@ test('export and a boolean see the moved solid', async () => {
   });
   assert.equal(decision.action, 'rebuild');
 });
+
+test('dropping a move on a multi-body part keeps every centroid', () => {
+  const mesh = fakeMesh();
+  const previous = runOf(moveScript(5), mesh, {
+    bodyCentroids: [[5, 0, 0], [45, 0, 0]],
+    bodyCount: 2,
+    baseCentroid: [0, 0, 0],
+  });
+  const dropped = decideMeshShip({ script: cubeScript(), previous });
+  assert.equal(dropped.action, 'rigid');
+  assert.equal(dropped.reason, 'identity');
+  assert.equal(dropped.bodyCount, 2);
+  assert.deepEqual(dropped.bodyCentroids, [[5, 0, 0], [45, 0, 0]]);
+});

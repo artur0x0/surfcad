@@ -186,7 +186,7 @@ import { listV2Assemblies, openV2Assembly, overlayWorkingCopyBrowseNames, PART_U
 import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { readSurfName } from './utils/git/surfId';
-import { createdPartFromDocs } from './agent/state/createPart.js';
+import { commitPartCreate, createPartQueue, createdPartFromDocs, partCreateKey } from './agent/state/createPart.js';
 import { finishedRunBodyCount } from './agent/state/runBodyCount.js';
 import { buildToasts } from './agent/state/toasts';
 import {
@@ -565,6 +565,7 @@ const App = () => {
   };
   /** Overlapping agent create_assembly calls join this promise (§3.6). */
   const createAssemblyInFlightRef = useRef(null);
+  const partCreateQueueRef = useRef(null);
   /** Re-key persist pairs: autosave writes both `from` and `to` while in flight. */
   const persistFlightPairsRef = useRef([]);
   const persistFlightToOnlyRef = useRef(false);
@@ -7906,47 +7907,39 @@ const App = () => {
   };
 
   const handleAddPart = async (partName, opts = {}) => {
+    if (!partCreateQueueRef.current) partCreateQueueRef.current = createPartQueue();
+    return partCreateQueueRef.current(partCreateKey(partName, opts?.script), async () => {
     const doc = assemblyRef.current;
-    if (!doc) return;
-    const live = codeEditorRef.current?.getContent?.();
-    const prev = doc.activeId;
-    const scripts = { ...partScriptsRef.current };
-    if (prev && !suppressPartSaveRef.current && typeof live === 'string') {
-      scripts[prev] = live;
-      savePartScript(prev, live);
-      stashPartHistory(prev, live);
-    }
-    let id;
-    let name;
-    const rawName = String(partName ?? '').trim();
-    id = mintSurfId();
-    const takenNames = (doc.parts || []).map((part) => part.name);
-    name = rawName
-      ? nextNumberedName(rawName, takenNames, { bareFirst: true })
-      : nextNumberedName('Part', takenNames);
+    if (!doc) return null;
     const order = doc.parts.length;
     const rowPosition = newPartRowPosition(order, {
       fromAgent: opts.fromAgent,
       position: opts.position,
     });
+    const id = mintSurfId();
     let starter = typeof opts?.script === 'string' && opts.script.trim()
       ? wrapRawScript(opts.script)
       : newPartStarterScript();
-    let surfId = null;
-    if (doc.source === 'git') {
-      surfId = id;
-      starter = withSurfId(starter, surfId);
+    if (doc.source === 'git') starter = withSurfId(starter, id);
+    const planned = commitPartCreate({
+      doc,
+      scripts: partScriptsRef.current,
+      editorText: codeEditorRef.current?.getContent?.(),
+      flushEditor: !suppressPartSaveRef.current,
+    }, partName, { ...opts, rowPosition, id, starter }, {
+      mintId: mintSurfId,
+      nextNumberedName,
+      wrapRawScript,
+      starterScript: newPartStarterScript,
+      withSurfId,
+    });
+    if (!planned?.part) return null;
+    const { part, scripts, doc: nextDoc } = planned;
+    const prev = doc.activeId;
+    if (prev && scripts[prev] !== partScriptsRef.current?.[prev] && !suppressPartSaveRef.current) {
+      savePartScript(prev, scripts[prev]);
+      stashPartHistory(prev, scripts[prev]);
     }
-    const part = {
-      id,
-      name,
-      visible: true,
-      order,
-      ...(rowPosition != null ? { position: rowPosition } : {}),
-      ...(surfId ? { surfId, isSynced: false } : {}),
-    };
-    scripts[id] = starter;
-    const nextDoc = { ...doc, activeId: id, parts: [...doc.parts, part] };
     const applyNewPart = async (appliedDoc, appliedScripts) => {
       rememberScripts(appliedScripts);
       partSaveEpochRef.current += 1;
@@ -7960,7 +7953,8 @@ const App = () => {
       codeEditorRef.current?.loadContent(appliedScripts[row.id] ?? starter, row.name, false);
       saveEditorDraft({ script: appliedScripts[row.id] ?? starter, filename: row.name, partId: row.id });
     };
-    setPendingPartIds((prev) => new Set(prev).add(id));
+    setPendingPartIds((prevIds) => new Set(prevIds).add(id));
+    let created = part;
     try {
       await applyNewPart(nextDoc, scripts);
       await savePartScript(id, starter, doc.source === 'git' ? { isSynced: false } : {});
@@ -7973,13 +7967,16 @@ const App = () => {
       }
       try { await deletePartScript(id); } catch { /* ignore */ }
       setUploadError(err?.message || 'Could not create part');
+      created = null;
     } finally {
-      setPendingPartIds((prev) => {
-        const next = new Set(prev);
+      setPendingPartIds((prevIds) => {
+        const next = new Set(prevIds);
         next.delete(id);
         return next;
       });
     }
+    return created;
+    });
   };
 
   const handlePreviewDeletePart = async (partId) => {
@@ -11527,7 +11524,7 @@ const App = () => {
       }
       // Agent parts stay path-less in a git assembly: git_save (behind the
       // write consent) paths and commits them with the assembly.
-      await handleAddPart(name, { script, deferVault: true, fromAgent: true, position });
+      const createdRow = await handleAddPart(name, { script, deferVault: true, fromAgent: true, position });
       // handleAddPart schedules a deferred auto-run. The new part's script,
       // blank starter included, must finish before this call returns, so
       // drop that timer and run it here: a part create_part returns is never
@@ -11535,7 +11532,9 @@ const App = () => {
       refreshGenRef.current += 1;
       await ensureLocalSurfIds();
       const after = assemblyRef.current;
-      const created = createdPartFromDocs(before, after);
+      const created = (createdRow?.id && after?.parts?.some((row) => row.id === createdRow.id))
+        ? (after.parts.find((row) => row.id === createdRow.id) || createdRow)
+        : createdPartFromDocs(before, after);
       if (!created) {
         return { error: { code: 'internal', message: 'Could not create part' } };
       }

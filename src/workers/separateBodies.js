@@ -20,6 +20,12 @@
  * A receiver that is one body, or whose bodies do not overlap, takes the
  * original method untouched, so every single-body script is bit-identical.
  *
+ * A closed shell decomposes into the filled outer hull plus a negative-volume
+ * cavity. That cavity is the inner shell of the void, not a second body.
+ * `logicalBodies` keeps it with the solid whose box contains it, so a merge-on
+ * add and `booleanBodies` boolean the whole voided solid. Union of the filled
+ * hull alone would fill the cavity.
+ *
  * Installed once on the embind prototype (Manifold.prototype is a wrapper).
  *
  * Run table. The kernel's decompose() hands every component the parent's
@@ -210,19 +216,41 @@ function rawDecomposeOf(m) {
   return (proto && typeof proto.__rawDecompose === 'function') ? proto.__rawDecompose : m.decompose;
 }
 
-function componentCount(m) {
-  let parts = null;
-  try { parts = rawDecomposeOf(m).call(m); } catch (_) { return 1; }
-  const n = Array.isArray(parts) ? parts.length : 1;
-  if (Array.isArray(parts)) for (const p of parts) if (p !== m) del(p);
-  return n;
+function volumeOf(m) {
+  try {
+    const v = m.volume();
+    return Number.isFinite(v) ? v : 0;
+  } catch (_) {
+    return 0;
+  }
+}
+
+/** Below this, a component is the inner shell of a void, not a solid. */
+const CAVITY_VOLUME = -1e-6;
+
+function boxCenter(box) {
+  return [
+    (box.min[0] + box.max[0]) / 2,
+    (box.min[1] + box.max[1]) / 2,
+    (box.min[2] + box.max[2]) / 2,
+  ];
+}
+
+function pointInBox(point, box, eps = 1e-4) {
+  for (let k = 0; k < 3; k++) {
+    if (point[k] < box.min[k] - eps || point[k] > box.max[k] + eps) return false;
+  }
+  return true;
 }
 
 /**
- * Bodies of `m` when at least two of them overlap; otherwise null (and the
- * decompose copies are freed).
+ * Logical solids of `m`. A negative-volume component is the inner shell of a
+ * void and stays with the positive solid whose box contains its center
+ * (else the largest solid). Returns null when `m` is already one logical
+ * body — one solid, or one solid plus its cavities — and frees the decompose
+ * copies so the caller keeps `m` unchanged. Otherwise one manifold per solid.
  */
-export function overlappingBodies(m, module) {
+export function logicalBodies(m, module) {
   if (!m || typeof m.decompose !== 'function') return null;
   let parts = null;
   try { parts = rawDecomposeOf(m).call(m); } catch (_) { return null; }
@@ -230,18 +258,74 @@ export function overlappingBodies(m, module) {
     if (Array.isArray(parts)) for (const p of parts) if (p !== m) del(p);
     return null;
   }
-  const boxes = parts.map(boxOf);
+  const positives = [];
+  const cavities = [];
+  for (const p of parts) {
+    if (volumeOf(p) < CAVITY_VOLUME) cavities.push(p);
+    else positives.push(p);
+  }
+  if (positives.length <= 1) {
+    for (const p of parts) if (p !== m) del(p);
+    return null;
+  }
+  const Manifold = module && module.Manifold;
+  const boxes = positives.map(boxOf);
+  const vols = positives.map(volumeOf);
+  const groups = positives.map((solid) => [solid]);
+  for (const cavity of cavities) {
+    let center = [0, 0, 0];
+    try { center = boxCenter(boxOf(cavity)); } catch (_) { /* origin */ }
+    let owner = -1;
+    for (let i = 0; i < boxes.length; i++) {
+      if (!pointInBox(center, boxes[i])) continue;
+      if (owner < 0 || vols[i] < vols[owner]) owner = i;
+    }
+    if (owner < 0) {
+      owner = 0;
+      for (let i = 1; i < vols.length; i++) if (vols[i] > vols[owner]) owner = i;
+    }
+    groups[owner].push(cavity);
+  }
+  const bodies = [];
+  for (const group of groups) {
+    let body = group[0];
+    if (group.length > 1 && Manifold && typeof Manifold.compose === 'function') {
+      body = Manifold.compose(group);
+      for (const g of group) del(g);
+    }
+    bodies.push(module ? adoptDecomposed(module, m, body) : body);
+  }
+  return bodies;
+}
+
+function componentCount(m, module) {
+  let bodies = null;
+  try { bodies = logicalBodies(m, module); } catch (_) { return 1; }
+  if (!bodies) return 1;
+  const n = bodies.length || 1;
+  for (const b of bodies) if (b !== m) del(b);
+  return n;
+}
+
+/**
+ * Bodies of `m` when at least two logical solids overlap; otherwise null
+ * (and the decompose copies are freed). A void's inner shell is not a body.
+ */
+export function overlappingBodies(m, module) {
+  if (!m || typeof m.decompose !== 'function') return null;
+  let bodies = null;
+  try { bodies = logicalBodies(m, module); } catch (_) { return null; }
+  if (!bodies || bodies.length < 2) {
+    if (bodies) for (const b of bodies) if (b !== m) del(b);
+    return null;
+  }
+  const boxes = bodies.map(boxOf);
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
-      if (boxesOverlap(boxes[i], boxes[j])) {
-        // Only bodies that are reused are checked (the copies carry the
-        // parent's whole run table); a bloated one is rebuilt.
-        const bodies = parts.map((p) => adoptDecomposed(module, m, p));
-        return { bodies, boxes };
-      }
+      if (boxesOverlap(boxes[i], boxes[j])) return { bodies, boxes };
     }
   }
-  for (const p of parts) del(p);
+  for (const b of bodies) del(b);
   return null;
 }
 
@@ -321,7 +405,7 @@ export function installSeparateBodies(module) {
     const split = overlappingBodies(self, module);
     if (!split) return rawAdd.call(self, other);
     const toolBox = boxOf(other);
-    const toolParts = componentCount(other);
+    const toolParts = componentCount(other, module);
     const touched = [];
     const untouched = [];
     let single = null;
@@ -333,7 +417,7 @@ export function installSeparateBodies(module) {
       }
       const u = rawAdd.call(body, other);
       noteRunEstimate(u, runEstimateOf(body) + runEstimateOf(other));
-      if (componentCount(u) < 1 + toolParts) {
+      if (componentCount(u, module) < 1 + toolParts) {
         touched.push(body);
         if (touched.length === 1) single = u;
         else del(u);

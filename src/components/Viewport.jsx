@@ -386,6 +386,7 @@ import {
   CUT_PIECE_COLORS,
   CUT_PIECE_OPACITY,
 } from '../utils/cutMode';
+import { listedBodies } from '../utils/meshBodyComponents.js';
 import {
   emptyBooleanState,
   applyBooleanTap,
@@ -13191,15 +13192,11 @@ const Viewport = forwardRef(({
     if (!geom?.attributes?.position || !geom.index) return null;
     const kernel = bodyCentroidsRef.current || [];
     const rigid = featureRigidRef.current;
-    return meshBodyComponents(geom.attributes.position, geom.index).map((body, index) => {
-      const at = rigid ? transformPoint(rigid, body.at) : body.at;
-      return {
-        index,
-        at: snapMoveBodyAt(at, kernel),
-        triangles: body.triangles,
-        triangleCount: body.triangles.length,
-      };
-    });
+    const comps = meshBodyComponents(geom.attributes.position, geom.index).map((body) => ({
+      ...body,
+      at: rigid ? transformPoint(rigid, body.at) : body.at,
+    }));
+    return listedBodies(kernel, comps);
   };
   agentReadBodiesRef.current = () => {
     const partId = activePartIdRef.current != null && activePartIdRef.current !== '' ? String(activePartIdRef.current) : null;

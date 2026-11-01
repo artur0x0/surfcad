@@ -209,11 +209,11 @@ export async function callPromptTool(prompts, name, args) {
     return { content };
   }
   if (name === 'reply_to_user') {
-    const result = prompts.reply(args);
+    const result = await prompts.reply(args);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
   if (name === 'set_status') {
-    const result = prompts.setStatus(args);
+    const result = await prompts.setStatus(args);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
   throw Object.assign(new Error(`Unknown tool: ${name}`), { code: 'unknown_tool' });

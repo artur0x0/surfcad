@@ -36,6 +36,27 @@ test('the Script snippet stays off the rail and still inserts a code block that 
   assert.match(edit.fields.script, /part = part\.add\(Manifold\.cylinder\(10, 2, 2, 24\)\);/);
 });
 
+test('insert_code_snippet keeps a long FEATURE-GAP comment in full', () => {
+  const gap = `flange or lip ${'around an open rim '.repeat(16)}`.trim();
+  const why = `hollow only shells a solid ${'and cannot add a lip '.repeat(16)}`.trim();
+  assert.ok(gap.length > 200);
+  assert.ok(why.length > 200);
+  const out = composeHelperInsert(CUBE, 'codeSnippet', null, {
+    gap,
+    why,
+    script: 'part = part.add(Manifold.cube([4, 4, 2], true));\n',
+  });
+  const rows = parseFeatureGaps(out);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].gap, gap);
+  assert.equal(rows[0].why, why);
+  assert.match(out, new RegExp(`FEATURE-GAP: ${gap.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  const block = out.slice(out.indexOf('// --- code begin'), out.indexOf('// --- code end') + '// --- code end ---'.length);
+  const edit = parseFeatureEdit('code', block);
+  assert.equal(edit.fields.gap, gap);
+  assert.equal(edit.fields.why, why);
+});
+
 test('on an empty part the snippet makes the first body; the default placeholder is replaced', () => {
   const out = composeHelperInsert('', 'codeSnippet', null, { gap: 'thread', why: 'no thread feature', script: 'part = part;' });
   assert.match(out, /let part = Manifold\.cube\(\[10, 10, 10\], true\);/);

@@ -357,17 +357,15 @@ export class RemoteSession {
     }
     if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
       const cancelId = typeof msg.id === 'string' ? msg.id : '';
-      void this.#prompts.cancel(cancelId).then((result) => {
-        try {
-          this.#sendToTab({
-            type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
-            v: 1,
-            id: result.id,
-            state: result.state,
-          });
-        } catch {
+        void this.#prompts.cancel(cancelId).then((result) => {
+        Promise.resolve(this.#sendToTab({
+          type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
+          v: 1,
+          id: result.id,
+          state: result.state,
+        })).catch(() => {
           /* socket closed before the result could be sent */
-        }
+        });
       }, () => {});
       return;
     }
@@ -427,19 +425,53 @@ export class RemoteSession {
   }
 
   /**
+   * Status and prompt frames. A paired WebSocket sends them on the socket.
+   * A paired HTTPS fallback (join-code login when wss is blocked, or the
+   * socket dropped) POSTs them. Either way a connected session is connected:
+   * the caller hears the transport's error, not a collapsed not_paired.
    * @param {object} payload
    */
-  #sendToTab(payload) {
-    if (this.#transport !== 'ws' || !this.#ws || this.#ws.readyState !== WebSocket.OPEN) {
-      throw Object.assign(
-        new Error('In-viewer prompts need the agent WebSocket. This session is using the HTTPS fallback.'),
-        {
-          code: 'prompts_need_websocket',
-          hint: 'This session is on the HTTPS fallback because WebSocket was blocked. In-viewer prompts need the WebSocket; retry where the agent server allows wss.',
-        },
-      );
+  async #sendToTab(payload) {
+    if (!this.isPaired()) await this.connect();
+    if (this.#transport === 'ws' && this.#ws && this.#ws.readyState === WebSocket.OPEN) {
+      this.#ws.send(JSON.stringify(payload));
+      return;
     }
-    this.#ws.send(JSON.stringify(payload));
+    if (this.#state === 'paired' && this.#transport === 'http') {
+      await this.#postPrompt(payload);
+      return;
+    }
+    throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+  }
+
+  /**
+   * @param {object} payload
+   */
+  async #postPrompt(payload) {
+    let res;
+    try {
+      res = await this.#fetch(this.#urls.promptsUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.#token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw Object.assign(new Error('Could not reach the SurfCAD agent server.'), { code: 'unreachable' });
+    }
+    if (!res.ok) {
+      let json = null;
+      try { json = await res.json(); } catch { json = null; }
+      if (res.status === 401) throw tokenRevokedError();
+      const code = typeof json?.error === 'string' && json.error ? json.error : 'bridge_error';
+      const message = typeof json?.message === 'string' && json.message
+        ? json.message
+        : `Prompt send failed (${res.status})`;
+      throw Object.assign(new Error(message), { code });
+    }
+    try { await res.body?.cancel?.(); } catch { /* noop */ }
   }
 
   /**

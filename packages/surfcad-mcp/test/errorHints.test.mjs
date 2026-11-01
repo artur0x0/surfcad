@@ -198,6 +198,8 @@ test('over stdio: resources list and read, error payloads carry hint and see, gu
     const np = JSON.parse(notPaired.content[0].text);
     assert.equal(np.code, 'not_paired');
     assert.ok(np.hint, 'hint present');
+    assert.match(np.hint, /Show pairing code/);
+    assert.match(np.hint, /login --code/);
     assert.equal(np.see, 'guide { topic: "errors.not_paired" }');
 
     const noCode = await client.callTool({ name: 'pair', arguments: {} });

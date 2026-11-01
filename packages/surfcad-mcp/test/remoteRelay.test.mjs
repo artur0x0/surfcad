@@ -413,6 +413,63 @@ test('websocket command, prompt, old client, and revoked token', async () => {
   assert.equal(logs.join('\n').includes(issued.token), false);
 });
 
+test('set_status on a websocket session reports the connected state', async () => {
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'status-ws' });
+  /** @type {object[]} */
+  const seen = [];
+  answerTab(relay, 'user-a', (frame, finish) => {
+    seen.push(frame);
+    finish();
+  });
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: () => {},
+  });
+  sessions.push(session);
+  const status = await session.prompts.setStatus({ state: 'building' });
+  assert.deepEqual(status, { working: true, state: 'working' });
+  assert.equal(session.status().state, 'paired');
+  assert.equal(session.status().transport, 'ws');
+  const started = Date.now();
+  let frame = seen.find((row) => row.type === 'agent.status');
+  while (!frame && Date.now() - started < 1000) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    frame = seen.find((row) => row.type === 'agent.status');
+  }
+  assert.ok(frame, 'tab received agent.status');
+  assert.equal(frame.state, 'working');
+  assert.equal(frame.working, true);
+});
+
+test('set_status on the HTTPS fallback reports the connected state', async () => {
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay, { upgrade: 'reject' });
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'status-http' });
+  /** @type {object[]} */
+  const seen = [];
+  answerTab(relay, 'user-a', (frame, finish) => {
+    seen.push(frame);
+    finish();
+  });
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: () => {},
+  });
+  sessions.push(session);
+  const status = await session.prompts.setStatus({ state: 'building' });
+  assert.deepEqual(status, { working: true, state: 'working' });
+  assert.equal(session.status().transport, 'http');
+  assert.equal(session.status().state, 'paired');
+  const frame = seen.find((row) => row.type === 'agent.status');
+  assert.ok(frame, 'tab received agent.status over HTTPS');
+  assert.equal(frame.state, 'working');
+  assert.equal(frame.working, true);
+});
+
 test('blocked websocket falls back to HTTPS POST and SSE', async () => {
   const relay = createAgentRelay({ asleepMs: 200 });
   const { origin, hits } = await listen(relay, { upgrade: 'reject' });

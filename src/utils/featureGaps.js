@@ -21,11 +21,10 @@ const CODE_END_RE = /^\s*\/\/ --- code end\s*---\s*$/;
 export { FEATURE_GAP_PREFIX };
 
 const GAP_LINE = /^\s*\/\/\s*FEATURE-GAP:\s*(.*?)\s*$/;
-const GAP_MAX = 200;
 
 function clean(text, fallback) {
   const t = String(text ?? '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return (t || fallback).slice(0, GAP_MAX);
+  return t || fallback;
 }
 
 /** The comment line for a gap. `|` inside the texts becomes `/`. */

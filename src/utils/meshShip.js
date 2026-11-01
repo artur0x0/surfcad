@@ -12,7 +12,32 @@ import {
   rigidMatrixForOps,
   splitTrailingRigid,
   transformBBox,
+  transformPoint,
 } from './rigidSuffix.js';
+
+/**
+ * Centroids a warm omit-mesh result reports. The page already has the mesh;
+ * bodyCount is this list's length, the same list list_bodies snaps to.
+ * A single cached centroid is the whole list. A feature rigid moves each one.
+ */
+export function omitMeshBodyFields({ bodyCentroids = null, baseCentroid = null, featureRigid = null } = {}) {
+  const raw = Array.isArray(bodyCentroids) && bodyCentroids.length
+    ? bodyCentroids
+    : (baseCentroid ? [baseCentroid] : []);
+  const centroids = raw.map((c) => (featureRigid ? transformPoint(featureRigid, c) : c.slice()));
+  return {
+    bodyCentroids: centroids,
+    ...(centroids.length ? { bodyCount: centroids.length } : {}),
+  };
+}
+
+/** Centroids when a trailing move is deleted. One body returns to its unmoved centroid. */
+function identityBodyCentroids(prev) {
+  const list = Array.isArray(prev.bodyCentroids) ? prev.bodyCentroids : null;
+  if (list && list.length > 1) return list.map((c) => c.slice());
+  if (prev.baseCentroid) return [prev.baseCentroid.slice()];
+  return list ? list.map((c) => c.slice()) : null;
+}
 
 function hasMesh(run) {
   return !!(run && run.ok !== false && run.mesh && run.mesh.vertProperties);
@@ -59,6 +84,7 @@ export function decideMeshShip({ script, salt = '', assetKey = '', previous = nu
   const meshKey = memoKey(split.prefix, useSalt);
   if (!split.ops.length) {
     if (prev.unmoved === true && prev.meshKey && prev.meshKey === meshKey) {
+      const bodyCentroids = identityBodyCentroids(prev);
       return {
         action: 'rigid',
         reason: 'identity',
@@ -72,8 +98,8 @@ export function decideMeshShip({ script, salt = '', assetKey = '', previous = nu
         baseCentroid: prev.baseCentroid || null,
         baseBBox: prev.baseBBox || null,
         bbox: prev.baseBBox || prev.bbox || null,
-        bodyCentroids: prev.baseCentroid ? [prev.baseCentroid.slice()] : (prev.bodyCentroids || null),
-        bodyCount: prev.bodyCount,
+        bodyCentroids,
+        bodyCount: Array.isArray(bodyCentroids) ? bodyCentroids.length : prev.bodyCount,
         volume: prev.volume,
       };
     }

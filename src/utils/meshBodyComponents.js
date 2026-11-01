@@ -25,6 +25,60 @@ function readIndex(index) {
   return index.array || index;
 }
 
+function finitePoint(point) {
+  if (!Array.isArray(point) || point.length < 3) return null;
+  const at = [Number(point[0]), Number(point[1]), Number(point[2])];
+  if (at.some((v) => !Number.isFinite(v))) return null;
+  return at;
+}
+
+function dist2(a, b) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  const dz = a[2] - b[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+/**
+ * Bodies list_bodies and bodyCount share. One row per kernel centroid.
+ * Mesh islands (a closed shell's outer wall and inner cavity do not share
+ * vertices) join the nearest kernel centroid, so a void is one body.
+ * With no kernel centroids, each mesh component is a body.
+ */
+export function listedBodies(kernelCentroids, meshComponents) {
+  const kernels = (Array.isArray(kernelCentroids) ? kernelCentroids : [])
+    .map(finitePoint)
+    .filter(Boolean);
+  const comps = Array.isArray(meshComponents) ? meshComponents : [];
+  if (!kernels.length) {
+    return comps.map((body, index) => {
+      const at = finitePoint(body?.at) || finitePoint(body?.center) || [0, 0, 0];
+      const triangles = Array.isArray(body?.triangles) ? body.triangles.slice() : [];
+      return { index, at, triangles, triangleCount: triangles.length };
+    });
+  }
+  const groups = kernels.map((at, index) => ({ index, at: at.slice(), triangles: [] }));
+  for (const comp of comps) {
+    const point = finitePoint(comp?.at) || finitePoint(comp?.center) || [0, 0, 0];
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < groups.length; i++) {
+      const d = dist2(point, groups[i].at);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (Array.isArray(comp?.triangles)) groups[best].triangles.push(...comp.triangles);
+  }
+  return groups.map((g) => ({
+    index: g.index,
+    at: g.at.slice(),
+    triangles: g.triangles,
+    triangleCount: g.triangles.length,
+  }));
+}
+
 export function meshBodyComponents(positions, index) {
   const idx = readIndex(index);
   if (!positions || !idx || !idx.length) return [];

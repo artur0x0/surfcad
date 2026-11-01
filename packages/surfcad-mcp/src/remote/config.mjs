@@ -105,6 +105,7 @@ export function agentUrls(origin) {
     pollUrl: `${base}/agent/pair/poll`,
     joinUrl: `${base}/agent/join/redeem`,
     commandsUrl: `${base}/agent/commands`,
+    promptsUrl: `${base}/agent/prompts`,
   };
 }
 

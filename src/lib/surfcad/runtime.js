@@ -46,17 +46,17 @@ import { buildMakeLoftSolid, offsetPlaneFrame } from '../../utils/makeLoft.js';
 import { blockSpec, buildBlockManifold } from '../../utils/blockSolid.js';
 import { buildSheetMetalSolid } from '../../utils/sheetMetal/sheetSolid.js';
 import { markSheetMesh } from '../../utils/sheetMetal/sheetMeshFlag.js';
-import { installSeparateBodies, overlappingBodies, runEstimateOf, noteRunEstimate } from '../../workers/separateBodies.js';
+import { installSeparateBodies, overlappingBodies, logicalBodies, runEstimateOf, noteRunEstimate } from '../../workers/separateBodies.js';
 import { installKernelArena, beginKernelArena, endKernelArena, retainFromKernelArena, wasmHeapMB } from '../../workers/kernelArena.js';
 import { planMemo, FeatureMemo, MEMO_CAPTURE, MEMO_RESTORE, featureMemoBudgetBytes, importedModelsKey, memoKey } from './featureMemo.js';
 import { collectTransferBuffers } from '../../utils/meshTransfer.js';
+import { omitMeshBodyFields } from '../../utils/meshShip.js';
 import {
   bakeRigidMesh,
   matrixIsIdentity,
   rigidMatrixForOps,
   splitTrailingRigid,
   transformBBox,
-  transformPoint,
 } from '../../utils/rigidSuffix.js';
 import { solveContour as solveContourModel } from '../../utils/contourSolve.js';
 import { classifyKernelFailure, FEATURE_TIMEOUT_CODE, FEATURE_TIMEOUT_HINT, featureTimeoutMessage } from '../../workers/kernelCrash.js';
@@ -114,6 +114,7 @@ let gameAttemptManifold = null;
 let cachedFeatureRigid = null;
 let cachedMeshKey = null;
 let cachedBaseCentroid = null;
+let cachedBodyCentroids = null;
 let cachedBaseBBox = null;
 let cachedVolume = null;
 let cachedTriCount = null;
@@ -128,6 +129,7 @@ function _clearFeatureRigid() {
   cachedFeatureRigid = null;
   cachedMeshKey = null;
   cachedBaseCentroid = null;
+  cachedBodyCentroids = null;
   cachedBaseBBox = null;
   cachedVolume = null;
   cachedTriCount = null;
@@ -10348,20 +10350,17 @@ function _cutNegligible(m, total) {
   return !(_cutVol(m) > floor);
 }
 
-/** More than one component → those bodies. One component → the input, unchanged. */
+/**
+ * Logical solids. A negative-volume component is the inner shell of a void
+ * and stays with the solid that contains it, so the caller booleans the
+ * voided solid instead of the filled hull. One logical body → the input.
+ */
 function _cutBodiesOf(manifold) {
-  if (typeof manifold.decompose !== 'function') return [manifold];
-  let parts = null;
-  try { parts = manifold.decompose(); } catch (_) { parts = null; }
-  if (!Array.isArray(parts) || parts.length <= 1) {
-    if (Array.isArray(parts)) {
-      for (const p of parts) {
-        if (p && p !== manifold) _safeDeleteManifold(p);
-      }
-    }
-    return [manifold];
-  }
-  return parts;
+  if (!manifold || typeof manifold.decompose !== 'function') return [manifold];
+  let bodies = null;
+  try { bodies = logicalBodies(manifold, manifoldModule); } catch (_) { bodies = null; }
+  if (!Array.isArray(bodies) || !bodies.length) return [manifold];
+  return bodies;
 }
 
 /**
@@ -12557,6 +12556,9 @@ function _rememberRigidBase(meta, triCount) {
   cachedFeatureRigid = meta.featureRigid || null;
   cachedMeshKey = meta.meshKey;
   cachedBaseCentroid = meta.baseCentroid;
+  cachedBodyCentroids = Array.isArray(meta.bodyCentroids) && meta.bodyCentroids.length
+    ? meta.bodyCentroids.map((c) => c.slice())
+    : (meta.baseCentroid ? [meta.baseCentroid.slice()] : null);
   cachedBaseBBox = meta.baseBBox;
   cachedVolume = meta.volume;
   if (triCount != null) cachedTriCount = triCount;
@@ -12635,6 +12637,7 @@ function _attemptRigidShip(script, importedModels, payload) {
     featureRigid,
     meshKey,
     baseCentroid: centroids[0].slice(),
+    bodyCentroids: [centroids[0].slice()],
     baseBBox,
     volume,
   };
@@ -13064,11 +13067,11 @@ self.onmessage = async (event) => {
           const movedBox = cachedBaseBBox
             ? transformBBox(cachedFeatureRigid, cachedBaseBBox)
             : null;
-          const centroid = cachedBaseCentroid
-            ? (cachedFeatureRigid
-              ? transformPoint(cachedFeatureRigid, cachedBaseCentroid)
-              : cachedBaseCentroid.slice())
-            : null;
+          const bodies = omitMeshBodyFields({
+            bodyCentroids: cachedBodyCentroids,
+            baseCentroid: cachedBaseCentroid,
+            featureRigid: cachedFeatureRigid,
+          });
           cachedExecuteNonce = (nonce !== undefined && nonce !== null) ? nonce : null;
           _postWorkerResult(self, id, {
             meshOmitted: true,
@@ -13079,8 +13082,8 @@ self.onmessage = async (event) => {
             baseCentroid: cachedBaseCentroid,
             baseBBox: cachedBaseBBox,
             boundingBox: movedBox,
-            bodyCentroids: centroid ? [centroid] : [],
-            ...(centroid ? { bodyCount: 1 } : {}),
+            bodyCentroids: bodies.bodyCentroids,
+            ...(bodies.bodyCount != null ? { bodyCount: bodies.bodyCount } : {}),
             unmoved: true,
             volume: cachedVolume,
             tris: cachedTriCount,
@@ -13143,6 +13146,7 @@ self.onmessage = async (event) => {
         if (!trailingRigid) {
           cachedMeshKey = scriptKey;
           cachedBaseCentroid = bodyCentroids[0] ? bodyCentroids[0].slice() : null;
+          cachedBodyCentroids = bodyCentroids.map((c) => c.slice());
           cachedBaseBBox = baseBBox;
           cachedVolume = volume;
           cachedTriCount = triCount;
@@ -13160,6 +13164,7 @@ self.onmessage = async (event) => {
             boundingBox: baseBBox,
             nonce: cachedExecuteNonce,
             bodyCentroids,
+            bodyCount: bodyCentroids.length,
             scriptKey,
             salt,
             ...(!trailingRigid ? {
