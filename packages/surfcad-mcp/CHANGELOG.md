@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4 - 2026-10-31
+
+- CLI login: unknown commands and bad flags print an error plus usage on stderr and exit non-zero. A 429 shows the server's `retryAfterSec` as `try again in N s`. Device-code login stops at the code's `expiresAt` with a stale/expired message. The copied join prompt rewrites plain http on a LAN host to `http://localhost:<port>`.
+
 ## 0.3.3 - 2026-10-31
 
 - `login --code ABCD-EFGH` redeems a one-time join code from SurfCAD Connect Agent (Safari, iOS, or phone-width). Writes the token the same way device-code login does and does not print it. Resume after reload is server/UI only.

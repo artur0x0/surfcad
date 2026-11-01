@@ -1,6 +1,6 @@
 {
   "name": "surfcad-mcp",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "SurfCAD agent bridge MCP server (stdio) — pairs to a browser tab via the local WebSocket relay, or a saved remote login",
   "license": "Apache-2.0",
   "author": "artur0x0",
