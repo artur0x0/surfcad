@@ -34,8 +34,7 @@ const CHROME_CANDIDATES = [
 
 const TOOLS = [
   { name: 'wall thickness', button: '[data-wall-heatmap]', pane: '[data-wall-legend]', scroll: false },
-  { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: false },
-  { name: 'side actions', button: '[data-mold-side-actions]', pane: '[data-side-action-legend]', scroll: true },
+  { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: true },
   { name: 'mold draft', button: '[data-mold-draft]', pane: '[data-mold-draft-legend]', scroll: false },
   { name: 'DFM report', button: '[data-mold-dfm]', pane: '[data-mold-dfm-report]', scroll: true },
   { name: 'quote', button: '[data-mold-quote]', pane: '[data-mold-quote-panel]', scroll: true, shots: true },
@@ -83,13 +82,23 @@ if (!exe) {
   process.exit(1);
 }
 
-const sideRows = Array.from({ length: 36 }, (_, i) => ({
-  id: `row-${i}`,
-  kind: i % 2 ? 'lifter' : 'slide',
-  css: i % 2 ? '#38bdf8' : '#f59e0b',
-  label: i % 2 ? `Lifter ${i + 1}` : `Slide ${i + 1}`,
-  pull: '[1, 0, 0]',
-}));
+const partingLegend = {
+  rows: [
+    { role: 'cavity', css: '#60a5fa', label: 'Cavity' },
+    { role: 'core', css: '#f87171', label: 'Core' },
+    { role: 'parting', css: '#fbbf24', label: 'Parting' },
+    { role: 'side', css: '#38bdf8', label: 'Side action' },
+  ],
+  groups: Array.from({ length: 36 }, (_, i) => ({
+    id: `row-${i}`,
+    kind: i % 2 ? 'lifter' : 'slide',
+    label: i % 2 ? `Lifter ${i + 1}` : `Slide ${i + 1}`,
+    pull: '[1, 0, 0]',
+    areaLabel: `${12 + i} mm²`,
+    css: i % 2 ? '#38bdf8' : '#f59e0b',
+    selected: i === 0,
+  })),
+};
 
 const faceNames = Array.from({ length: 28 }, (_, i) => `Parting face ${i + 1}`);
 
@@ -167,12 +176,11 @@ import MoldResultsPane from './src/components/molding/MoldResultsPane.jsx';
 import PullReference from './src/components/molding/PullReference.jsx';
 import WallLegend from './src/components/molding/WallLegend.jsx';
 import PartingLegend from './src/components/molding/PartingLegend.jsx';
-import SideActionLegend from './src/components/molding/SideActionLegend.jsx';
 import MoldDraftLegend from './src/components/molding/MoldDraftLegend.jsx';
 import DfmReportPanel from './src/components/molding/DfmReportPanel.jsx';
 import MoldQuotePanel from './src/components/molding/MoldQuotePanel.jsx';
 
-const sideRows = ${JSON.stringify(sideRows)};
+const partingLegend = ${JSON.stringify(partingLegend)};
 const dfmReport = ${JSON.stringify(dfmReport)};
 const quoteState = ${JSON.stringify(quoteState)};
 
@@ -255,19 +263,7 @@ function Harness() {
       )}
       {which === 'parting' && (
         <Pane>
-          <PartingLegend legend={{
-            lineCount: 12,
-            rows: [
-              { role: 'cavity', css: '#60a5fa', label: 'Cavity', count: 40 },
-              { role: 'core', css: '#f87171', label: 'Core', count: 38 },
-              { role: 'parting', css: '#fbbf24', label: 'Parting', count: 6 },
-            ],
-          }} />
-        </Pane>
-      )}
-      {which === 'sides' && (
-        <Pane>
-          <SideActionLegend legend={{ more: 4, rows: sideRows }} />
+          <PartingLegend legend={partingLegend} />
         </Pane>
       )}
       {which === 'draft' && (
@@ -305,14 +301,7 @@ function Harness() {
             onFace={() => setPullMode('face')}
             onPickPlane={(id) => { setPullMode('plane'); setPullPlane(id); }}
           />
-          <PartingLegend legend={{
-            lineCount: 12,
-            rows: [
-              { role: 'cavity', css: '#60a5fa', label: 'Cavity', count: 40 },
-              { role: 'core', css: '#f87171', label: 'Core', count: 38 },
-              { role: 'parting', css: '#fbbf24', label: 'Parting', count: 6 },
-            ],
-          }} />
+          <PartingLegend legend={partingLegend} />
         </Pane>
       )}
       <div
@@ -329,19 +318,16 @@ function Harness() {
           defaultOpen
           showWall
           showParting
-          showSideActions
           showMoldDraft
           showDfm
           showQuote
           wallActive={!!on.wall}
           partingActive={!!on.parting}
-          sideActionsActive={!!on.sides}
           moldDraftActive={!!on.draft}
           dfmActive={!!on.dfm}
           quoteActive={!!on.quote}
           onWallToggle={() => press('wall')}
           onPartingToggle={() => press('parting')}
-          onSideActionsToggle={() => press('sides')}
           onMoldDraftToggle={() => press('draft')}
           onDfmToggle={() => press('dfm')}
           onQuoteToggle={() => press('quote')}

@@ -610,10 +610,9 @@ import { dropMoldJobs, dropWallJobs, requestMoldAnalysis, requestWallField } fro
 import { MOLD_PULL_PLANES, unitPull } from '../molding/pullReference.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
-import { partingLegendModel } from '../molding/parting.js';
 import { detachPartingSkin, syncPartingSkin } from '../molding/partingSkin.js';
-import { sideActionLegendModel } from '../molding/sideActions.js';
-import { detachSideActionSkin, syncSideActionSkin } from '../molding/sideActionSkin.js';
+import { splitLegendModel } from '../molding/sideActions.js';
+import { detachSideActionSkin } from '../molding/sideActionSkin.js';
 import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
 import { dfmReport } from '../molding/dfmReport.js';
@@ -623,7 +622,6 @@ import { boundsFromPositions, postMoldingQuote, quoteBodyFromAnalysis } from '..
 import { PAY_FOR_REVIEW_MESSAGE, checkoutUrlAllowed, clearReviewLabel, leadBody, partnerUnlocked, pollReviewStatus, postMoldingLead, postReviewCheckout, readReviewLabel, rememberReviewLabel } from '../utils/moldingLeadClient.js';
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
-import SideActionLegend from './molding/SideActionLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
 import DfmReportPanel from './molding/DfmReportPanel';
 import MoldQuotePanel from './molding/MoldQuotePanel';
@@ -1494,7 +1492,7 @@ const Viewport = forwardRef(({
     pullReferenceRef.current = stored;
     setPullReference(stored);
     partingFieldRef.current = null;
-    sideActionsFieldRef.current = null;
+    selectedSideGroupRef.current = null;
     moldDraftFieldRef.current = null;
     dfmFieldRef.current = null;
     quoteFieldRef.current = null;
@@ -1512,8 +1510,7 @@ const Viewport = forwardRef(({
       };
     }
     const tool = partingOnRef.current ? 'parting'
-      : sideActionsOnRef.current ? 'side'
-        : moldDraftOnRef.current ? 'draft'
+      : moldDraftOnRef.current ? 'draft'
           : dfmOnRef.current ? 'dfm'
             : quoteOnRef.current ? 'quote'
               : 'pull';
@@ -1543,14 +1540,14 @@ const Viewport = forwardRef(({
     }
     rememberMoldAnalysis(geometry, analyzed);
     if (partingOnRef.current && analyzed.parting) {
-      partingFieldRef.current = { geometry, parting: analyzed.parting };
-      setPartingLegend(partingLegendModel(analyzed.parting));
-      syncPartingSkin(resultRef.current, analyzed.parting);
-    }
-    if (sideActionsOnRef.current && analyzed.sideActions) {
-      sideActionsFieldRef.current = { geometry, sideActions: analyzed.sideActions };
-      setSideActionLegend(sideActionLegendModel(analyzed.sideActions));
-      syncSideActionSkin(resultRef.current, analyzed.sideActions);
+      const selected = selectedSideGroupRef.current;
+      partingFieldRef.current = {
+        geometry,
+        parting: analyzed.parting,
+        sideActions: analyzed.sideActions || null,
+      };
+      setPartingLegend(splitLegendModel(analyzed.parting, analyzed.sideActions, selected));
+      syncPartingSkin(resultRef.current, analyzed.parting, analyzed.sideActions, selected);
     }
     if (moldDraftOnRef.current && analyzed.moldDraft) {
       moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
@@ -1578,18 +1575,16 @@ const Viewport = forwardRef(({
     };
   };
   const agentMoldSideActionsRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
-  const sideActionsOnRef = useRef(false);
-  const sideActionsFieldRef = useRef(null);
   const clearSideActionsRef = useRef(() => {});
   const applySideActionSkinRef = useRef(() => {});
-  const [sideActionLegend, setSideActionLegend] = useState(null);
+  const selectedSideGroupRef = useRef(null);
   const agentMoldDraftRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const moldDraftOnRef = useRef(false);
   const moldDraftFieldRef = useRef(null);
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
-  const pullToolsOn = mode !== 'game' && !!(partingLegend || sideActionLegend || moldDraftLegend);
+  const pullToolsOn = mode !== 'game' && !!(partingLegend || moldDraftLegend);
   const agentMoldDfmRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const dfmOnRef = useRef(false);
   const dfmFieldRef = useRef(null);
@@ -13914,9 +13909,12 @@ const Viewport = forwardRef(({
 
   function rememberMoldAnalysis(geometry, analyzed) {
     if (!analyzed || analyzed.error || analyzed.dropped) return;
-    if (analyzed.parting) partingFieldRef.current = { geometry, parting: analyzed.parting };
-    if (analyzed.sideActions) {
-      sideActionsFieldRef.current = { geometry, sideActions: analyzed.sideActions };
+    if (analyzed.parting) {
+      partingFieldRef.current = {
+        geometry,
+        parting: analyzed.parting,
+        sideActions: analyzed.sideActions || null,
+      };
     }
     if (analyzed.moldDraft) {
       moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
@@ -14017,17 +14015,19 @@ const Viewport = forwardRef(({
   const clearParting = () => {
     partingOnRef.current = false;
     partingFieldRef.current = null;
+    selectedSideGroupRef.current = null;
     setPartingLegend(null);
     detachPartingSkin(resultRef.current);
-    for (const mesh of assemblyExtrasRef.current.values()) detachPartingSkin(mesh);
+    detachSideActionSkin(resultRef.current);
+    for (const mesh of assemblyExtrasRef.current.values()) {
+      detachPartingSkin(mesh);
+      detachSideActionSkin(mesh);
+    }
     putMoldProgress((cur) => (cur && cur.tool === 'parting' ? null : cur));
   };
   clearPartingRef.current = clearParting;
 
   const clearSideActions = () => {
-    sideActionsOnRef.current = false;
-    sideActionsFieldRef.current = null;
-    setSideActionLegend(null);
     detachSideActionSkin(resultRef.current);
     for (const mesh of assemblyExtrasRef.current.values()) detachSideActionSkin(mesh);
     putMoldProgress((cur) => (cur && cur.tool === 'side' ? null : cur));
@@ -14054,14 +14054,19 @@ const Viewport = forwardRef(({
     syncThicknessSkin(resultRef.current, wall);
   };
 
-  const showParting = (parting, geometry) => {
+  const showParting = (parting, geometry, sideActions = null) => {
     clearWallMap();
-    clearSideActions();
     clearMoldDraft();
+    detachSideActionSkin(resultRef.current);
     partingOnRef.current = true;
-    partingFieldRef.current = { geometry, parting };
-    setPartingLegend(partingLegendModel(parting));
-    syncPartingSkin(resultRef.current, parting);
+    const groups = sideActions?.groups || [];
+    const selected = groups.some((group) => group.id === selectedSideGroupRef.current)
+      ? selectedSideGroupRef.current
+      : null;
+    selectedSideGroupRef.current = selected;
+    partingFieldRef.current = { geometry, parting, sideActions };
+    setPartingLegend(splitLegendModel(parting, sideActions, selected));
+    syncPartingSkin(resultRef.current, parting, sideActions, selected);
   };
 
   applyWallSkinRef.current = (host) => {
@@ -14123,7 +14128,7 @@ const Viewport = forwardRef(({
     const geometry = host.geometry;
     const cached = partingFieldRef.current;
     if (cached && cached.geometry === geometry && cached.parting) {
-      syncPartingSkin(host, cached.parting);
+      syncPartingSkin(host, cached.parting, cached.sideActions, selectedSideGroupRef.current);
       return;
     }
     const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'parting');
@@ -14137,8 +14142,8 @@ const Viewport = forwardRef(({
         return;
       }
       rememberMoldAnalysis(geometry, analyzed);
-      setPartingLegend(partingLegendModel(analyzed.parting));
-      syncPartingSkin(host, analyzed.parting);
+      setPartingLegend(splitLegendModel(analyzed.parting, analyzed.sideActions, selectedSideGroupRef.current));
+      syncPartingSkin(host, analyzed.parting, analyzed.sideActions, selectedSideGroupRef.current);
       if (gen != null) endMoldProgress(gen);
     }).catch(() => {
       if (gen != null && moldJobGenRef.current === gen) clearParting();
@@ -14202,7 +14207,61 @@ const Viewport = forwardRef(({
     return wallLegendPayload(analyzed.wall);
   };
 
-  agentMoldPartingRef.current = async ({ on } = {}) => {
+  const sideActionPayload = (sideActions, selected) => {
+    const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+    return {
+      count: sideActions?.count || 0,
+      slides: sideActions?.slideCount || 0,
+      lifters: sideActions?.lifterCount || 0,
+      groups: groups.map((group) => ({
+        id: group.id,
+        kind: group.kind,
+        pull: group.pull,
+        area: group.area,
+        regions: group.regionIds?.length || 0,
+        clear: group.clear !== false,
+      })),
+      selected: selected ?? null,
+    };
+  };
+
+  const partingPayload = (analyzed, selected) => ({
+    on: true,
+    pull: analyzed?.pull,
+    cavity: analyzed?.parting?.counts?.cavity,
+    core: analyzed?.parting?.counts?.core,
+    parting: analyzed?.parting?.counts?.parting,
+    lines: analyzed?.parting?.lines?.length || 0,
+    sideActions: sideActionPayload(analyzed?.sideActions, selected),
+  });
+
+  const selectSideGroup = (group) => {
+    const cached = partingFieldRef.current;
+    if (!cached?.parting) return { error: { code: 'no_mesh', message: 'No parting split on that mesh' } };
+    const groups = cached.sideActions?.groups || [];
+    const next = group == null || selectedSideGroupRef.current === group ? null : group;
+    if (next != null && !groups.some((row) => row.id === next)) {
+      return { error: { code: 'bad_args', message: 'group is not a side action on this part' } };
+    }
+    selectedSideGroupRef.current = next;
+    setPartingLegend(splitLegendModel(cached.parting, cached.sideActions, next));
+    syncPartingSkin(resultRef.current, cached.parting, cached.sideActions, next);
+    const analyzed = moldAnalysisRef.current?.result;
+    return partingPayload(analyzed && analyzed.parting ? analyzed : {
+      parting: cached.parting,
+      sideActions: cached.sideActions,
+    }, next);
+  };
+
+  agentMoldPartingRef.current = async ({ on, group } = {}) => {
+    const selecting = Number.isInteger(group) || group === null;
+    if (on === false) {
+      clearParting();
+      return { on: false };
+    }
+    if (selecting && on !== true && partingOnRef.current && partingFieldRef.current?.parting) {
+      return selectSideGroup(group);
+    }
     const next = typeof on === 'boolean' ? on : !partingOnRef.current;
     if (!next) {
       clearParting();
@@ -14213,7 +14272,6 @@ const Viewport = forwardRef(({
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
     clearWallMap();
-    clearSideActions();
     clearMoldDraft();
     const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'parting');
     const analyzed = await promise;
@@ -14227,101 +14285,45 @@ const Viewport = forwardRef(({
       if (gen != null) endMoldProgress(gen);
       return { error: { code: 'no_mesh', message: 'No parting split on that mesh' } };
     }
+    if (Number.isInteger(group)) {
+      const exists = (analyzed.sideActions?.groups || []).some((row) => row.id === group);
+      if (!exists) {
+        if (gen != null) endMoldProgress(gen);
+        return { error: { code: 'bad_args', message: 'group is not a side action on this part' } };
+      }
+      selectedSideGroupRef.current = group;
+    } else if (group === null) {
+      selectedSideGroupRef.current = null;
+    }
     rememberMoldAnalysis(geometry, analyzed);
-    showParting(analyzed.parting, geometry);
+    showParting(analyzed.parting, geometry, analyzed.sideActions);
     if (gen != null) endMoldProgress(gen);
-    return {
-      on: true,
-      pull: analyzed.pull,
-      cavity: analyzed.parting.counts.cavity,
-      core: analyzed.parting.counts.core,
-      parting: analyzed.parting.counts.parting,
-      lines: analyzed.parting.lines.length,
-    };
-  };
-
-  const showSideActions = (sideActions, geometry) => {
-    clearWallMap();
-    clearParting();
-    clearMoldDraft();
-    sideActionsOnRef.current = true;
-    sideActionsFieldRef.current = { geometry, sideActions };
-    setSideActionLegend(sideActionLegendModel(sideActions));
-    syncSideActionSkin(resultRef.current, sideActions);
+    return partingPayload(analyzed, selectedSideGroupRef.current);
   };
 
   applySideActionSkinRef.current = (host) => {
-    if (!host) return;
-    if (!sideActionsOnRef.current || host !== resultRef.current) {
-      detachSideActionSkin(host);
-      return;
-    }
-    const geometry = host.geometry;
-    const cached = sideActionsFieldRef.current;
-    if (cached && cached.geometry === geometry && cached.sideActions) {
-      syncSideActionSkin(host, cached.sideActions);
-      return;
-    }
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'side');
-    promise.then((analyzed) => {
-      if (!sideActionsOnRef.current || resultRef.current?.geometry !== geometry) return;
-      if (gen != null && moldJobGenRef.current !== gen) return;
-      if (analyzed?.dropped) return;
-      if (analyzed?.error || !analyzed?.sideActions) {
-        clearSideActions();
-        if (gen != null) endMoldProgress(gen);
-        return;
-      }
-      rememberMoldAnalysis(geometry, analyzed);
-      setSideActionLegend(sideActionLegendModel(analyzed.sideActions));
-      syncSideActionSkin(host, analyzed.sideActions);
-      if (gen != null) endMoldProgress(gen);
-    }).catch(() => {
-      if (gen != null && moldJobGenRef.current === gen) clearSideActions();
-    });
+    if (host) detachSideActionSkin(host);
   };
 
-  agentMoldSideActionsRef.current = async ({ on } = {}) => {
-    const next = typeof on === 'boolean' ? on : !sideActionsOnRef.current;
-    if (!next) {
-      clearSideActions();
-      return { on: false };
+  agentMoldSideActionsRef.current = async (args = {}) => {
+    if (args?.on === false) {
+      return {
+        on: false,
+        replacedBy: 'mold_parting',
+        message: 'Side actions are part of core and cavity. Call mold_parting with { on: false } to hide that colouring.',
+      };
     }
-    const geometry = resultRef.current?.geometry;
-    if (!geometry?.attributes?.position) {
-      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    }
-    clearWallMap();
-    clearParting();
-    clearMoldDraft();
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'side');
-    const analyzed = await promise;
-    if (gen != null && moldJobGenRef.current !== gen) return { on: !!sideActionsOnRef.current };
-    if (analyzed?.dropped) return { on: !!sideActionsOnRef.current };
-    if (analyzed?.error) {
-      if (gen != null) endMoldProgress(gen);
-      return analyzed;
-    }
-    if (!analyzed.sideActions) {
-      if (gen != null) endMoldProgress(gen);
-      return { error: { code: 'no_mesh', message: 'No side actions on that mesh' } };
-    }
-    rememberMoldAnalysis(geometry, analyzed);
-    showSideActions(analyzed.sideActions, geometry);
-    if (gen != null) endMoldProgress(gen);
-    const groups = analyzed.sideActions.groups.map((group) => ({
-      id: group.id,
-      kind: group.kind,
-      pull: group.pull,
-      area: group.area,
-      regions: group.regionIds.length,
-    }));
+    const result = await agentMoldPartingRef.current({ on: true, group: args?.group });
+    if (result?.error) return result;
+    const sides = result.sideActions || {};
     return {
       on: true,
-      count: analyzed.sideActions.count,
-      slides: analyzed.sideActions.slideCount,
-      lifters: analyzed.sideActions.lifterCount,
-      groups,
+      replacedBy: 'mold_parting',
+      count: sides.count || 0,
+      slides: sides.slides || 0,
+      lifters: sides.lifters || 0,
+      groups: sides.groups || [],
+      selected: sides.selected ?? null,
     };
   };
 
@@ -17241,7 +17243,7 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || sideActionLegend || moldDraftLegend || dfmReportState || moldQuote) && (
+      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || moldDraftLegend || dfmReportState || moldQuote) && (
         <MoldResultsPane compact={isMobile}>
           <MoldProgress progress={moldProgress} />
           {pullToolsOn && (
@@ -17256,8 +17258,10 @@ const Viewport = forwardRef(({
             />
           )}
           <WallLegend legend={wallLegend} />
-          <PartingLegend legend={partingLegend} />
-          <SideActionLegend legend={sideActionLegend} />
+          <PartingLegend
+            legend={partingLegend}
+            onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
+          />
           <MoldDraftLegend legend={moldDraftLegend} />
           <DfmReportPanel report={dfmReportState} />
           <MoldQuotePanel
@@ -17315,10 +17319,6 @@ const Viewport = forwardRef(({
           partingActive={!!partingLegend}
           partingPending={moldProgress?.tool === 'parting'}
           onPartingToggle={() => agentMoldPartingRef.current({})}
-          showSideActions={mode !== 'game'}
-          sideActionsActive={!!sideActionLegend}
-          sideActionsPending={moldProgress?.tool === 'side'}
-          onSideActionsToggle={() => agentMoldSideActionsRef.current({})}
           showMoldDraft={mode !== 'game'}
           moldDraftActive={!!moldDraftLegend}
           moldDraftPending={moldProgress?.tool === 'draft'}

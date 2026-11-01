@@ -19,7 +19,6 @@ const read = (rel) => readFileSync(join(root, rel), 'utf8');
 const PANES = [
   ['src/components/molding/WallLegend.jsx', 'data-wall-legend'],
   ['src/components/molding/PartingLegend.jsx', 'data-parting-legend'],
-  ['src/components/molding/SideActionLegend.jsx', 'data-side-action-legend'],
   ['src/components/molding/MoldDraftLegend.jsx', 'data-mold-draft-legend'],
   ['src/components/molding/DfmReportPanel.jsx', 'data-mold-dfm-report'],
   ['src/components/molding/MoldQuotePanel.jsx', 'data-mold-quote-panel'],
@@ -119,7 +118,6 @@ test('phone molding panes cap height and keep the scroll off the canvas', () => 
 test('each molding pane renders the scroll container and its last control', async () => {
   const { default: WallLegend } = await importJsx(new URL('./WallLegend.jsx', import.meta.url));
   const { default: PartingLegend } = await importJsx(new URL('./PartingLegend.jsx', import.meta.url));
-  const { default: SideActionLegend } = await importJsx(new URL('./SideActionLegend.jsx', import.meta.url));
   const { default: MoldDraftLegend } = await importJsx(new URL('./MoldDraftLegend.jsx', import.meta.url));
   const { default: DfmReportPanel } = await importJsx(new URL('./DfmReportPanel.jsx', import.meta.url));
   const { default: MoldQuotePanel } = await importJsx(new URL('./MoldQuotePanel.jsx', import.meta.url));
@@ -143,14 +141,25 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(parting, /Core/);
   assert.doesNotMatch(parting, /Parting line ·/);
 
-  const sides = renderToStaticMarkup(React.createElement(SideActionLegend, {
+  const sides = renderToStaticMarkup(React.createElement(PartingLegend, {
     legend: {
-      more: 0,
-      rows: [{ id: 'a', kind: 'slide', css: '#abc', label: 'Slide', pull: '[0, 0, 1]' }],
+      rows: [
+        { role: 'core', css: '#abc', label: 'Core' },
+        { role: 'side', css: '#0a0', label: 'Side action' },
+        { role: 'parting-line', css: '#ff0', label: 'Parting line' },
+      ],
+      groups: [{ id: 0, kind: 'slide', css: '#0a0', label: 'Slide', pull: '+X', areaLabel: '12 mm²', selected: true }],
     },
   }));
-  assert.match(sides, /data-side-action-legend/);
+  assert.match(sides, /data-parting-legend/);
+  assert.match(sides, /data-mold-side-action-group/);
+  assert.match(sides, /data-ui-action="data-mold-side-action-group"/);
+  assert.match(sides, /data-side-action-area/);
+  assert.match(sides, /12 mm²/);
+  assert.match(sides, /\+X/);
+  assert.match(sides, /aria-pressed="true"/);
   assert.match(sides, /data-mold-pane-end/);
+  assert.doesNotMatch(sides, /data-side-action-legend/);
 
   const draft = renderToStaticMarkup(React.createElement(MoldDraftLegend, {
     legend: { minDeg: 1, violations: 2, pins: 4, sleeves: 1, css: '#abc' },

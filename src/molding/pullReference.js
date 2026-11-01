@@ -1,5 +1,5 @@
 /**
- * Shared pull reference for core/cavity, side actions, and mold draft.
+ * Shared pull reference for core/cavity (including side actions) and mold draft.
  * Auto searches. Plane uses an origin-plane normal. Face uses a picked
  * face normal. The sign is kept.
  */

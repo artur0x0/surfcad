@@ -1,13 +1,18 @@
 /**
  * Side-action groups (injection molding, M2.2).
  *
- * Each M1 undercut region already shares a side and a normal. This step
- * clusters those regions into the slides and lifters a later quote can
- * count. The split is a heuristic. A region whose normal sits within 45°
- * of the main pull is a lifter, and its suggested pull is that normal
- * (the way the steel leaves the plastic, not an angled ejection path).
- * A region closer to the parting plane is a slide, and its suggested pull
- * is the part of the normal that lies in the parting plane.
+ * Only a true undercut becomes a slide or a lifter. A region whose normal
+ * lies within `PARTING_ZERO_DRAFT_DEG` of the parting plane is a vertical
+ * wall, not a side action. Draft analysis owns that wall. Nothing here
+ * names a part or turns a zero-draft wall into a slide.
+ *
+ * Each remaining region gets an escape direction. Candidates lie in the
+ * parting plane: the in-plane part of the region's normal first, then a
+ * ring of in-plane samples. The first direction whose faces are not blocked
+ * by the rest of the part is a slide. When every lateral move hits the
+ * part before it leaves, an angled direction into the core (−pull plus
+ * lateral) is a lifter. The split is a heuristic. A true undercut is
+ * blocked along ±pull, so the escape is never that axis.
  *
  * Regions of the same kind and the same side whose suggested pulls agree
  * within 35° are one action, including when they sit far apart. Opposite
@@ -15,19 +20,30 @@
  * mold CAD. A messy mesh returns groups instead of failing.
  */
 
+import { PARTING_ZERO_DRAFT_DEG, partingLegendModel } from './parting.js';
+
 /** Matches `MOLD_REGION_NORMAL_DEG`. Suggested pulls this close share an action. */
 export const SIDE_ACTION_ALIGN_DEG = 35;
-/** A normal within this angle of the main pull is called a lifter. Heuristic. */
-export const SIDE_ACTION_LIFTER_DEG = 45;
+/** An angled lifter leaves the parting plane by this much, into the core. */
+export const SIDE_ACTION_LIFTER_DEG = 20;
 
 const ALIGN_COS = Math.cos((SIDE_ACTION_ALIGN_DEG * Math.PI) / 180);
-const LIFTER_COS = Math.cos((SIDE_ACTION_LIFTER_DEG * Math.PI) / 180);
+const CANDIDATE_COS = Math.cos((15 * Math.PI) / 180);
+const ESCAPE_SKIN_MM = 0.05;
+const SAMPLE_COUNT = 12;
+/** Same band as the undercut test. A wall this close to vertical is not a side action. */
+const VERTICAL_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 
 /** Discrete skin colours. Not stress, and not a CSS token. */
 export const SIDE_ACTION_KIND_RGB = Object.freeze({
   slide: Object.freeze([0.15, 0.55, 0.38]),
   lifter: Object.freeze([0.48, 0.32, 0.70]),
 });
+
+/** One face colour for every side action on the core/cavity skin. */
+export const SIDE_ACTION_FACE_RGB = Object.freeze([0.15, 0.55, 0.38]);
+/** Selected group. Same family, light enough to read against the base. */
+export const SIDE_ACTION_HIGHLIGHT_RGB = Object.freeze([0.55, 0.92, 0.70]);
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -42,6 +58,18 @@ function unit(v) {
   const l = len(v);
   if (!(l > 1e-12)) return null;
   return [v[0] / l, v[1] / l, v[2] / l];
+}
+
+function cross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function sub(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
 function round(n, places = 6) {
@@ -59,10 +87,16 @@ function rgbCss(rgb) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+function basisOf(d) {
+  const helper = Math.abs(d[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+  const u = unit(cross(helper, d));
+  const v = unit(cross(d, u));
+  return { u, v };
+}
+
 /**
- * Heuristic pull for one undercut region. `lifter` when the normal is
- * within 45° of the main pull; otherwise `slide` in the parting plane.
- * Returns null when either vector is zero.
+ * In-plane part of `normal`. Null when the normal is parallel to the pull:
+ * that axis is blocked for a true undercut, so it is not an escape.
  */
 export function suggestSidePull(normal, pull) {
   const n = unit(normal);
@@ -70,12 +104,205 @@ export function suggestSidePull(normal, pull) {
   if (!n || !d) return null;
   const along = dot(n, d);
   const lateral = [n[0] - d[0] * along, n[1] - d[1] * along, n[2] - d[2] * along];
-  if (Math.abs(along) >= LIFTER_COS || !(len(lateral) > 1e-8)) {
-    return { kind: 'lifter', pull: round3(n) };
-  }
   const slide = unit(lateral);
-  if (!slide) return { kind: 'lifter', pull: round3(n) };
+  if (!slide) return null;
   return { kind: 'slide', pull: round3(slide) };
+}
+
+function pushUnique(list, raw) {
+  const dir = unit(raw);
+  if (!dir) return;
+  for (const have of list) {
+    if (dot(have, dir) > CANDIDATE_COS) return;
+  }
+  list.push(dir);
+}
+
+function inPlaneCandidates(normal, pull) {
+  const d = unit(pull);
+  if (!d) return [];
+  const { u, v } = basisOf(d);
+  const dirs = [];
+  const hinted = suggestSidePull(normal, d);
+  if (hinted) {
+    pushUnique(dirs, hinted.pull);
+    pushUnique(dirs, hinted.pull.map((n) => -n));
+  }
+  for (let i = 0; i < SAMPLE_COUNT; i++) {
+    const ang = (i * 2 * Math.PI) / SAMPLE_COUNT;
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    pushUnique(dirs, [
+      u[0] * c + v[0] * s,
+      u[1] * c + v[1] * s,
+      u[2] * c + v[2] * s,
+    ]);
+  }
+  return dirs;
+}
+
+function boundsOf(tris) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const tri of tris) {
+    for (const p of [tri.a, tri.b, tri.c]) {
+      for (let k = 0; k < 3; k++) {
+        if (p[k] < min[k]) min[k] = p[k];
+        if (p[k] > max[k]) max[k] = p[k];
+      }
+    }
+  }
+  return { min, max };
+}
+
+function rayAabbExit(orig, dir, min, max) {
+  let tEnter = -Infinity;
+  let tExit = Infinity;
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(dir[k]) < 1e-12) {
+      if (orig[k] < min[k] || orig[k] > max[k]) return 0;
+      continue;
+    }
+    const inv = 1 / dir[k];
+    let t0 = (min[k] - orig[k]) * inv;
+    let t1 = (max[k] - orig[k]) * inv;
+    if (t0 > t1) {
+      const swap = t0;
+      t0 = t1;
+      t1 = swap;
+    }
+    if (t0 > tEnter) tEnter = t0;
+    if (t1 < tExit) tExit = t1;
+  }
+  if (tExit < tEnter || tExit < 0) return 0;
+  return tExit;
+}
+
+function rayHit(orig, dir, tri) {
+  const e1 = sub(tri.b, tri.a);
+  const e2 = sub(tri.c, tri.a);
+  const pvec = cross(dir, e2);
+  const det = dot(e1, pvec);
+  if (Math.abs(det) < 1e-8) return null;
+  const inv = 1 / det;
+  const tvec = sub(orig, tri.a);
+  const u = dot(tvec, pvec) * inv;
+  if (u < 0 || u > 1) return null;
+  const qvec = cross(tvec, e1);
+  const v = dot(dir, qvec) * inv;
+  if (v < 0 || u + v > 1) return null;
+  const t = dot(e2, qvec) * inv;
+  if (!(t > ESCAPE_SKIN_MM)) return null;
+  return t;
+}
+
+function samplesOf(region, byIndex) {
+  const out = [];
+  const ids = Array.isArray(region?.triangles) ? region.triangles : [];
+  for (const id of ids) {
+    const tri = byIndex.get(id);
+    if (!tri?.centroid || !tri.n) continue;
+    const n = tri.n;
+    const c = tri.centroid;
+    out.push([
+      c[0] + n[0] * ESCAPE_SKIN_MM,
+      c[1] + n[1] * ESCAPE_SKIN_MM,
+      c[2] + n[2] * ESCAPE_SKIN_MM,
+    ]);
+  }
+  return out;
+}
+
+/**
+ * True when translating `triangleIds` along `direction` leaves the part
+ * before the ray hits any other triangle. No samples means nothing to block.
+ */
+export function directionClears(tris, triangleIds, direction) {
+  const dir = unit(direction);
+  if (!dir || !Array.isArray(tris) || !tris.length) return true;
+  const own = new Set(triangleIds || []);
+  const bounds = boundsOf(tris);
+  const samples = [];
+  for (const tri of tris) {
+    if (!own.has(tri.t) || !tri.centroid || !tri.n) continue;
+    const n = tri.n;
+    const c = tri.centroid;
+    samples.push([
+      c[0] + n[0] * ESCAPE_SKIN_MM,
+      c[1] + n[1] * ESCAPE_SKIN_MM,
+      c[2] + n[2] * ESCAPE_SKIN_MM,
+    ]);
+  }
+  if (!samples.length) return true;
+  return samples.every((origin) => sampleExits(origin, dir, tris, own, bounds));
+}
+
+function sampleExits(origin, dir, tris, own, bounds) {
+  // A triangle on the bounding box is still the part. Only a ray that
+  // leaves that box without a hit is an open escape.
+  const limit = rayAabbExit(origin, dir, bounds.min, bounds.max) + ESCAPE_SKIN_MM;
+  for (const tri of tris) {
+    if (own.has(tri.t)) continue;
+    const t = rayHit(origin, dir, tri);
+    if (t != null && t <= limit) return false;
+  }
+  return true;
+}
+
+function clearanceOf(samples, dir, tris, own, bounds) {
+  if (!samples.length) return Infinity;
+  let nearest = Infinity;
+  for (const origin of samples) {
+    const limit = rayAabbExit(origin, dir, bounds.min, bounds.max);
+    for (const tri of tris) {
+      if (own.has(tri.t)) continue;
+      const t = rayHit(origin, dir, tri);
+      if (t != null && t < limit && t < nearest) nearest = t;
+    }
+  }
+  return nearest;
+}
+
+function escapeForRegion(region, pull, tris, byIndex, bounds) {
+  const d = unit(pull);
+  const candidates = inPlaneCandidates(region?.normal, d);
+  const own = new Set(region?.triangles || []);
+  const samples = tris ? samplesOf(region, byIndex) : [];
+  const exits = (dir) => {
+    if (!tris || !samples.length) return true;
+    return samples.every((origin) => sampleExits(origin, dir, tris, own, bounds));
+  };
+  for (const dir of candidates) {
+    if (exits(dir)) return { kind: 'slide', pull: round3(dir), clear: true };
+  }
+  const angled = [];
+  const sine = Math.sin((SIDE_ACTION_LIFTER_DEG * Math.PI) / 180);
+  const cosine = Math.cos((SIDE_ACTION_LIFTER_DEG * Math.PI) / 180);
+  for (const dir of candidates) {
+    pushUnique(angled, [
+      dir[0] * cosine - d[0] * sine,
+      dir[1] * cosine - d[1] * sine,
+      dir[2] * cosine - d[2] * sine,
+    ]);
+  }
+  for (const dir of angled) {
+    if (exits(dir)) return { kind: 'lifter', pull: round3(dir), clear: true };
+  }
+  let best = candidates[0] || basisOf(d).u;
+  let bestGap = -1;
+  for (const dir of candidates) {
+    const gap = tris ? clearanceOf(samples, dir, tris, own, bounds) : Infinity;
+    if (gap > bestGap) {
+      bestGap = gap;
+      best = dir;
+    }
+  }
+  const lifter = unit([
+    best[0] * cosine - d[0] * sine,
+    best[1] * cosine - d[1] * sine,
+    best[2] * cosine - d[2] * sine,
+  ]) || best;
+  return { kind: 'lifter', pull: round3(lifter), clear: false };
 }
 
 /** Skin colour for a group. Later groups of the same kind step lighter. */
@@ -97,6 +324,23 @@ function formatPull(pull) {
   return pull.map((n) => n.toFixed(2)).join(' ');
 }
 
+function formatArea(area) {
+  if (!Number.isFinite(area)) return '';
+  const text = Math.abs(area - Math.round(area)) < 0.05
+    ? String(Math.round(area))
+    : Math.abs(area) >= 10
+      ? area.toFixed(1)
+      : area.toFixed(2);
+  return `${text} mm²`;
+}
+
+/** A vertical wall, within half a degree, is not a true undercut. */
+function clearsVertical(normal, pull) {
+  const n = unit(normal);
+  if (!n) return false;
+  return Math.abs(dot(n, pull)) > VERTICAL_SIN;
+}
+
 function emptyActions() {
   return {
     heuristic: true,
@@ -113,14 +357,27 @@ function emptyActions() {
  * Cluster undercut regions into side actions along `pull`.
  * A bad pull or a missing list is zero groups, not an error.
  */
-export function groupSideActions(regions, pull) {
+export function groupSideActions(regions, pull, tris = null) {
   const d = unit(pull);
   if (!d || !Array.isArray(regions)) return emptyActions();
+  const mesh = Array.isArray(tris) && tris.length ? tris : null;
+  const byIndex = new Map();
+  if (mesh) {
+    for (const tri of mesh) byIndex.set(tri.t, tri);
+  }
+  const bounds = mesh ? boundsOf(mesh) : null;
   const members = [];
   for (const region of regions) {
-    const suggested = suggestSidePull(region?.normal, d);
-    if (!suggested || (region.side !== 1 && region.side !== -1)) continue;
-    members.push({ region, kind: suggested.kind, pull: suggested.pull });
+    if (!clearsVertical(region?.normal, d)) continue;
+    if (region.side !== 1 && region.side !== -1) continue;
+    const escape = escapeForRegion(region, d, mesh, byIndex, bounds);
+    if (!escape?.pull) continue;
+    members.push({
+      region,
+      kind: escape.kind,
+      pull: escape.pull,
+      clear: !!escape.clear,
+    });
   }
   const parent = members.map((_, i) => i);
   const find = (i) => {
@@ -173,6 +430,7 @@ export function groupSideActions(regions, pull) {
     groups.push({
       kind: list[0].kind,
       heuristic: true,
+      clear: list.every((member) => member.clear),
       pull: round3(merged),
       side: list[0].region.side,
       area: round(area),
@@ -203,6 +461,40 @@ export function groupSideActions(regions, pull) {
   };
 }
 
+/**
+ * Core/cavity legend plus one row per slide or lifter. Omitting side
+ * actions still inserts the side-action swatch with no group buttons.
+ * `partingLegendModel` itself stays the three role rows.
+ */
+export function splitLegendModel(parting, sideActions = null, selectedId = null) {
+  const base = partingLegendModel(parting);
+  if (!base) return null;
+  const rows = [];
+  for (const row of base.rows) {
+    if (row.role === 'parting-line') {
+      rows.push({ role: 'side', label: 'Side action', css: rgbCss(SIDE_ACTION_FACE_RGB) });
+    }
+    rows.push(row);
+  }
+  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+  return {
+    rows,
+    groups: groups.map((group) => ({
+      id: group.id,
+      kind: group.kind,
+      label: group.kind === 'lifter' ? 'Lifter' : 'Slide',
+      pull: formatPull(group.pull),
+      areaLabel: formatArea(group.area),
+      css: rgbCss(sideActionRgb(group.kind, 0)),
+      selected: selectedId != null && group.id === selectedId,
+    })),
+    heuristic: true,
+    count: sideActions?.count || 0,
+    slideCount: sideActions?.slideCount || 0,
+    lifterCount: sideActions?.lifterCount || 0,
+  };
+}
+
 /** Legend rows. Null without an analysis. Zero groups still produce a chip. */
 export function sideActionLegendModel(sideActions) {
   if (!sideActions || !Array.isArray(sideActions.groups)) return null;
@@ -212,6 +504,7 @@ export function sideActionLegendModel(sideActions) {
     kind: group.kind,
     label: group.kind === 'lifter' ? 'Lifter' : 'Slide',
     pull: formatPull(group.pull),
+    areaLabel: formatArea(group.area),
     css: rgbCss(sideActionRgb(group.kind, index)),
   }));
   return {

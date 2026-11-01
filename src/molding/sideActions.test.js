@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runScript } from '../lib/surfcad/index.js';
 import { analyzePullDirection } from './pullDirection.js';
 import { MOLD_REGION_NORMAL_DEG } from './pullDirection.js';
+import { partingLegendModel } from './parting.js';
 import {
   SIDE_ACTION_ALIGN_DEG,
   groupSideActions,
   sideActionLegendModel,
+  splitLegendModel,
   suggestSidePull,
 } from './sideActions.js';
 
@@ -34,7 +37,7 @@ function appendMesh(dstPos, dstIdx, positions, indices) {
 }
 
 /**
- * Outer box, a +Z shelf (lifter on a +Z pull), and a tilted +X wall (slide).
+ * Outer box, a +Z shelf, and a tilted wall. Both are trapped, so both are lifters.
  */
 function shelfAndSlide() {
   const positions = [];
@@ -70,14 +73,12 @@ test('the align angle matches the undercut region angle', () => {
   assert.equal(SIDE_ACTION_ALIGN_DEG, MOLD_REGION_NORMAL_DEG);
 });
 
-test('a sideways normal is a slide and a pull-facing normal is a lifter', () => {
+test('a sideways normal hints a slide and a pull-parallel normal is not an escape', () => {
   const slide = suggestSidePull([1, 0, 0.2], [0, 0, 1]);
   assert.equal(slide.kind, 'slide');
   assert.ok(slide.pull[0] > 0.9);
   assert.ok(Math.abs(slide.pull[2]) < 1e-6);
-  const lifter = suggestSidePull([0, 0, 1], [0, 0, 1]);
-  assert.equal(lifter.kind, 'lifter');
-  assert.deepEqual(lifter.pull, [0, 0, 1]);
+  assert.equal(suggestSidePull([0, 0, 1], [0, 0, 1]), null);
   assert.equal(suggestSidePull([0, 0, 0], [0, 0, 1]), null);
 });
 
@@ -90,8 +91,8 @@ test('same-direction regions on one side are one action, even far apart', () => 
     region(4, [0, 0.2, 1], 1, { area: 4 }),
   ], [0, 0, 1]);
   assert.equal(grouped.heuristic, true);
-  assert.equal(grouped.slideCount, 3);
-  assert.equal(grouped.lifterCount, 1);
+  assert.equal(grouped.slideCount, 4);
+  assert.equal(grouped.lifterCount, 0);
   assert.equal(grouped.count, 4);
   const slides = grouped.groups.filter((group) => group.kind === 'slide');
   const merged = slides.find((group) => group.regionIds.length === 2);
@@ -100,12 +101,90 @@ test('same-direction regions on one side are one action, even far apart', () => 
   assert.equal(merged.pull[0] > 0.9, true);
   assert.equal(slides.some((group) => group.side === -1), true);
   assert.equal(slides.some((group) => group.pull[0] < -0.9), true);
-  assert.equal(grouped.groups[grouped.groups.length - 1].kind, 'lifter');
+  const alongY = grouped.groups.find((group) => group.area === 4);
+  assert.equal(alongY.kind, 'slide');
+  assert.ok(alongY.pull[1] > 0.9);
   const legend = sideActionLegendModel(grouped);
   assert.equal(legend.heuristic, true);
   assert.equal(legend.rows.length, 4);
   assert.equal(legend.more, 0);
   assert.equal(legend.rows[0].label, 'Slide');
+  assert.equal(legend.rows[0].areaLabel, '4 mm²');
+});
+
+test('a wall within half a degree of vertical is not a side action', () => {
+  const grouped = groupSideActions([
+    region(0, [1, 0, 0], 1, { area: 40 }),
+    region(1, [1, 0, Math.sin((0.25 * Math.PI) / 180)], 1, { area: 30 }),
+    region(2, [0, 0, -1], -1, { area: 12 }),
+  ], [0, 0, 1]);
+  assert.equal(grouped.count, 1);
+  assert.equal(grouped.slideCount, 1);
+  assert.equal(grouped.lifterCount, 0);
+  assert.equal(grouped.groups[0].area, 12);
+  assert.ok(grouped.groups[0].pull[0] > 0.9);
+  assert.ok(Math.abs(grouped.groups[0].pull[2]) < 1e-6);
+  const legend = sideActionLegendModel(grouped);
+  assert.equal(legend.rows[0].label, 'Slide');
+  assert.equal(legend.rows[0].pull, '+X');
+  assert.equal(legend.rows[0].areaLabel, '12 mm²');
+});
+
+/**
+ * Closed box plus one internal wall. At 0° the wall is vertical and must
+ * not be a side action. At 2° it is a true undercut. The box blocks every
+ * lateral escape, so the action is an angled lifter. The 10° drafted-area
+ * band must not swallow it.
+ */
+function occludedWall(deg) {
+  const positions = [];
+  const indices = [];
+  const box = boxMesh([0, 0, 0], [20, 20, 12]);
+  appendMesh(positions, indices, box.positions, box.indices);
+  const lean = Math.tan((deg * Math.PI) / 180);
+  const z0 = 2;
+  const z1 = 8;
+  const x0 = 8;
+  const x1 = 8 + (z1 - z0) * lean;
+  const base = positions.length / 3;
+  positions.push(x0, 6, z0, x0, 14, z0, x1, 14, z1, x1, 6, z1);
+  indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  return { positions, indices, pull: [0, 0, 1] };
+}
+
+test('an occluded wall is a side action only once it leaves the vertical band', () => {
+  const upright = analyzePullDirection(occludedWall(0));
+  assert.equal(upright.undercutCount, 0);
+  assert.equal(upright.sideActions.count, 0);
+  const grazing = analyzePullDirection(occludedWall(0.25));
+  assert.equal(grazing.undercutCount, 0);
+  assert.equal(grazing.sideActions.count, 0);
+  const drafted = analyzePullDirection(occludedWall(2));
+  assert.equal(drafted.error, undefined);
+  assert.equal(drafted.undercutCount, 1);
+  assert.equal(drafted.sideActions.count, 1);
+  assert.equal(drafted.sideActions.slideCount, 0);
+  assert.equal(drafted.sideActions.lifterCount, 1);
+  const group = drafted.sideActions.groups[0];
+  assert.equal(group.clear, false);
+  assert.ok(group.pull[0] > 0.8);
+  assert.ok(group.pull[2] < -0.2);
+  assert.ok(group.area > 40);
+});
+
+test('the core and cavity legend lists each side action', () => {
+  const parting = { counts: { core: 1, cavity: 1, parting: 0 } };
+  const grouped = groupSideActions([
+    region(2, [0, 0, -1], -1, { area: 12 }),
+  ], [0, 0, 1]);
+  const legend = splitLegendModel(parting, grouped, 0);
+  assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Side action', 'Parting line']);
+  assert.equal(legend.groups[0].label, 'Slide');
+  assert.equal(legend.groups[0].areaLabel, '12 mm²');
+  assert.equal(legend.groups[0].pull, '+X');
+  assert.equal(legend.groups[0].selected, true);
+  assert.equal(partingLegendModel(parting).rows.length, 3);
+  assert.equal(splitLegendModel(null), null);
 });
 
 test('a zero pull and a missing list are zero groups', () => {
@@ -125,15 +204,49 @@ test('a box has no side actions and a shelf plus a tilted wall splits', () => {
   assert.equal(box.sideActions.heuristic, true);
   const part = analyzePullDirection({ ...shelfAndSlide(), pull: [0, 0, 1] });
   assert.equal(part.error, undefined);
-  assert.equal(part.sideActions.slideCount, 1);
-  assert.equal(part.sideActions.lifterCount, 1);
+  assert.equal(part.sideActions.slideCount, 0);
+  assert.equal(part.sideActions.lifterCount, 2);
   assert.equal(part.sideActions.count, 2);
-  const slide = part.sideActions.groups.find((group) => group.kind === 'slide');
-  const lifter = part.sideActions.groups.find((group) => group.kind === 'lifter');
-  assert.ok(slide.pull[0] > 0.9);
-  assert.deepEqual(lifter.pull, [0, 0, 1]);
-  assert.ok(slide.triangles.length >= 1);
-  assert.ok(lifter.triangles.length >= 1);
+  for (const group of part.sideActions.groups) {
+    assert.equal(group.kind, 'lifter');
+    assert.equal(group.clear, false);
+    assert.ok(group.pull[2] < -0.2);
+    assert.ok(group.triangles.length >= 1);
+  }
   assert.equal(part.fit, 'fixable');
   assert.equal(part.undercutCount, 2);
+});
+
+const SHELL_FILLET = `
+// --- cube begin id=cube1 ---
+let box1 = Manifold.cube([68.7, 74.10000000000001, 37.5], true);
+let part = box1;
+// --- cube end id=cube1 ---
+// --- fillet-mode begin id=fillet1 ---
+const selEdges = edgesNamed(part, "cube1.back~cube1.right", "cube1.back~cube1.bottom", "cube1.bottom~cube1.right", "cube1.bottom~cube1.left", "cube1.bottom~cube1.front", "cube1.front~cube1.left", "cube1.back~cube1.left", "cube1.front~cube1.right");
+part = filletEdges(part, selEdges, 4, { sphericalCorners: true });
+// --- fillet-mode end id=fillet1 ---
+part = hollow(part, 1.85, { center: [0.0003, -0.0003, 18.75], normal: [0, 0, 1] });
+return part;
+`;
+
+test('Shell_Fillet_Test has no side actions on the searched pull', { timeout: 120_000 }, async () => {
+  const ran = await runScript(SHELL_FILLET);
+  assert.equal(ran.status, 'NoError', ran.status);
+  const np = ran.mesh.numProp || 3;
+  const src = ran.mesh.vertProperties;
+  const positions = new Float64Array((src.length / np) * 3);
+  for (let i = 0, v = 0; i < src.length; i += np, v += 3) {
+    positions[v] = src[i];
+    positions[v + 1] = src[i + 1];
+    positions[v + 2] = src[i + 2];
+  }
+  const result = analyzePullDirection({ positions, indices: ran.mesh.triVerts });
+  assert.equal(result.error, undefined);
+  assert.equal(result.fit, 'good');
+  assert.deepEqual(result.pull, [0, 0, 1]);
+  assert.equal(result.undercutCount, 0);
+  assert.equal(result.sideActions.count, 0);
+  assert.equal(result.sideActions.slideCount, 0);
+  assert.equal(result.sideActions.lifterCount, 0);
 });

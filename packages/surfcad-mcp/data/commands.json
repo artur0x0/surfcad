@@ -2534,7 +2534,7 @@
     },
     {
       "name": "mold_fit",
-      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters, each with a suggested pull. That split is a heuristic. count, slideCount, and lifterCount are the numbers a later tooling adder can use. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
+      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters. Each group has an escape direction and an area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. A wall within 0.5° of vertical is not a side action. That split is a heuristic. count, slideCount, and lifterCount are the numbers the DFM report and the quote read. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2579,7 +2579,7 @@
     },
     {
       "name": "mold_pull",
-      "description": "Set the shared pull reference used by core/cavity, side actions, and mold draft. mode auto searches icosphere and planar candidates, minimizing occluded undercut area and then maximizing drafted area. mode plane uses Top (+Z), Front (+Y), or Right (+X). mode face uses normal [x, y, z] in the part local frame and keeps its sign. Changing it recomputes those three from the same pull. Read-only. It does not edit CAD draft.",
+      "description": "Set the shared pull reference used by core/cavity (including side actions) and mold draft. mode auto searches icosphere and planar candidates, minimizing occluded undercut area and then maximizing drafted area. mode plane uses Top (+Z), Front (+Y), or Right (+X). mode face uses normal [x, y, z] in the part local frame and keeps its sign. Changing it recomputes those from the same pull. Read-only. It does not edit CAD draft.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2676,14 +2676,62 @@
     },
     {
       "name": "mold_parting",
-      "description": "Show or hide the core and cavity colours on the active part, in the part local frame. on true classifies every face from the mold-analysis pull by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical is still core or cavity: it takes the role of the labelled neighbour it can reach, so an inner pocket wall joins the core and an outer wall joins the cavity. There is no separate zero-draft colour. The outer parting loop is a polyline. Stamped faces keep their edge names on that loop. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not a CAD draft edit and not a quote.",
+      "description": "Show or hide the core, cavity, and side-action colours on the active part, in the part local frame. on true classifies every face from the mold-analysis pull by complete visibility (core along +pull, cavity along -pull) and paints a true undercut as a side action. A wall within 0.5° of vertical is still core or cavity: it takes the role of the labelled neighbour it can reach, so an inner pocket wall joins the core and an outer wall joins the cavity. There is no separate zero-draft colour. The outer parting loop is a polyline. Stamped faces keep their edge names on that loop. sideActions lists each slide or lifter with its escape direction and area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. group highlights one of those groups. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not a CAD draft edit and not a quote.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "on": {
             "type": "boolean",
-            "description": "true shows core and cavity colours and the outer parting line. false restores paint and the part colour. Omit to toggle."
+            "description": "true shows core, cavity, and side-action colours and the outer parting line. false restores paint and the part colour. Omit to toggle."
+          },
+          "group": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Side-action group id to highlight. The same id again, or null, clears the highlight. Omit to leave the selection."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": "measure",
+      "immediate": true,
+      "uiEntry": [
+        "data-mold-parting",
+        "data-mold-side-action-group"
+      ],
+      "example": {
+        "on": true
+      }
+    },
+    {
+      "name": "mold_side_actions",
+      "description": "Alias of mold_parting for side actions. on true, or omit on, opens the core and cavity colouring and returns the same slide and lifter counts, each with its escape direction and area. replacedBy is mold_parting. on false does not hide that colouring; the message names mold_parting { on: false }. A wall within 0.5° of vertical is not a side action. The escape is never the pull axis. group highlights one group. Read-only. Not mold CAD and not a quote.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "true, or omit, opens core and cavity and returns the side actions. false does not hide them. Call mold_parting { on: false } to hide that colouring."
+          },
+          "group": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Side-action group id to highlight, forwarded to mold_parting."
           }
         }
       },
@@ -2701,37 +2749,6 @@
       "group": "measure",
       "immediate": true,
       "uiEntry": "data-mold-parting",
-      "example": {
-        "on": true
-      }
-    },
-    {
-      "name": "mold_side_actions",
-      "description": "Show or hide side-action groups on the active part, in the part local frame. on true clusters the mold-analysis undercuts into slides and lifters, each with a suggested pull, and paints those triangles. Slide versus lifter is a heuristic. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not mold CAD and not a quote.",
-      "args": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "on": {
-            "type": "boolean",
-            "description": "true shows side-action groups. false restores paint and the part colour. Omit to toggle."
-          }
-        }
-      },
-      "result": {
-        "type": "object",
-        "additionalProperties": true
-      },
-      "errors": [
-        "no_mesh",
-        "internal"
-      ],
-      "mutates": false,
-      "destructive": false,
-      "confirm": false,
-      "group": "measure",
-      "immediate": true,
-      "uiEntry": "data-mold-side-actions",
       "example": {
         "on": true
       }

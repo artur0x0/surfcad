@@ -1,11 +1,11 @@
 // components/MoldingToolsControl.jsx — Molding tools drawer on the right rail.
 //
 // One trigger, one menu, same unfurl as ViewSnapControl:
-//   tap      opens the six molding tools in a row to the left
+//   tap      opens the molding tools in a row to the left
 //   tap again closes it — the icon becomes a left arrow while open
 // The menu flies out left because the rail lives on the right edge.
 // `w-max` + `flex-nowrap` keep that row from collapsing (see ViewSnapControl).
-// The row is one step tighter than view snap so six icons clear the left
+// The row is one step tighter than view snap so the icons clear the left
 // rail on a 390px phone.
 //
 // A tool press closes the flyout, then opens or toggles that pane.
@@ -14,7 +14,6 @@ import React, { useState } from 'react';
 import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
-  ArrowLeftRight,
   ArrowUpFromLine,
   ClipboardList,
   Factory,
@@ -33,10 +32,6 @@ const MoldingToolsControl = ({
   partingActive = false,
   partingPending = false,
   onPartingToggle = null,
-  showSideActions = false,
-  sideActionsActive = false,
-  sideActionsPending = false,
-  onSideActionsToggle = null,
   showMoldDraft = false,
   moldDraftActive = false,
   moldDraftPending = false,
@@ -53,11 +48,10 @@ const MoldingToolsControl = ({
   defaultOpen = false,
 }) => {
   const [open, setOpen] = useState(!!defaultOpen);
-  const anyShown = showWall || showParting || showSideActions || showMoldDraft || showDfm || showQuote;
+  const anyShown = showWall || showParting || showMoldDraft || showDfm || showQuote;
   if (!anyShown) return null;
   const anyOn = (showWall && (wallActive || wallPending))
     || (showParting && (partingActive || partingPending))
-    || (showSideActions && (sideActionsActive || sideActionsPending))
     || (showMoldDraft && (moldDraftActive || moldDraftPending))
     || (showDfm && (dfmActive || dfmPending))
     || (showQuote && (quoteActive || quotePending));
@@ -104,22 +98,6 @@ const MoldingToolsControl = ({
               data-ui-action="data-mold-parting"
             >
               <SquareSplitHorizontal size={20} />
-            </button>
-          )}
-          {showSideActions && (
-            <button
-              type="button"
-              onClick={() => pressMoldTool(setOpen, onSideActionsToggle)}
-              className={toolToggleClass(sideActionsActive || sideActionsPending)}
-              title={sideActionsPending ? 'Computing side actions' : (sideActionsActive ? 'Hide side actions' : 'Show side actions')}
-              aria-label={sideActionsPending ? 'Computing side actions' : (sideActionsActive ? 'Hide side actions' : 'Show side actions')}
-              aria-pressed={!!sideActionsActive}
-              aria-busy={sideActionsPending || undefined}
-              data-mold-side-actions=""
-              data-mold-side-actions-state={toolState(sideActionsActive, sideActionsPending)}
-              data-ui-action="data-mold-side-actions"
-            >
-              <ArrowLeftRight size={20} />
             </button>
           )}
           {showMoldDraft && (

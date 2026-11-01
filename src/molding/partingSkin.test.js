@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial } from 'three';
 import { PARTING_ROLE_RGB } from './parting.js';
+import { SIDE_ACTION_FACE_RGB, SIDE_ACTION_HIGHLIGHT_RGB } from './sideActions.js';
 import { detachPartingSkin, syncPartingSkin, PARTING_SKIN_RENDER_ORDER } from './partingSkin.js';
 
 function hostWithPaint() {
@@ -79,6 +80,25 @@ test('the parting skin draws the outer loop as a polyline', () => {
   const line = skin.children.find((child) => child.name === 'mold-parting-line');
   assert.ok(line);
   assert.equal(line.geometry.getAttribute('position').count, 4);
+});
+
+test('a side action paints the third colour, and the selected group is brighter', () => {
+  const host = hostWithPaint();
+  const withSide = {
+    ...parting,
+    triangles: [{ index: 0, role: 'core' }],
+  };
+  const sides = { groups: [{ id: 0, triangles: [0] }] };
+  const skin = syncPartingSkin(host, withSide, sides, null);
+  const colours = skin.geometry.getAttribute('color').array;
+  assert.ok(Math.abs(colours[0] - SIDE_ACTION_FACE_RGB[0]) < 1e-6);
+  assert.ok(Math.abs(colours[1] - SIDE_ACTION_FACE_RGB[1]) < 1e-6);
+  assert.ok(Math.abs(colours[2] - SIDE_ACTION_FACE_RGB[2]) < 1e-6);
+  const highlighted = syncPartingSkin(host, withSide, sides, 0);
+  const bright = highlighted.geometry.getAttribute('color').array;
+  assert.ok(Math.abs(bright[0] - SIDE_ACTION_HIGHLIGHT_RGB[0]) < 1e-6);
+  assert.ok(Math.abs(bright[1] - SIDE_ACTION_HIGHLIGHT_RGB[1]) < 1e-6);
+  assert.ok(Math.abs(bright[2] - SIDE_ACTION_HIGHLIGHT_RGB[2]) < 1e-6);
 });
 
 test('turning the parting skin off restores face paint', () => {
