@@ -254,9 +254,14 @@ body,
   background-color: rgba(107, 114, 128, 0.45);
   border-radius: 9999px;
 }
+/* 16px so iOS Safari does not zoom a focused field. The molding results
+   pane is not a feature card, and it uses the same rule. */
 [data-feature-card] input,
 [data-feature-card] select,
-[data-feature-card] textarea {
+[data-feature-card] textarea,
+[data-mold-results-pane] input,
+[data-mold-results-pane] select,
+[data-mold-results-pane] textarea {
   font-size: 16px;
 }
 @media (prefers-reduced-motion: reduce) {

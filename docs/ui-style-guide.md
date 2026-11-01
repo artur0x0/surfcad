@@ -155,6 +155,30 @@ tracking-wide`, value `text-[13px]`, note `text-xs`. Prefer those
 tokens inside feature popups. Parts inputs use
 `PARTS_TEXT_INPUT_*` (≥16px).
 
+**Focused fields and selects.** A focused text field or select stays
+readable, and iOS Safari does not zoom the page.
+
+- Font size is at least 16px. `text-ui-lg` is that size. Feature cards
+  set it with `[data-feature-card] input, select, textarea` in
+  `src/index.css`. The molding results pane is not a feature card; it
+  uses the same rule on `[data-mold-results-pane]`. Parts and
+  sheet-metal fields also set `PARTS_TEXT_INPUT_STYLE`
+  (`{ fontSize: '16px' }`). iOS Safari zooms when a focused control is
+  under 16px, and the viewport `maximum-scale` lock does not stop that.
+- The control has an opaque fill and an explicit text colour.
+  `PARTS_TEXT_INPUT_CLASS` (`bg-black/30`, `text-chrome-text`,
+  `src/utils/partsChrome.js`) is that chrome. A `bg-transparent` field
+  on `surface-glass-chip` disappears while it is focused.
+- The touch target for a feature-pane select or typed field is 44px:
+  `SM_TAP` (`min-h-[44px]`) in `src/components/sheetMetal/SmControls.jsx`,
+  the class `SmSelect` combines with `PARTS_TEXT_INPUT_*`. That is the
+  height. A new control does not pick its own.
+- The mold report resin select (`data-mold-report-resin`) and custom
+  quantity (`data-mold-report-custom`) use `PARTS_TEXT_INPUT_CLASS`,
+  `PARTS_TEXT_INPUT_STYLE`, and `SM_TAP`.
+- `useModalViewport` scrolls the focused control into the open pane for
+  `.modal-fit`, `[data-feature-card]`, and `[data-mold-results-pane]`.
+
 `formatDisplayNumber` (`src/utils/displayUnit.js`) is the one formatter
 for calculated numbers: at most four decimals, trailing zeros removed.
 Displaying a field does not rewrite the script.

@@ -7,6 +7,8 @@
 import React, { useState } from 'react';
 import { REPORT_QUANTITIES } from '../../molding/moldReport.js';
 import { PAY_FOR_REVIEW_MESSAGE } from '../../utils/moldingLeadClient.js';
+import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../../utils/partsChrome.js';
+import { SM_TAP } from '../sheetMetal/SmControls.jsx';
 
 function num(value, digits) {
   return Number.isFinite(value) ? value.toFixed(digits) : null;
@@ -91,7 +93,8 @@ export default function MoldReportPanel({
         <select
           data-mold-report-resin=""
           data-ui-action="data-mold-report-resin"
-          className="mt-0.5 w-full min-h-11 rounded-md border border-chrome-border bg-transparent px-2 font-ui text-on-dark"
+          className={`mt-0.5 ${PARTS_TEXT_INPUT_CLASS} ${SM_TAP}`}
+          style={PARTS_TEXT_INPUT_STYLE}
           value={report.grade || ''}
           onChange={(event) => onGrade?.(event.target.value)}
         >
@@ -132,7 +135,8 @@ export default function MoldReportPanel({
           aria-invalid={customInvalid || undefined}
           value={preset ? custom : (custom || String(report.quantity))}
           placeholder="Quantity"
-          className="mt-0.5 w-full min-h-11 rounded-md border border-chrome-border bg-transparent px-2 font-ui text-on-dark"
+          className={`mt-0.5 ${PARTS_TEXT_INPUT_CLASS} ${SM_TAP}`}
+          style={PARTS_TEXT_INPUT_STYLE}
           onChange={(event) => {
             const next = event.target.value;
             setCustom(next);

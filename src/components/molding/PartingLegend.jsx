@@ -1,7 +1,8 @@
 /**
  * Core / cavity section of the molding results pane. Labels stay
  * `text-on-dark`. Counts stay off the section: the parting line is one
- * polyline, not a face tally. Side actions are rows in this same section.
+ * polyline, not a face tally. The Side action row and its slide or lifter
+ * list render only when that count is greater than 0.
  */
 
 import React from 'react';
@@ -15,7 +16,7 @@ export default function PartingLegend({ legend, onSelectGroup = null }) {
       className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Core and cavity</div>
-      <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end={groups ? undefined : ''}>
+      <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end={groups && groups.length > 0 ? undefined : ''}>
         {legend.rows.map((row) => (
           <li key={row.role} className="flex items-center gap-1 text-ui-sm text-on-dark">
             <span
@@ -24,16 +25,11 @@ export default function PartingLegend({ legend, onSelectGroup = null }) {
               style={{ background: row.css }}
             />
             {row.label}
-            {row.role === 'side' && groups && groups.length === 0 ? (
-              <span className="ml-auto text-muted-on-dark" data-side-action-empty="">
-                None
-              </span>
-            ) : null}
           </li>
         ))}
       </ul>
       {groups && groups.length > 0 && (
-        <ul className="mt-1 flex flex-col gap-1">
+        <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end="">
           {groups.map((row) => (
             <li key={row.id}>
               <button
@@ -62,11 +58,6 @@ export default function PartingLegend({ legend, onSelectGroup = null }) {
             </li>
           ))}
         </ul>
-      )}
-      {groups && (
-        <div className="mt-1 text-ui-sm text-muted-on-dark" data-side-action-heuristic="" data-mold-pane-end="">
-          Heuristic
-        </div>
       )}
     </div>
   );

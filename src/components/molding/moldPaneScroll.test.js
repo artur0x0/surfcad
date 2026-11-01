@@ -158,6 +158,25 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(sides, /aria-pressed="true"/);
   assert.match(sides, /data-mold-pane-end/);
   assert.doesNotMatch(sides, /data-side-action-legend/);
+  assert.doesNotMatch(sides, /Heuristic/);
+  assert.doesNotMatch(sides, /data-side-action-heuristic/);
+
+  const noSides = renderToStaticMarkup(React.createElement(PartingLegend, {
+    legend: {
+      rows: [
+        { role: 'core', css: '#abc', label: 'Core' },
+        { role: 'cavity', css: '#cba', label: 'Cavity' },
+        { role: 'parting-line', css: '#ff0', label: 'Parting line' },
+      ],
+      groups: [],
+      count: 0,
+    },
+  }));
+  assert.doesNotMatch(noSides, /Side action/);
+  assert.doesNotMatch(noSides, /Lifter/);
+  assert.doesNotMatch(noSides, /None/);
+  assert.doesNotMatch(noSides, /Heuristic/);
+  assert.match(noSides, /data-mold-pane-end/);
 
   const draft = renderToStaticMarkup(React.createElement(MoldDraftLegend, {
     legend: {
@@ -188,6 +207,8 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(draft, /--mold-draft-positive:\s*46 115 199/);
   assert.match(draft, /--mold-draft-negative:\s*184 92 46/);
   assert.doesNotMatch(draft, /#[0-9a-fA-F]{3,8}/);
+  assert.doesNotMatch(draft, /Heuristic/);
+  assert.doesNotMatch(draft, /data-mold-draft-heuristic/);
 
   const report = renderToStaticMarkup(React.createElement(MoldReportPanel, {
     report: {
@@ -260,6 +281,22 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(priced, /Material \+ press time \+ tooling \/ quantity/);
   assert.match(priced, /data-mold-report-custom/);
   assert.match(priced, /value="17"/);
+  assert.match(priced, /data-mold-report-resin/);
+  assert.match(priced, /min-h-\[44px\]/);
+  assert.match(priced, /font-size:16px/);
+  assert.match(priced, /bg-black\/30/);
+  const resinAt = priced.indexOf('data-mold-report-resin');
+  const customAt = priced.indexOf('data-mold-report-custom');
+  assert.match(priced.slice(resinAt, resinAt + 400), /min-h-\[44px\]/);
+  assert.match(priced.slice(resinAt, resinAt + 400), /font-size:16px/);
+  assert.match(priced.slice(customAt, customAt + 500), /min-h-\[44px\]/);
+  assert.match(priced.slice(customAt, customAt + 500), /font-size:16px/);
+  const viewport = read('src/hooks/useModalViewport.js');
+  const fieldCss = read('src/index.css');
+  assert.match(viewport, /data-mold-results-pane/);
+  assert.match(fieldCss, /\[data-mold-results-pane\] input/);
+  assert.match(fieldCss, /\[data-mold-results-pane\] select/);
+  assert.match(fieldCss, /font-size:\s*16px/);
 
   const { default: MoldResultsPane } = await importJsx(new URL('./MoldResultsPane.jsx', import.meta.url));
   const { default: PullReference } = await importJsx(new URL('./PullReference.jsx', import.meta.url));
