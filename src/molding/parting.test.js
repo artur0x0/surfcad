@@ -141,7 +141,7 @@ test('a box along +Z keeps an axis pull, colours every face, and draws the top l
   assert.ok(Math.abs(line.projectedPerimeter - 40) < 1e-4);
   assert.ok(line.points.every((point) => Math.abs(point[2] - 10) < 1e-4));
   const legend = partingLegendModel(parting);
-  assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Parting line']);
+  assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Zero-draft', 'Parting line']);
   assert.ok(legend.rows.every((row) => row.count == null));
 });
 

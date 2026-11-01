@@ -7,7 +7,9 @@
  * same skin as the undercut grid) is core. One whose samples are all on
  * the back is cavity. Anything only partly in front is not a seed.
  *
- * Walls with |n · d| under half a degree are not rasterized. They take
+ * Walls with |n · d| under half a degree are not rasterized. The test uses
+ * the triangle's own normal, so a faceted fillet whose stamp points along
+ * the pull is still zero-draft. They take
  * the role of the labelled neighbour they touch. A wall that touches both
  * roles joins the cavity, so the outside of a tray stays outside and an
  * inside wall that only meets the core stays core. A face that contains
@@ -54,6 +56,9 @@ export const PARTING_ROLE_RGB = Object.freeze({
   cavity: Object.freeze([0.18, 0.45, 0.78]),
   core: Object.freeze([0.72, 0.36, 0.18]),
 });
+
+/** Zero-draft walls. Still owned by core or cavity. Not a parting area. */
+export const PARTING_ZERO_DRAFT_RGB = Object.freeze([0.2, 0.55, 0.42]);
 
 /** Parting polyline. Not a face colour and not a CSS token. */
 export const PARTING_LINE_RGB = Object.freeze([0.96, 0.78, 0.18]);
@@ -172,6 +177,7 @@ function visibilitySeeds(tris, d) {
       hb,
       hc,
       nd: dot(tri.n, d),
+      ndGeom: dot(tri.nGeom || tri.n, d),
       u0: Math.min(pa[0], pb[0], pc[0]),
       u1: Math.max(pa[0], pb[0], pc[0]),
       v0: Math.min(pa[1], pb[1], pc[1]),
@@ -226,7 +232,7 @@ function visibilitySeeds(tris, d) {
   const seeds = new Array(n).fill(null);
   for (let i = 0; i < n; i++) {
     const row = rows[i];
-    if (Math.abs(row.nd) <= ZERO_SIN) continue;
+    if (Math.abs(row.ndGeom) <= ZERO_SIN) continue;
     const samples = [
       [(row.pa[0] + row.pb[0] + row.pc[0]) / 3, (row.pa[1] + row.pb[1] + row.pc[1]) / 3],
       [row.pa[0] * 0.6 + row.pb[0] * 0.2 + row.pc[0] * 0.2, row.pa[1] * 0.6 + row.pb[1] * 0.2 + row.pc[1] * 0.2],
@@ -904,10 +910,18 @@ export function classifyParting(tris, pull, faceInfo = null) {
   const d = unit(pull);
   if (!d || !Array.isArray(tris) || !tris.length) return null;
   const roleOf = assignRoles(tris, d, faceInfo);
-  const roleByTriangle = tris.map((tri, i) => ({ index: tri.t, role: roleOf[i] }));
+  let zeroDraft = 0;
+  const roleByTriangle = tris.map((tri, i) => {
+    const n = tri.nGeom || tri.n;
+    const vertical = !!(n && Math.abs(dot(n, d)) <= ZERO_SIN);
+    if (vertical) zeroDraft += tri.area;
+    const row = { index: tri.t, role: roleOf[i] };
+    if (vertical) row.zeroDraft = true;
+    return row;
+  });
   const faces = clusterFaces(tris, roleOf, faceInfo);
   const counts = { core: 0, cavity: 0, parting: 0 };
-  const areas = { core: 0, cavity: 0, parting: 0 };
+  const areas = { core: 0, cavity: 0, parting: 0, zeroDraft: round(zeroDraft) };
   for (const face of faces) {
     counts[face.role] += 1;
     areas[face.role] = round(areas[face.role] + face.area);
@@ -923,13 +937,14 @@ export function classifyParting(tris, pull, faceInfo = null) {
   };
 }
 
-/** Legend rows for the parting overlay. Core, cavity, and the parting line. No face counts. */
+/** Legend rows. Zero-draft is a paint class on top of core or cavity, not an area bucket. */
 export function partingLegendModel(parting) {
   if (!parting?.counts) return null;
   return {
     rows: [
       { role: 'core', label: 'Core', css: rgbCss(PARTING_ROLE_RGB.core) },
       { role: 'cavity', label: 'Cavity', css: rgbCss(PARTING_ROLE_RGB.cavity) },
+      { role: 'zero-draft', label: 'Zero-draft', css: rgbCss(PARTING_ZERO_DRAFT_RGB) },
       { role: 'parting-line', label: 'Parting line', css: rgbCss(PARTING_LINE_RGB) },
     ],
   };

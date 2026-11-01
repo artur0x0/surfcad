@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial } from 'three';
-import { PARTING_ROLE_RGB } from './parting.js';
+import { PARTING_ROLE_RGB, PARTING_ZERO_DRAFT_RGB } from './parting.js';
 import { detachPartingSkin, syncPartingSkin, PARTING_SKIN_RENDER_ORDER } from './partingSkin.js';
 
 function hostWithPaint() {
@@ -38,6 +38,30 @@ test('the parting skin paints the triangle and hides face paint', () => {
   assert.ok(Math.abs(colors[1] - PARTING_ROLE_RGB.cavity[1]) < 1e-6);
   assert.ok(Math.abs(colors[2] - PARTING_ROLE_RGB.cavity[2]) < 1e-6);
   assert.equal(skin.children.some((child) => child.name === 'mold-parting-line'), false);
+});
+
+test('a zero-draft triangle keeps its owner and paints the zero-draft colour', () => {
+  const host = hostWithPaint();
+  const skin = syncPartingSkin(host, {
+    ...parting,
+    triangles: [{ index: 0, role: 'cavity', zeroDraft: true }],
+  });
+  const colors = skin.geometry.getAttribute('color').array;
+  assert.ok(Math.abs(colors[0] - PARTING_ZERO_DRAFT_RGB[0]) < 1e-6);
+  assert.ok(Math.abs(colors[1] - PARTING_ZERO_DRAFT_RGB[1]) < 1e-6);
+  assert.ok(Math.abs(colors[2] - PARTING_ZERO_DRAFT_RGB[2]) < 1e-6);
+});
+
+test('an unknown role paints cavity, not an unmarked colour', () => {
+  const host = hostWithPaint();
+  const skin = syncPartingSkin(host, {
+    ...parting,
+    triangles: [{ index: 0, role: 'parting' }],
+  });
+  const colors = skin.geometry.getAttribute('color').array;
+  assert.ok(Math.abs(colors[0] - PARTING_ROLE_RGB.cavity[0]) < 1e-6);
+  assert.ok(Math.abs(colors[1] - PARTING_ROLE_RGB.cavity[1]) < 1e-6);
+  assert.ok(Math.abs(colors[2] - PARTING_ROLE_RGB.cavity[2]) < 1e-6);
 });
 
 test('the parting skin draws the outer loop as a polyline', () => {

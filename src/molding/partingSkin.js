@@ -17,7 +17,7 @@ import {
   Mesh,
 } from 'three';
 import { makeFaceSkinMaterial } from '../utils/faceColorSkin.js';
-import { PARTING_LINE_RGB, PARTING_ROLE_RGB } from './parting.js';
+import { PARTING_LINE_RGB, PARTING_ROLE_RGB, PARTING_ZERO_DRAFT_RGB } from './parting.js';
 
 /** Above paint (2), under the wall skin (2.4) and the stress skin (2.5). */
 export const PARTING_SKIN_RENDER_ORDER = 2.35;
@@ -54,17 +54,22 @@ function buildGeometry(geometry, parting) {
   if (!index?.length || !src?.length) return null;
   const triangles = Math.floor(index.length / 3);
   if (!triangles) return null;
-  const roleOf = new Array(triangles).fill('parting');
+  const roleOf = new Array(triangles).fill('cavity');
+  const zeroDraft = new Array(triangles).fill(false);
   const rows = Array.isArray(parting?.triangles) ? parting.triangles : [];
   for (let i = 0; i < rows.length; i++) {
     const sample = rows[i];
-    if (sample?.index >= 0 && sample.index < triangles) roleOf[sample.index] = sample.role;
+    if (!(sample?.index >= 0 && sample.index < triangles)) continue;
+    if (sample.role === 'core' || sample.role === 'cavity') roleOf[sample.index] = sample.role;
+    if (sample.zeroDraft) zeroDraft[sample.index] = true;
   }
   const positions = new Float32Array(triangles * 9);
   const colors = new Float32Array(triangles * 9);
   let w = 0;
   for (let t = 0; t < triangles; t++) {
-    const rgb = PARTING_ROLE_RGB[roleOf[t]] || PARTING_ROLE_RGB.cavity;
+    const rgb = zeroDraft[t]
+      ? PARTING_ZERO_DRAFT_RGB
+      : (PARTING_ROLE_RGB[roleOf[t]] || PARTING_ROLE_RGB.cavity);
     for (let k = 0; k < 3; k++) {
       const vi = index[t * 3 + k] * 3;
       positions[w] = src[vi] || 0;
@@ -151,6 +156,7 @@ export function syncPartingSkin(host, parting) {
     parting.lines?.[0]?.length || 0,
     parting.lines?.[0]?.points?.length || 0,
     parting.neutralDeg,
+    parting.areas?.zeroDraft || 0,
   ].join('|');
   if (host.userData?.partingStamp === stamp && host.userData.partingSkin) {
     hidePaintSkin(host);
