@@ -22,9 +22,11 @@
  *
  * A closed shell decomposes into the filled outer hull plus a negative-volume
  * cavity. That cavity is the inner shell of the void, not a second body.
- * `logicalBodies` keeps it with the solid whose box contains it, so a merge-on
- * add and `booleanBodies` boolean the whole voided solid. Union of the filled
- * hull alone would fill the cavity.
+ * `logicalBodies` keeps it with the solid that encloses the void shell: a
+ * winding-number test of points on that shell, and the smallest enclosing
+ * solid wins. A bounding box that merely covers the cavity center is not
+ * enough — two solids can overlap in box without one nesting inside the
+ * other. Union of the filled hull alone would fill the cavity.
  *
  * Installed once on the embind prototype (Manifold.prototype is a wrapper).
  *
@@ -244,11 +246,102 @@ function pointInBox(point, box, eps = 1e-4) {
 }
 
 /**
+ * Points just inside the void, one at each extreme of its shell. The bbox
+ * center is not used: concentric shells share it, so the outer void would
+ * look contained by the inner solid.
+ */
+function cavityShellPoints(cavity) {
+  let mesh = null;
+  try { mesh = cavity.getMesh(); } catch (_) { mesh = null; }
+  const props = mesh && mesh.vertProperties;
+  const stride = (mesh && mesh.numProp) || 3;
+  const n = props ? Math.floor(props.length / stride) : 0;
+  let center = [0, 0, 0];
+  try { center = boxCenter(boxOf(cavity)); } catch (_) { /* origin */ }
+  if (n < 1) return [center];
+  const picked = new Set();
+  const coord = (i, axis) => props[i * stride + axis];
+  for (let axis = 0; axis < 3; axis++) {
+    let lo = 0;
+    let hi = 0;
+    for (let i = 1; i < n; i++) {
+      if (coord(i, axis) < coord(lo, axis)) lo = i;
+      if (coord(i, axis) > coord(hi, axis)) hi = i;
+    }
+    picked.add(lo);
+    picked.add(hi);
+  }
+  const points = [];
+  for (const i of picked) {
+    const v = [coord(i, 0), coord(i, 1), coord(i, 2)];
+    const d = [center[0] - v[0], center[1] - v[1], center[2] - v[2]];
+    const dist = Math.hypot(d[0], d[1], d[2]) || 1;
+    // Stay on the shell. A long step toward the center falls inside a solid
+    // that only overlaps the middle of the void.
+    const nudge = Math.min(0.25, dist * 0.05);
+    points.push([
+      v[0] + (d[0] / dist) * nudge,
+      v[1] + (d[1] / dist) * nudge,
+      v[2] + (d[2] / dist) * nudge,
+    ]);
+  }
+  return points.length ? points : [center];
+}
+
+/** Generalized winding number of `point` against a closed triangle mesh. */
+function windingNumber(mesh, point) {
+  const props = mesh.vertProperties;
+  const tris = mesh.triVerts;
+  if (!props || !tris) return 0;
+  const stride = mesh.numProp || 3;
+  const vert = (i) => {
+    const o = i * stride;
+    return [props[o] - point[0], props[o + 1] - point[1], props[o + 2] - point[2]];
+  };
+  let sum = 0;
+  for (let t = 0; t + 2 < tris.length; t += 3) {
+    const a = vert(tris[t]);
+    const b = vert(tris[t + 1]);
+    const c = vert(tris[t + 2]);
+    const la = Math.hypot(a[0], a[1], a[2]);
+    const lb = Math.hypot(b[0], b[1], b[2]);
+    const lc = Math.hypot(c[0], c[1], c[2]);
+    const cross = [
+      b[1] * c[2] - b[2] * c[1],
+      b[2] * c[0] - b[0] * c[2],
+      b[0] * c[1] - b[1] * c[0],
+    ];
+    const num = a[0] * cross[0] + a[1] * cross[1] + a[2] * cross[2];
+    const den = la * lb * lc
+      + (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) * lc
+      + (b[0] * c[0] + b[1] * c[1] + b[2] * c[2]) * la
+      + (c[0] * a[0] + c[1] * a[1] + c[2] * a[2]) * lb;
+    sum += 2 * Math.atan2(num, den);
+  }
+  return Number.isFinite(sum) ? sum / (4 * Math.PI) : 0;
+}
+
+/** True when every void-shell sample sits inside `mesh` (winding about ±1). */
+function meshEncloses(mesh, points) {
+  for (const point of points) {
+    if (Math.abs(windingNumber(mesh, point)) <= 0.5) return false;
+  }
+  return true;
+}
+
+function boxHoldsPoints(box, points) {
+  for (const point of points) if (!pointInBox(point, box)) return false;
+  return true;
+}
+
+/**
  * Logical solids of `m`. A negative-volume component is the inner shell of a
- * void and stays with the positive solid whose box contains its center
- * (else the largest solid). Returns null when `m` is already one logical
- * body — one solid, or one solid plus its cavities — and frees the decompose
- * copies so the caller keeps `m` unchanged. Otherwise one manifold per solid.
+ * void and stays with the smallest positive solid that encloses it (a
+ * winding test of points on the void shell; the box only rejects solids that
+ * cannot). Otherwise the largest solid. Returns null when `m` is already one
+ * logical body — one solid, or one solid plus its cavities — and frees the
+ * decompose copies so the caller keeps `m` unchanged. Otherwise one manifold
+ * per solid.
  */
 export function logicalBodies(m, module) {
   if (!m || typeof m.decompose !== 'function') return null;
@@ -272,19 +365,26 @@ export function logicalBodies(m, module) {
   const boxes = positives.map(boxOf);
   const vols = positives.map(volumeOf);
   const groups = positives.map((solid) => [solid]);
-  for (const cavity of cavities) {
-    let center = [0, 0, 0];
-    try { center = boxCenter(boxOf(cavity)); } catch (_) { /* origin */ }
+  const shellPoints = cavities.map(cavityShellPoints);
+  const meshes = new Map();
+  for (let c = 0; c < cavities.length; c++) {
+    const points = shellPoints[c];
     let owner = -1;
-    for (let i = 0; i < boxes.length; i++) {
-      if (!pointInBox(center, boxes[i])) continue;
+    for (let i = 0; i < positives.length; i++) {
+      if (!boxHoldsPoints(boxes[i], points)) continue;
+      let mesh = meshes.get(i);
+      if (mesh === undefined) {
+        try { mesh = positives[i].getMesh(); } catch (_) { mesh = null; }
+        meshes.set(i, mesh);
+      }
+      if (!mesh || !meshEncloses(mesh, points)) continue;
       if (owner < 0 || vols[i] < vols[owner]) owner = i;
     }
     if (owner < 0) {
       owner = 0;
       for (let i = 1; i < vols.length; i++) if (vols[i] > vols[owner]) owner = i;
     }
-    groups[owner].push(cavity);
+    groups[owner].push(cavities[c]);
   }
   const bodies = [];
   for (const group of groups) {
