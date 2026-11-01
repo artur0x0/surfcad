@@ -62,6 +62,21 @@ return part;`;
   assert.ok(Math.abs(ran.volume - 36500) < 5, `volume ${ran.volume} filled the lip hole`);
 });
 
+test('a rim lip the boolean turns into a handle stays its own body', async () => {
+  // 68.7 x 74.1 is not the 40 mm lip: the coplanar rim boolean joins into one
+  // solid of genus 2. That join is dropped. The lip stays a separate body.
+  const src = `let part = Manifold.cube([68.7, 74.1, 37.5], true);
+const lip = makeExtrude([].concat(profileRectangle(86.7, 92.1, true).contours, profileRectangle(68.7, 74.1, true).contours), 3.175).translate([0, 0, 18.75]);
+part = part.add(lip);
+return part;`;
+  const ran = await runScript(src);
+  assert.equal(ran.status, 'NoError', ran.status);
+  assert.equal(ran.bodyCount, 2);
+  assert.equal(ran.manifold.genus(), 0);
+  const parts = rows(ran.manifold);
+  assert.equal(parts.length, 2);
+});
+
 test('a proper frame on the face stays one solid, and a real gap stays separate', async () => {
   const frame = await runScript(`${CUBE}
 const frame = makeExtrude([].concat(profileRectangle(50, 40, true).contours, profileRectangle(30, 20, true).contours), 5).translate([0, 0, 10]);
