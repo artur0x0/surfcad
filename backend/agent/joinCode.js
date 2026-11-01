@@ -234,9 +234,11 @@ export function createJoinCodeService(opts) {
       };
     }
     if (record.status === 'expired') return { status: 'expired', id: record.id };
-    if (record.status === 'used' || record.status === 'dead' || record.status === 'superseded') {
-      return { status: 'used', id: record.id };
-    }
+    // A successful redeem is the only `used` record. Dead and superseded
+    // stay distinct so the waiting card does not treat a killed code as connected.
+    if (record.status === 'used') return { status: 'redeemed', id: record.id };
+    if (record.status === 'dead') return { status: 'dead', id: record.id };
+    if (record.status === 'superseded') return { status: 'superseded', id: record.id };
     return { status: 'none' };
   }
 

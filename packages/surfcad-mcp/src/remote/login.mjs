@@ -31,12 +31,34 @@ export function loginStatusError(status) {
   return 'Login ended before approval. Run npx surfcad-mcp login again.';
 }
 
+export const LOGIN_STALE_MESSAGE = 'That login code is stale. Run npx surfcad-mcp login again for a new one.';
+
+/**
+ * @param {unknown} retryAfterSec
+ * @returns {string} empty, or ` try again in N s.`
+ */
+export function formatRetryAfter(retryAfterSec) {
+  const sec = Number(retryAfterSec);
+  if (!Number.isFinite(sec) || sec <= 0) return '';
+  return ` try again in ${Math.ceil(sec)} s.`;
+}
+
+/**
+ * @param {string} lead sentence ending in a period
+ * @param {unknown} retryAfterSec
+ * @param {string} again
+ */
+function rateLimitMessage(lead, retryAfterSec, again) {
+  return `${lead}${formatRetryAfter(retryAfterSec)} ${again}`;
+}
+
 /**
  * @param {string} url
  * @param {object} body
  * @param {typeof fetch} fetchImpl
+ * @param {AbortSignal} [signal]
  */
-async function postJson(url, body, fetchImpl) {
+async function postJson(url, body, fetchImpl, signal) {
   /** @type {Response} */
   let res;
   try {
@@ -47,8 +69,12 @@ async function postJson(url, body, fetchImpl) {
         Accept: 'application/json',
       },
       body: JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw Object.assign(new Error('aborted'), { code: 'aborted' });
+    }
     throw Object.assign(new Error('Could not reach the SurfCAD agent server.'), { code: 'unreachable' });
   }
   /** @type {any} */
@@ -93,7 +119,11 @@ export async function loginDevice(options) {
   if (started.status !== 201 || !started.json?.userCode) {
     const code = started.json?.error === 'rate_limited' ? 'rate_limited' : 'pair_failed';
     const message = code === 'rate_limited'
-      ? 'Too many login attempts. Wait and run npx surfcad-mcp login again.'
+      ? rateLimitMessage(
+        'Too many login attempts.',
+        started.json?.retryAfterSec,
+        'Run npx surfcad-mcp login again.',
+      )
       : 'Could not start login.';
     throw Object.assign(new Error(message), { code });
   }
@@ -107,12 +137,47 @@ export async function loginDevice(options) {
       interval: Number.isFinite(intervalSec) && intervalSec > 0 ? intervalSec : 5,
     });
   }
-  const deadline = now() + (options.timeoutMs ?? 10 * 60 * 1000);
+  const expiresAtMs = Date.parse(started.json.expiresAt);
+  const deadline = Number.isFinite(expiresAtMs)
+    ? expiresAtMs
+    : now() + (options.timeoutMs ?? 10 * 60 * 1000);
   let first = true;
   while (now() < deadline) {
-    if (!first) await sleep(pollMs);
+    if (!first) {
+      const wait = Math.min(pollMs, deadline - now());
+      if (wait > 0) await sleep(wait);
+      if (now() >= deadline) break;
+    }
     first = false;
-    const polled = await postJson(urls.pollUrl, { deviceSecret, userCode }, fetchImpl);
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const remaining = Math.max(0, deadline - now());
+    /** @type {ReturnType<typeof setTimeout> | undefined} */
+    let timeoutId;
+    const timeout = new Promise((resolve) => {
+      timeoutId = setTimeout(() => {
+        controller?.abort();
+        resolve({ timedOut: true });
+      }, remaining);
+    });
+    const pending = postJson(urls.pollUrl, { deviceSecret, userCode }, fetchImpl, controller?.signal)
+      .catch((err) => {
+        if (err?.code === 'aborted') return { timedOut: true };
+        throw err;
+      });
+    let polled;
+    try {
+      polled = await Promise.race([pending, timeout]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (polled?.timedOut) break;
+    if (polled.status === 429) {
+      throw Object.assign(new Error(rateLimitMessage(
+        'Too many login attempts.',
+        polled.json?.retryAfterSec,
+        'Run npx surfcad-mcp login again.',
+      )), { code: 'rate_limited' });
+    }
     if (polled.status !== 200 || !polled.json?.status) {
       throw Object.assign(new Error('Could not check the login code.'), { code: 'poll_failed' });
     }
@@ -136,10 +201,7 @@ export async function loginDevice(options) {
     }
     throw Object.assign(new Error(loginStatusError(status)), { code: status });
   }
-  throw Object.assign(
-    new Error('Timed out waiting for approval. Run npx surfcad-mcp login again.'),
-    { code: 'expired' },
-  );
+  throw Object.assign(new Error(LOGIN_STALE_MESSAGE), { code: 'expired' });
 }
 
 /**
@@ -171,7 +233,11 @@ export async function loginWithCode(options) {
   }, fetchImpl);
   if (redeemed.status === 429) {
     throw Object.assign(
-      new Error('Too many attempts. Wait and run npx surfcad-mcp login --code again.'),
+      new Error(rateLimitMessage(
+        'Too many attempts.',
+        redeemed.json?.retryAfterSec,
+        'Run npx surfcad-mcp login --code again.',
+      )),
       { code: 'rate_limited' },
     );
   }

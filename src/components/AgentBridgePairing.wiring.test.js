@@ -14,7 +14,7 @@ const TAB = readFileSync(join(dir, '../agent/ws/tabConnection.js'), 'utf8');
 
 test('pairing reports paired plus link so the in-viewer prompt can show', () => {
   assert.match(SRC, /onPairingChange = null/);
-  assert.match(SRC, /onPairingChange\?\.\(\{ paired: state === 'paired', link \}\)/);
+  assert.match(SRC, /onPairingChange\?\.\(\{ paired: visiblePaired, link: visibleLink \}\)/);
 });
 
 test('Connect Agent opens a body-portal dialog and closes the profile menu', () => {
@@ -34,6 +34,13 @@ test('Safari and phone width open the server dialog and do not probe localhost',
   assert.match(SRC, /data-agent-join-code/);
   assert.match(SRC, /text-ui-code/);
   assert.match(SRC, /resumeJoinAction/);
+  assert.match(SRC, /joinPollEvent/);
+  assert.match(SRC, /stepJoinConnection/);
+  assert.match(SRC, /visibilitychange/);
+  const serverDeps = SRC.split('\n').find((line) => line.includes('serverKick, stopConnection'));
+  assert.ok(serverDeps);
+  assert.doesNotMatch(serverDeps, /\bnarrow\b/);
+  assert.match(SRC, /narrowRef\.current/);
   assert.match(SRC, /sessionStorage/);
   assert.match(SRC, /SERVER_PAIRING_WAITING_COPY/);
   assert.match(SRC, /data-agent-bridge-waiting-server=""/);
@@ -171,6 +178,6 @@ test('the connected banner shell does not take clicks outside the card', () => {
 });
 
 test('menu and dialog Disconnect are hidden until the agent is paired', () => {
-  assert.match(SRC, /shouldShowAgentBridgeDisconnect\(\{ paired, link \}\)/);
+  assert.match(SRC, /shouldShowAgentBridgeDisconnect\(\{ paired, link: visibleLink \}\)/);
   assert.equal((SRC.match(/shouldShowAgentBridgeDisconnect/g) || []).length >= 2, true);
 });

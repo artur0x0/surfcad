@@ -7,6 +7,7 @@ import {
 import {
   createCloseMenuRegistry,
   shouldKeepAgentBridgeHostMounted,
+  shouldOpenAgentChatOnConnect,
   shouldShowAgentBridgeDisconnect,
 } from '../agent/ws/pairingFlow.js';
 import AgentBridgePairing from './AgentBridgePairing';
@@ -47,9 +48,13 @@ export default function AgentBridgeHost({ enabled = false, children }) {
   }, []);
   const openAgentChat = useCallback(() => setAgentChatOpen(true), []);
   const closeAgentChat = useCallback(() => setAgentChatOpen(false), []);
+  const wasConnectedRef = useRef(false);
   useEffect(() => {
-    if (!shouldShowAgentBridgeDisconnect({ paired, link })) setAgentChatOpen(false);
-  }, [paired, link]);
+    const connected = shouldShowAgentBridgeDisconnect({ paired, link });
+    if (shouldOpenAgentChatOnConnect(wasConnectedRef.current, connected)) openAgentChat();
+    if (!connected) setAgentChatOpen(false);
+    wasConnectedRef.current = connected;
+  }, [paired, link, openAgentChat]);
   const onPairingChange = useCallback(({ paired: nextPaired, link: nextLink } = {}) => {
     setPaired(nextPaired === true);
     if (nextLink !== undefined) setLink(nextLink);

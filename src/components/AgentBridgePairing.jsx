@@ -16,6 +16,7 @@ import {
 import AgentBridgePopupStatus from './AgentBridgePopupStatus.jsx';
 import {
   clearStoredJoin,
+  joinPollEvent,
   loadStoredJoin,
   resumeJoinAction,
   saveStoredJoin,
@@ -53,6 +54,7 @@ import {
   SERVER_PAIRING_WAITING_COPY,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
+  stepJoinConnection,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
@@ -112,6 +114,8 @@ export default function AgentBridgePairing({
   const [relayReachable, setRelayReachable] = useState(false);
   const [approvalUi, setApprovalUi] = useState({ open: false });
   const [link, setLink] = useState(null);
+  const [joinLatched, setJoinLatched] = useState(false);
+  const [joinId, setJoinId] = useState('');
   const [toastOpen, setToastOpen] = useState(false);
   const [popupFallback, setPopupFallback] = useState(false);
   const [usingServer, setUsingServer] = useState(false);
@@ -128,6 +132,10 @@ export default function AgentBridgePairing({
   const serverUnreachableRef = useRef(false);
   const serverAttemptRef = useRef(false);
   const userStoppedRef = useRef(false);
+  const joinLatchRef = useRef(false);
+  const sawAgentUpRef = useRef(false);
+  const narrowRef = useRef(narrow);
+  narrowRef.current = narrow;
   const pollerRef = useRef(null);
   const transportRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
@@ -186,16 +194,46 @@ export default function AgentBridgePairing({
     pollerRef.current = null;
   }, []);
 
+  const applyJoinEvent = useCallback((event) => {
+    const next = stepJoinConnection(
+      { connected: joinLatchRef.current, waiting: flowOpenRef.current },
+      event,
+    );
+    const became = next.connected && !joinLatchRef.current;
+    const dropped = joinLatchRef.current && !next.connected;
+    joinLatchRef.current = next.connected;
+    setJoinLatched(next.connected);
+    if (became) {
+      setState('paired');
+      setLink('connected');
+      setFlowOpen(false);
+      setToastOpen(true);
+      if (typeof window !== 'undefined') clearStoredJoin(window.sessionStorage);
+      setJoinCode('');
+    } else if (dropped) {
+      setLink(null);
+      setState('advertising');
+    } else if (next.connected && flowOpenRef.current) {
+      setFlowOpen(false);
+    } else if (next.waiting && !flowOpenRef.current) {
+      setFlowOpen(true);
+    }
+    return next;
+  }, []);
+
   const disconnectPairing = useCallback(() => {
     if (stateRef.current === 'pending') {
       connRef.current?.rejectPair();
     }
+    sawAgentUpRef.current = false;
+    applyJoinEvent('user-disconnect');
     setFlowOpen(false);
     stopPolling();
     stopConnection();
     setToken('');
+    setJoinId('');
     setRelayReachable(false);
-  }, [stopConnection, stopPolling]);
+  }, [applyJoinEvent, stopConnection, stopPolling]);
 
   const disconnectFromUser = useCallback(() => {
     userStoppedRef.current = true;
@@ -259,13 +297,16 @@ export default function AgentBridgePairing({
     }
   }, [state]);
 
-  useEffect(() => {
-    onConnectionChange?.(link);
-  }, [onConnectionChange, link]);
+  const visiblePaired = joinLatched || state === 'paired';
+  const visibleLink = joinLatched ? 'connected' : link;
 
   useEffect(() => {
-    onPairingChange?.({ paired: state === 'paired', link });
-  }, [onPairingChange, state, link]);
+    onConnectionChange?.(visibleLink);
+  }, [onConnectionChange, visibleLink]);
+
+  useEffect(() => {
+    onPairingChange?.({ paired: visiblePaired, link: visibleLink });
+  }, [onPairingChange, visiblePaired, visibleLink]);
 
   useEffect(() => {
     if (state === 'pending') {
@@ -278,11 +319,11 @@ export default function AgentBridgePairing({
 
   useEffect(() => {
     if (!flowOpen) return;
-    if (shouldClosePairingDialogOnConnect({ paired: state === 'paired', link })) {
+    if (joinLatched || shouldClosePairingDialogOnConnect({ paired: state === 'paired', link })) {
       setFlowOpen(false);
       setToastOpen(true);
     }
-  }, [state, link, flowOpen]);
+  }, [state, link, flowOpen, joinLatched]);
 
   useEffect(() => {
     if (issue === 'bridge_closed' || issue === 'popup_blocked') {
@@ -336,10 +377,12 @@ export default function AgentBridgePairing({
       if (joinRequestRef.current !== ticket) return;
       if (res.status === 201 && body?.code && body?.id && body?.expiresAt) {
         saveStoredJoin(window.sessionStorage, body);
+        setJoinId(String(body.id));
         setJoinCode(String(body.code));
         return;
       }
       clearStoredJoin(window.sessionStorage);
+      setJoinId('');
       setJoinCode('');
       setJoinNotice(res.status === 401
         ? 'Sign in to connect an agent.'
@@ -523,24 +566,62 @@ export default function AgentBridgePairing({
           body,
           now: Date.now(),
         });
-        if (action === 'restore') {
-          setJoinCode(stored.code);
-          setFlowOpen(true);
+        if (action === 'connected') {
+          applyJoinEvent('redeemed');
           return;
         }
-        clearStoredJoin(window.sessionStorage);
+        if (action === 'restore') {
+          const next = applyJoinEvent('resume-pending');
+          if (next.waiting && !next.connected) {
+            setJoinId(stored.id);
+            setJoinCode(stored.code);
+            setFlowOpen(true);
+          }
+          return;
+        }
+        if (!joinLatchRef.current) clearStoredJoin(window.sessionStorage);
       } catch {
         if (!cancelled && joinRequestRef.current === 0) clearStoredJoin(window.sessionStorage);
       }
     })();
     return () => { cancelled = true; };
-  }, [forcedServer]);
+  }, [applyJoinEvent, forcedServer]);
 
   useEffect(() => {
-    if (state !== 'paired' || link !== 'connected') return;
+    if (!forcedServer || !flowOpen || joinLatched || !joinId || typeof window === 'undefined') {
+      return undefined;
+    }
+    let cancelled = false;
+    const look = async () => {
+      if (cancelled || joinLatchRef.current) return;
+      try {
+        const res = await fetch('/agent/join', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+        if (cancelled || joinLatchRef.current || !res.ok) return;
+        const body = await res.json().catch(() => null);
+        if (joinPollEvent(body, joinId) === 'redeemed') applyJoinEvent('redeemed');
+      } catch { /* next tick */ }
+    };
+    const timer = setInterval(() => { void look(); }, 2000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void look();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    void look();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [applyJoinEvent, flowOpen, forcedServer, joinId, joinLatched]);
+
+  useEffect(() => {
+    if (!joinLatched && (state !== 'paired' || link !== 'connected')) return;
     if (typeof window !== 'undefined') clearStoredJoin(window.sessionStorage);
     setJoinCode('');
-  }, [state, link]);
+  }, [joinLatched, state, link]);
 
   useEffect(() => {
     if (popupMode || forcedServer) return;
@@ -602,7 +683,7 @@ export default function AgentBridgePairing({
             serverAttemptRef.current = false;
             serverModeRef.current = true;
             setUsingServer(true);
-            onConnectionState(next, conn);
+            if (!(joinLatchRef.current && next !== 'paired')) onConnectionState(next, conn);
             return;
           }
           if (!serverModeRef.current && next === 'reconnecting') {
@@ -614,11 +695,25 @@ export default function AgentBridgePairing({
             return;
           }
           if (!serverModeRef.current) return;
+          if (joinLatchRef.current && next !== 'paired') return;
           onConnectionState(next, conn);
         },
         onLink: (next) => {
           if (!serverModeRef.current || !isCurrentPairingConnection(connRef.current, conn)) return;
+          if (joinLatchRef.current && next !== 'connected') return;
           setLink(next);
+        },
+        onAgent: (connected, info) => {
+          if (pending.cancelled || !isCurrentPairingConnection(connRef.current, conn)) return;
+          if (connected) {
+            sawAgentUpRef.current = true;
+            applyJoinEvent('agent-up');
+            return;
+          }
+          if (info?.source === 'agent' || sawAgentUpRef.current) {
+            sawAgentUpRef.current = false;
+            applyJoinEvent('agent-down');
+          }
         },
       });
       connRef.current = conn;
@@ -654,7 +749,7 @@ export default function AgentBridgePairing({
       userAgent,
       platform: navigator.platform,
       maxTouchPoints: navigator.maxTouchPoints,
-      isMobile: narrow,
+      isMobile: narrowRef.current,
       innerWidth: window.innerWidth,
       relayTarget,
     })) {
@@ -678,7 +773,7 @@ export default function AgentBridgePairing({
       if (pending.timer) clearTimeout(pending.timer);
       if (pending.giveUp) clearTimeout(pending.giveUp);
     };
-  }, [enabled, forcedServer, narrow, onConnectionState, pageSecure, preference, relayTarget, serverKick, stopConnection, stopPolling, userAgent, wsUrl]);
+  }, [applyJoinEvent, enabled, forcedServer, onConnectionState, pageSecure, preference, relayTarget, serverKick, stopConnection, stopPolling, userAgent, wsUrl]);
 
   const handleApprove = useCallback(() => {
     setApprovalUi((prev) => approvalPopupReducer(prev, 'allow'));
@@ -696,12 +791,12 @@ export default function AgentBridgePairing({
       return;
     }
     if (state === 'pending') handleReject();
-    if (state === 'paired' && link === 'connected') {
+    if (joinLatched || (state === 'paired' && link === 'connected')) {
       setFlowOpen(false);
       return;
     }
     disconnectFromUser();
-  }, [disconnectFromUser, handleReject, link, state]);
+  }, [disconnectFromUser, handleReject, joinLatched, link, state]);
 
   useEffect(() => {
     if (!flowOpen) return undefined;
@@ -717,7 +812,7 @@ export default function AgentBridgePairing({
 
   if (!enabled) return null;
 
-  const paired = state === 'paired';
+  const paired = visiblePaired;
   const pending = state === 'pending';
   const browserFamily = typeof navigator !== 'undefined' ? detectBrowserFamily(navigator.userAgent) : 'unknown';
   const stage = pairingDialogStage({
@@ -847,19 +942,19 @@ export default function AgentBridgePairing({
               onDeny={handleReject}
             />
           ) : null}
-          {link === 'reconnecting' && !paired ? (
+          {visibleLink === 'reconnecting' && !paired ? (
             <p className="text-ui-xs text-amber-300/90 text-center" data-agent-bridge-link="reconnecting">
               Connection to the local agent dropped. Reconnecting…
             </p>
           ) : null}
-          {link === 'lost' && !paired ? (
+          {visibleLink === 'lost' && !paired ? (
             <p className="text-ui-xs text-red-300 text-center" data-agent-bridge-link="lost">
               {popupMode
                 ? 'Lost the local agent. Keep the SurfCAD local agent bridge window open; it reconnects when the agent is back.'
                 : 'Lost the local agent. Keep this tab open in Chrome; it reconnects when the agent is back.'}
             </p>
           ) : null}
-          {shouldShowAgentBridgeDisconnect({ paired, link }) ? (
+          {shouldShowAgentBridgeDisconnect({ paired, link: visibleLink }) ? (
             <button
               type="button"
               className={SECONDARY_BUTTON_CLASS}
@@ -894,12 +989,12 @@ export default function AgentBridgePairing({
     </button>
   ) : null;
 
-  const menuDisconnect = shouldShowAgentBridgeDisconnect({ paired, link }) && !flowOpen ? (
+  const menuDisconnect = shouldShowAgentBridgeDisconnect({ paired, link: visibleLink }) && !flowOpen ? (
     <AgentBridgeDisconnectMenuItem onDisconnect={disconnectFromUser} />
   ) : null;
 
   const bodyTarget = approvalPopupPortalTarget(typeof document !== 'undefined' ? document : null);
-  const showConnectedBanner = shouldShowAgentBridgeDisconnect({ paired, link });
+  const showConnectedBanner = shouldShowAgentBridgeDisconnect({ paired, link: visibleLink });
   const bannerPortal = showConnectedBanner && bodyTarget
     ? createPortal(
       <div
