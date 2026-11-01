@@ -20,6 +20,7 @@ import { clientAddress } from './clientIp.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
+import { sessionMessageProblem } from './sessionMessage.js';
 import { deliverTabAgentFrame } from './tabPrompt.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
@@ -442,6 +443,17 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
       sendJson(ws, frame);
     }
     return;
+  }
+  if (msg?.type === 'agent.message') {
+    const problem = sessionMessageProblem(msg);
+    if (problem) {
+      sendJson(ws, { type: 'error', error: problem });
+      return;
+    }
+    if (!relay.registry.allowSessionMessage(auth.userId)) {
+      sendJson(ws, { type: 'error', error: 'rate_limited' });
+      return;
+    }
   }
   if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
     relay.registry.forwardToTabs(auth.userId, msg);

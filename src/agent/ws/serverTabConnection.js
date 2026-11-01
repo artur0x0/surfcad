@@ -13,6 +13,7 @@ const PROMPT_TYPES = new Set([
   PAIR_MSG.AGENT_PROMPT,
   PAIR_MSG.AGENT_PROMPT_ACK,
   PAIR_MSG.AGENT_REPLY,
+  PAIR_MSG.AGENT_MESSAGE,
   PAIR_MSG.AGENT_STATUS,
   PAIR_MSG.AGENT_ACTIVITY,
   PAIR_MSG.AGENT_PROMPT_CANCEL,
@@ -129,6 +130,7 @@ export function createServerTabConnection(opts) {
   function sendPrompt(message) {
     if (transport.status() !== 'open') return false;
     if (!message || !PROMPT_TYPES.has(message.type)) return false;
+    if (message.type === PAIR_MSG.AGENT_MESSAGE) return false;
     // The join latch can show the chat before this socket has seen an
     // agent frame. Prompts and cancels still go out: the server delivers
     // them or acks a failure. Replies stay paired-only.

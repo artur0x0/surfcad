@@ -317,4 +317,18 @@ describe('tab registry', () => {
     assert.equal(agent.at(-1).text, 'live');
     assert.equal(registry.forwardToAgents('nobody', { type: 'agent.prompt', text: 'no' }), 0);
   });
+
+  test('a session note is one per second per account', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock, sessionMessageGapMs: 1000 });
+    assert.equal(registry.allowSessionMessage('user-a'), true);
+    assert.equal(registry.allowSessionMessage('user-a'), false);
+    assert.equal(registry.allowSessionMessage('user-b'), true);
+    clock.advance(999);
+    assert.equal(registry.allowSessionMessage('user-a'), false);
+    assert.equal(registry.allowSessionMessage('user-b'), false);
+    clock.advance(1);
+    assert.equal(registry.allowSessionMessage('user-a'), true);
+    assert.equal(registry.allowSessionMessage('user-b'), true);
+  });
 });

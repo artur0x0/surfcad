@@ -4,7 +4,7 @@
  *
  * `agentPromptState` seeds a visual state:
  *   hidden | idle | typing | reply-short | reply-long | reply-streaming | working | shot-off | shot-on
- *   | chat | chat-long | agent-typing | agent-working | folded
+ *   | chat | chat-long | agent-typing | agent-working | folded | session-note
  */
 export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'hidden',
@@ -22,6 +22,7 @@ export const AGENT_PROMPT_DEMO_STATES = Object.freeze([
   'agent-typing',
   'agent-working',
   'folded',
+  'session-note',
 ]);
 
 export const AGENT_PROMPT_TYPED = [
@@ -60,6 +61,9 @@ export const AGENT_PROMPT_CHAT = Object.freeze([
   { role: 'user', text: 'Rebuild the bike as separate parts with real joints.' },
   { role: 'agent', text: 'The bike is rebuilt as 9 parts with 15 mechanical joints. To save it to git, please click Allow on the git-write prompt in this tab.' },
 ]);
+
+/** One unsolicited agent note, including markup the bubble must show as text. */
+export const AGENT_PROMPT_SESSION_NOTE = '<img src=x onerror="alert(1)"><b>hello</b>';
 
 /** Enough turns to scroll inside the pane. */
 export const AGENT_PROMPT_CHAT_LONG = Object.freeze([

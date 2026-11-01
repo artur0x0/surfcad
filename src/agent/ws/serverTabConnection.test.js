@@ -62,6 +62,29 @@ test('a registered tab stays advertising until an agent connects', () => {
   conn.disconnect();
 });
 
+test('a session note is delivered inbound and the page cannot send one', () => {
+  const factory = fakeSocketFactory();
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+  });
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  socket.fire('message', { data: JSON.stringify({ type: 'agent', v: 1, connected: true }) });
+  const heard = [];
+  conn.subscribe((frame) => heard.push(frame));
+  socket.fire('message', { data: JSON.stringify({ type: 'agent.message', v: 1, text: '<b>hi</b>' }) });
+  assert.equal(heard.length, 1);
+  assert.equal(heard[0].text, '<b>hi</b>');
+  assert.equal(heard[0].id, undefined);
+  assert.equal(conn.send({ type: 'agent.message', v: 1, text: 'nope' }), false);
+  assert.equal(socket.sent.some((msg) => msg.type === 'agent.message'), false);
+  conn.disconnect();
+});
+
 test('a prompt leaves an open server socket before the agent frame arrives', () => {
   const factory = fakeSocketFactory();
   const conn = createServerTabConnection({

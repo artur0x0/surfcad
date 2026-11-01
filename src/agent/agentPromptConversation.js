@@ -8,7 +8,8 @@
  * and its reply share an id and sit next to each other. A reply is shown
  * when this conversation already has that user message, or when this page
  * sent that prompt on another transport (there is no user row yet). Any
- * other id is ignored.
+ * other id is ignored. A session note has no prompt id: it is its own
+ * agent bubble, and the text is stored as plain text.
  */
 import { pageSentPrompt } from './agentPromptTransport.js';
 
@@ -35,6 +36,20 @@ export function conversationReducer(state, event) {
       };
     }
     case 'reply': {
+      if (event.session === true) {
+        const note = typeof event.text === 'string' ? event.text : '';
+        if (!note) return cur;
+        return {
+          hidden: false,
+          messages: [...cur.messages, {
+            key: `s:${cur.messages.length}`,
+            id: '',
+            role: 'agent',
+            text: note,
+            thumb: null,
+          }],
+        };
+      }
       if (typeof event.id !== 'string' || !event.id) return cur;
       const chunk = typeof event.text === 'string' ? event.text : '';
       const key = `a:${event.id}`;

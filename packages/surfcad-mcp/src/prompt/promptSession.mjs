@@ -173,6 +173,8 @@ export function createPromptSession(options) {
   let promptEpoch = 0;
   let workedEpoch = 0;
   let lastAcceptedAt = -Infinity;
+  /** Last unsolicited session message. Separate from prompt accepts. */
+  let lastSessionAt = -Infinity;
   /** @type {string | null} */
   let lastId = null;
   /** @type {unknown} */
@@ -642,19 +644,65 @@ export function createPromptSession(options) {
   }
 
   /**
-   * @param {{ in_reply_to?: unknown, text?: unknown, final?: unknown }} args
+   * Plain text for a reply or a session note. Not parsed as HTML.
+   * @param {unknown} text
    */
-  function reply(args) {
-    const inReplyTo = args?.in_reply_to;
-    const text = args?.text;
-    if (typeof inReplyTo !== 'string' || !inReplyTo || inReplyTo.length > 80) {
-      throw Object.assign(new Error('in_reply_to is required'), { code: 'bad_args' });
-    }
+  function requireReplyText(text) {
     if (typeof text !== 'string' || text.length === 0) {
       throw Object.assign(new Error('Reply text is required'), { code: 'bad_args' });
     }
     if (text.length > PROMPT_REPLY_MAX) {
       throw Object.assign(new Error('Reply text is too long'), { code: 'reply_too_long' });
+    }
+    return text;
+  }
+
+  /**
+   * A note for this paired session, with no prompt id. The page shows it
+   * as its own chat bubble. One per rate window. Does not touch prompt state.
+   * @param {unknown} raw
+   */
+  function postSessionMessage(raw) {
+    const run = chain.then(() => postSessionNow(raw));
+    chain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  /**
+   * @param {unknown} raw
+   */
+  function postSessionNow(raw) {
+    const text = requireReplyText(raw);
+    const at = now();
+    if (at - lastSessionAt < rateLimitMs) {
+      throw Object.assign(new Error('Too many messages'), { code: 'rate_limited' });
+    }
+    const sent = emit({
+      type: PAIR_MSG.AGENT_MESSAGE,
+      v: 1,
+      text,
+      ts: new Date(at).toISOString(),
+    }, { required: true });
+    const finish = () => {
+      lastSessionAt = at;
+      return { ok: true, session: true };
+    };
+    if (sent && typeof sent.then === 'function') {
+      return sent.then(finish);
+    }
+    if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+    return finish();
+  }
+
+  /**
+   * @param {{ in_reply_to?: unknown, text?: unknown, final?: unknown }} args
+   */
+  function reply(args) {
+    if (args?.in_reply_to == null) return postSessionMessage(args?.text);
+    const inReplyTo = args.in_reply_to;
+    const text = requireReplyText(args?.text);
+    if (typeof inReplyTo !== 'string' || !inReplyTo || inReplyTo.length > 80) {
+      throw Object.assign(new Error('in_reply_to is required'), { code: 'bad_args' });
     }
     // Only a prompt this session accepted. Checked before any send, so an
     // invented id never becomes an agent.reply on the tab.
@@ -809,6 +857,7 @@ export function createPromptSession(options) {
     promptEpoch = 0;
     workedEpoch = 0;
     lastAcceptedAt = -Infinity;
+    lastSessionAt = -Infinity;
     lastId = null;
     clearIdle();
   }

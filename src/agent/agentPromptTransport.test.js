@@ -116,6 +116,10 @@ test('a reply for an id this page did not send is dropped', () => {
     { id, text: '40 mm', final: false },
     { id, text: ' across.', final: true },
   ]);
+  bridge.emit({ type: PAIR_MSG.AGENT_MESSAGE, v: 1, id: 'x', text: 'hidden' });
+  bridge.emit({ type: PAIR_MSG.AGENT_MESSAGE, v: 1, text: '<b>hello</b>' });
+  assert.deepEqual(replies.at(-1), { text: '<b>hello</b>', final: true, session: true });
+  assert.equal(replies.some((row) => row.text === 'hidden'), false);
   transport.dispose();
 });
 

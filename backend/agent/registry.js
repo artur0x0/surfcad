@@ -7,6 +7,7 @@ import {
   MAX_TABS_PER_USER,
   PROMPT_HOLD_MS,
   RESULT_RETENTION_MS,
+  SESSION_MESSAGE_GAP_MS,
   TAB_ASLEEP_MS,
 } from './limits.js';
 
@@ -58,6 +59,9 @@ export function createMemoryTabRegistry(opts = {}) {
   const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
   const maxAgents = opts.maxAgents ?? MAX_AGENTS_PER_USER;
   const promptHoldMs = opts.promptHoldMs ?? PROMPT_HOLD_MS;
+  const sessionMessageGapMs = opts.sessionMessageGapMs ?? SESSION_MESSAGE_GAP_MS;
+  /** @type {Map<string, number>} */
+  const sessionMessageAt = new Map();
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
@@ -582,6 +586,21 @@ export function createMemoryTabRegistry(opts = {}) {
      */
     agentConnected(userId) {
       return (agents.get(String(userId))?.size || 0) > 0;
+    },
+
+    /**
+     * One unsolicited session message per gap, per account. The frame
+     * itself is not stored.
+     * @param {string} userId
+     * @returns {boolean}
+     */
+    allowSessionMessage(userId) {
+      const key = String(userId);
+      const at = clock.now();
+      const prev = sessionMessageAt.get(key);
+      if (prev != null && at - prev < sessionMessageGapMs) return false;
+      sessionMessageAt.set(key, at);
+      return true;
     },
 
     /**

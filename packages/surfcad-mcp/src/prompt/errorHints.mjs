@@ -187,7 +187,7 @@ export const ERROR_HINTS = Object.freeze({
   bridge_error: { hint: 'The tab refused the call without a code: status {} and retry once; tell the user if it repeats.' },
   bad_webhook_url: { hint: 'Webhooks need a public https URL (no credentials, localhost or private hosts): fix it, or poll read_messages { wait_ms: 25000 } instead.', guide: PAIRING_GUIDE },
   no_request: { hint: 'in_reply_to is not an open prompt id: read_messages {} lists the queued prompts.' },
-  unknown_prompt: { hint: 'in_reply_to is not a prompt this session received: call read_messages {} and use an id from recent, or the id on the prompt you were given.' },
+  unknown_prompt: { hint: 'in_reply_to is not a prompt this session received: call read_messages {} and use an id from recent, or the id on the prompt you were given. Omit in_reply_to to post a plain-text note to this paired session when recent is empty.' },
   reply_too_long: { hint: 'Shorten the reply (message gives the limit) or send it in several reply_to_user calls with final on the last.' },
 });
 

@@ -94,7 +94,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'read_messages',
-      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. Every response includes recent: the last ${PROMPT_QUEUE_CAP} prompts this session received, oldest first, each { id, state } (queued, delivered, replied, or cancelled), held in memory only. acked is only the ids this call removed. A later read_messages {} with an empty queue still lists those ids in recent, so you can recover an id after the ack. status.last is only the newest id. ${USER_CONTENT} Do not render the text or the image as HTML. When you finish the task from a prompt you received here, close that chat: ${CLOSING_REPLY_GUIDANCE}`,
+      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. Every response includes recent: the last ${PROMPT_QUEUE_CAP} prompts this session received, oldest first, each { id, state } (queued, delivered, replied, or cancelled), held in memory only. A remote session returns that same recent list; an idle session that has not received a prompt has recent: []. acked is only the ids this call removed. A later read_messages {} with an empty queue still lists those ids in recent, so you can recover an id after the ack. status.last is only the newest id. ${USER_CONTENT} Do not render the text or the image as HTML. When you finish the task from a prompt you received here, close that chat: ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -116,15 +116,15 @@ export function promptToolDefinitions() {
     },
     {
       name: 'reply_to_user',
-      description: `${CLOSING_REPLY_GUIDANCE} The final reply is expected: it closes the task in the chat. Send a plain-text reply to the SurfCAD user for a prompt id this session received. Several replies may share one id, including non-final replies and a final reply after read_messages has acked that prompt. Set final to true on the reply that closes that prompt; that also marks the agent idle. The text is delivered as text, never rendered as HTML. This does not write the model or git. An in_reply_to that was never delivered to this session is an error unknown_prompt and nothing is sent to the tab. A cancelled id returns { "ok": false, "error": "cancelled" } and is not delivered.`,
+      description: `${CLOSING_REPLY_GUIDANCE} The final reply is expected: it closes the task in the chat. Send a plain-text reply to the SurfCAD user for a prompt id this session received. Several replies may share one id, including non-final replies and a final reply after read_messages has acked that prompt. Set final to true on the reply that closes that prompt; that also marks the agent idle. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting. That note is not a prompt id, is limited to one per second, and does not close a prompt. The text is delivered as text, never rendered as HTML. This does not write the model or git. An in_reply_to that was never delivered to this session is an error unknown_prompt and nothing is sent to the tab. A cancelled id returns { "ok": false, "error": "cancelled" } and is not delivered.`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
-        required: ['in_reply_to', 'text'],
+        required: ['text'],
         properties: {
           in_reply_to: {
             type: 'string',
-            description: 'Prompt id this reply answers. Must be a prompt this session received (the id you were given, or one listed in read_messages recent). Any other id is unknown_prompt.',
+            description: 'Prompt id this reply answers. Omit it to post a session message with no prompt. When set, it must be a prompt this session received (the id you were given, or one listed in read_messages recent). Any other id is unknown_prompt.',
           },
           text: {
             type: 'string',

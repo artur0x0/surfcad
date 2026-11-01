@@ -337,6 +337,19 @@ test('prompt frames are sent only while paired and replies unsubscribe', () => {
   assert.equal(seen[2].working, false);
 });
 
+test('a session note reaches prompt listeners and the page cannot send one', () => {
+  const ctx = setup();
+  const { ws } = pair(ctx);
+  const seen = [];
+  ctx.conn.subscribe((msg) => seen.push(msg));
+  ws.receive({ type: PAIR_MSG.AGENT_MESSAGE, v: 1, text: '<b>hi</b>' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].text, '<b>hi</b>');
+  assert.equal(seen[0].id, undefined);
+  assert.equal(ctx.conn.send({ type: PAIR_MSG.AGENT_MESSAGE, v: 1, text: 'nope' }), false);
+  assert.equal(ws.sent.some((msg) => msg.type === PAIR_MSG.AGENT_MESSAGE), false);
+});
+
 test('a bridge command is prompt activity until the call returns', async () => {
   let release;
   const done = new Promise((resolve) => { release = resolve; });

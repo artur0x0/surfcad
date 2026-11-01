@@ -877,4 +877,95 @@ describe('agent relay websocket', () => {
     assert.equal(ack.error, 'not_paired');
     tab.ws.close();
   });
+
+  test('a paired agent can post a session note, and a tab or another user cannot', async () => {
+    const clock = createManualClock(0);
+    const relay = createAgentRelay({ clock });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const otherIssued = await relay.tokens.issue({ userId: 'user-b', label: 'other' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const tab = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-a' });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    const presence = await tab.nextMessage();
+    assert.equal(presence.type, 'agent');
+    assert.equal(presence.connected, true);
+
+    const tabExtra = [];
+    tab.ws.on('message', (data) => tabExtra.push(JSON.parse(data.toString())));
+    const agentExtra = [];
+    agent.ws.on('message', (data) => agentExtra.push(JSON.parse(data.toString())));
+
+    agent.ws.send(JSON.stringify({ type: 'agent.message', v: 1, text: '<b>hi</b>' }));
+    const note = await tab.nextMessage();
+    assert.equal(note.type, 'agent.message');
+    assert.equal(note.v, 1);
+    assert.equal(note.text, '<b>hi</b>');
+    assert.equal(Object.hasOwn(note, 'id'), false);
+
+    agent.ws.send(JSON.stringify({ type: 'agent.message', v: 1, text: 'again' }));
+    assert.deepEqual(await agent.nextMessage(), { type: 'error', error: 'rate_limited' });
+    agent.ws.send(JSON.stringify({ type: 'agent.message', v: 1, id: 'x', text: 'spoof' }));
+    assert.deepEqual(await agent.nextMessage(), { type: 'error', error: 'bad_call' });
+
+    const stranger = openSocket(url, { authorization: `Bearer ${otherIssued.token}` });
+    await stranger.opened;
+    stranger.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await stranger.nextMessage()).type, 'hello');
+    stranger.ws.send(JSON.stringify({ type: 'agent.message', v: 1, text: 'for b' }));
+    tab.ws.send(JSON.stringify({ type: 'agent.message', v: 1, text: 'from tab' }));
+    await sleep(50);
+    assert.equal(tabExtra.some((msg) => msg.text === 'again' || msg.text === 'spoof' || msg.text === 'for b'), false);
+    assert.equal(agentExtra.some((msg) => msg.type === 'agent.message'), false);
+
+    const post = (token, body) => fetch(`http://127.0.0.1:${port}/agent/prompts`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    const limited = await post(issued.token, { type: 'agent.message', v: 1, text: 'from https' });
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), { error: 'rate_limited' });
+
+    clock.advance(1000);
+    const posted = await post(issued.token, { type: 'agent.message', v: 1, text: 'from https' });
+    assert.equal(posted.status, 202);
+    assert.deepEqual(await posted.json(), { ok: true });
+    const httpNote = await tab.nextMessage();
+    assert.equal(httpNote.type, 'agent.message');
+    assert.equal(httpNote.text, 'from https');
+    assert.equal(Object.hasOwn(httpNote, 'id'), false);
+
+    const again = await post(issued.token, { type: 'agent.message', v: 1, text: 'too soon' });
+    assert.equal(again.status, 429);
+    const bad = await post(issued.token, { type: 'agent.message', v: 1, id: 'x', text: 'spoof' });
+    assert.equal(bad.status, 400);
+    assert.deepEqual(await bad.json(), { error: 'bad_call' });
+    const empty = await post(issued.token, { type: 'agent.message', v: 1, text: '' });
+    assert.equal(empty.status, 400);
+    assert.deepEqual(await empty.json(), { error: 'bad_call' });
+    const anon = await fetch(`http://127.0.0.1:${port}/agent/prompts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'agent.message', v: 1, text: 'nope' }),
+    });
+    assert.equal(anon.status, 401);
+    await sleep(40);
+    assert.equal(tabExtra.some((msg) => msg.text === 'too soon' || msg.text === 'spoof' || msg.text === 'nope'), false);
+
+    agent.ws.close();
+    stranger.ws.close();
+    tab.ws.close();
+  });
 });
