@@ -186,26 +186,6 @@ export function serverBlocksLocalPairing(input = {}) {
   return false;
 }
 
-export const AGENT_CONNECTED_TOAST_MS = 5000;
-export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
-
-/**
- * @param {{ open?: boolean, hideAt?: number }} state
- * @param {'show' | 'dismiss' | 'timeout' | 'tick'} action
- * @param {number} [now]
- */
-export function agentConnectedToastReducer(state, action, now = 0) {
-  const current = state && typeof state === 'object'
-    ? { open: !!state.open, hideAt: Number(state.hideAt) || 0 }
-    : { open: false, hideAt: 0 };
-  if (action === 'show') return { open: true, hideAt: now + AGENT_CONNECTED_TOAST_MS };
-  if (action === 'dismiss' || action === 'timeout') return { open: false, hideAt: 0 };
-  if (action === 'tick' && current.open && now >= current.hideAt) {
-    return { open: false, hideAt: 0 };
-  }
-  return current;
-}
-
 /**
  * The tab WebSocket lives in AgentBridgePairing, hosted once on App via
  * AgentBridgeHost (above the isMobile split) for the whole time

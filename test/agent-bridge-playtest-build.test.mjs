@@ -156,7 +156,7 @@ test('localStorage auto-approve flag is ignored in production build', { timeout:
     let pairedEarly = false;
     try {
       await page.waitForSelector(
-        '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
+        '[data-agent-bridge-connection-ring="connected"]',
         { state: 'visible', timeout: 1500 },
       );
       pairedEarly = true;

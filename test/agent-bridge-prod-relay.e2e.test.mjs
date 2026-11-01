@@ -108,7 +108,7 @@ async function runBrowserE2E(t, browserType, executablePath) {
     await page.waitForSelector('[data-ui-action="data-agent-bridge-approve"]', { timeout: 15000 });
     await page.click('[data-ui-action="data-agent-bridge-approve"]');
     await page.waitForSelector(
-      '[data-agent-bridge-connected-toast], [data-agent-bridge-connection-ring="connected"]',
+      '[data-agent-bridge-connection-ring="connected"]',
       { timeout: 15000 },
     );
 

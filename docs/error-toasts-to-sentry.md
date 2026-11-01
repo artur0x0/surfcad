@@ -136,7 +136,7 @@ An assembly rename that is held for retry (`code: 'rename-held'`) does not set `
 | `uploadNotice` | `tone="warn"` |
 | `GitBehindToast` | `tone="warn"`. Remote-ahead choice, not a failure. |
 | Repo-moved card | `tone="warn"` |
-| Repo-saved card, agent-connected toast (`AgentBridgePairing.jsx`) | `tone="success"` |
+| Repo-saved card | `tone="success"` |
 | `FeatureDeleteToast`, fillet toast | `tone="warn"`. Undo / refusal. |
 | Edge-mode toast | `tone="amber"` |
 | Contour, shell, sheet-metal delete toasts | `tone="cyan"` |

@@ -1,12 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  AGENT_CONNECTED_TOAST_COPY,
-  AGENT_CONNECTED_TOAST_MS,
   PAIRING_ORIGIN_REJECTED_COPY,
   PAIRING_WAITING_COPY,
   SERVER_PAIRING_WAITING_COPY,
-  agentConnectedToastReducer,
   createCloseMenuRegistry,
   disposePairingHost,
   isCurrentPairingConnection,
@@ -212,17 +209,6 @@ test('Disconnect shows only while the local agent relay is paired or connected',
   assert.equal(shouldShowAgentBridgeDisconnect({ paired: true }), true);
   assert.equal(shouldShowAgentBridgeDisconnect({ paired: false, link: 'connected' }), true);
   assert.equal(shouldShowAgentBridgeDisconnect({ paired: true, link: 'reconnecting' }), true);
-});
-
-test('Agent connected toast auto-dismisses at 5 s and closes with X', () => {
-  assert.equal(AGENT_CONNECTED_TOAST_MS, 5000);
-  assert.equal(AGENT_CONNECTED_TOAST_COPY, 'Agent connected');
-  const shown = agentConnectedToastReducer({ open: false }, 'show', 1000);
-  assert.deepEqual(shown, { open: true, hideAt: 6000 });
-  assert.deepEqual(agentConnectedToastReducer(shown, 'tick', 5999), shown);
-  assert.deepEqual(agentConnectedToastReducer(shown, 'tick', 6000), { open: false, hideAt: 0 });
-  assert.deepEqual(agentConnectedToastReducer(shown, 'dismiss', 2000), { open: false, hideAt: 0 });
-  assert.deepEqual(agentConnectedToastReducer(shown, 'timeout'), { open: false, hideAt: 0 });
 });
 
 test('a 403 origin rejection and a probe timeout have distinct user messages', () => {
