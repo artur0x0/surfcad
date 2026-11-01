@@ -45,7 +45,7 @@ const BY_KIND = new Map([
   ['fillet', setOf(['radius'])],
   ['chamfer', setOf(['chamfer'])],
   ['shell', setOf(['wall', 'openingMode'])],
-  ['draft', setOf(['angle', 'flip'])],
+  ['draft', setOf(['angle', 'flip', 'draftDeg', 'pull', 'reference', 'faceScope'])],
   ['cut', setOf(['originOffset', 'keep'])],
   ['boolean', setOf(['op'])],
   ['moveFace', setOf(['distance', 'flip'])],
@@ -106,6 +106,31 @@ function paramTypeError(kind, params) {
       if (!named && !isVec3(axis)) {
         return { code: 'bad_args', message: 'edit_feature: rotate param axis must be x, y, z, or [ax, ay, az]' };
       }
+    }
+  }
+  if (kind === 'draft') {
+    if ('angle' in params && !isNum(params.angle)) return numError(kind, 'angle');
+    if ('draftDeg' in params && !isNum(params.draftDeg)) return numError(kind, 'draftDeg');
+    if ('angle' in params && 'draftDeg' in params && params.angle !== params.draftDeg) {
+      return { code: 'bad_args', message: 'edit_feature: draft angle and draftDeg disagree' };
+    }
+    if ('flip' in params && typeof params.flip !== 'boolean') {
+      return { code: 'bad_args', message: 'edit_feature: draft param flip must be a boolean' };
+    }
+    const axis = new Set(['x', '-x', 'y', '-y', 'z', '-z']);
+    if ('pull' in params && !axis.has(params.pull)) {
+      return { code: 'bad_args', message: "edit_feature: draft param pull must be 'x', 'y', 'z', or a signed axis" };
+    }
+    if ('reference' in params) {
+      const ref = params.reference;
+      const named = ref === 'min' || ref === 'mid' || ref === 'max';
+      if (!named && !isNum(ref)) {
+        return { code: 'bad_args', message: "edit_feature: draft param reference must be 'min', 'mid', 'max', or a number" };
+      }
+    }
+    const scope = new Set(['sides', 'all', 'none', ...axis]);
+    if ('faceScope' in params && !scope.has(params.faceScope)) {
+      return { code: 'bad_args', message: "edit_feature: draft param faceScope must be 'sides' or an axis" };
     }
   }
   if (isBlockSolidId(kind)) {
