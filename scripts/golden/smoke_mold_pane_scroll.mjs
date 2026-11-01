@@ -238,9 +238,9 @@ function Harness() {
             legend={{
               minDeg: draftMin,
               presets: [0.5, 1, 2, 3, 5],
-              positiveAbove: { count: 8, area: 1048.1 },
-              positiveBelow: { count: 4, area: 160 },
+              positive: { count: 8, area: 1048.1 },
               negative: { count: 2, area: 36.2 },
+              below: { count: 4, area: 160, positive: { count: 3, area: 120 }, negative: { count: 1, area: 40 } },
               pins: 8,
               sleeves: 2,
             }}

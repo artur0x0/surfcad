@@ -1,14 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { PARTING_ROLE_RGB } from './parting.js';
 import { analyzePullDirection, analyzeWallOnly, MOLD_REGION_NORMAL_DEG } from './pullDirection.js';
 import {
   MOLD_DRAFT_CLUSTER_DEG,
+  MOLD_DRAFT_HATCH_RGB,
   MOLD_DRAFT_MIN_DEG,
+  MOLD_DRAFT_NEEDS_WORK_RGB,
+  MOLD_DRAFT_NEGATIVE_RGB,
+  MOLD_DRAFT_POSITIVE_RGB,
   MOLD_DRAFT_PRESETS,
   analyzeMoldDraft,
   classifyMoldDraft,
   draftAngleDeg,
   moldDraftLegendModel,
+  moldDraftSwatchChannels,
   parseDraftThreshold,
   signedDraftDeg,
 } from './moldDraft.js';
@@ -80,18 +87,23 @@ test('a box flags four vertical walls and no ejectors', () => {
   assert.equal(draft.triangleCount, 8);
   assert.equal(draft.minDraftDeg, 0);
   assert.equal(draft.minDeg, 1);
-  assert.equal(draft.positiveAbove.count, 0);
-  assert.equal(draft.positiveBelow.count, 4);
-  assert.equal(draft.positiveBelow.area, 400);
+  assert.equal(draft.positive.count, 0);
   assert.equal(draft.negative.count, 0);
+  assert.equal(draft.below.count, 4);
+  assert.equal(draft.below.area, 400);
+  assert.equal(draft.below.positive.count, 4);
+  assert.equal(draft.below.positive.area, 400);
+  assert.equal(draft.below.negative.count, 0);
+  assert.equal(draft.triangles.every((row) => row.state === 'below' && row.sign === 'positive'), true);
   assert.equal(draft.ejectors.heuristic, true);
   assert.equal(draft.ejectors.pinCount, 0);
   assert.equal(draft.ejectors.sleeveCount, 0);
   assert.equal(result.fit, 'good');
   const legend = moldDraftLegendModel(draft);
   assert.equal(legend.violations, 4);
-  assert.equal(legend.positiveBelow.count, 4);
-  assert.equal(legend.positiveBelow.area, 400);
+  assert.equal(legend.below.count, 4);
+  assert.equal(legend.below.area, 400);
+  assert.equal(legend.below.positive.count, 4);
   assert.equal(legend.negative.area, 0);
   assert.equal(legend.heuristic, true);
   assert.equal(moldDraftLegendModel(null), null);
@@ -114,22 +126,46 @@ test('a 3° wall is not a violation and 1° stays clear', () => {
   };
   const three = analyzeMoldDraft([tilt(3)], [0, 0, 1], null);
   assert.equal(three.violationCount, 0);
-  assert.equal(three.positiveAbove.count, 1);
+  assert.equal(three.positive.count, 1);
   assert.equal(three.negative.count, 0);
+  assert.equal(three.below.count, 0);
   assert.equal(three.minDraftDeg, 3);
+  assert.equal(three.triangles[0].state, 'positive');
+  assert.equal(three.triangles[0].sign, 'positive');
   const one = analyzeMoldDraft([tilt(1)], [0, 0, 1], null);
   assert.equal(one.violationCount, 0);
-  assert.equal(one.positiveAbove.count, 1);
-  assert.equal(one.positiveBelow.count, 0);
+  assert.equal(one.positive.count, 1);
+  assert.equal(one.below.count, 0);
   const zero = analyzeMoldDraft([tilt(0)], [0, 0, 1], null);
   assert.equal(zero.violationCount, 1);
-  assert.equal(zero.positiveBelow.count, 1);
+  assert.equal(zero.below.count, 1);
+  assert.equal(zero.below.positive.count, 1);
   assert.equal(zero.negative.count, 0);
+  assert.equal(zero.triangles[0].sign, 'positive');
   assert.equal(zero.minDraftDeg, 0);
+  const shallow = analyzeMoldDraft([tilt(-0.4)], [0, 0, 1], null);
+  assert.equal(shallow.positive.count, 0);
+  assert.equal(shallow.negative.count, 0);
+  assert.equal(shallow.below.count, 1);
+  assert.equal(shallow.below.negative.count, 1);
+  assert.equal(shallow.below.positive.count, 0);
+  assert.equal(shallow.triangles[0].state, 'below');
+  assert.equal(shallow.triangles[0].sign, 'negative');
+  assert.equal(shallow.violationCount, 1);
+  const steep = analyzeMoldDraft([tilt(-3)], [0, 0, 1], null);
+  assert.equal(steep.negative.count, 1);
+  assert.equal(steep.below.count, 0);
+  assert.equal(steep.triangles[0].state, 'negative');
+  assert.equal(steep.triangles[0].sign, 'negative');
+  assert.equal(steep.violationCount, 0);
+  const onLine = analyzeMoldDraft([tilt(-1)], [0, 0, 1], null);
+  assert.equal(onLine.negative.count, 1);
+  assert.equal(onLine.below.count, 0);
   const wider = classifyMoldDraft(three, 5);
   assert.equal(wider.samples, three.samples);
-  assert.equal(wider.positiveAbove.count, 0);
-  assert.equal(wider.positiveBelow.count, 1);
+  assert.equal(wider.positive.count, 0);
+  assert.equal(wider.below.count, 1);
+  assert.equal(wider.below.positive.count, 1);
   assert.equal(wider.negative.count, 0);
   assert.equal(analyzeMoldDraft([], [0, 0, 1]).violationCount, 0);
   assert.equal(parseDraftThreshold(undefined).threshold, null);
@@ -166,7 +202,8 @@ test('a thin rib yields pins and a thick boss yields one sleeve', () => {
   assert.equal(plain.moldDraft.ejectors.pinCount, 0);
   assert.equal(plain.moldDraft.ejectors.sleeveCount, 0);
   assert.equal(plain.moldDraft.violationCount, 8);
-  assert.equal(plain.moldDraft.positiveBelow.count, 8);
+  assert.equal(plain.moldDraft.below.count, 8);
+  assert.equal(plain.moldDraft.below.positive.count, 8);
   assert.equal(plain.moldDraft.negative.count, 0);
 });
 
@@ -284,54 +321,74 @@ function draftOf(mesh) {
   return analyzePullDirection({ ...mesh, pull: [0, 0, 1] }).moldDraft;
 }
 
-test('a plate, a tray, a snap hook, and a through hole are positive and below 1°', () => {
+test('a plate, a tray, a snap hook, and a through hole are below 1° and still positive', () => {
   const plate = draftOf(boxMesh([0, 0, 0], [20, 20, 2]));
-  assert.equal(plate.positiveAbove.count, 0);
-  assert.equal(plate.positiveBelow.count, 4);
-  assert.equal(plate.positiveBelow.area, 160);
+  assert.equal(plate.positive.count, 0);
+  assert.equal(plate.below.count, 4);
+  assert.equal(plate.below.area, 160);
+  assert.equal(plate.below.positive.count, 4);
   assert.equal(plate.negative.count, 0);
   assert.equal(plate.minDraftDeg, 0);
 
   const tray = draftOf(openTray());
-  assert.equal(tray.positiveAbove.count, 0);
-  assert.ok(tray.positiveBelow.count > 0);
-  assert.ok(tray.positiveBelow.area > 0);
+  assert.equal(tray.positive.count, 0);
+  assert.ok(tray.below.count > 0);
+  assert.ok(tray.below.area > 0);
   assert.equal(tray.negative.count, 0);
 
   const hook = draftOf(snapHook());
-  assert.equal(hook.positiveAbove.count, 0);
-  assert.ok(hook.positiveBelow.count > 0);
+  assert.equal(hook.positive.count, 0);
+  assert.ok(hook.below.count > 0);
   assert.equal(hook.negative.count, 0);
   assert.equal(hook.negative.area, 0);
 
   const hole = draftOf(throughHole());
-  assert.equal(hole.positiveAbove.count, 0);
-  assert.equal(hole.positiveBelow.count, 8);
+  assert.equal(hole.positive.count, 0);
+  assert.equal(hole.below.count, 8);
+  assert.equal(hole.below.positive.count, 8);
   assert.equal(hole.negative.count, 0);
-  assert.ok(Math.abs(hole.positiveBelow.area - 1248) < 1e-3);
+  assert.ok(Math.abs(hole.below.area - 1248) < 1e-3);
 });
 
-test('a drafted cup is positive above 1° and an inverted cup is back-draft', () => {
+test('a drafted cup is positive at or above 1° and an inverted cup is negative at or above 1°', () => {
   const cup = draftOf(taperedCup(true));
   assert.equal(cup.negative.count, 0);
   assert.equal(cup.negative.area, 0);
-  assert.equal(cup.positiveBelow.count, 0);
-  assert.ok(cup.positiveAbove.count > 0);
-  assert.ok(cup.positiveAbove.area > 0);
+  assert.equal(cup.below.count, 0);
+  assert.ok(cup.positive.count > 0);
+  assert.ok(cup.positive.area > 0);
   assert.ok(cup.minDraftDeg > 4 && cup.minDraftDeg < 5);
 
   const split = classifyMoldDraft(cup, 5);
   assert.equal(split.samples, cup.samples);
   assert.equal(split.negative.count, 0);
-  assert.ok(split.positiveAbove.count > 0);
-  assert.ok(split.positiveBelow.count > 0);
-  assert.ok(split.positiveAbove.area > 0);
-  assert.ok(split.positiveBelow.area > 0);
+  assert.ok(split.positive.count > 0);
+  assert.ok(split.below.count > 0);
+  assert.ok(split.below.positive.count > 0);
+  assert.equal(split.below.negative.count, 0);
+  assert.ok(split.positive.area > 0);
+  assert.ok(split.below.area > 0);
 
   const back = draftOf(taperedCup(false));
-  assert.equal(back.positiveAbove.count, 0);
-  assert.equal(back.positiveBelow.count, 0);
+  assert.equal(back.positive.count, 0);
+  assert.equal(back.below.count, 0);
   assert.ok(back.negative.count > 0);
   assert.ok(back.negative.area > 0);
   assert.ok(back.minDraftDeg < 0);
+  assert.equal(back.triangles.every((row) => row.sign === 'negative'), true);
+});
+
+test('positive and negative draft colours are the cavity and core colours', () => {
+  assert.equal(MOLD_DRAFT_POSITIVE_RGB, PARTING_ROLE_RGB.cavity);
+  assert.equal(MOLD_DRAFT_NEGATIVE_RGB, PARTING_ROLE_RGB.core);
+  const swatches = moldDraftSwatchChannels();
+  assert.equal(swatches.positive, '46 115 199');
+  assert.equal(swatches.negative, '184 92 46');
+  const css = readFileSync(new URL('../index.css', import.meta.url), 'utf8');
+  assert.match(css, /--mold-draft-needs-work:\s*248 113 113/);
+  assert.match(css, /--mold-draft-hatch:\s*15 23 42/);
+  assert.deepEqual(MOLD_DRAFT_NEEDS_WORK_RGB.map((channel) => Math.round(channel * 255)), [248, 113, 113]);
+  assert.deepEqual(MOLD_DRAFT_HATCH_RGB.map((channel) => Math.round(channel * 255)), [15, 23, 42]);
+  assert.doesNotMatch(css, /--mold-draft-above:/);
+  assert.doesNotMatch(css, /--mold-draft-below:/);
 });

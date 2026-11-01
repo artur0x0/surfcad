@@ -81,7 +81,7 @@ export default function MoldReportPanel({
           <Row
             label="Draft"
             testId="draft"
-            value={`${geometry.draft.positiveAbove} above · ${geometry.draft.positiveBelow} below ${geometry.draft.minDeg}° · ${geometry.draft.negative} back-draft`}
+            value={`${geometry.draft.positive} positive ≥ ${geometry.draft.minDeg}° · ${geometry.draft.negative} negative ≥ ${geometry.draft.minDeg}° · ${geometry.draft.below} below ${geometry.draft.minDeg}° (${geometry.draft.belowPositive} positive, ${geometry.draft.belowNegative} negative)`}
           />
         )}
       </dl>

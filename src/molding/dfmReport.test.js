@@ -128,8 +128,10 @@ test('a stamped cube report names faces and stays a good fit', { timeout: 60_000
   assert.ok(report.naming.names.some((name) => name.includes('.top') || name.includes('.bottom')));
   assert.equal(report.ejectors.pinCount, result.moldDraft.ejectors.pinCount);
   assert.equal(report.draft.negative, 0);
-  assert.ok(report.draft.positiveBelow > 0);
-  assert.equal(report.draft.positiveAbove, result.moldDraft.positiveAbove.count);
+  assert.ok(report.draft.below > 0);
+  assert.equal(report.draft.belowPositive, result.moldDraft.below.positive.count);
+  assert.equal(report.draft.belowNegative, 0);
+  assert.equal(report.draft.positive, result.moldDraft.positive.count);
   assert.equal(report.sideActions.slideCount, result.sideActions.slideCount);
   assert.doesNotMatch(JSON.stringify(report), /usd|dollar|\$/i);
 });

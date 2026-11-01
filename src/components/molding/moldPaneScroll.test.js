@@ -163,9 +163,9 @@ test('each molding pane renders the scroll container and its last control', asyn
     legend: {
       minDeg: 1,
       presets: [0.5, 1, 2, 3, 5],
-      positiveAbove: { count: 8, area: 1048.1 },
-      positiveBelow: { count: 4, area: 160 },
+      positive: { count: 8, area: 1048.1 },
       negative: { count: 2, area: 36.2 },
+      below: { count: 4, area: 160, positive: { count: 3, area: 120 }, negative: { count: 1, area: 40 } },
       pins: 4,
       sleeves: 1,
     },
@@ -175,12 +175,19 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(draft, /data-mold-draft-threshold="1"/);
   assert.match(draft, /data-ui-action="data-mold-draft-threshold"/);
   assert.match(draft, /Positive ≥ 1°/);
-  assert.match(draft, /Positive &lt; 1°/);
-  assert.match(draft, /Negative/);
+  assert.match(draft, /Negative ≥ 1°/);
+  assert.match(draft, /Below 1°/);
+  assert.match(draft, /mold-draft-swatch-positive/);
   assert.match(draft, /mold-draft-swatch-negative/);
+  assert.match(draft, /mold-draft-swatch-needs-work/);
   assert.match(draft, /8 · 1048 mm²/);
   assert.match(draft, /2 · 36.2 mm²/);
-  assert.doesNotMatch(draft, /style=/);
+  assert.match(draft, /3 positive · 1 negative/);
+  assert.match(draft, /data-mold-draft-below-positive="3"/);
+  assert.match(draft, /data-mold-draft-below-negative="1"/);
+  assert.match(draft, /--mold-draft-positive:\s*46 115 199/);
+  assert.match(draft, /--mold-draft-negative:\s*184 92 46/);
+  assert.doesNotMatch(draft, /#[0-9a-fA-F]{3,8}/);
 
   const report = renderToStaticMarkup(React.createElement(MoldReportPanel, {
     report: {
@@ -188,7 +195,12 @@ test('each molding pane renders the scroll container and its last control', asyn
       disclaimer: 'Budgetary, not binding.',
       grade: 'PC/ABS',
       quantity: 1000,
-      geometry: { volumeCm3: 0.8, projectedAreaMm2: 400, sideActionCount: 1 },
+      geometry: {
+        volumeCm3: 0.8,
+        projectedAreaMm2: 400,
+        sideActionCount: 1,
+        draft: { minDeg: 1, positive: 8, negative: 2, below: 4, belowPositive: 3, belowNegative: 1 },
+      },
       estimates: { pressTons: 2.04 },
       notes: { mass: 'The resin library has no density, so part mass is not computed.' },
     },
@@ -214,6 +226,7 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(report, /0\.800 cm/);
   assert.match(report, /400\.00 mm/);
   assert.match(report, /data-mold-report-field="sides"/);
+  assert.match(report, /8 positive ≥ 1° · 2 negative ≥ 1° · 4 below 1° \(3 positive, 1 negative\)/);
   assert.match(report, /PC\/ABS/);
   assert.match(report, /data-mold-report-quantity="1000"/);
   assert.match(report, /no density/);

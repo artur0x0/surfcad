@@ -1,34 +1,33 @@
 /**
  * Lit mold-draft skin for the active part.
  *
- * Paints every side wall in the signed classification. Positive draft is a
- * blue ramp: dark at or above the threshold, lighter below it. Negative
- * draft, a locked-steel back-draft, is an orange face with a world-space
- * hatch so it does not depend on hue alone. While the skin is visible the
- * paint skin is hidden. Detach puts that visibility back, unless another
- * mold overlay or a stress skin is still holding it hidden. This is not
- * CAD draft mode.
+ * Paints every side wall in the three draft classes. Positive ≥ T uses the
+ * cavity colour. Negative ≥ T uses the core colour. Below T, either sign,
+ * is the needs-work red with a world-space hatch so it does not depend on
+ * hue alone. While the skin is visible the paint skin is hidden. Detach
+ * puts that visibility back, unless another mold overlay or a stress skin
+ * is still holding it hidden. This is not CAD draft mode.
  */
 
 import { BufferAttribute, BufferGeometry, DoubleSide, FrontSide, Mesh, MeshStandardMaterial } from 'three';
 import { adoptSectionClip } from '../utils/sectionClip.js';
 import {
-  MOLD_DRAFT_ABOVE_RGB,
-  MOLD_DRAFT_BELOW_RGB,
   MOLD_DRAFT_HATCH_RGB,
+  MOLD_DRAFT_NEEDS_WORK_RGB,
   MOLD_DRAFT_NEGATIVE_RGB,
+  MOLD_DRAFT_POSITIVE_RGB,
 } from './moldDraft.js';
 
 /** Above the side-action skin (2.42), under the stress skin (2.5). */
 export const MOLD_DRAFT_SKIN_RENDER_ORDER = 2.43;
 
 const SKIN_NAME = 'mold-draft-skin';
-const PROGRAM_KEY = 'mold-draft-hatch-v1';
+const PROGRAM_KEY = 'mold-draft-hatch-v2';
 
 const RGB = {
-  positiveAbove: MOLD_DRAFT_ABOVE_RGB,
-  positiveBelow: MOLD_DRAFT_BELOW_RGB,
+  positive: MOLD_DRAFT_POSITIVE_RGB,
   negative: MOLD_DRAFT_NEGATIVE_RGB,
+  below: MOLD_DRAFT_NEEDS_WORK_RGB,
 };
 
 function glslVec(rgb) {
@@ -42,7 +41,7 @@ function hostSide(host) {
 }
 
 /**
- * Face-skin headlight plus a world-space hatch on negative triangles.
+ * Face-skin headlight plus a world-space hatch on Below T triangles.
  * The stripe colours match the CSS tokens. They are copied here because a
  * WebGL program cannot read a stylesheet.
  */
@@ -60,7 +59,7 @@ export function makeDraftSkinMaterial(side) {
     toneMapped: false,
     side,
   });
-  const negative = glslVec(MOLD_DRAFT_NEGATIVE_RGB);
+  const needsWork = glslVec(MOLD_DRAFT_NEEDS_WORK_RGB);
   const hatch = glslVec(MOLD_DRAFT_HATCH_RGB);
   material.customProgramCacheKey = () => PROGRAM_KEY;
   material.onBeforeCompile = (shader) => {
@@ -68,29 +67,29 @@ export function makeDraftSkinMaterial(side) {
       .replace(
         '#include <common>',
         `#include <common>
-        attribute float draftNegative;
-        varying float vDraftNegative;
+        attribute float draftNeedsWork;
+        varying float vDraftNeedsWork;
         varying vec3 vDraftWorld;`,
       )
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-        vDraftNegative = draftNegative;
+        vDraftNeedsWork = draftNeedsWork;
         vDraftWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
         `#include <common>
-        varying float vDraftNegative;
+        varying float vDraftNeedsWork;
         varying vec3 vDraftWorld;`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-        if (vDraftNegative > 0.5) {
+        if (vDraftNeedsWork > 0.5) {
           float band = step(0.5, fract((vDraftWorld.x + vDraftWorld.y) * 0.45));
-          diffuseColor.rgb = mix(${negative}, ${hatch}, band);
+          diffuseColor.rgb = mix(${needsWork}, ${hatch}, band);
         }
         diffuseColor.rgb = mix(
           pow((diffuseColor.rgb + vec3(0.055)) / vec3(1.055), vec3(2.4)),
@@ -138,7 +137,7 @@ function restorePaintSkin(host) {
 }
 
 function colorOf(state) {
-  return RGB[state] || MOLD_DRAFT_BELOW_RGB;
+  return RGB[state] || MOLD_DRAFT_NEEDS_WORK_RGB;
 }
 
 function buildGeometry(geometry, moldDraft) {
@@ -151,20 +150,20 @@ function buildGeometry(geometry, moldDraft) {
   const rows = Array.isArray(moldDraft?.triangles) ? moldDraft.triangles : [];
   for (let i = 0; i < rows.length; i++) {
     const t = rows[i]?.index;
-    if (t >= 0 && t < triangles) state[t] = rows[i].state || 'positiveBelow';
+    if (t >= 0 && t < triangles) state[t] = rows[i].state || 'below';
   }
   let count = 0;
   for (let t = 0; t < triangles; t++) if (state[t]) count += 1;
   if (!count) return null;
   const positions = new Float32Array(count * 9);
   const colors = new Float32Array(count * 9);
-  const negative = new Float32Array(count * 3);
+  const needsWork = new Float32Array(count * 3);
   let w = 0;
   let v = 0;
   for (let t = 0; t < triangles; t++) {
     if (!state[t]) continue;
     const rgb = colorOf(state[t]);
-    const hatch = state[t] === 'negative' ? 1 : 0;
+    const hatch = state[t] === 'below' ? 1 : 0;
     for (let k = 0; k < 3; k++) {
       const vi = index[t * 3 + k] * 3;
       positions[w] = src[vi] || 0;
@@ -176,14 +175,14 @@ function buildGeometry(geometry, moldDraft) {
       positions[w] = src[vi + 2] || 0;
       colors[w] = rgb[2];
       w += 1;
-      negative[v] = hatch;
+      needsWork[v] = hatch;
       v += 1;
     }
   }
   const geom = new BufferGeometry();
   geom.setAttribute('position', new BufferAttribute(positions, 3));
   geom.setAttribute('color', new BufferAttribute(colors, 3));
-  geom.setAttribute('draftNegative', new BufferAttribute(negative, 1));
+  geom.setAttribute('draftNeedsWork', new BufferAttribute(needsWork, 1));
   geom.computeVertexNormals();
   return geom;
 }
@@ -192,15 +191,15 @@ function stampOf(host, moldDraft) {
   const rows = Array.isArray(moldDraft?.triangles) ? moldDraft.triangles : [];
   let sig = 0;
   for (let i = 0; i < rows.length; i++) {
-    const stateCode = rows[i]?.state === 'negative' ? 3 : rows[i]?.state === 'positiveBelow' ? 2 : 1;
+    const stateCode = rows[i]?.state === 'negative' ? 3 : rows[i]?.state === 'below' ? 2 : 1;
     sig = (sig + ((rows[i]?.index || 0) + 1) * stateCode) >>> 0;
   }
   return [
     host.geometry?.uuid || '',
     moldDraft?.minDeg,
-    moldDraft?.positiveAbove?.count,
-    moldDraft?.positiveBelow?.count,
+    moldDraft?.positive?.count,
     moldDraft?.negative?.count,
+    moldDraft?.below?.count,
     sig,
   ].join('|');
 }

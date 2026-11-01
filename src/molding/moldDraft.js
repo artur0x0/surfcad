@@ -3,8 +3,13 @@
  *
  * Draft here is signed against the pull. Positive draft opens along the
  * pull, on an outside wall and on a hole wall. Negative draft closes along
- * the pull: the steel on the outward-normal side cannot pull off. A side
- * wall at 0° is positive and below the threshold. There is no zero-draft
+ * the pull: the steel on the outward-normal side cannot pull off.
+ *
+ * Three classes, against the selected threshold T. Positive draft at or
+ * above T is Positive ≥ T and uses the cavity colour. Negative draft at or
+ * above T is Negative ≥ T and uses the core colour. Absolute draft below T,
+ * either sign, is Below T: a red hatch, the needs-work class. A side wall
+ * at 0° is Below T and its sign stays positive. There is no zero-draft
  * class. Tops and bottoms, outside the 10° band from the pull, are not
  * classified. Nothing here changes the mesh.
  *
@@ -19,9 +24,9 @@
  * patch gets a sleeve. This is not a mold design.
  */
 
-import { PARTING_NEUTRAL_DEG } from './parting.js';
+import { PARTING_NEUTRAL_DEG, PARTING_ROLE_RGB } from './parting.js';
 
-/** Default threshold. Side walls at or above this are positive above. */
+/** Default threshold. |draft| at or above this leaves the needs-work class. */
 export const MOLD_DRAFT_MIN_DEG = 1;
 /** Buttons in the draft section. The agent may pass any angle in (0, 90]. */
 export const MOLD_DRAFT_PRESETS = Object.freeze([0.5, 1, 2, 3, 5]);
@@ -35,15 +40,28 @@ const CLUSTER_COS = Math.cos((MOLD_DRAFT_CLUSTER_DEG * Math.PI) / 180);
 const SIDE_EPS = 1e-4;
 
 /**
- * Blue ramp for positive draft, orange for back-draft. Not CSS tokens.
- * The legend swatches are `--mold-draft-above`, `--mold-draft-below`,
- * and `--mold-draft-negative` in src/index.css.
+ * Positive ≥ T. The same array as the cavity face in `PARTING_ROLE_RGB`.
+ * Negative ≥ T is `PARTING_ROLE_RGB.core`. Neither value is copied.
  */
-export const MOLD_DRAFT_ABOVE_RGB = Object.freeze([30 / 255, 58 / 255, 138 / 255]);
-export const MOLD_DRAFT_BELOW_RGB = Object.freeze([59 / 255, 130 / 255, 246 / 255]);
-export const MOLD_DRAFT_NEGATIVE_RGB = Object.freeze([234 / 255, 88 / 255, 12 / 255]);
-/** Dark stripe on a negative face. Matches `--mold-draft-hatch`. */
+export const MOLD_DRAFT_POSITIVE_RGB = PARTING_ROLE_RGB.cavity;
+export const MOLD_DRAFT_NEGATIVE_RGB = PARTING_ROLE_RGB.core;
+/**
+ * Needs-work fill for |draft| below the threshold.
+ * Same channels as `--mold-draft-needs-work` (red-400, `.feature-failed-ring`).
+ * Copied because the skin cannot read a stylesheet.
+ */
+export const MOLD_DRAFT_NEEDS_WORK_RGB = Object.freeze([248 / 255, 113 / 255, 113 / 255]);
+/** Dark stripe on a needs-work face. Matches `--mold-draft-hatch`. */
 export const MOLD_DRAFT_HATCH_RGB = Object.freeze([15 / 255, 23 / 255, 42 / 255]);
+
+/** Space-separated channels for the legend swatches. Source is the role colours. */
+export function moldDraftSwatchChannels() {
+  const channels = (rgb) => rgb.map((channel) => Math.round(channel * 255)).join(' ');
+  return {
+    positive: channels(MOLD_DRAFT_POSITIVE_RGB),
+    negative: channels(MOLD_DRAFT_NEGATIVE_RGB),
+  };
+}
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -140,9 +158,14 @@ export function signedDraftDeg(normal, pull, centroid, center) {
 }
 
 function stateOf(signed, threshold) {
-  if (signed < 0) return 'negative';
-  if (signed >= threshold) return 'positiveAbove';
-  return 'positiveBelow';
+  if (signed >= threshold) return 'positive';
+  if (signed <= -threshold) return 'negative';
+  return 'below';
+}
+
+/** A wall at 0° stays positive. Only a strict negative closes along the pull. */
+function signOf(signed) {
+  return signed < 0 ? 'negative' : 'positive';
 }
 
 function cluster(members) {
@@ -264,13 +287,21 @@ function emptyBucket() {
   return { count: 0, area: 0, regions: [] };
 }
 
+function emptyCount() {
+  return { count: 0, area: 0 };
+}
+
+function emptyBelow() {
+  return { count: 0, area: 0, regions: [], positive: emptyCount(), negative: emptyCount() };
+}
+
 function emptyDraft(threshold = MOLD_DRAFT_MIN_DEG) {
   return {
     minDeg: threshold,
     neutralDeg: MOLD_DRAFT_NEUTRAL_DEG,
-    positiveAbove: emptyBucket(),
-    positiveBelow: emptyBucket(),
+    positive: emptyBucket(),
     negative: emptyBucket(),
+    below: emptyBelow(),
     violationCount: 0,
     triangleCount: 0,
     minDraftDeg: null,
@@ -293,33 +324,48 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
     empty.ejectors = report?.ejectors || empty.ejectors;
     return empty;
   }
-  const above = [];
-  const below = [];
-  const negative = [];
+  const positiveMembers = [];
+  const negativeMembers = [];
+  const belowPositive = [];
+  const belowNegative = [];
   const triangles = [];
   let minDraft = null;
   for (const sample of samples) {
     const signed = sample.signedDeg;
     if (minDraft == null || signed < minDraft) minDraft = signed;
     const state = stateOf(signed, minDeg);
-    const member = { ...sample, t: sample.t, draftDeg: signed, state };
-    if (state === 'negative') negative.push(member);
-    else if (state === 'positiveAbove') above.push(member);
-    else below.push(member);
-    triangles.push({ index: sample.t, signedDeg: signed, state });
+    const sign = signOf(signed);
+    const member = { ...sample, t: sample.t, draftDeg: signed, state, sign };
+    if (state === 'positive') positiveMembers.push(member);
+    else if (state === 'negative') negativeMembers.push(member);
+    else if (sign === 'negative') belowNegative.push(member);
+    else belowPositive.push(member);
+    triangles.push({ index: sample.t, signedDeg: signed, state, sign });
   }
   triangles.sort((a, b) => a.index - b.index);
-  const positiveAbove = bucketOf(above);
-  const positiveBelow = bucketOf(below);
-  const negativeBucket = bucketOf(negative);
-  const regions = positiveBelow.regions.concat(negativeBucket.regions);
+  const positive = bucketOf(positiveMembers);
+  const negative = bucketOf(negativeMembers);
+  const belowPos = bucketOf(belowPositive);
+  const belowNeg = bucketOf(belowNegative);
+  const regions = belowPos.regions.concat(belowNeg.regions);
+  regions.forEach((region, id) => { region.id = id; });
+  let belowArea = 0;
+  for (const member of belowPositive) belowArea += member.area || 0;
+  for (const member of belowNegative) belowArea += member.area || 0;
+  const below = {
+    count: belowPos.count + belowNeg.count,
+    area: round(belowArea),
+    regions,
+    positive: { count: belowPos.count, area: belowPos.area },
+    negative: { count: belowNeg.count, area: belowNeg.area },
+  };
   return {
     minDeg,
     neutralDeg: MOLD_DRAFT_NEUTRAL_DEG,
-    positiveAbove,
-    positiveBelow,
-    negative: negativeBucket,
-    violationCount: positiveBelow.count + negativeBucket.count,
+    positive,
+    negative,
+    below,
+    violationCount: below.count,
     triangleCount: triangles.length,
     minDraftDeg: minDraft == null ? null : round(minDraft),
     regions,
@@ -333,6 +379,7 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
  * Signed draft and ejector candidates along `pull`.
  * A bad pull or an empty mesh is an empty report, not an error.
  * The buckets use the default 1° threshold. `classifyMoldDraft` retargets them.
+ * Positive ≥ T, Negative ≥ T, and Below T, with the Below T sign split.
  */
 export function analyzeMoldDraft(tris, pull, wall = null) {
   const d = unit(pull);
@@ -385,14 +432,20 @@ function packBucket(bucket) {
   return { count: bucket?.count || 0, area: bucket?.area || 0 };
 }
 
-/** Counts and areas for the legend, the agent result, and the DFM line. */
+/** Counts and areas for the legend, the agent result, and the report line. */
 export function moldDraftSummary(moldDraft) {
-  if (!moldDraft || moldDraft.positiveAbove == null) return null;
+  if (!moldDraft || moldDraft.positive == null) return null;
+  const below = moldDraft.below || emptyBelow();
   return {
     threshold: moldDraft.minDeg,
-    positiveAbove: packBucket(moldDraft.positiveAbove),
-    positiveBelow: packBucket(moldDraft.positiveBelow),
+    positive: packBucket(moldDraft.positive),
     negative: packBucket(moldDraft.negative),
+    below: {
+      count: below.count || 0,
+      area: below.area || 0,
+      positive: packBucket(below.positive),
+      negative: packBucket(below.negative),
+    },
     violations: moldDraft.violationCount,
     minDeg: moldDraft.minDeg,
     minDraftDeg: moldDraft.minDraftDeg,
@@ -409,9 +462,9 @@ export function moldDraftLegendModel(moldDraft) {
     heuristic: true,
     minDeg: summary.minDeg,
     presets: MOLD_DRAFT_PRESETS,
-    positiveAbove: summary.positiveAbove,
-    positiveBelow: summary.positiveBelow,
+    positive: summary.positive,
     negative: summary.negative,
+    below: summary.below,
     violations: summary.violations,
     pins: summary.pins,
     sleeves: summary.sleeves,
