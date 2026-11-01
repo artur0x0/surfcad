@@ -18,7 +18,6 @@ export default function GitBehindToast({
       <ErrorPopup
         tone="warn"
         onDismiss={onDismiss}
-        className="px-4 py-2"
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <span data-git-behind-toast-msg="">{message}</span>

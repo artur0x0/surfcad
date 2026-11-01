@@ -76,9 +76,10 @@ check(
 );
 check(
   'stacked execution layout keeps Undo and dismiss on the first line',
-  /layout === 'stacked' \? 'gap-5' : 'gap-1'/.test(popup)
-    && /data-error-layout="stacked"/.test(popup)
-    && /justify-between/.test(popup),
+  /data-error-layout="stacked"/.test(popup)
+    && /toast-first-row/.test(popup)
+    && /justify-between/.test(popup)
+    && !/gap-5/.test(popup),
   'stacked header missing',
 );
 

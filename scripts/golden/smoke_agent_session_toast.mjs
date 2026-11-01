@@ -3,14 +3,11 @@
 /**
  * Agent connected / Agent disconnected toasts at 390px.
  *
- * The #832 card grew to the 44px Disconnect / Reconnect button (46px with
- * the border). The shared card is one text line plus --toast-pad, about
- * half that. The message is inset and vertically centred. The buttons sit
- * the same distance from the top, right, and bottom edges. Their hit
- * target stays 44px and hangs off .toast-glass so the blur does not clip it.
- *
- * Notice, soft-fail, roomy delete, and stacked execution cards keep the
- * padding their callers pass.
+ * Every single-line card matches the Deleted toast: same height, text
+ * inset, and X inset. A multi-line error keeps its second line, and its
+ * first row uses the Deleted pill, pill-to-X gap, X size, right inset,
+ * and top inset. The 44px hit hangs off .toast-glass so the blur does
+ * not clip it.
  *
  * Shots go to GOLDEN_SHOT_DIR or os.tmpdir() only.
  */
@@ -161,7 +158,7 @@ try {
         points: ab && db ? {
           actionAbove: { x: ab.x + ab.w / 2, y: ab.y + ab.h / 2 - 20 },
           actionCenter: { x: ab.x + Math.min(24, ab.w / 2), y: ab.y + ab.h / 2 },
-          dismissRight: { x: db.x + db.w + 10, y: db.y + db.h / 2 },
+          dismissRight: { x: db.x + db.w - 4, y: db.y + db.h / 2 },
           dismissLeftOf: { x: db.x - 2, y: db.y + db.h / 2 },
         } : null,
       };
@@ -171,6 +168,8 @@ try {
       const popup = root?.querySelector('[data-error-popup]');
       const cs = popup ? window.getComputedStyle(popup) : null;
       const row = popup?.querySelector('[data-error-popup-row]');
+      const text = popup?.querySelector('[data-error-popup-text]') || popup?.querySelector('.font-bold');
+      const body = popup?.querySelector('[data-error-popup-body]');
       const undo = root?.querySelector('[data-error-undo]');
       const dismiss = root?.querySelector('[data-error-dismiss]');
       const actions = popup?.querySelector('[data-error-actions]');
@@ -178,20 +177,35 @@ try {
       const db = box(dismiss);
       const pb = box(popup);
       const rb = box(row);
-      const borderV = (parseFloat(cs?.borderTopWidth) || 0) + (parseFloat(cs?.borderBottomWidth) || 0);
+      const tb = box(text);
+      const bb = box(body);
+      const borderTop = parseFloat(cs?.borderTopWidth) || 0;
+      const borderRight = parseFloat(cs?.borderRightWidth) || 0;
+      const borderV = borderTop + (parseFloat(cs?.borderBottomWidth) || 0);
       const padV = (parseFloat(cs?.paddingTop) || 0) + (parseFloat(cs?.paddingBottom) || 0);
       const base = (rb?.h || 0) + borderV + padV;
+      const borderLeft = parseFloat(cs?.borderLeftWidth) || 0;
       return {
         padTop: parseFloat(cs?.paddingTop) || 0,
         padLeft: parseFloat(cs?.paddingLeft) || 0,
         popupH: pb?.h || 0,
+        textLeft: tb && pb ? tb.x - (pb.x + borderLeft) : -1,
+        textMid: tb ? tb.y + tb.h / 2 : 0,
+        popMid: pb ? pb.y + pb.h / 2 : 0,
+        lines: text?.getClientRects().length || 0,
         layout: popup?.getAttribute('data-error-layout') || '',
         roomy: popup?.getAttribute('data-error-roomy') != null,
         ratio: base > 0 ? (pb?.h || 0) / base : 0,
         undoW: ub?.w || 0,
+        undoH: ub?.h || 0,
+        undoTop: ub && pb ? ub.y - pb.y : -1,
         dismissW: db?.w || 0,
-        undoPadTop: undo ? parseFloat(window.getComputedStyle(undo).paddingTop) || 0 : 0,
+        dismissH: db?.h || 0,
+        dismissTop: db && pb ? db.y - pb.y : -1,
+        xRight: db && pb ? (pb.x + pb.w - borderRight) - (db.x + db.w) : -1,
+        pillToX: ub && db ? db.x - (ub.x + ub.w) : -1,
         gap: parseFloat(actions ? window.getComputedStyle(actions).columnGap : '') || 0,
+        bodyBelow: !!(bb && rb && bb.y >= rb.y + rb.h - 1),
         desc: (popup?.textContent || '').replace(/\s+/g, ' ').trim(),
       };
     };
@@ -217,41 +231,49 @@ try {
       soft: sample('soft'),
       roomy: sample('roomy'),
       stacked: sample('stacked'),
-      padToken: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-pad')) || 0,
-      hitToken: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-hit')) || 0,
+      tokens: {
+        height: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-height')) || 0,
+        inset: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-inset-x')) || 0,
+        textGap: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-text-gap')) || 0,
+        pillH: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-pill-height')) || 0,
+        pillPad: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-pill-pad-x')) || 0,
+        actionGap: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-action-gap')) || 0,
+        xSize: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-x-size')) || 0,
+        xBox: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-x-box')) || 0,
+        hit: parseFloat(window.getComputedStyle(window.document.documentElement).getPropertyValue('--toast-hit')) || 0,
+      },
     };
   });
 
-  // 44px button + 1px border on each side. Half of that is 23px.
-  const previousH = 46;
-  console.log(`  card height connected=${metrics.connected.popupH} disconnected=${metrics.disconnected.popupH} (previous ${previousH})`);
+  const deleted = metrics.roomy;
+  console.log(`  card height connected=${metrics.connected.popupH} disconnected=${metrics.disconnected.popupH} deleted=${deleted.popupH}`);
   for (const [label, card] of [['connected', metrics.connected], ['disconnected', metrics.disconnected]]) {
     check(`${label}: copy`,
       card.copy === (label === 'connected' ? 'Agent connected' : 'Agent disconnected'),
       card.copy);
-    check(`${label}: about half the previous card`,
-      card.popupH > previousH * 0.4 && card.popupH < previousH * 0.65,
-      `h=${card.popupH} previous=${previousH}`);
     check(`${label}: one line, inset from the left, vertically centred`,
       card.lines === 1
-        && card.textLeft > 2
-        && nearly(card.textLeft, card.padLeft)
+        && nearly(card.textLeft, deleted.textLeft)
         && nearly(card.textMid, card.popMid),
-      JSON.stringify({ textLeft: card.textLeft, padLeft: card.padLeft, textMid: card.textMid, popMid: card.popMid, lines: card.lines }));
-    const inset = card.dismissInset;
-    const actionInset = card.actionInset;
-    check(`${label}: buttons have even padding to the toast edges`,
-      !!inset && !!actionInset
-        && nearly(inset.top, card.padLeft)
-        && nearly(inset.bottom, inset.top)
-        && nearly(inset.right, inset.top)
-        && nearly(actionInset.top, inset.top)
-        && nearly(actionInset.bottom, inset.top)
-        && nearly(card.gap, inset.top),
-      JSON.stringify({ inset, actionInset, gap: card.gap, pad: card.padLeft }));
-    check(`${label}: visual buttons are shorter than 44px`,
-      card.actionH > 0 && card.actionH < 44 && card.dismissH < 44 && card.dismissW < 44,
-      JSON.stringify({ actionH: card.actionH, dismissH: card.dismissH, dismissW: card.dismissW }));
+      JSON.stringify({ textLeft: card.textLeft, deletedTextLeft: deleted.textLeft, textMid: card.textMid, popMid: card.popMid, lines: card.lines }));
+    check(`${label}: same height and X inset as Deleted`,
+      nearly(card.popupH, deleted.popupH)
+        && card.dismissInset
+        && nearly(card.dismissInset.right, deleted.xRight)
+        && nearly(card.dismissW, deleted.dismissW)
+        && nearly(card.dismissH, deleted.dismissH)
+        && nearly(card.dismissInset.top, deleted.dismissTop - 1),
+      JSON.stringify({
+        h: card.popupH,
+        deletedH: deleted.popupH,
+        xRight: card.dismissInset?.right,
+        deletedXRight: deleted.xRight,
+        dismiss: [card.dismissW, card.dismissH, card.dismissInset?.top],
+        deletedDismiss: [deleted.dismissW, deleted.dismissH, deleted.dismissTop],
+      }));
+    check(`${label}: pill matches Deleted height and the pill-to-X gap`,
+      nearly(card.actionH, deleted.undoH) && nearly(card.gap, deleted.pillToX),
+      JSON.stringify({ actionH: card.actionH, deletedPillH: deleted.undoH, gap: card.gap, deletedGap: deleted.pillToX }));
     check(`${label}: hit target is 44px and grows outward`,
       card.actionHit.h === 44 && card.actionHit.w >= 44
         && card.dismissHit.h === 44 && card.dismissHit.w === 44
@@ -263,7 +285,7 @@ try {
   }
   check('390: hit above Disconnect reaches the button', metrics.hits.connectedAbove, JSON.stringify(metrics.connected.points));
   check('390: Disconnect label still hits Disconnect', metrics.hits.connectedCenter);
-  check('390: hit to the right of X reaches X', metrics.hits.connectedRight && metrics.hits.disconnectedRight);
+  check('390: the right side of the 44px X reaches X', metrics.hits.connectedRight && metrics.hits.disconnectedRight);
   check('390: X hit does not cover the gap beside Disconnect', metrics.hits.connectedNotDismiss);
   check('390: hit above Reconnect reaches the button', metrics.hits.disconnectedAbove);
 
@@ -276,32 +298,62 @@ try {
     clicks.includes('disconnect') && clicks.includes('disconnected-dismiss'),
     JSON.stringify(clicks));
 
-  check('notice toast keeps px-4 py-2',
-    metrics.notice.padLeft === 16 && metrics.notice.padTop === 8
-      && metrics.notice.popupH > metrics.connected.popupH,
+  const likeDeleted = (card, { pill = true } = {}) => nearly(card.popupH, deleted.popupH)
+    && nearly(card.textLeft, deleted.textLeft)
+    && nearly(card.xRight, deleted.xRight)
+    && nearly(card.dismissW, deleted.dismissW)
+    && nearly(card.dismissH, deleted.dismissH)
+    && nearly(card.dismissTop, deleted.dismissTop)
+    && (!pill || (
+      nearly(card.undoH, deleted.undoH)
+      && nearly(card.undoW, deleted.undoW)
+      && nearly(card.pillToX, deleted.pillToX)
+      && nearly(card.undoTop, deleted.undoTop)
+    ));
+  check('Deleted toast is the 40px reference',
+    deleted.roomy
+      && deleted.popupH === 40
+      && deleted.textLeft === 12
+      && deleted.xRight === 12
+      && deleted.undoH === 16
+      && deleted.dismissW === 44
+      && deleted.dismissH === 18
+      && deleted.dismissTop === 11
+      && deleted.pillToX === 16
+      && Math.abs(deleted.ratio - 2) < 0.05,
+    JSON.stringify(deleted));
+  check('Saved Branch matches Deleted height, text inset, and X',
+    likeDeleted(metrics.notice, { pill: false }) && metrics.notice.lines === 1,
     JSON.stringify(metrics.notice));
-  check('soft-fail toast keeps px-3 py-2 and its Undo padding',
-    metrics.soft.padLeft === 12 && metrics.soft.padTop === 8
-      && metrics.soft.undoPadTop > 0
-      && metrics.soft.popupH > metrics.connected.popupH,
+  check('Pick at least one edge matches Deleted, including the Undo pill',
+    likeDeleted(metrics.soft) && metrics.soft.lines === 1,
     JSON.stringify(metrics.soft));
-  check('roomy delete toast stays 2× with 44px controls',
-    metrics.roomy.roomy
-      && Math.abs(metrics.roomy.ratio - 2) < 0.05
-      && metrics.roomy.undoW >= 44
-      && metrics.roomy.dismissW >= 44
-      && Math.abs(metrics.roomy.gap - 16) < 0.5,
-    JSON.stringify(metrics.roomy));
-  check('stacked execution toast keeps p-3 and two lines',
+  check('stacked error keeps its body, and the first row matches Deleted',
     metrics.stacked.layout === 'stacked'
-      && metrics.stacked.padTop === 12
-      && metrics.stacked.padLeft === 12
       && metrics.stacked.desc.includes('Error')
       && metrics.stacked.desc.includes('The script failed')
-      && metrics.stacked.popupH > metrics.connected.popupH,
+      && metrics.stacked.bodyBelow
+      && metrics.stacked.popupH > deleted.popupH
+      && nearly(metrics.stacked.undoH, deleted.undoH)
+      && nearly(metrics.stacked.undoW, deleted.undoW)
+      && nearly(metrics.stacked.pillToX, deleted.pillToX)
+      && nearly(metrics.stacked.dismissW, deleted.dismissW)
+      && nearly(metrics.stacked.dismissH, deleted.dismissH)
+      && nearly(metrics.stacked.xRight, deleted.xRight)
+      && nearly(metrics.stacked.dismissTop, deleted.dismissTop)
+      && nearly(metrics.stacked.undoTop, deleted.undoTop),
     JSON.stringify(metrics.stacked));
-  check('toast tokens', metrics.padToken === 4 && metrics.hitToken === 44,
-    JSON.stringify({ pad: metrics.padToken, hit: metrics.hitToken }));
+  check('toast tokens',
+    metrics.tokens.height === 40
+      && metrics.tokens.inset === 12
+      && metrics.tokens.textGap === 8
+      && metrics.tokens.pillH === 16
+      && metrics.tokens.pillPad === 12
+      && metrics.tokens.actionGap === 16
+      && metrics.tokens.xSize === 18
+      && metrics.tokens.xBox === 44
+      && metrics.tokens.hit === 44,
+    JSON.stringify(metrics.tokens));
 
   const shot = join(shotDir, 'agent-session-toast-390.png');
   await page.screenshot({ path: shot, fullPage: true });
