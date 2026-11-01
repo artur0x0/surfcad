@@ -127,8 +127,14 @@ export function createServerTabConnection(opts) {
   }
 
   function sendPrompt(message) {
-    if (state !== 'paired' || transport.status() !== 'open') return false;
+    if (transport.status() !== 'open') return false;
     if (!message || !PROMPT_TYPES.has(message.type)) return false;
+    // The join latch can show the chat before this socket has seen an
+    // agent frame. Prompts and cancels still go out: the server delivers
+    // them or acks a failure. Replies stay paired-only.
+    const fromPage = message.type === PAIR_MSG.AGENT_PROMPT
+      || message.type === PAIR_MSG.AGENT_PROMPT_CANCEL;
+    if (!fromPage && state !== 'paired') return false;
     transport.send(message);
     return true;
   }

@@ -548,8 +548,8 @@ Mobile specifics:
   center while no agent is connected. While an agent is connected, that
   center is a Bot button (`data-ui-action="data-agent-chat-open"`,
   `data-agent-chat-open`) that opens the same agent chat as desktop
-  (`PromptInput`). It shows a spinner while the agent is working and
-  disappears on disconnect. Contour/Fillet chips use `bottom-14` on
+  (`PromptInput`) and folds it on the next tap. It shows a spinner while
+  the agent is working and disappears on disconnect. Contour/Fillet chips use `bottom-14` on
   mobile so they clear the pill. Shell exposes `data-mobile-stage="cad"|"script"`.
 - **Feature strip (Slice Mobile B → B.1 → C → C.1 → C.4 + UI polish):** `FeatureStrip.jsx`.
   **Script stage:** vertical right rail (`data-feature-strip-side="right"`), starting

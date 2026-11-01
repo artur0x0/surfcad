@@ -571,6 +571,22 @@ export function createAgentRouter(deps) {
     }
   });
 
+  router.get('/prompts', async (req, res, next) => {
+    try {
+      const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
+      if (!auth) return res.status(401).json({ error: 'Authentication required' });
+      if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
+      const timeout = clampTimeout(req.query.timeout);
+      const result = await deps.registry.waitPrompts(auth.userId, timeout, auth.id);
+      if (!result || result.status === 'revoked') {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      return res.json({ messages: result.messages });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.post('/prompts', async (req, res, next) => {
     try {
       const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));

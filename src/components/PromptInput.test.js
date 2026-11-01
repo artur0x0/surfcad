@@ -24,6 +24,8 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /Screenshot attached/);
   assert.match(SRC, /discardShot\(\)/);
   assert.match(SRC, /sendAgentPromptText\(/);
+  assert.match(SRC, /reason: 'no_transport'/);
+  assert.match(SRC, /delivery: 'failed', error: 'not_paired'/);
   assert.match(SRC, /attachViewerShot/);
   assert.match(SRC, /promptContext/);
   assert.match(SRC, /bindAgentPromptTransport/);

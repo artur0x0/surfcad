@@ -129,6 +129,15 @@ export function shouldOpenAgentChatOnConnect(wasConnected, connected) {
 }
 
 /**
+ * The phone bot button opens the agent chat, and the next tap folds it.
+ * @param {boolean} open
+ * @returns {'close' | 'open'}
+ */
+export function agentChatToggleAction(open) {
+  return open === true ? 'close' : 'open';
+}
+
+/**
  * Disconnect in the profile menu / Connect Agent dialog drops the local
  * WebSocket relay (`disconnectPairing`), not the GitHub write-grant.
  * Show it only while a client is paired or the link is connected.

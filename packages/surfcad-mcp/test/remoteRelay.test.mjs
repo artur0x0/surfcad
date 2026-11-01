@@ -17,6 +17,7 @@ import { configDir, normalizeServer, resolveAgentName, selectRelayMode, tokenPat
 import { loginStatusError } from '../src/remote/login.mjs';
 import { agentHelloFrame, RemoteSession } from '../src/remote/session.mjs';
 import { createAgentRelay } from '../../../backend/agent/createRelay.js';
+import { deliverTabAgentFrame } from '../../../backend/agent/tabPrompt.js';
 import { attachAgentWebSocket } from '../../../backend/agent/wsServer.js';
 
 /** @type {import('node:http').Server[]} */
@@ -442,6 +443,52 @@ test('set_status on a websocket session reports the connected state', async () =
   assert.ok(frame, 'tab received agent.status');
   assert.equal(frame.state, 'working');
   assert.equal(frame.working, true);
+});
+
+test('an HTTPS fallback session receives a tab prompt and the reply reaches the tab', async () => {
+  const relay = createAgentRelay({ promptHoldMs: 5000 });
+  const { origin } = await listen(relay, { upgrade: 'reject' });
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'https-prompt' });
+  /** @type {object[]} */
+  const seen = [];
+  answerTab(relay, 'user-a', (frame, finish) => {
+    seen.push(frame);
+    finish();
+  });
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: () => {},
+  });
+  sessions.push(session);
+  await session.connect();
+  assert.equal(session.status().transport, 'http');
+  assert.equal(session.status().state, 'paired');
+  const promptId = '33333333-3333-4333-8333-333333333333';
+  deliverTabAgentFrame(relay.registry, 'user-a', {
+    type: 'agent.prompt',
+    v: 1,
+    id: promptId,
+    text: 'draw a box',
+  }, (frame) => seen.push(frame));
+  const started = Date.now();
+  let text = '';
+  while (!text && Date.now() - started < 2000) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    text = session.prompts.readMessages().messages[0]?.text || '';
+  }
+  assert.equal(text, 'draw a box');
+  assert.equal(seen.some((row) => row.delivery === 'failed'), false);
+  const replied = await session.prompts.reply({
+    in_reply_to: promptId,
+    text: 'made a box',
+    final: true,
+  });
+  assert.equal(replied.id, promptId);
+  assert.equal(replied.final, true);
+  const reply = seen.find((row) => row.type === 'agent.reply');
+  assert.ok(reply, 'tab received agent.reply over HTTPS');
+  assert.equal(reply.text, 'made a box');
 });
 
 test('set_status on the HTTPS fallback reports the connected state', async () => {

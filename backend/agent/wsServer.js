@@ -20,6 +20,7 @@ import { clientAddress } from './clientIp.js';
 import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
+import { deliverTabAgentFrame } from './tabPrompt.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
 /**
@@ -437,6 +438,9 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
     }
     ready.markReady();
     sendJson(ws, { type: 'hello', v: version.v });
+    for (const frame of relay.registry.drainPrompts(auth.userId)) {
+      sendJson(ws, frame);
+    }
     return;
   }
   if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
@@ -548,7 +552,9 @@ function bindTab(ws, user, relay, req) {
       return;
     }
     if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
-      relay.registry.forwardToAgents(user.id, msg);
+      deliverTabAgentFrame(relay.registry, user.id, msg, (frame) => {
+        if (ws.readyState === WebSocket.OPEN) sendJson(ws, frame);
+      });
       return;
     }
     const parsed = readCommandResponse(msg);

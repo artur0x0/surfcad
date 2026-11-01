@@ -68,6 +68,15 @@ export const MAX_TABS_PER_USER = 8;
 /** Live agent sockets for one account. A further socket is closed. */
 export const MAX_AGENTS_PER_USER = 8;
 
+/**
+ * How long a tab prompt waits for an agent socket or an HTTPS pull
+ * before the tab is told delivery failed.
+ */
+export const PROMPT_HOLD_MS = 8_000;
+
+/** Tab prompts held for one account while no agent socket is up. */
+export const MAX_HELD_PROMPTS = 20;
+
 /** Pending device codes held in this process. */
 export const MAX_PENDING_PAIRINGS = 500;
 
