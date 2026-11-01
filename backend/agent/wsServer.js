@@ -648,10 +648,10 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
 
 /**
  * @param {import('ws').WebSocket & { tabSession?: { userId: string, headers: Record<string, string> } }} ws
- * @param {{ id: string }} user
+ * @param {{ id: string, sessionKey?: string | null }} user
  * @param {{
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
- *   tabSockets?: { add: (userId: string, ws: import('ws').WebSocket) => void },
+ *   tabSockets?: { add: (userId: string, ws: import('ws').WebSocket, sessionKey?: string | null) => void },
  * }} relay
  * @param {import('node:http').IncomingMessage} req
  */
@@ -662,7 +662,7 @@ function bindTab(ws, user, relay, req) {
   const testUser = req.headers['x-test-user'];
   if (typeof testUser === 'string') headers['x-test-user'] = testUser;
   ws.tabSession = { userId: String(user.id), headers };
-  relay.tabSockets?.add(user.id, ws);
+  relay.tabSockets?.add(user.id, ws, user.sessionKey || null);
   const tabId = randomUUID();
   let registered = false;
   ws.on('error', (err) => {

@@ -29,7 +29,12 @@ import {
 } from '../auth/guestConvert.js';
 import { recordRegisterIp, registerIpWait } from '../auth/registerCooldown.js';
 import { persistAfterAgentRevoke } from '../agent/credentialRevoke.js';
-import { closeUserTabSockets, revokeUserAgentAccess } from '../agent/install.js';
+import {
+  closeSessionTabSockets,
+  closeUserTabSockets,
+  revokeSessionAgentAccess,
+  revokeUserAgentAccess,
+} from '../agent/install.js';
 import { appleOAuthUnavailable } from '../auth/appleIdentity.js';
 import { isAdmin } from '../middleware/requireAdmin.js';
 
@@ -431,16 +436,17 @@ router.post('/login', async (req, res, next) => {
 
 /**
  * POST /api/auth/logout
- * End the browser session and revoke every agent token on the account.
- * Same path as a password change or account deletion: join codes, tokens,
- * open agent sockets, held prompts, and presence (reason revoked).
+ * End this browser session and revoke only the agent tokens it approved.
+ * Tokens paired from another session, and tokens with no recorded session,
+ * stay. Password change and account deletion still revoke the whole account.
  * Revoke runs before the session is destroyed so a failure can be retried,
- * and before the tab sockets close so they still receive that frame.
+ * and before this session's tab sockets close so they still receive the frame.
  */
 router.post('/logout', async (req, res) => {
   const userId = req.user?._id ?? req.user?.id;
+  const sessionId = req.sessionID;
   try {
-    if (userId != null) await revokeUserAgentAccess(userId);
+    if (userId != null) await revokeSessionAgentAccess(userId, sessionId);
   } catch (err) {
     console.error('[Auth] Logout agent revoke error:', err);
     return res.status(500).json({ error: 'Logout failed' });
@@ -456,7 +462,7 @@ router.post('/logout', async (req, res) => {
         console.error('[Auth] Session destroy error:', destroyErr);
       }
       res.clearCookie('surfcad.sid');
-      if (userId != null) closeUserTabSockets(userId);
+      if (userId != null) closeSessionTabSockets(userId, sessionId);
       return res.json({ success: true });
     });
   });

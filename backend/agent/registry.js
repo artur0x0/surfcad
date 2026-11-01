@@ -729,6 +729,26 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
+     * One browser session's tokens were revoked and another pairing is
+     * still live. Tabs hear reason revoked, then stay present for the
+     * other pairing. The epoch is not bumped and presence is not held
+     * down, so the surviving token's next call still clears a hold.
+     * @param {string} userId
+     */
+    notePartialRevoke(userId) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      if (row.heldDown || !row.announced) return;
+      notifyTabs(key, false, 'revoked');
+      if (row.at == null || clock.now() - row.at >= presenceTtlMs) {
+        row.announced = false;
+        cancelPresenceTimer(row);
+        return;
+      }
+      notifyTabs(key, true);
+    },
+
+    /**
      * Pairing expiry. Offline immediately, reason expired. A revoke that
      * already holds this account is left alone. A later hello on a
      * still-valid token can return; a check that captured this epoch cannot.

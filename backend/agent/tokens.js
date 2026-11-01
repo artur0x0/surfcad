@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { TOKEN_TTL_MS } from './limits.js';
+import { storedApprovingSession } from './sessionKey.js';
 
 /**
  * @param {string} raw
@@ -94,6 +95,26 @@ export function createMemoryTokenStore() {
       return ids;
     },
     /**
+     * Revoke live tokens issued from one browser session. A row with no
+     * session key is left alone. `sessionKey` must be the stored hash.
+     * @param {string} userId
+     * @param {string} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      const key = storedApprovingSession(sessionKey);
+      if (!key) return [];
+      const ids = [];
+      const when = new Date().toISOString();
+      for (const row of byId.values()) {
+        if (String(row.userId) !== String(userId) || row.revokedAt) continue;
+        if (row.sessionKey !== key) continue;
+        row.revokedAt = when;
+        ids.push(String(row.id));
+      }
+      return ids;
+    },
+    /**
      * @param {string} tokenHash
      * @param {string} when
      */
@@ -132,6 +153,7 @@ export function createMongoTokenStore(model) {
         expiresAt: row.expiresAt,
         revokedAt: row.revokedAt,
         lastUsedAt: row.lastUsedAt,
+        sessionKey: row.sessionKey || null,
       });
       return { ...row, id: String(doc._id) };
     },
@@ -151,6 +173,7 @@ export function createMongoTokenStore(model) {
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
         lastUsedAt: doc.lastUsedAt ?? null,
+        sessionKey: doc.sessionKey ?? null,
       };
     },
     /** @param {string} userId */
@@ -168,6 +191,7 @@ export function createMongoTokenStore(model) {
         expiresAt: doc.expiresAt,
         revokedAt: doc.revokedAt ?? null,
         lastUsedAt: doc.lastUsedAt ?? null,
+        sessionKey: doc.sessionKey ?? null,
       }));
     },
     /**
@@ -190,6 +214,23 @@ export function createMongoTokenStore(model) {
       const ids = docs.map((doc) => String(doc._id));
       if (ids.length === 0) return [];
       await model.updateMany({ userId, revokedAt: null }, { $set: { revokedAt: new Date() } });
+      return ids;
+    },
+    /**
+     * @param {string} userId
+     * @param {string} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      const key = storedApprovingSession(sessionKey);
+      if (!key) return [];
+      const docs = await model.find({ userId, revokedAt: null, sessionKey: key }).select('_id').lean();
+      const ids = docs.map((doc) => String(doc._id));
+      if (ids.length === 0) return [];
+      await model.updateMany(
+        { userId, revokedAt: null, sessionKey: key },
+        { $set: { revokedAt: new Date() } },
+      );
       return ids;
     },
     /**
@@ -293,7 +334,14 @@ export function createTokenService(opts = {}) {
       holder.store = store;
     },
     /**
-     * @param {{ userId: string, label: string, machine?: string, city?: string | null, ip?: string | null }} fields
+     * @param {{
+     *   userId: string,
+     *   label: string,
+     *   machine?: string,
+     *   city?: string | null,
+     *   ip?: string | null,
+     *   sessionKey?: string | null,
+     * }} fields
      * @returns {Promise<{ token: string, id: string }>}
      */
     async issue(fields) {
@@ -311,6 +359,7 @@ export function createTokenService(opts = {}) {
         machine: typeof fields.machine === 'string' ? fields.machine : '',
         city: typeof fields.city === 'string' && fields.city ? fields.city : null,
         ip: typeof fields.ip === 'string' && fields.ip ? fields.ip : null,
+        sessionKey: storedApprovingSession(fields.sessionKey),
         createdAt: new Date(now()).toISOString(),
         expiresAt: new Date(now() + ttlMs).toISOString(),
         revokedAt: null,
@@ -373,6 +422,24 @@ export function createTokenService(opts = {}) {
      */
     async revokeAll(userId) {
       return holder.store.revokeAll(String(userId));
+    },
+    /**
+     * Live tokens whose stored session hash matches. Missing hashes stay.
+     * @param {string} userId
+     * @param {string | null} sessionKey
+     * @returns {Promise<string[]>}
+     */
+    async revokeBySession(userId, sessionKey) {
+      if (!sessionKey) return [];
+      return holder.store.revokeBySession(String(userId), sessionKey);
+    },
+    /**
+     * @param {string} userId
+     * @returns {Promise<number>}
+     */
+    async countLive(userId) {
+      const rows = await holder.store.listByUser(String(userId));
+      return rows.filter((row) => liveness(row) === 'ok').length;
     },
   };
 }

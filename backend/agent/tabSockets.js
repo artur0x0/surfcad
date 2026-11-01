@@ -17,18 +17,44 @@ export function createTabSocketRegistry() {
      * @param {string} userId
      * @param {import('ws').WebSocket} ws
      */
-    add(userId, ws) {
+    /**
+     * @param {string} userId
+     * @param {import('ws').WebSocket} ws
+     * @param {string | null} [sessionKey] hash of the browser session, not the id
+     */
+    add(userId, ws, sessionKey = null) {
       const user = String(userId);
       let set = byUser.get(user);
       if (!set) {
         set = new Set();
         byUser.set(user, set);
       }
+      /** @type {import('ws').WebSocket & { surfcadSessionKey?: string | null }} */ (ws).surfcadSessionKey = sessionKey || null;
       set.add(ws);
       ws.once('close', () => {
         set.delete(ws);
         if (set.size === 0) byUser.delete(user);
       });
+    },
+
+    /**
+     * Close tab sockets opened by one browser session. Other sessions stay.
+     * @param {string} userId
+     * @param {string} sessionKey
+     * @param {number} [code]
+     * @param {string} [reason]
+     * @returns {number}
+     */
+    closeSession(userId, sessionKey, code = TAB_SESSION_ENDED_CODE, reason = TAB_SESSION_ENDED_REASON) {
+      if (!sessionKey) return 0;
+      const set = byUser.get(String(userId));
+      if (!set) return 0;
+      const sockets = [...set].filter((ws) => {
+        const keyed = /** @type {import('ws').WebSocket & { surfcadSessionKey?: string | null }} */ (ws);
+        return keyed.surfcadSessionKey === sessionKey && ws.readyState !== WebSocket.CLOSED;
+      });
+      for (const ws of sockets) ws.close(code, reason);
+      return sockets.length;
     },
 
     /**

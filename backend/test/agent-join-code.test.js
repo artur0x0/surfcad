@@ -92,6 +92,32 @@ test('rejection sampling skips bytes that would bias the alphabet', () => {
 });
 
 describe('join code service', () => {
+  test('redeem keeps the approving session hash and sign-out drops only that code', async () => {
+    const { tokens, join } = harness();
+    const iphone = 'ab'.repeat(32);
+    const desktop = 'cd'.repeat(32);
+    const phoneCode = join.create({ userId: 'user-a', sessionKey: iphone });
+    const phone = await join.redeem({ code: phoneCode.code, name: 'Cursor', machine: 'iPhone' });
+    assert.equal(phone.ok, true);
+    const deskCode = join.create({ userId: 'user-a', sessionKey: desktop });
+    const desk = await join.redeem({ code: deskCode.code, name: 'Cursor', machine: 'Mac' });
+    assert.equal(desk.ok, true);
+    assert.deepEqual(await tokens.revokeBySession('user-a', iphone), [phone.tokenId]);
+    assert.equal(await tokens.authenticate(phone.token), null);
+    assert.equal((await tokens.authenticate(desk.token)).userId, 'user-a');
+    const rawCode = join.create({ userId: 'user-a', sessionKey: 's:raw-session.sig' });
+    const raw = await join.redeem({ code: rawCode.code, name: 'Cursor', machine: 'old' });
+    assert.equal(raw.ok, true);
+    assert.deepEqual(await tokens.revokeBySession('user-a', 's:raw-session.sig'), []);
+    assert.equal((await tokens.authenticate(raw.token)).userId, 'user-a');
+    const pending = join.create({ userId: 'user-b', sessionKey: iphone });
+    join.clearSession('user-b', desktop);
+    assert.equal((await join.redeem({ code: pending.code, name: 'Cursor', machine: 'iPhone' })).ok, true);
+    const dying = join.create({ userId: 'user-b', sessionKey: iphone });
+    join.clearSession('user-b', iphone);
+    assert.equal((await join.redeem({ code: dying.code, name: 'Cursor', machine: 'iPhone' })).ok, false);
+  });
+
   test('a code is single use and the second redeem matches an unknown code', async () => {
     const { tokens, join } = harness();
     const created = join.create({ userId: 'user-a' });

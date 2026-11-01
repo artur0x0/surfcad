@@ -18,6 +18,7 @@ import {
 import { approvalFetchAllowed, browserReadAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
+import { hashApprovingSession } from './sessionKey.js';
 import { sessionMessageProblem } from './sessionMessage.js';
 
 /**
@@ -248,7 +249,10 @@ export function createAgentRouter(deps) {
     if (rejectBrowser(req, res, true)) return undefined;
     const user = userFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const result = deps.joinCodes.create({ userId: user.id });
+    const result = deps.joinCodes.create({
+      userId: user.id,
+      sessionKey: hashApprovingSession(req.sessionID),
+    });
     if (!result.ok) {
       if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
       const status = result.error === 'rate_limited' ? 429 : 503;
@@ -366,6 +370,7 @@ export function createAgentRouter(deps) {
         userCode,
         userId: user.id,
         ip: req.ip,
+        sessionKey: hashApprovingSession(req.sessionID),
       });
       if (html) clearClaimedCode(req);
       if (!result.ok) {

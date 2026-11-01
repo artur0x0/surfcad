@@ -13,6 +13,7 @@ import {
   PAIR_RETENTION_MS,
 } from './limits.js';
 import { formatUserCode, normalizeUserCode, USER_CODE_ALPHABET } from './pairing.js';
+import { storedApprovingSession } from './sessionKey.js';
 import { hashesMatch } from './tokens.js';
 
 const LABEL_MAX = 80;
@@ -245,7 +246,7 @@ export function createJoinCodeService(opts) {
   return {
     /**
      * One live code per account. The previous code can no longer be redeemed.
-     * @param {{ userId: string }} fields
+     * @param {{ userId: string, sessionKey?: string | null }} fields
      */
     create(fields) {
       sweep();
@@ -273,6 +274,7 @@ export function createJoinCodeService(opts) {
         id: randomUUID(),
         userId,
         codeHash,
+        sessionKey: storedApprovingSession(fields.sessionKey),
         createdAt: now(),
         failedTries: 0,
         status: 'pending',
@@ -346,6 +348,7 @@ export function createJoinCodeService(opts) {
         machine,
         city: cleanCity(fields.city),
         ip: cleanIp(fields.ip),
+        sessionKey: record.sessionKey,
       });
       if (record.cleared || (userEpoch.get(record.userId) || 0) !== epoch) {
         await opts.tokens.revoke(record.userId, issued.id);
@@ -378,6 +381,26 @@ export function createJoinCodeService(opts) {
         byHash.delete(codeHash);
         byId.delete(record.id);
       }
+    },
+
+    /**
+     * Sign-out of one browser. Drops only the join code that browser
+     * created, so an in-flight redeem of that code cannot keep its token.
+     * Another session's code is left in place.
+     * @param {string} userId
+     * @param {string | null} sessionKey
+     */
+    clearSession(userId, sessionKey) {
+      const id = String(userId || '');
+      const key = storedApprovingSession(sessionKey);
+      if (!id || !key) return;
+      const current = byUser.get(id);
+      if (!current || current.sessionKey !== key) return;
+      userEpoch.set(id, (userEpoch.get(id) || 0) + 1);
+      current.cleared = true;
+      byUser.delete(id);
+      byHash.delete(current.codeHash);
+      byId.delete(current.id);
     },
 
     /** Records for tests. The raw code is not here. */

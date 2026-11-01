@@ -1,8 +1,6 @@
 /**
- * Signing out of the site revokes every agent token, the same path as a
- * password change or account deletion. A later agent HTTP call is 401,
- * an open agent socket closes with 4001, a held prompt is cleared, and
- * the tab receives presence reason revoked.
+ * Signing out revokes only the agent tokens that browser session approved.
+ * Another session's agent stays up. A password change still revokes both.
  */
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -25,7 +23,6 @@ import {
 import { installFakeModel, patch } from './helpers/fakeDb.js';
 
 const ORIGIN = 'https://surfcad.com';
-const PROMPT_ID = '33333333-3333-4333-8333-333333333333';
 
 /** @type {import('node:http').Server | null} */
 let server = null;
@@ -180,86 +177,153 @@ after(async () => {
   for (const restore of restores.reverse()) restore();
 });
 
-test('web sign-out revokes every agent token and tells the tab why', async () => {
-  const jar = { cookie: '' };
-  const request = browser(jar);
-  const login = await request('POST', '/api/auth/login', {
+/**
+ * @param {ReturnType<typeof browser>} request
+ */
+async function login(request) {
+  const result = await request('POST', '/api/auth/login', {
     email: 'pat@example.com',
     password: 'password12',
   });
-  assert.equal(login.status, 200, JSON.stringify(login.body));
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+}
 
-  const first = await redeemToken(request, 'laptop');
-  const second = await redeemToken(request, 'phone');
-  const url = `ws://127.0.0.1:${port}/agent`;
-
-  const tab = openSocket(url, { origin: ORIGIN, cookie: jar.cookie });
+/**
+ * @param {string} cookie
+ */
+async function openTab(cookie) {
+  const tab = openSocket(`ws://127.0.0.1:${port}/agent`, { origin: ORIGIN, cookie });
   await tab.opened;
   assert.equal((await tab.nextMessage()).type, 'registered');
+  return tab;
+}
 
-  const agent = openSocket(url, { authorization: `Bearer ${first}` });
+/**
+ * @param {string} token
+ */
+async function helloAgent(token) {
+  const agent = openSocket(`ws://127.0.0.1:${port}/agent`, { authorization: `Bearer ${token}` });
   await agent.opened;
   agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
   assert.equal((await agent.nextMessage()).type, 'hello');
-  const up = await tab.nextMessage();
-  assert.equal(up.type, 'agent');
-  assert.equal(up.connected, true);
+  return agent;
+}
 
-  const live = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
-    headers: { authorization: `Bearer ${first}` },
+/**
+ * @param {string} token
+ */
+async function promptStatus(token) {
+  const res = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
+    headers: { authorization: `Bearer ${token}` },
   });
-  assert.equal(live.status, 200);
-  const otherLive = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
-    headers: { authorization: `Bearer ${second}` },
+  return res.status;
+}
+
+test('sign-out revokes only that browser, and a password change still revokes both', async () => {
+  const iphone = { cookie: '' };
+  const desktop = { cookie: '' };
+  const phoneRequest = browser(iphone);
+  const deskRequest = browser(desktop);
+  await login(phoneRequest);
+  await login(deskRequest);
+
+  const phoneToken = await redeemToken(phoneRequest, 'iphone');
+  const deskToken = await redeemToken(deskRequest, 'desktop');
+  const phoneTab = await openTab(iphone.cookie);
+  const deskTab = await openTab(desktop.cookie);
+  const phoneAgent = await helloAgent(phoneToken);
+  const phoneUp = await phoneTab.nextMessage();
+  const deskUp = await deskTab.nextMessage();
+  assert.equal(phoneUp.connected, true);
+  assert.equal(deskUp.connected, true);
+  const deskAgent = await helloAgent(deskToken);
+  assert.equal(await promptStatus(phoneToken), 200);
+  assert.equal(await promptStatus(deskToken), 200);
+
+  let deskAgentClosed = false;
+  deskAgent.ws.once('close', () => { deskAgentClosed = true; });
+  const phoneAgentClosed = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for the iphone agent to close')), 3000);
+    phoneAgent.ws.once('close', (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    });
   });
-  assert.equal(otherLive.status, 200);
-
-  const paused = new Promise((resolve) => agent.ws.once('close', resolve));
-  agent.ws.close();
-  await paused;
-  await sleep(30);
-  assert.equal(tab.ws.readyState, WebSocket.OPEN);
-
-  tab.ws.send(JSON.stringify({
-    type: 'agent.prompt', v: 1, id: PROMPT_ID, text: 'still here',
-  }));
-  await sleep(30);
-
-  const lingering = openSocket(url, { authorization: `Bearer ${second}` });
-  await lingering.opened;
-  const revokedClose = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timed out waiting for the revoke close')), 3000);
-    lingering.ws.once('close', (code, reason) => {
+  const phoneTabClosed = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for the iphone tab to close')), 3000);
+    phoneTab.ws.once('close', (code, reason) => {
       clearTimeout(timer);
       resolve({ code, reason: reason.toString() });
     });
   });
 
-  const loggedOut = await request('POST', '/api/auth/logout');
+  const loggedOut = await phoneRequest('POST', '/api/auth/logout');
   assert.equal(loggedOut.status, 200, JSON.stringify(loggedOut.body));
 
-  const ack = await tab.nextMessage();
-  assert.equal(ack.type, 'agent.prompt.ack');
-  assert.equal(ack.id, PROMPT_ID);
-  assert.equal(ack.delivery, 'failed');
-
-  const down = await tab.nextMessage();
+  const down = await deskTab.nextMessage();
   assert.deepEqual(down, { type: 'agent', v: 1, connected: false, reason: 'revoked' });
   assert.equal(agentDisconnectToastCopy(down.reason, AGENT_DISCONNECTED_TOAST_COPY), 'Agent access revoked');
+  const back = await deskTab.nextMessage();
+  assert.deepEqual(back, { type: 'agent', v: 1, connected: true });
 
-  const closed = await revokedClose;
+  const closed = await phoneAgentClosed;
   assert.equal(closed.code, AGENT_SOCKET_CLOSE_CODE);
   assert.equal(closed.reason, 'token revoked');
+  await sleep(40);
+  assert.equal(deskAgentClosed, false);
+  assert.equal(deskAgent.ws.readyState, WebSocket.OPEN);
+  assert.equal(deskTab.ws.readyState, WebSocket.OPEN);
+  const phoneTabEnd = await phoneTabClosed;
+  assert.equal(phoneTabEnd.code, 1000);
+  assert.equal(phoneTabEnd.reason, 'session ended');
 
-  const dead = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
-    headers: { authorization: `Bearer ${first}` },
-  });
-  assert.equal(dead.status, 401);
-  const otherDead = await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0`, {
-    headers: { authorization: `Bearer ${second}` },
-  });
-  assert.equal(otherDead.status, 401);
-
-  const me = await request('GET', '/api/auth/me');
+  assert.equal(await promptStatus(phoneToken), 401);
+  assert.equal(await promptStatus(deskToken), 200);
+  const me = await phoneRequest('GET', '/api/auth/me');
   assert.equal(me.body?.authenticated, false);
+  const deskMe = await deskRequest('GET', '/api/auth/me');
+  assert.equal(deskMe.body?.authenticated, true);
+
+  const againPhone = { cookie: '' };
+  const againDesk = { cookie: '' };
+  const againPhoneRequest = browser(againPhone);
+  const againDeskRequest = browser(againDesk);
+  await login(againPhoneRequest);
+  await login(againDeskRequest);
+  const secondPhone = await redeemToken(againPhoneRequest, 'iphone-2');
+  const secondDesk = await redeemToken(againDeskRequest, 'desktop-2');
+  const watch = await openTab(againDesk.cookie);
+  const secondPhoneAgent = await helloAgent(secondPhone);
+  const secondDeskAgent = await helloAgent(secondDesk);
+  const phoneClose = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for both agents to close')), 3000);
+    let pending = 2;
+    const onClose = (code, reason) => {
+      pending -= 1;
+      if (pending > 0) return;
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    };
+    secondPhoneAgent.ws.once('close', onClose);
+    secondDeskAgent.ws.once('close', onClose);
+  });
+  const changed = await againDeskRequest('POST', '/api/auth/change-password', {
+    currentPassword: 'password12',
+    newPassword: 'password123',
+  });
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+  const revoked = await watch.nextMessage();
+  assert.deepEqual(revoked, { type: 'agent', v: 1, connected: false, reason: 'revoked' });
+  assert.equal(agentDisconnectToastCopy(revoked.reason, AGENT_DISCONNECTED_TOAST_COPY), 'Agent access revoked');
+  const extra = await Promise.race([
+    watch.nextMessage(),
+    sleep(80).then(() => null),
+  ]);
+  assert.equal(extra, null);
+  const both = await phoneClose;
+  assert.equal(both.code, AGENT_SOCKET_CLOSE_CODE);
+  assert.equal(both.reason, 'token revoked');
+  assert.equal(await promptStatus(secondPhone), 401);
+  assert.equal(await promptStatus(secondDesk), 401);
+  assert.equal(await promptStatus(deskToken), 401);
 });
