@@ -27,7 +27,8 @@ export const moldSideActionsCommand = Object.freeze({
       return { error: { code: 'internal', message: 'moldSideActions handler is missing' } };
     }
     const out = show({ on: args?.on });
-    if (out?.error) return { error: out.error };
-    return { result: out };
+    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
+    if (out && typeof out.then === 'function') return out.then(pack);
+    return pack(out);
   },
 });

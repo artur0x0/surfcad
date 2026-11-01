@@ -605,8 +605,7 @@ import {
   transformPoint,
 } from '../utils/rigidSuffix.js';
 import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceNames, stampedFaceTable, stampedNameForTriangles } from '../utils/faceIdentity.js';
-import { moldFitFromGeometry } from '../molding/fromGeometry.js';
-import { dropWallJobs, requestWallField } from '../molding/wallFieldClient.js';
+import { dropMoldJobs, dropWallJobs, requestMoldAnalysis, requestWallField } from '../molding/wallFieldClient.js';
 import { MOLD_PULL_PLANES, unitPull } from '../molding/pullReference.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
@@ -629,6 +628,7 @@ import DfmReportPanel from './molding/DfmReportPanel';
 import MoldQuotePanel from './molding/MoldQuotePanel';
 import PullReference from './molding/PullReference';
 import MoldResultsPane from './molding/MoldResultsPane';
+import MoldProgress from './molding/MoldProgress';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -1445,6 +1445,15 @@ const Viewport = forwardRef(({
   const wallMapOnRef = useRef(false);
   const wallFieldRef = useRef(null);
   const wallJobGenRef = useRef(0);
+  const moldJobGenRef = useRef(0);
+  const moldAnalysisRef = useRef(null);
+  const [moldProgress, setMoldProgress] = useState(null);
+  const moldProgressRef = useRef(null);
+  const putMoldProgress = (value) => {
+    const next = typeof value === 'function' ? value(moldProgressRef.current) : value;
+    moldProgressRef.current = next;
+    setMoldProgress(next);
+  };
   const clearWallMapRef = useRef(() => {});
   const applyWallSkinRef = useRef(() => {});
   const [wallLegend, setWallLegend] = useState(null);
@@ -1462,7 +1471,7 @@ const Viewport = forwardRef(({
     if (!ref || ref.mode === 'auto' || !ref.pull) return null;
     return ref.pull;
   }
-  applySharedPullRef.current = (next) => {
+  applySharedPullRef.current = async (next) => {
     const choice = next?.mode;
     if (choice !== 'auto' && choice !== 'plane' && choice !== 'face') {
       return { error: { code: 'bad_args', message: 'mode must be auto, plane, or face' } };
@@ -1488,6 +1497,8 @@ const Viewport = forwardRef(({
     moldDraftFieldRef.current = null;
     dfmFieldRef.current = null;
     quoteFieldRef.current = null;
+    moldAnalysisRef.current = null;
+    dropMoldJobs();
     const geometry = resultRef.current?.geometry;
     const waiting = choice === 'face' && !pull;
     if (!geometry?.attributes?.position) {
@@ -1499,8 +1510,37 @@ const Viewport = forwardRef(({
         pullSource: pull ? 'override' : 'search',
       };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull });
-    if (analyzed?.error) return analyzed;
+    const tool = partingOnRef.current ? 'parting'
+      : sideActionsOnRef.current ? 'side'
+        : moldDraftOnRef.current ? 'draft'
+          : dfmOnRef.current ? 'dfm'
+            : quoteOnRef.current ? 'quote'
+              : 'pull';
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, pull, tool);
+    const analyzed = await promise;
+    if (gen != null && moldJobGenRef.current !== gen) {
+      return {
+        mode: choice,
+        plane,
+        pull,
+        waiting,
+        pullSource: pull ? 'override' : 'search',
+      };
+    }
+    if (analyzed?.dropped) {
+      return {
+        mode: choice,
+        plane,
+        pull,
+        waiting,
+        pullSource: pull ? 'override' : 'search',
+      };
+    }
+    if (analyzed?.error) {
+      if (gen != null) endMoldProgress(gen);
+      return analyzed;
+    }
+    rememberMoldAnalysis(geometry, analyzed);
     if (partingOnRef.current && analyzed.parting) {
       partingFieldRef.current = { geometry, parting: analyzed.parting };
       setPartingLegend(partingLegendModel(analyzed.parting));
@@ -1517,12 +1557,13 @@ const Viewport = forwardRef(({
       syncMoldDraftSkin(resultRef.current, analyzed.moldDraft);
     }
     if (dfmOnRef.current) {
-      const report = dfmReport(analyzed);
+      const report = analyzed.dfm || dfmReport(analyzed);
       if (report) {
         dfmFieldRef.current = { geometry, report };
         setDfmReportState(report);
       }
     }
+    if (gen != null) endMoldProgress(gen);
     return {
       mode: choice,
       plane,
@@ -13235,16 +13276,40 @@ const Viewport = forwardRef(({
     };
   };
 
-  agentMoldFitRef.current = ({ partId, pull } = {}) => {
+  agentMoldFitRef.current = async ({ partId, pull } = {}) => {
     const geom = meshGeometryForAgentPart(partId);
     if (!geom) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     const chosen = pull != null ? pull : sharedMoldPull();
-    const analyzed = moldFitFromGeometry(geom, faceIDsForAgentPart(partId, geom), { pull: chosen });
+    const faceIDs = faceIDsForAgentPart(partId, geom);
+    const token = `fit-${moldJobGenRef.current + 1}-${Date.now()}`;
+    const show = !moldProgressRef.current;
+    if (show) putMoldProgress({ tool: 'pull', stage: 'Pull direction', percent: 0, gen: token });
+    const message = moldAnalysisMessage(geom, faceIDs);
+    if (!message) {
+      if (show) putMoldProgress((cur) => (cur && cur.gen === token ? null : cur));
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const analyzed = await requestMoldAnalysis({
+      ...message,
+      pull: chosen,
+      onProgress: (info) => {
+        if (!show) return;
+        putMoldProgress((cur) => (cur && cur.gen === token
+          ? { tool: 'pull', stage: info.stage, percent: info.percent, gen: token }
+          : cur));
+      },
+    });
+    if (show) putMoldProgress((cur) => (cur && cur.gen === token ? null : cur));
     if (analyzed?.error) return analyzed;
+    if (analyzed?.dropped) {
+      return { error: { code: 'internal', message: 'Mold analysis was cancelled' } };
+    }
+    const packed = { ...analyzed };
+    delete packed.dfm;
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       frame: 'local',
-      ...analyzed,
+      ...packed,
     };
   };
 
@@ -13811,6 +13876,105 @@ const Viewport = forwardRef(({
     return listDroppedFacePaints(parts, map);
   };
 
+  function pullKeyOf(value) {
+    if (!Array.isArray(value) || value.length < 3) return 'auto';
+    return [0, 1, 2].map((i) => {
+      const n = Number(value[i]);
+      return Number.isFinite(n) ? n.toFixed(6) : '0';
+    }).join(',');
+  }
+
+  function endMoldProgress(gen) {
+    putMoldProgress((cur) => (cur && cur.gen === gen ? null : cur));
+  }
+
+  function moldAnalysisMessage(geometry, faceIDs) {
+    const positions = geometry?.attributes?.position?.array;
+    const indices = geometry?.index?.array;
+    if (!positions || !indices || indices.length < 3) return null;
+    let stamped = null;
+    try {
+      const table = stampedFaceTable(geometry, faceIDs);
+      if (table?.triFace && table.faces?.length) {
+        stamped = {
+          triFace: table.triFace,
+          normals: table.faces.map((face) => face.normal),
+          names: table.faces.map((face) => face.name),
+        };
+      }
+    } catch {
+      stamped = null;
+    }
+    let patches = null;
+    try {
+      const graph = warmFaceGraph(geometry, faceIDs);
+      patches = graph?.patches || null;
+    } catch {
+      patches = null;
+    }
+    return { positions, indices, stamped, patches };
+  }
+
+  function rememberMoldAnalysis(geometry, analyzed) {
+    if (!analyzed || analyzed.error || analyzed.dropped) return;
+    if (analyzed.parting) partingFieldRef.current = { geometry, parting: analyzed.parting };
+    if (analyzed.sideActions) {
+      sideActionsFieldRef.current = { geometry, sideActions: analyzed.sideActions };
+    }
+    if (analyzed.moldDraft) {
+      moldDraftFieldRef.current = { geometry, moldDraft: analyzed.moldDraft };
+    }
+    const report = analyzed.dfm || dfmReport(analyzed);
+    if (report) dfmFieldRef.current = { geometry, report };
+    const quote = quoteFieldRef.current;
+    if (!quote || quote.geometry !== geometry) quoteFieldRef.current = { geometry, analysis: analyzed };
+    else quote.analysis = analyzed;
+  }
+
+  function loadMoldAnalysis(geometry, faceIDs, pull, tool) {
+    const key = `${geometry?.uuid || ''}|${pullKeyOf(pull)}`;
+    const slot = moldAnalysisRef.current;
+    if (slot?.key === key && slot.result && !slot.result.error && !slot.result.dropped) {
+      return { gen: null, promise: Promise.resolve(slot.result) };
+    }
+    if (slot?.key === key && slot.promise) {
+      return { gen: moldJobGenRef.current, promise: slot.promise };
+    }
+    if (slot?.promise) dropMoldJobs();
+    const gen = moldJobGenRef.current + 1;
+    moldJobGenRef.current = gen;
+    putMoldProgress({ tool, stage: 'Pull direction', percent: 0, gen });
+    const message = moldAnalysisMessage(geometry, faceIDs);
+    if (!message) {
+      endMoldProgress(gen);
+      return {
+        gen,
+        promise: Promise.resolve({ error: { code: 'no_mesh', message: 'No mesh for that part' } }),
+      };
+    }
+    let promise;
+    promise = requestMoldAnalysis({
+      ...message,
+      pull,
+      onProgress: (info) => {
+        if (moldJobGenRef.current !== gen) return;
+        putMoldProgress({ tool, stage: info.stage, percent: info.percent, gen });
+      },
+    }).then((result) => {
+      const current = moldAnalysisRef.current;
+      if (current?.promise === promise) {
+        moldAnalysisRef.current = {
+          key,
+          promise: null,
+          result: result && !result.error && !result.dropped ? result : null,
+        };
+      }
+      return result;
+    });
+    moldAnalysisRef.current = { key, promise, result: null };
+    return { gen, promise };
+  }
+
   const wallFieldMessage = (geometry) => {
     const positions = geometry?.attributes?.position?.array;
     const indices = geometry?.index?.array;
@@ -13849,6 +14013,7 @@ const Viewport = forwardRef(({
     setWallLegend(null);
     detachThicknessSkin(resultRef.current);
     for (const mesh of assemblyExtrasRef.current.values()) detachThicknessSkin(mesh);
+    putMoldProgress((cur) => (cur && cur.tool === 'wall' ? null : cur));
   };
   clearWallMapRef.current = clearWallMap;
 
@@ -13858,6 +14023,7 @@ const Viewport = forwardRef(({
     setPartingLegend(null);
     detachPartingSkin(resultRef.current);
     for (const mesh of assemblyExtrasRef.current.values()) detachPartingSkin(mesh);
+    putMoldProgress((cur) => (cur && cur.tool === 'parting' ? null : cur));
   };
   clearPartingRef.current = clearParting;
 
@@ -13867,6 +14033,7 @@ const Viewport = forwardRef(({
     setSideActionLegend(null);
     detachSideActionSkin(resultRef.current);
     for (const mesh of assemblyExtrasRef.current.values()) detachSideActionSkin(mesh);
+    putMoldProgress((cur) => (cur && cur.tool === 'side' ? null : cur));
   };
   clearSideActionsRef.current = clearSideActions;
 
@@ -13876,6 +14043,7 @@ const Viewport = forwardRef(({
     setMoldDraftLegend(null);
     detachMoldDraftSkin(resultRef.current);
     for (const mesh of assemblyExtrasRef.current.values()) detachMoldDraftSkin(mesh);
+    putMoldProgress((cur) => (cur && cur.tool === 'draft' ? null : cur));
   };
   clearMoldDraftRef.current = clearMoldDraft;
 
@@ -13919,8 +14087,15 @@ const Viewport = forwardRef(({
     const gen = wallJobGenRef.current + 1;
     wallJobGenRef.current = gen;
     wallFieldRef.current = { geometry, pending: true };
+    dropMoldJobs();
+    moldAnalysisRef.current = null;
+    putMoldProgress({ tool: 'wall', stage: 'Wall thickness', percent: 0, gen });
     requestWallField({
       ...message,
+      onProgress: (info) => {
+        if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+        putMoldProgress({ tool: 'wall', stage: info.stage, percent: info.percent, gen });
+      },
       onCoarse: (coarse) => {
         if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
         if (resultRef.current?.geometry !== geometry) return;
@@ -13935,6 +14110,7 @@ const Viewport = forwardRef(({
         return;
       }
       paintWallField(analyzed.wall, geometry, false);
+      if (wallJobGenRef.current === gen) endMoldProgress(gen);
     }).catch(() => {
       if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
       clearWallMap();
@@ -13948,18 +14124,28 @@ const Viewport = forwardRef(({
       return;
     }
     const geometry = host.geometry;
-    let cached = partingFieldRef.current;
-    if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
+    const cached = partingFieldRef.current;
+    if (cached && cached.geometry === geometry && cached.parting) {
+      syncPartingSkin(host, cached.parting);
+      return;
+    }
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'parting');
+    promise.then((analyzed) => {
+      if (!partingOnRef.current || resultRef.current?.geometry !== geometry) return;
+      if (gen != null && moldJobGenRef.current !== gen) return;
+      if (analyzed?.dropped) return;
       if (analyzed?.error || !analyzed?.parting) {
         clearParting();
+        if (gen != null) endMoldProgress(gen);
         return;
       }
-      cached = { geometry, parting: analyzed.parting };
-      partingFieldRef.current = cached;
+      rememberMoldAnalysis(geometry, analyzed);
       setPartingLegend(partingLegendModel(analyzed.parting));
-    }
-    syncPartingSkin(host, cached.parting);
+      syncPartingSkin(host, analyzed.parting);
+      if (gen != null) endMoldProgress(gen);
+    }).catch(() => {
+      if (gen != null && moldJobGenRef.current === gen) clearParting();
+    });
   };
 
   agentMoldWallMapRef.current = async ({ on } = {}) => {
@@ -13977,10 +14163,20 @@ const Viewport = forwardRef(({
     wallJobGenRef.current = gen;
     wallMapOnRef.current = true;
     wallFieldRef.current = { geometry, pending: true };
+    clearParting();
+    clearSideActions();
+    clearMoldDraft();
+    dropMoldJobs();
+    moldAnalysisRef.current = null;
+    putMoldProgress({ tool: 'wall', stage: 'Wall thickness', percent: 0, gen });
     let analyzed;
     try {
       analyzed = await requestWallField({
         ...message,
+        onProgress: (info) => {
+          if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
+          putMoldProgress({ tool: 'wall', stage: info.stage, percent: info.percent, gen });
+        },
         onCoarse: (coarse) => {
           if (wallJobGenRef.current !== gen || !wallMapOnRef.current) return;
           if (resultRef.current?.geometry !== geometry) return;
@@ -14005,10 +14201,11 @@ const Viewport = forwardRef(({
       return { error: { code: 'no_mesh', message: 'No wall thickness on that mesh' } };
     }
     paintWallField(analyzed.wall, geometry, false);
+    if (wallJobGenRef.current === gen) endMoldProgress(gen);
     return wallLegendPayload(analyzed.wall);
   };
 
-  agentMoldPartingRef.current = ({ on } = {}) => {
+  agentMoldPartingRef.current = async ({ on } = {}) => {
     const next = typeof on === 'boolean' ? on : !partingOnRef.current;
     if (!next) {
       clearParting();
@@ -14018,12 +14215,24 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) return analyzed;
+    clearWallMap();
+    clearSideActions();
+    clearMoldDraft();
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'parting');
+    const analyzed = await promise;
+    if (gen != null && moldJobGenRef.current !== gen) return { on: !!partingOnRef.current };
+    if (analyzed?.dropped) return { on: !!partingOnRef.current };
+    if (analyzed?.error) {
+      if (gen != null) endMoldProgress(gen);
+      return analyzed;
+    }
     if (!analyzed.parting) {
+      if (gen != null) endMoldProgress(gen);
       return { error: { code: 'no_mesh', message: 'No parting split on that mesh' } };
     }
+    rememberMoldAnalysis(geometry, analyzed);
     showParting(analyzed.parting, geometry);
+    if (gen != null) endMoldProgress(gen);
     return {
       on: true,
       pull: analyzed.pull,
@@ -14051,21 +14260,31 @@ const Viewport = forwardRef(({
       return;
     }
     const geometry = host.geometry;
-    let cached = sideActionsFieldRef.current;
-    if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
+    const cached = sideActionsFieldRef.current;
+    if (cached && cached.geometry === geometry && cached.sideActions) {
+      syncSideActionSkin(host, cached.sideActions);
+      return;
+    }
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'side');
+    promise.then((analyzed) => {
+      if (!sideActionsOnRef.current || resultRef.current?.geometry !== geometry) return;
+      if (gen != null && moldJobGenRef.current !== gen) return;
+      if (analyzed?.dropped) return;
       if (analyzed?.error || !analyzed?.sideActions) {
         clearSideActions();
+        if (gen != null) endMoldProgress(gen);
         return;
       }
-      cached = { geometry, sideActions: analyzed.sideActions };
-      sideActionsFieldRef.current = cached;
+      rememberMoldAnalysis(geometry, analyzed);
       setSideActionLegend(sideActionLegendModel(analyzed.sideActions));
-    }
-    syncSideActionSkin(host, cached.sideActions);
+      syncSideActionSkin(host, analyzed.sideActions);
+      if (gen != null) endMoldProgress(gen);
+    }).catch(() => {
+      if (gen != null && moldJobGenRef.current === gen) clearSideActions();
+    });
   };
 
-  agentMoldSideActionsRef.current = ({ on } = {}) => {
+  agentMoldSideActionsRef.current = async ({ on } = {}) => {
     const next = typeof on === 'boolean' ? on : !sideActionsOnRef.current;
     if (!next) {
       clearSideActions();
@@ -14075,12 +14294,24 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) return analyzed;
+    clearWallMap();
+    clearParting();
+    clearMoldDraft();
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'side');
+    const analyzed = await promise;
+    if (gen != null && moldJobGenRef.current !== gen) return { on: !!sideActionsOnRef.current };
+    if (analyzed?.dropped) return { on: !!sideActionsOnRef.current };
+    if (analyzed?.error) {
+      if (gen != null) endMoldProgress(gen);
+      return analyzed;
+    }
     if (!analyzed.sideActions) {
+      if (gen != null) endMoldProgress(gen);
       return { error: { code: 'no_mesh', message: 'No side actions on that mesh' } };
     }
+    rememberMoldAnalysis(geometry, analyzed);
     showSideActions(analyzed.sideActions, geometry);
+    if (gen != null) endMoldProgress(gen);
     const groups = analyzed.sideActions.groups.map((group) => ({
       id: group.id,
       kind: group.kind,
@@ -14114,21 +14345,31 @@ const Viewport = forwardRef(({
       return;
     }
     const geometry = host.geometry;
-    let cached = moldDraftFieldRef.current;
-    if (!cached || cached.geometry !== geometry) {
-      const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
+    const cached = moldDraftFieldRef.current;
+    if (cached && cached.geometry === geometry && cached.moldDraft) {
+      syncMoldDraftSkin(host, cached.moldDraft);
+      return;
+    }
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'draft');
+    promise.then((analyzed) => {
+      if (!moldDraftOnRef.current || resultRef.current?.geometry !== geometry) return;
+      if (gen != null && moldJobGenRef.current !== gen) return;
+      if (analyzed?.dropped) return;
       if (analyzed?.error || !analyzed?.moldDraft) {
         clearMoldDraft();
+        if (gen != null) endMoldProgress(gen);
         return;
       }
-      cached = { geometry, moldDraft: analyzed.moldDraft };
-      moldDraftFieldRef.current = cached;
+      rememberMoldAnalysis(geometry, analyzed);
       setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
-    }
-    syncMoldDraftSkin(host, cached.moldDraft);
+      syncMoldDraftSkin(host, analyzed.moldDraft);
+      if (gen != null) endMoldProgress(gen);
+    }).catch(() => {
+      if (gen != null && moldJobGenRef.current === gen) clearMoldDraft();
+    });
   };
 
-  agentMoldDraftRef.current = ({ on } = {}) => {
+  agentMoldDraftRef.current = async ({ on } = {}) => {
     const next = typeof on === 'boolean' ? on : !moldDraftOnRef.current;
     if (!next) {
       clearMoldDraft();
@@ -14138,12 +14379,24 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) return analyzed;
+    clearWallMap();
+    clearParting();
+    clearSideActions();
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'draft');
+    const analyzed = await promise;
+    if (gen != null && moldJobGenRef.current !== gen) return { on: !!moldDraftOnRef.current };
+    if (analyzed?.dropped) return { on: !!moldDraftOnRef.current };
+    if (analyzed?.error) {
+      if (gen != null) endMoldProgress(gen);
+      return analyzed;
+    }
     if (!analyzed.moldDraft) {
+      if (gen != null) endMoldProgress(gen);
       return { error: { code: 'no_mesh', message: 'No mold draft on that mesh' } };
     }
+    rememberMoldAnalysis(geometry, analyzed);
     showMoldDraft(analyzed.moldDraft, geometry);
+    if (gen != null) endMoldProgress(gen);
     return {
       on: true,
       violations: analyzed.moldDraft.violationCount,
@@ -14158,11 +14411,12 @@ const Viewport = forwardRef(({
     dfmOnRef.current = false;
     dfmFieldRef.current = null;
     setDfmReportState(null);
+    putMoldProgress((cur) => (cur && cur.tool === 'dfm' ? null : cur));
   };
   clearDfmRef.current = clearDfm;
 
   const publishDfm = (geometry, analyzed) => {
-    const report = dfmReport(analyzed);
+    const report = analyzed?.dfm || dfmReport(analyzed);
     if (!report) {
       clearDfm();
       return { error: { code: 'no_mesh', message: 'No DFM report on that mesh' } };
@@ -14182,15 +14436,24 @@ const Viewport = forwardRef(({
     }
     const cached = dfmFieldRef.current;
     if (cached && cached.geometry === geometry) return;
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) {
-      clearDfm();
-      return;
-    }
-    publishDfm(geometry, analyzed);
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'dfm');
+    promise.then((analyzed) => {
+      if (!dfmOnRef.current || resultRef.current?.geometry !== geometry) return;
+      if (gen != null && moldJobGenRef.current !== gen) return;
+      if (analyzed?.dropped) return;
+      if (analyzed?.error) {
+        clearDfm();
+        return;
+      }
+      rememberMoldAnalysis(geometry, analyzed);
+      publishDfm(geometry, analyzed);
+      if (gen != null) endMoldProgress(gen);
+    }).catch(() => {
+      if (gen != null && moldJobGenRef.current === gen) clearDfm();
+    });
   };
 
-  agentMoldDfmRef.current = ({ on } = {}) => {
+  agentMoldDfmRef.current = async ({ on } = {}) => {
     const next = typeof on === 'boolean' ? on : !dfmOnRef.current;
     if (!next) {
       clearDfm();
@@ -14207,10 +14470,19 @@ const Viewport = forwardRef(({
       setDfmReportState(cached.report);
       return { on: true, ...cached.report };
     }
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) return analyzed;
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'dfm');
+    const analyzed = await promise;
+    if (gen != null && moldJobGenRef.current !== gen) return { on: !!dfmOnRef.current };
+    if (analyzed?.dropped) return { on: !!dfmOnRef.current };
+    if (analyzed?.error) {
+      if (gen != null) endMoldProgress(gen);
+      return analyzed;
+    }
+    rememberMoldAnalysis(geometry, analyzed);
     clearQuoteRef.current();
-    return publishDfm(geometry, analyzed);
+    const published = publishDfm(geometry, analyzed);
+    if (gen != null) endMoldProgress(gen);
+    return published;
   };
 
   const clearQuote = () => {
@@ -14220,6 +14492,7 @@ const Viewport = forwardRef(({
     quoteOnRef.current = false;
     quoteFieldRef.current = null;
     setMoldQuote(null);
+    putMoldProgress((cur) => (cur && cur.tool === 'quote' ? null : cur));
   };
   clearQuoteRef.current = clearQuote;
 
@@ -14378,22 +14651,31 @@ const Viewport = forwardRef(({
       return;
     }
     const cached = quoteFieldRef.current;
-    if (cached && cached.geometry === geometry) return;
-    const analyzed = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-    if (analyzed?.error) {
-      clearQuote();
-      return;
-    }
-    const prev = moldQuoteRef.current;
-    publishQuote(geometry, analyzed, {
-      quantity: prev?.quantity ?? 1,
-      cavityCount: prev?.cavityCount ?? 1,
-      grade: prev?.grade || '',
-      selected: prev?.selected || '',
+    if (cached && cached.geometry === geometry && cached.analysis) return;
+    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'quote');
+    promise.then((analyzed) => {
+      if (!quoteOnRef.current || resultRef.current?.geometry !== geometry) return;
+      if (gen != null && moldJobGenRef.current !== gen) return;
+      if (analyzed?.dropped) return;
+      if (analyzed?.error) {
+        clearQuote();
+        return;
+      }
+      rememberMoldAnalysis(geometry, analyzed);
+      const prev = moldQuoteRef.current;
+      if (gen != null) endMoldProgress(gen);
+      publishQuote(geometry, analyzed, {
+        quantity: prev?.quantity ?? 1,
+        cavityCount: prev?.cavityCount ?? 1,
+        grade: prev?.grade || '',
+        selected: prev?.selected || '',
+      });
+    }).catch(() => {
+      if (gen != null && moldJobGenRef.current === gen) clearQuote();
     });
   };
 
-  agentMoldQuoteRef.current = ({ on, quantity, cavityCount, grade } = {}) => {
+  agentMoldQuoteRef.current = async ({ on, quantity, cavityCount, grade } = {}) => {
     const next = typeof on === 'boolean' ? on : !quoteOnRef.current;
     if (!next) {
       clearQuote();
@@ -14409,8 +14691,16 @@ const Viewport = forwardRef(({
     const nextGrade = grade == null ? (prev?.grade || '') : grade;
     let analysis = quoteFieldRef.current?.geometry === geometry ? quoteFieldRef.current.analysis : null;
     if (!analysis) {
-      analysis = moldFitFromGeometry(geometry, faceIDsRef.current, { pull: sharedMoldPull() });
-      if (analysis?.error) return analysis;
+      const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'quote');
+      analysis = await promise;
+      if (gen != null && moldJobGenRef.current !== gen) return { on: !!quoteOnRef.current };
+      if (analysis?.dropped) return { on: !!quoteOnRef.current };
+      if (analysis?.error) {
+        if (gen != null) endMoldProgress(gen);
+        return analysis;
+      }
+      rememberMoldAnalysis(geometry, analysis);
+      if (gen != null) endMoldProgress(gen);
     }
     clearDfm();
     return publishQuote(geometry, analysis, {
@@ -16954,8 +17244,9 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {mode !== 'game' && (wallLegend || partingLegend || sideActionLegend || moldDraftLegend || dfmReportState || moldQuote) && (
+      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || sideActionLegend || moldDraftLegend || dfmReportState || moldQuote) && (
         <MoldResultsPane compact={isMobile}>
+          <MoldProgress progress={moldProgress} />
           {pullToolsOn && (
             <PullReference
               mode={pullReference.mode}
@@ -17021,21 +17312,27 @@ const Viewport = forwardRef(({
           }}
           showWall={mode !== 'game'}
           wallActive={!!wallLegend}
+          wallPending={moldProgress?.tool === 'wall' || !!wallFieldRef.current?.pending}
           onWallToggle={() => agentMoldWallMapRef.current({})}
           showParting={mode !== 'game'}
           partingActive={!!partingLegend}
+          partingPending={moldProgress?.tool === 'parting'}
           onPartingToggle={() => agentMoldPartingRef.current({})}
           showSideActions={mode !== 'game'}
           sideActionsActive={!!sideActionLegend}
+          sideActionsPending={moldProgress?.tool === 'side'}
           onSideActionsToggle={() => agentMoldSideActionsRef.current({})}
           showMoldDraft={mode !== 'game'}
           moldDraftActive={!!moldDraftLegend}
+          moldDraftPending={moldProgress?.tool === 'draft'}
           onMoldDraftToggle={() => agentMoldDraftRef.current({})}
           showDfm={mode !== 'game'}
           dfmActive={!!dfmReportState}
+          dfmPending={moldProgress?.tool === 'dfm'}
           onDfmToggle={() => agentMoldDfmRef.current({})}
           showQuote={mode !== 'game'}
           quoteActive={!!moldQuote}
+          quotePending={moldProgress?.tool === 'quote'}
           onQuoteToggle={() => agentMoldQuoteRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';

@@ -1,33 +1,34 @@
 /**
- * Module worker for the wall-thickness heatmap. One message is one mesh:
- * a coarse centroid field, then the refined field. The main thread keeps
- * this worker for the next request.
+ * Module worker for the wall heatmap and the mold analysis. One mesh
+ * message is one job. Jobs run one at a time. A `{ cancel: id }` message
+ * drops that job at the next yield. The main thread keeps this worker.
  */
 
-import { computeWallField } from './wallFieldJob.js';
+import { runAnalysisJob, runWallJob } from './wallFieldJob.js';
+
+const cancelled = new Set();
+let chain = Promise.resolve();
 
 globalThis.onmessage = (event) => {
   const data = event?.data || {};
+  if (data.cancel != null) {
+    cancelled.add(data.cancel);
+    return;
+  }
   const id = data.id;
-  try {
-    const result = computeWallField(
-      { positions: data.positions, indices: data.indices, stamped: data.stamped },
-      {
-        onCoarse(coarse) {
-          globalThis.postMessage({ id, phase: 'coarse', result: coarse });
-        },
-      },
-    );
-    if (result?.error) {
-      globalThis.postMessage({ id, phase: 'error', error: result.error });
-      return;
-    }
-    globalThis.postMessage({ id, phase: 'done', result });
-  } catch (err) {
+  const run = data.kind === 'analysis' ? runAnalysisJob : runWallJob;
+  chain = chain.then(() => run(data, {
+    cancelled: () => cancelled.has(id),
+    post: (message) => {
+      globalThis.postMessage({ id, ...message });
+    },
+  }).catch((err) => {
     globalThis.postMessage({
       id,
       phase: 'error',
-      error: { code: 'internal', message: String(err?.message || err || 'Wall field failed') },
+      error: { code: 'internal', message: String(err?.message || err || 'Mold analysis failed') },
     });
-  }
+  })).finally(() => {
+    cancelled.delete(id);
+  });
 };

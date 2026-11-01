@@ -9,12 +9,14 @@
  *
  * Walls with |n · d| under half a degree are not rasterized. The test uses
  * the triangle's own normal, so a faceted fillet whose stamp points along
- * the pull is still zero-draft. They take
- * the role of the labelled neighbour they touch. A wall that touches both
- * roles joins the cavity, so the outside of a tray stays outside and an
- * inside wall that only meets the core stays core. A face that contains
- * both draft signs is split at n · d = 0 instead of taking one majority
- * role. Islands smaller than two grid cells are absorbed.
+ * the pull is still tied. Every triangle is core or cavity: a tied wall
+ * takes the role of the labelled neighbour it can reach. A wall that
+ * touches both roles joins the cavity, so the outside of a tray stays
+ * outside and an inside wall that only meets the core stays core. A face
+ * that contains both draft signs is split at n · d = 0 instead of taking
+ * one majority role. Islands smaller than two grid cells are absorbed.
+ * There is no zero-draft paint class. `PARTING_ZERO_DRAFT_DEG` only keeps
+ * those vertical walls out of the undercut test.
  *
  * The parting line is one polyline: the closed core-cavity loop that is
  * not inside another loop and has the largest projected perimeter.
@@ -39,7 +41,10 @@ const SKIN_DIAG_FRAC = 1e-4;
 export const PARTING_NEUTRAL_DEG = 10;
 /** Matches `MOLD_REGION_NORMAL_DEG`. Unstamped triangles this close stay one face. */
 export const PARTING_CLUSTER_DEG = 35;
-/** Below this |n · d| a wall is zero-draft and is not a visibility seed. */
+/**
+ * Below this |n · d| a wall is not a visibility seed and is not an undercut.
+ * The wall is still core or cavity, from the neighbour it can reach.
+ */
 export const PARTING_ZERO_DRAFT_DEG = 0.5;
 
 const ZERO_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
@@ -56,9 +61,6 @@ export const PARTING_ROLE_RGB = Object.freeze({
   cavity: Object.freeze([0.18, 0.45, 0.78]),
   core: Object.freeze([0.72, 0.36, 0.18]),
 });
-
-/** Zero-draft walls. Still owned by core or cavity. Not a parting area. */
-export const PARTING_ZERO_DRAFT_RGB = Object.freeze([0.2, 0.55, 0.42]);
 
 /** Parting polyline. Not a face colour and not a CSS token. */
 export const PARTING_LINE_RGB = Object.freeze([0.96, 0.78, 0.18]);
@@ -585,7 +587,7 @@ function assignRoles(tris, pull, faceInfo) {
 /**
  * Unstamped triangles of one role that share a vertex and agree within
  * 35° are one face. Stamped triangles stay on their stamp, split by role
- * when the face straddles the zero-draft curve.
+ * when the face straddles the pull.
  */
 function clusterFaces(tris, roleOf, faceInfo) {
   const parent = tris.map((_, i) => i);
@@ -910,18 +912,10 @@ export function classifyParting(tris, pull, faceInfo = null) {
   const d = unit(pull);
   if (!d || !Array.isArray(tris) || !tris.length) return null;
   const roleOf = assignRoles(tris, d, faceInfo);
-  let zeroDraft = 0;
-  const roleByTriangle = tris.map((tri, i) => {
-    const n = tri.nGeom || tri.n;
-    const vertical = !!(n && Math.abs(dot(n, d)) <= ZERO_SIN);
-    if (vertical) zeroDraft += tri.area;
-    const row = { index: tri.t, role: roleOf[i] };
-    if (vertical) row.zeroDraft = true;
-    return row;
-  });
+  const roleByTriangle = tris.map((tri, i) => ({ index: tri.t, role: roleOf[i] }));
   const faces = clusterFaces(tris, roleOf, faceInfo);
   const counts = { core: 0, cavity: 0, parting: 0 };
-  const areas = { core: 0, cavity: 0, parting: 0, zeroDraft: round(zeroDraft) };
+  const areas = { core: 0, cavity: 0, parting: 0 };
   for (const face of faces) {
     counts[face.role] += 1;
     areas[face.role] = round(areas[face.role] + face.area);
@@ -937,14 +931,13 @@ export function classifyParting(tris, pull, faceInfo = null) {
   };
 }
 
-/** Legend rows. Zero-draft is a paint class on top of core or cavity, not an area bucket. */
+/** Legend rows. Every face is core or cavity. The loop is the third row. */
 export function partingLegendModel(parting) {
   if (!parting?.counts) return null;
   return {
     rows: [
       { role: 'core', label: 'Core', css: rgbCss(PARTING_ROLE_RGB.core) },
       { role: 'cavity', label: 'Cavity', css: rgbCss(PARTING_ROLE_RGB.cavity) },
-      { role: 'zero-draft', label: 'Zero-draft', css: rgbCss(PARTING_ZERO_DRAFT_RGB) },
       { role: 'parting-line', label: 'Parting line', css: rgbCss(PARTING_LINE_RGB) },
     ],
   };

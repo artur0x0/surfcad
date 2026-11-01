@@ -71,7 +71,8 @@ export const moldPullCommand = Object.freeze({
       plane: args.plane,
       pull: args.mode === 'face' ? args.normal : null,
     });
-    if (out?.error) return { error: out.error };
-    return { result: out };
+    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
+    if (out && typeof out.then === 'function') return out.then(pack);
+    return pack(out);
   },
 });

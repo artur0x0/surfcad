@@ -45,26 +45,32 @@ const CrossSectionPanel = forwardRef(({
   /** Wall-thickness heatmap. Inspection group, immediately after Analyze. Hidden in game. */
   showWall = false,
   wallActive = false,
+  wallPending = false,
   onWallToggle = null,
   /** Core / cavity coloring. Inspection group, immediately after wall thickness. Hidden in game. */
   showParting = false,
   partingActive = false,
+  partingPending = false,
   onPartingToggle = null,
   /** Side actions. Inspection group, immediately after core and cavity. Hidden in game. */
   showSideActions = false,
   sideActionsActive = false,
+  sideActionsPending = false,
   onSideActionsToggle = null,
   /** Mold draft and ejector hints. Inspection group, immediately after side actions. Hidden in game. */
   showMoldDraft = false,
   moldDraftActive = false,
+  moldDraftPending = false,
   onMoldDraftToggle = null,
   /** Budgetary DFM report. Inspection group, immediately after mold draft. Hidden in game. */
   showDfm = false,
   dfmActive = false,
+  dfmPending = false,
   onDfmToggle = null,
   /** Budgetary quote. Inspection group, immediately after the DFM report. Hidden in game. */
   showQuote = false,
   quoteActive = false,
+  quotePending = false,
   onQuoteToggle = null,
   /** Initial Molding tools flyout. The rail leaves this unset. */
   moldToolsOpen = false,
@@ -553,21 +559,27 @@ const handleButtonClick = () => {
         <MoldingToolsControl
           showWall={showWall}
           wallActive={wallActive}
+          wallPending={wallPending}
           onWallToggle={onWallToggle}
           showParting={showParting}
           partingActive={partingActive}
+          partingPending={partingPending}
           onPartingToggle={onPartingToggle}
           showSideActions={showSideActions}
           sideActionsActive={sideActionsActive}
+          sideActionsPending={sideActionsPending}
           onSideActionsToggle={onSideActionsToggle}
           showMoldDraft={showMoldDraft}
           moldDraftActive={moldDraftActive}
+          moldDraftPending={moldDraftPending}
           onMoldDraftToggle={onMoldDraftToggle}
           showDfm={showDfm}
           dfmActive={dfmActive}
+          dfmPending={dfmPending}
           onDfmToggle={onDfmToggle}
           showQuote={showQuote}
           quoteActive={quoteActive}
+          quotePending={quotePending}
           onQuoteToggle={onQuoteToggle}
           defaultOpen={moldToolsOpen}
         />

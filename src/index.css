@@ -557,6 +557,17 @@ textarea {
     padding-top: 0.75rem;
     border-top: 1px solid rgb(var(--chrome-border));
   }
+  .mold-progress-spinner {
+    box-sizing: border-box;
+    display: inline-block;
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: 0 0 auto;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 9999px;
+    animation: agent-prompt-spin 0.8s linear infinite;
+  }
   @media (min-width: 1024px) {
     .mold-results-pane {
       left: calc(1rem + 4rem + var(--feature-strip-rail-gap));
@@ -1059,7 +1070,8 @@ textarea {
   }
   .agent-prompt,
   .agent-prompt-spinner,
-  .agent-prompt-dots span {
+  .agent-prompt-dots span,
+  .mold-progress-spinner {
     animation: none !important;
     transition: none !important;
   }

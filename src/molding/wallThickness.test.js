@@ -429,6 +429,116 @@ function openTray() {
   };
 }
 
+/**
+ * Square-cut open wall, 1.85 mm, with a 0.02 mm needle along the outer rim.
+ * The needle shares the inset edge with the rim face. A rib in another mesh
+ * keeps its own end reading.
+ */
+function squareCutRimNeedles() {
+  const wall = 1.85;
+  const xOuter = 30;
+  const xInner = xOuter - wall;
+  const xInset = xOuter - 0.02;
+  const y0 = 2;
+  const y1 = 16;
+  const z0 = 0;
+  const z1 = 10;
+  const pos = [];
+  const add = (p) => {
+    pos.push(p[0], p[1], p[2]);
+    return (pos.length / 3) - 1;
+  };
+  const i0 = add([xInner, y0, z1]);
+  const i1 = add([xInner, y1, z1]);
+  const n0 = add([xInset, y0, z1]);
+  const n1 = add([xInset, y1, z1]);
+  const o0 = add([xOuter, y0, z1]);
+  const o1 = add([xOuter, y1, z1]);
+  const bo0 = add([xOuter, y0, z0]);
+  const bo1 = add([xOuter, y1, z0]);
+  const bi0 = add([xInner, y0, z0]);
+  const bi1 = add([xInner, y1, z0]);
+  const idx = [];
+  const rim = markRange(idx);
+  idx.push(i0, n0, n1, i0, n1, i1);
+  closeRange(idx, rim);
+  const needles = markRange(idx);
+  idx.push(n0, o0, n1);
+  closeRange(idx, needles);
+  idx.push(bo0, bo1, o1, bo0, o1, o0);
+  idx.push(i0, i1, bi1, i0, bi1, bi0);
+  idx.push(bi0, bi1, bo1, bi0, bo1, bo0);
+  idx.push(i0, bi0, bo0, i0, bo0, o0, i0, o0, n0);
+  idx.push(i1, n1, o1, i1, o1, bo1, i1, bo1, bi1);
+  return { positions: pos, indices: idx, rim, needles, wall };
+}
+
+/**
+ * A float crack wound the other way from the face it lies on. The ray hits
+ * the sheet 0.00025 mm away. The crack still belongs to that face.
+ */
+function flippedCrackNeedle() {
+  const positions = [
+    0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0,
+    0, 0, 2, 10, 0, 2, 10, 10, 2, 0, 10, 2,
+    5, 0.00004, 2,
+    0, -1, 2.00025, 10, -1, 2.00025, 5, 1, 2.00025,
+  ];
+  const indices = [
+    0, 2, 1, 0, 3, 2,
+    4, 5, 6, 4, 6, 7,
+    1, 2, 6, 1, 6, 5,
+    0, 4, 7, 0, 7, 3,
+    3, 7, 6, 3, 6, 2,
+    0, 1, 5, 0, 5, 4,
+    4, 8, 5,
+    9, 10, 11,
+  ];
+  return { positions, indices, needle: 12, wall: 2 };
+}
+
+test('a square-cut rim needle reads the wall, and a rib end still reads the rib', () => {
+  const rim = squareCutRimNeedles();
+  const wall = analyzeWallOnly({
+    positions: rim.positions,
+    indices: rim.indices,
+    wallPass: 'refine',
+  }).wall;
+  assert.ok(Math.abs(wall.nominal - rim.wall) < 0.15, `nominal ${wall.nominal}`);
+  const needles = sliceRange(wall.field, rim.needles);
+  assert.equal(needles.length, 1);
+  assert.ok(
+    Math.abs(needles[0].thickness - wall.nominal) < 0.15,
+    `needle ${needles[0].thickness} ${needles[0].source} nominal ${wall.nominal}`,
+  );
+  assert.notEqual(needles[0].flag, 'thin');
+  for (const sample of sliceRange(wall.field, rim.rim)) {
+    assert.ok(Math.abs(sample.thickness - rim.wall) < 0.2, `rim ${sample.thickness}`);
+    assert.notEqual(sample.flag, 'thin');
+  }
+  const rib = score(thinRib()).wall;
+  assert.ok(rib.min > 0.7 && rib.min < 0.85, `rib ${rib.min}`);
+  assert.equal(rib.thinCount, 1);
+});
+
+test('a flipped crack needle copies the face it lies on', () => {
+  const crack = flippedCrackNeedle();
+  const wall = analyzeWallOnly({
+    positions: crack.positions,
+    indices: crack.indices,
+    wallPass: 'refine',
+  }).wall;
+  const needle = wall.field.find((sample) => sample.index === crack.needle);
+  assert.ok(needle, 'needle sample');
+  assert.ok(
+    Math.abs(needle.thickness - crack.wall) < 0.15,
+    `needle ${needle.thickness} ${needle.source}`,
+  );
+  assert.notEqual(needle.flag, 'thin');
+  assert.equal(wall.thinCount, 0);
+  assert.ok(Math.abs(wall.nominal - crack.wall) < 0.15, `nominal ${wall.nominal}`);
+});
+
 test('an open filleted tray keeps nominal walls and does not thicken the rim', () => {
   const tray = openTray();
   const wall = score(tray).wall;
