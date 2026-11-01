@@ -1092,7 +1092,10 @@ meeting at a box corner converge to a sharp cusp point — the plain
 result is a valid but pointy corner. With this option the cusp is
 replaced by the sphere of radius `r` centered on the trihedral incenter
 (equidistant `r` from all three faces and lying ON all three fillet
-cylinder axes): a spherical corner patch that is tangent to each
+cylinder axes). The center solves those three plane equations. It equals
+`r` times the sum of the inward normals only when the normals are
+orthogonal, so a drafted corner (faces a degree off square) still gets
+a cap. The patch is tangent to each
 fillet sail along a circle (C1 junction) and to each face at one point —
 i.e. the true CAD r/r/r rounded corner. An exact right-angle corner is
 built as meshes (each edge cutter stops at the junction plane and one
@@ -1104,7 +1107,9 @@ has no needle triangles. v1 scope: applies only at vertices where exactly
 THREE filleted edges meet at ~90° with EQUAL radii; other corners keep
 the cusp, and non-triple corners are unaffected (the option is a no-op
 on an edge set whose corners have fewer than three fillets). A corner a
-fraction of a degree off square keeps the older ball cut.
+degree off square (a drafted box) uses the same mesh, on the incenter
+above. The older ball cut remains only when an edge is too short to hold
+the cap.
 
 **Verified** against analytic volumes: single edge, 4 top edges, all 12
 box edges (pair + triple corner overlaps), an obtuse wedge (90°/116°/153°
