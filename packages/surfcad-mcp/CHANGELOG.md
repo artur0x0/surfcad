@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Server relay: a tab prompt sent while the agent is present but has no socket open (a fresh `surfcad-mcp` per tool call, between calls) is held by the server and reaches the next process. The tab hears `queued` at once. Each new socket is offered held prompts after hello, and an HTTPS-fallback pull is offered them once per process (`GET /agent/prompts?session=<id>`). The process reports them with `agent.prompt.taken { ids }` when `read_messages` returns them or the webhook POST succeeds; the server then drops them. A prompt offered twice to one process is kept once. Presence ending (inactive, `close_session`, revoke, expiry) fails the held prompts back to the tab.
+- `reply_to_user` accepts an `in_reply_to` that an earlier process received. An id that is not a prompt id is still `unknown_prompt`.
+
 ## 0.3.4 - 2026-10-31
 
 - CLI login: unknown commands and bad flags print an error plus usage on stderr and exit non-zero. A 429 shows the server's `retryAfterSec` as `try again in N s`. Device-code login stops at the code's `expiresAt` with a stale/expired message. The copied join prompt rewrites plain http on a LAN host to `http://localhost:<port>`.

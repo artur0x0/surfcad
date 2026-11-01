@@ -494,6 +494,54 @@ test('an HTTPS fallback session receives a tab prompt and the reply reaches the 
   assert.equal(reply.text, 'made a box');
 });
 
+test('a prompt the server holds is taken once read_messages returns it, over websocket and over the HTTPS pull', async () => {
+  const until = async (pred, label) => {
+    const started = Date.now();
+    while (!pred()) {
+      if (Date.now() - started > 3000) throw new Error(`timed out: ${label}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  // WebSocket: the live socket gets the prompt and the server also holds it
+  // for the next process until this one reports it taken.
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'ws-held' });
+  answerTab(relay, 'user-a');
+  const session = new RemoteSession({ serverUrl: origin, token: issued.token, onLog: () => {} });
+  sessions.push(session);
+  await session.connect();
+  assert.equal(session.status().transport, 'ws');
+  const seen = [];
+  const id = randomUUID();
+  deliverTabAgentFrame(relay.registry, 'user-a', { type: 'agent.prompt', v: 1, id, text: 'held one' }, (frame) => seen.push(frame));
+  assert.deepEqual(relay.registry.heldPromptIds('user-a'), [id]);
+  await until(() => session.prompts.queuedCount() === 1, 'the socket received the prompt');
+  assert.deepEqual(relay.registry.heldPromptIds('user-a'), [id], 'queued in the process is not taken yet');
+  assert.equal(session.prompts.readMessages().messages[0].id, id);
+  await until(() => relay.registry.heldPromptIds('user-a').length === 0, 'agent.prompt.taken over the socket');
+  assert.equal(seen.some((frame) => frame.type === 'agent.prompt.taken'), false);
+
+  // HTTPS pull: offered to this process's pull session, held until taken.
+  const relay2 = createAgentRelay();
+  const { origin: origin2 } = await listen(relay2, { upgrade: 'reject' });
+  const issued2 = await relay2.tokens.issue({ userId: 'user-a', label: 'http-held' });
+  answerTab(relay2, 'user-a');
+  const session2 = new RemoteSession({ serverUrl: origin2, token: issued2.token, onLog: () => {} });
+  sessions.push(session2);
+  await session2.connect();
+  assert.equal(session2.status().transport, 'http');
+  await until(() => relay2.registry.agentConnected('user-a'), 'the first pull stamped presence');
+  const id2 = randomUUID();
+  const seen2 = [];
+  deliverTabAgentFrame(relay2.registry, 'user-a', { type: 'agent.prompt', v: 1, id: id2, text: 'held two' }, (frame) => seen2.push(frame));
+  assert.deepEqual(seen2.map((frame) => frame.delivery), ['queued']);
+  await until(() => session2.prompts.queuedCount() === 1, 'the pull received the prompt');
+  assert.deepEqual(relay2.registry.heldPromptIds('user-a'), [id2]);
+  assert.equal(session2.prompts.readMessages().messages[0].id, id2);
+  await until(() => relay2.registry.heldPromptIds('user-a').length === 0, 'agent.prompt.taken over POST /agent/prompts');
+});
+
 test('set_status on the HTTPS fallback reports the connected state', async () => {
   const relay = createAgentRelay();
   const { origin } = await listen(relay, { upgrade: 'reject' });
