@@ -5037,6 +5037,26 @@ function _c6Norm(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/
 function _c6Cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
 function _c6Sub(a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
 function _c6Len(v) { return Math.hypot(v[0], v[1], v[2]); }
+function _c6Dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+/**
+ * Point at signed distances `offsets[k]` inside the three planes through P
+ * with inward unit normals m[k]. Orthogonal normals reduce to P + Σ offset·m.
+ * Returns null when the three planes are parallel (the matrix is singular).
+ */
+function _c6PointAtFaceDistances(P, m, offsets) {
+  const c0 = _c6Cross(m[1], m[2]);
+  const c1 = _c6Cross(m[2], m[0]);
+  const c2 = _c6Cross(m[0], m[1]);
+  const det = _c6Dot(m[0], c0);
+  if (!(Math.abs(det) > 1e-8)) return null;
+  const s = 1 / det;
+  return [
+    P[0] + s * (offsets[0] * c0[0] + offsets[1] * c1[0] + offsets[2] * c2[0]),
+    P[1] + s * (offsets[0] * c0[1] + offsets[1] * c1[1] + offsets[2] * c2[1]),
+    P[2] + s * (offsets[0] * c0[2] + offsets[1] * c1[2] + offsets[2] * c2[2]),
+  ];
+}
 
 // Per-edge geometry needed by both run-detection and singleton/fallback
 // cutter construction. Throws on exactly the conditions v1 threw on
@@ -5414,10 +5434,16 @@ function _c6ClosedRunCutter(M, manifoldModule, run, geoms) {
 // corner record below), so the union of the cutters merges them away and the
 // sail meets the sphere along a shared ring of vertices. One subtract.
 //
-// Only an EXACT right-angle corner (edge directions orthogonal and every
-// dihedral 90° within _C6_EXACT_CORNER_TOL, each edge long enough to hold
-// its caps) takes this path. A near-90° corner (a drafted box) keeps the v1
-// ball cut: its sails and faces are not where the pocket assumes them.
+// Every ~90° corner takes this path, including a drafted one. The incenter
+// is the point at distance r from all three faces (the three plane
+// equations), not r times the sum of the inward normals: that sum is the
+// incenter only when the normals are orthonormal, and a 1° draft misses
+// |O−P| = r√3 (3.4239 vs 3.4641 at r = 2). The mesh is built on that
+// center, with the arc put on the sphere when the edge directions are not
+// orthonormal. The v1 ball cut remains only for a corner whose edges are
+// too short to hold the caps. An orthogonal corner is unchanged: its
+// directions already have length 1, and |O−P| is still checked against r√3
+// at the same tolerance.
 //
 // Sphere octant grid: a barycentric grid of FILLET_EDGES_CORNER_SEGMENTS/4
 // steps per side, warped so every boundary arc is uniform in angle, with
@@ -5443,11 +5469,17 @@ function _c6QuarterArcU(v, nFine) {
  */
 function _c6CornerSpherePoint(c, u1, u2, u3) {
   const { O, r, d } = c;
-  return [
-    O[0] - r * (u1 * d[0][0] + u2 * d[1][0] + u3 * d[2][0]),
-    O[1] - r * (u1 * d[0][1] + u2 * d[1][1] + u3 * d[2][1]),
-    O[2] - r * (u1 * d[0][2] + u2 * d[1][2] + u3 * d[2][2]),
-  ];
+  let x = u1 * d[0][0] + u2 * d[1][0] + u3 * d[2][0];
+  let y = u1 * d[0][1] + u2 * d[1][1] + u3 * d[2][1];
+  let z = u1 * d[0][2] + u2 * d[1][2] + u3 * d[2][2];
+  // Orthonormal edge directions already have length 1, and dividing would
+  // move the shared ring off the orthogonal pocket. A drafted corner's
+  // directions are not orthonormal, so the same weights are put on the sphere.
+  const len = Math.hypot(x, y, z) || 1;
+  if (Math.abs(len - 1) > 1e-8) {
+    x /= len; y /= len; z /= len;
+  }
+  return [O[0] - r * x, O[1] - r * y, O[2] - r * z];
 }
 
 /**
@@ -5495,9 +5527,14 @@ function _c6PushOut(p, dirs, eps) {
  * other two edges). Shared by the prism of edge k and the pocket of c.
  */
 function _c6CornerEdgePoint(c, k) {
-  const { P, r, d } = c;
+  const { P, r, d, O } = c;
+  const along = _c6Dot(_c6Sub(O, P), d[k]);
   const [i, j] = [0, 1, 2].filter((x) => x !== k);
-  return _c6PushOut([P[0] + r * d[k][0], P[1] + r * d[k][1], P[2] + r * d[k][2]], [d[i], d[j]], _c6FacePush(r));
+  return _c6PushOut(
+    [P[0] + along * d[k][0], P[1] + along * d[k][1], P[2] + along * d[k][2]],
+    [d[i], d[j]],
+    _c6FacePush(r),
+  );
 }
 
 /**
@@ -5533,7 +5570,7 @@ function _c6SignedVolume(V, T) {
 }
 
 /** Build a Manifold from a closed triangle soup; loud on anything but a clean solid. */
-function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
+function _c6SolidFromSoup(M, what, verts, tris, expectVol, tol = 0.01) {
   const { Mesh } = manifoldModule;
   // Compact: a welded ring end leaves its duplicate unreferenced.
   const remap = new Int32Array(verts.length).fill(-1);
@@ -5565,7 +5602,7 @@ function _c6SolidFromSoup(M, what, verts, tris, expectVol) {
   const se = _c4StatusError(solid);
   if (se) throw new Error(`filletEdges: bad ${what} (${se})`);
   const vol = solid.volume();
-  if (!(vol > 1e-9) || Math.abs(vol - expectVol) > 0.01 * expectVol) {
+  if (!(vol > 1e-9) || Math.abs(vol - expectVol) > tol * expectVol) {
     throw new Error(`filletEdges: ${what} volume ${vol} is off the expected ${expectVol}`);
   }
   return solid;
@@ -5602,9 +5639,12 @@ function _c6TrimmedEdgeCutter(M, g, capA, capB) {
     }
   }
   // An open end overruns a free end face by the push (see _c6EdgeGeom).
+  // A cap ends on the plane through the incenter perpendicular to the edge.
+  // That station is r only when the corner is orthogonal.
   const push = _c6FacePush(r);
-  const s0 = capA ? r : (g.freeA ? -push : 0);
-  const s1 = capB ? L - r : (g.freeB ? L + push : L);
+  const station = (cap) => _c6Dot(_c6Sub(cap.corner.O, cap.corner.P), cap.corner.d[cap.k]);
+  const s0 = capA ? station(capA) : (g.freeA ? -push : 0);
+  const s1 = capB ? L - station(capB) : (g.freeB ? L + push : L);
   if (!(s1 > s0 + 1e-9)) throw new Error('filletEdges: corner caps overlap on a short edge');
   if (!ring0) {
     ring0 = shift(ring1, -(s1 - s0));
@@ -5634,9 +5674,12 @@ function _c6TrimmedEdgeCutter(M, g, capA, capB) {
     tris.push([n + 1, R1(v), R1(v + 1)]);
   }
   // Section: the square minus the quarter disc, plus the strip the pushed
-  // corner adds (shoelace over Q', T_A, C, T_B gives r² + ε·r).
+  // corner adds (shoelace over Q', T_A, C, T_B gives r² + ε·r). A drafted
+  // corner's arc is the sphere's, so the analytic quarter-disc is only a
+  // nearby estimate; an orthogonal corner stays inside 1%.
+  const drafted = (capA && capA.corner.orthogonal === false) || (capB && capB.corner.orthogonal === false);
   const expectVol = (s1 - s0) * (r * r * (1 - Math.PI / 4) + push * r);
-  return _c6SolidFromSoup(M, 'corner edge cutter', verts, tris, expectVol);
+  return _c6SolidFromSoup(M, 'corner edge cutter', verts, tris, expectVol, drafted ? 0.06 : 0.01);
 }
 
 /**
@@ -5816,15 +5859,20 @@ function _c6CornerPocket(M, c, pocketOpts = {}) {
   // points add under the three face squares (depth ε at the corner points,
   // 0 at the tangent point: 2ε·r² to first order).
   const expectVol = r * r * r * (1 - Math.PI / 6) + 2 * _c6FacePush(r) * r * r;
-  return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol);
+  // A drafted corner is not an r-cube minus an octant. The mesh is still
+  // that construction on the real incenter; the orthogonal formula is the
+  // nearby check, and an orthogonal corner stays inside 1%.
+  return _c6SolidFromSoup(M, 'corner pocket', verts, tris, expectVol, c.orthogonal === false ? 0.06 : 0.01);
 }
 
 /**
  * Trihedral corners among the live edges: a vertex where exactly three
  * filleted edges of one radius meet at right angles. Each record carries the
  * vertex P, unit directions d[k] from P into edge k, the inward face normals
- * m[k] (v1 cap frame), the incenter O, and whether it is EXACT (pocket path)
- * or near (v1 ball path). Returns the records and a per-edge cap map.
+ * m[k] (v1 cap frame), the incenter O (distance r from each face), and
+ * whether it is orthogonal. Every corner here takes the mesh cap; `exact`
+ * is cleared when an edge is too short to hold one, and that corner falls
+ * back to the ball cut. Returns the records and a per-edge cap map.
  */
 function _c6TrihedralCorners(live) {
   const byVertex = new Map();
@@ -5853,25 +5901,33 @@ function _c6TrihedralCorners(live) {
     };
     const m = [inwardOf(d[0], d[1], d[2]), inwardOf(d[1], d[2], d[0]), inwardOf(d[2], d[0], d[1])];
     const r = g1.r;
-    const O = [
-      P[0] + r * (m[0][0] + m[1][0] + m[2][0]),
-      P[1] + r * (m[0][1] + m[1][1] + m[2][1]),
-      P[2] + r * (m[0][2] + m[1][2] + m[2][2]),
-    ];
+    // Distance r inside every face. P + r(m0+m1+m2) is that point only when
+    // the inward normals are orthonormal; a drafted corner is not.
+    const O = _c6PointAtFaceDistances(P, m, [r, r, r]);
+    if (!O) throw new Error('filletEdges: corner-cap incenter is degenerate');
+    const tol = 1e-3 * r + 1e-6;
+    for (let k = 0; k < 3; k++) {
+      const plane = _c6Dot(_c6Sub(O, P), m[k]);
+      if (Math.abs(plane - r) > tol) {
+        throw new Error(`filletEdges: corner-cap incenter sanity failed (face distance ${plane}, want ${r})`);
+      }
+    }
     const dist = _c6Len(_c6Sub(O, P));
-    const dev = Math.abs(dist - r * Math.sqrt(3));
-    if (dev > 1e-3 * r + 1e-6)
-      throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r * Math.sqrt(3)})`);
-    const dot = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
-    const exact = dot(d[0], d[1]) < _C6_EXACT_CORNER_TOL
-      && dot(d[1], d[2]) < _C6_EXACT_CORNER_TOL
-      && dot(d[2], d[0]) < _C6_EXACT_CORNER_TOL
+    const dotAbs = (a, b) => Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+    const orthogonal = dotAbs(d[0], d[1]) < _C6_EXACT_CORNER_TOL
+      && dotAbs(d[1], d[2]) < _C6_EXACT_CORNER_TOL
+      && dotAbs(d[2], d[0]) < _C6_EXACT_CORNER_TOL
       && eg.every((g) => Math.abs(g.theta - Math.PI / 2) < _C6_EXACT_CORNER_TOL);
-    corners.push({ vk, P, r, geoms: eg, d, m, O: exact ? [
-      P[0] + r * (d[0][0] + d[1][0] + d[2][0]),
-      P[1] + r * (d[0][1] + d[1][1] + d[2][1]),
-      P[2] + r * (d[0][2] + d[1][2] + d[2][2]),
-    ] : O, exact });
+    // An orthogonal corner still has to land on r√3. Widening this is what
+    // let a drafted corner through with the wrong center. A drafted corner
+    // is not checked against that length; its center already sits at
+    // distance r from each face, and it takes the same mesh cap.
+    if (orthogonal && Math.abs(dist - r * Math.sqrt(3)) > tol) {
+      throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r * Math.sqrt(3)})`);
+    }
+    corners.push({
+      vk, P, r, geoms: eg, d, m, O, exact: true, orthogonal,
+    });
   }
   // An exact corner trims its edges to the junction plane, so each edge must
   // hold its caps: demote every corner on an edge that cannot.
@@ -6145,11 +6201,16 @@ function filletEdges(part, edgesIn, radiusIn, opts = {}) {
       //     cylinders, so the sphere IS the true CAD corner patch).
       //   T \ octant = the cusp pocket the plain fillets leave.
       // A zero coordinate puts the point on that face: push it out of it.
-      const mkPt = (a, b, c) => _c6PushOut([
-        P[0] + r0*(a*m12[0] + b*m23[0] + c*m31[0]),
-        P[1] + r0*(a*m12[1] + b*m23[1] + c*m31[1]),
-        P[2] + r0*(a*m12[2] + b*m23[2] + c*m31[2]),
-      ], [a ? null : m12, b ? null : m23, c ? null : m31].filter(Boolean), _c6FacePush(r0));
+      const normals = [m12, m23, m31];
+      const mkPt = (a, b, cFlag) => {
+        const pt = _c6PointAtFaceDistances(P, normals, [a * r0, b * r0, cFlag * r0]);
+        if (!pt) throw new Error('filletEdges: corner cap is degenerate');
+        const onFace = [];
+        if (!a) onFace.push(m12);
+        if (!b) onFace.push(m23);
+        if (!cFlag) onFace.push(m31);
+        return _c6PushOut(pt, onFace, _c6FacePush(r0));
+      };
       const cornerBox = M.hull([
         mkPt(0,0,0), mkPt(1,0,0), mkPt(0,1,0), mkPt(0,0,1),
         mkPt(1,1,0), mkPt(1,0,1), mkPt(0,1,1), mkPt(1,1,1),

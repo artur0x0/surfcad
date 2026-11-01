@@ -383,10 +383,13 @@ distance `r/sin(θ/2)` from the edge (1 mm overshoot each end).
     their inner neighbour and fanned from its far vertex, so no fan triangle
     lies along one arc. `FILLET_EDGES_CORNER_SEGMENTS` must divide
     `FILLET_EDGES_CIRCLE_SEGMENTS` (asserted at load).
-  - **Near-90° corners** (a corner whose edges are within 0.02 rad of 90° but
-    not exact, such as a lightly drafted box) keep the v1 ball cut on the
-    already-filleted solid; `_c6TrihedralCorners` hands those records to that
-    loop, and the sail cylinder it intersects is built on demand (`cyl()`).
+  - **Near-90° corners** (edges within 0.02 rad of 90° but not orthogonal,
+    such as a 1° drafted box) take the same mesh. The incenter solves the
+    three face-distance equations; `P + r(n1+n2+n3)` is that point only for
+    orthonormal normals, and checking `|O−P|` against `r√3` rejected a
+    drafted corner (3.4239 vs 3.4641 at r = 2). The arc weights are
+    normalized onto the sphere when the edge directions are not orthonormal.
+    The v1 ball cut remains only when an edge cannot hold its caps.
   - **Identity.** Each pocket's run id goes into `_blendCornerIDs` (read from
     `getMesh().runOriginalID`: a mesh-built solid reports `originalID() === -1`)
     so `_stampRunsInRange` names it `<block>.corner[k]` instead of `.round`.
