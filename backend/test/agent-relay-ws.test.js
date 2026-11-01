@@ -968,4 +968,138 @@ describe('agent relay websocket', () => {
     stranger.ws.close();
     tab.ws.close();
   });
+
+  test('socket close logs the code and reason and omits secrets', async () => {
+    const lines = [];
+    const original = console.info;
+    console.info = (...args) => lines.push(args.map(String).join(' '));
+    try {
+      const relay = createAgentRelay({ pingIntervalMs: 60_000 });
+      const app = express();
+      app.use(express.json());
+      const server = http.createServer(app);
+      const wss = attachAgentWebSocket(server, relay, {
+        authenticateUpgrade: async (req) => {
+          const id = req.headers['x-test-user'];
+          return typeof id === 'string' ? { id } : null;
+        },
+      });
+      servers.push(server);
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const port = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
+      const url = `ws://127.0.0.1:${port}/agent`;
+      const issued = await relay.tokens.issue({ userId: 'user-a', label: 'diag' });
+      const tab = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-a' });
+      await tab.opened;
+      assert.equal((await tab.nextMessage()).type, 'registered');
+      const early = openSocket(url, { authorization: `Bearer ${issued.token}` });
+      await early.opened;
+      const earlyClosed = closeEvent(early.ws, 'early agent close');
+      early.ws.close(1001, `early ${issued.token} ABCD-EFGH`);
+      await earlyClosed;
+
+      const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+      await agent.opened;
+      agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+      assert.equal((await agent.nextMessage()).type, 'hello');
+      agent.ws.send(JSON.stringify({
+        v: 1,
+        id: 'c1',
+        command: 'list_faces',
+        args: { secret: 'payload-secret', text: 'draw-a-secret-box' },
+      }));
+      await sleep(30);
+      const serverAgent = [...wss.clients].find((ws) => ws.agentAuth && ws.readyState === WebSocket.OPEN);
+      assert.ok(serverAgent);
+      serverAgent.emit('error', new Error(`reset ${issued.token} ABCD-EFGH`));
+      const agentClosed = closeEvent(agent.ws, 'agent close');
+      agent.ws.close(4000, `diag-reason ${issued.token} ABCD-EFGH`);
+      const agentEvent = await agentClosed;
+      assert.equal(agentEvent.code, 4000);
+      const tabClosed = closeEvent(tab.ws, 'tab close');
+      tab.ws.close(1000, 'tab-bye');
+      await tabClosed;
+      await sleep(30);
+
+      const events = lines
+        .filter((line) => line.includes('[agent-relay]'))
+        .map((line) => JSON.parse(line.slice(line.indexOf('{'))));
+      const closes = events.filter((event) => event.event === 'socket-close');
+      const earlyClose = closes.find((event) => event.code === 1001 && event.side === 'agent');
+      const agentClose = closes.find((event) => event.code === 4000 && event.side === 'agent');
+      const tabClose = closes.find((event) => event.side === 'tab' && event.code === 1000);
+      assert.ok(earlyClose);
+      assert.equal(earlyClose.hello, false);
+      assert.equal(earlyClose.userId, 'user-a');
+      assert.match(earlyClose.reason, /early/);
+      assert.equal(earlyClose.wasClean, true);
+      assert.equal(typeof earlyClose.livedMs, 'number');
+      assert.ok(agentClose);
+      assert.equal(agentClose.hello, true);
+      assert.equal(agentClose.pingOutstanding, false);
+      assert.match(agentClose.reason, /diag-reason/);
+      assert.equal(agentClose.wasClean, true);
+      assert.ok(tabClose);
+      assert.equal(tabClose.hello, false);
+      assert.equal(tabClose.reason, 'tab-bye');
+      assert.equal(tabClose.userId, 'user-a');
+      const errors = events.filter((event) => event.event === 'agent-ws-error');
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].side, 'agent');
+      assert.match(errors[0].message, /reset/);
+      const logged = lines.join('\n');
+      assert.equal(logged.includes(issued.token), false);
+      assert.equal(logged.includes('ABCD-EFGH'), false);
+      assert.equal(logged.includes('payload-secret'), false);
+      assert.equal(logged.includes('draw-a-secret-box'), false);
+      assert.equal(logged.includes('Bearer'), false);
+    } finally {
+      console.info = original;
+    }
+  });
+
+  test('a missed pong logs the server terminate and an outstanding ping', async () => {
+    const lines = [];
+    const original = console.info;
+    console.info = (...args) => lines.push(args.map(String).join(' '));
+    try {
+      const relay = createAgentRelay({ pingIntervalMs: 200 });
+      const port = await listen(relay, async () => null);
+      const issued = await relay.tokens.issue({ userId: 'user-a', label: 'pong' });
+      const agent = openSocket(`ws://127.0.0.1:${port}/agent`, {
+        authorization: `Bearer ${issued.token}`,
+      });
+      await agent.opened;
+      agent.ws._autoPong = false;
+      agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+      assert.equal((await agent.nextMessage()).type, 'hello');
+      const event = await closeEvent(agent.ws, 'missed pong');
+      assert.equal(event.code, 1006);
+      const started = Date.now();
+      let events = [];
+      while (Date.now() - started < 1000) {
+        events = lines
+          .filter((line) => line.includes('[agent-relay]'))
+          .map((line) => JSON.parse(line.slice(line.indexOf('{'))));
+        if (events.some((row) => row.event === 'socket-close' && row.pingOutstanding === true)) break;
+        await sleep(20);
+      }
+      const terminated = events.find((row) => row.event === 'socket-terminate');
+      const closed = events.find((row) => row.event === 'socket-close' && row.side === 'agent');
+      assert.ok(terminated);
+      assert.equal(terminated.side, 'agent');
+      assert.equal(terminated.userId, 'user-a');
+      assert.equal(terminated.message, 'missed pong');
+      assert.ok(closed);
+      assert.equal(closed.code, 1006);
+      assert.equal(closed.pingOutstanding, true);
+      assert.equal(closed.wasClean, false);
+      assert.equal(closed.hello, true);
+      const logged = lines.join('\n');
+      assert.equal(logged.includes(issued.token), false);
+      assert.equal(logged.includes('Bearer'), false);
+    } finally {
+      console.info = original;
+    }
+  });
 });

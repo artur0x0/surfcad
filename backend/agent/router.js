@@ -573,18 +573,39 @@ export function createAgentRouter(deps) {
   });
 
   router.get('/prompts', async (req, res, next) => {
+    /** @type {{ userId: string } | null} */
+    let polling = null;
+    let timeout = 0;
+    let status = 'error';
     try {
       const auth = await deps.tokens.authenticate(readBearer(req.get('authorization')));
       if (!auth) return res.status(401).json({ error: 'Authentication required' });
       if (rejectLimited(res, deps.readLimiter, auth.id)) return undefined;
-      const timeout = clampTimeout(req.query.timeout);
+      timeout = clampTimeout(req.query.timeout);
+      polling = auth;
+      logRelay({
+        event: 'prompt-poll-start',
+        userId: auth.userId,
+        timeoutMs: timeout,
+      });
       const result = await deps.registry.waitPrompts(auth.userId, timeout, auth.id);
       if (!result || result.status === 'revoked') {
+        status = 'revoked';
         return res.status(401).json({ error: 'Authentication required' });
       }
+      status = Array.isArray(result.messages) && result.messages.length > 0 ? 'messages' : 'empty';
       return res.json({ messages: result.messages });
     } catch (error) {
       return next(error);
+    } finally {
+      if (polling) {
+        logRelay({
+          event: 'prompt-poll-end',
+          userId: polling.userId,
+          status,
+          timeoutMs: timeout,
+        });
+      }
     }
   });
 
