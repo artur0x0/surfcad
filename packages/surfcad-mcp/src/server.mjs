@@ -254,7 +254,7 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     if (isPromptTool(name)) {
-      if (name !== 'set_status') session.noteAgentToolCall();
+      if (name !== 'set_status' && name !== 'post_progress' && name !== 'close_session') session.noteAgentToolCall();
       try {
         const out = await callPromptTool(session.prompts, name, args);
         if (out.isError) return errorResult(out.error, name);

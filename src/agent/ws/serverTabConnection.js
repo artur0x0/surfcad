@@ -16,6 +16,7 @@ const PROMPT_TYPES = new Set([
   PAIR_MSG.AGENT_MESSAGE,
   PAIR_MSG.AGENT_STATUS,
   PAIR_MSG.AGENT_ACTIVITY,
+  PAIR_MSG.AGENT_PROGRESS,
   PAIR_MSG.AGENT_PROMPT_CANCEL,
   PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
 ]);
@@ -26,7 +27,7 @@ const PROMPT_TYPES = new Set([
  *   call: (name: string, args: Record<string, unknown>) => Promise<{ ok?: boolean, result?: unknown, error?: unknown }>,
  *   onState?: (state: string) => void,
  *   onLink?: (link: string | null) => void,
- *   onAgent?: (connected: boolean, info: { source: 'registered' | 'agent', was: boolean }) => void,
+   *   onAgent?: (connected: boolean, info: { source: 'registered' | 'agent', was: boolean, reason: string | null }) => void,
  *   createSocket?: (url: string) => any,
  *   reconnectDelaysMs?: readonly number[],
  * }} opts
@@ -77,7 +78,7 @@ export function createServerTabConnection(opts) {
       return;
     }
     if (msg.type === 'agent') {
-      applyAgent(msg.connected === true, 'agent');
+      applyAgent(msg.connected === true, 'agent', msg.reason);
       return;
     }
     if (typeof msg.type === 'string' && PROMPT_TYPES.has(msg.type)) {
@@ -100,13 +101,18 @@ export function createServerTabConnection(opts) {
   /**
    * @param {boolean} connected
    * @param {'registered' | 'agent'} source
+   * @param {unknown} [reason]
    */
-  function applyAgent(connected, source) {
+  function applyAgent(connected, source, reason) {
     const was = sawAgent;
     sawAgent = connected;
     // `registered` is a snapshot and may say false before the agent
     // frame arrives. `agent` is the live leave. Socket close is neither.
-    opts.onAgent?.(connected, { source, was });
+    opts.onAgent?.(connected, {
+      source,
+      was,
+      reason: typeof reason === 'string' ? reason : null,
+    });
     if (connected) {
       setState('paired');
       setLink('connected');

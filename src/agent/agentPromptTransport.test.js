@@ -65,6 +65,17 @@ test('send returns an id and subscriptions unsubscribe', () => {
   assert.deepEqual(replies, [{ id, text: '<b>40 mm</b>', final: false }]);
   assert.deepEqual(working, [true]);
   assert.deepEqual(acks, [{ id, delivery: 'queued' }]);
+
+  const progress = [];
+  transport.onProgress((event) => progress.push(event));
+  bridge.emit({
+    type: PAIR_MSG.AGENT_PROGRESS,
+    v: 1,
+    working: true,
+    text: 'thinking about the fillet',
+  });
+  assert.deepEqual(progress, [{ working: true }]);
+  assert.equal(working.length, 1);
 });
 
 test('dispose unsubscribes so a new transport does not stack listeners', () => {

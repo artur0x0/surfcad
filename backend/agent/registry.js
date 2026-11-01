@@ -1,6 +1,7 @@
 import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createSystemClock } from './clock.js';
 import {
+  AGENT_PRESENCE_TTL_MS,
   MAX_AGENTS_PER_USER,
   MAX_HELD_PROMPTS,
   MAX_PENDING,
@@ -49,6 +50,7 @@ function asleepResponse(frame) {
  *   maxTabs?: number,
  *   maxAgents?: number,
  *   promptHoldMs?: number,
+ *   presenceTtlMs?: number,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
@@ -59,9 +61,16 @@ export function createMemoryTabRegistry(opts = {}) {
   const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
   const maxAgents = opts.maxAgents ?? MAX_AGENTS_PER_USER;
   const promptHoldMs = opts.promptHoldMs ?? PROMPT_HOLD_MS;
+  const presenceTtlMs = opts.presenceTtlMs ?? AGENT_PRESENCE_TTL_MS;
   const sessionMessageGapMs = opts.sessionMessageGapMs ?? SESSION_MESSAGE_GAP_MS;
   /** @type {Map<string, number>} */
   const sessionMessageAt = new Map();
+  /**
+   * Last activity per account. `at` is null until something stamps it, so
+   * a manual clock at 0 is a real sighting. `heldDown` is a revoke.
+   * @type {Map<string, { at: number | null, timer: unknown, announced: boolean, heldDown: boolean, epoch: number }>}
+   */
+  const presence = new Map();
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
@@ -111,17 +120,76 @@ export function createMemoryTabRegistry(opts = {}) {
 
   /**
    * Presence only. Not sent from registerTab, so a tab that just joined
-   * does not look like a command frame.
+   * does not look like a command frame. `reason` is set only when the
+   * agent goes offline: inactive, closed, or revoked.
    * @param {string} userId
    * @param {boolean} connected
+   * @param {'inactive' | 'closed' | 'revoked'} [reason]
    */
-  function notifyTabs(userId, connected) {
+  function notifyTabs(userId, connected, reason) {
     const found = users.get(String(userId));
     if (!found) return;
     const frame = { type: 'agent', v: 1, connected: connected === true };
+    if (!frame.connected && (reason === 'inactive' || reason === 'closed' || reason === 'revoked')) {
+      frame.reason = reason;
+    }
     for (const tab of found.tabs.values()) {
       try { tab.send(frame); } catch { /* a dead tab must not block the rest */ }
     }
+  }
+
+  /**
+   * @param {string} userId
+   */
+  function presenceRow(userId) {
+    const key = String(userId);
+    let row = presence.get(key);
+    if (!row) {
+      row = { at: null, timer: null, announced: false, heldDown: false, epoch: 0 };
+      presence.set(key, row);
+    }
+    return row;
+  }
+
+  /**
+   * @param {{ timer: unknown }} row
+   */
+  function cancelPresenceTimer(row) {
+    if (row.timer) clock.cancel(row.timer);
+    row.timer = null;
+  }
+
+  /**
+   * @param {string} key
+   * @param {{ at: number | null, timer: unknown, announced: boolean, heldDown: boolean }} row
+   */
+  function armPresence(key, row) {
+    cancelPresenceTimer(row);
+    if (row.at == null || !row.announced || row.heldDown) return;
+    const remain = presenceTtlMs - (clock.now() - row.at);
+    if (remain <= 0) {
+      expirePresence(key);
+      return;
+    }
+    row.timer = clock.schedule(() => expirePresence(key), remain);
+  }
+
+  /**
+   * Offline after the presence window, including while a socket is still open.
+   * A close is not a goodbye and does not reach this.
+   * @param {string} key
+   */
+  function expirePresence(key) {
+    const row = presence.get(key);
+    if (!row) return;
+    row.timer = null;
+    if (row.heldDown || row.at == null || !row.announced) return;
+    if (clock.now() - row.at < presenceTtlMs) {
+      armPresence(key, row);
+      return;
+    }
+    row.announced = false;
+    notifyTabs(key, false, 'inactive');
   }
 
   /**
@@ -550,23 +618,25 @@ export function createMemoryTabRegistry(opts = {}) {
 
     /**
      * @param {{ userId: string, agentId: string, send: (frame: object) => void }} agent
-     * @returns {boolean} false when this account is already at the agent cap
+     * @param {{ clearHold?: boolean, epoch?: number }} [seen]
+     * @returns {boolean | 'revoked'} false when this account is already at the agent cap
      */
-    registerAgent(agent) {
+    registerAgent(agent, seen) {
       const userId = String(agent.userId);
       let found = agents.get(userId);
       if (found && !found.has(agent.agentId) && found.size >= maxAgents) return false;
-      const first = !found || found.size === 0;
+      if (!this.noteAgentSeen(userId, seen)) return 'revoked';
       if (!found) {
         found = new Map();
         agents.set(userId, found);
       }
       found.set(agent.agentId, { agentId: agent.agentId, userId, send: agent.send });
-      if (first) notifyTabs(userId, true);
       return true;
     },
 
     /**
+     * A socket close is a pause. It does not stamp last-seen and it does
+     * not tell the tab the agent left.
      * @param {string} userId
      * @param {string} agentId
      */
@@ -574,18 +644,98 @@ export function createMemoryTabRegistry(opts = {}) {
       const found = agents.get(String(userId));
       if (!found) return;
       found.delete(agentId);
-      if (found.size === 0) {
-        agents.delete(String(userId));
-        notifyTabs(userId, false);
-      }
+      if (found.size === 0) agents.delete(String(userId));
     },
 
     /**
+     * True while the last stamp is still inside the presence window.
+     * An open socket with no recent activity is offline.
      * @param {string} userId
      * @returns {boolean}
      */
     agentConnected(userId) {
-      return (agents.get(String(userId))?.size || 0) > 0;
+      const row = presence.get(String(userId));
+      if (!row || row.heldDown || !row.announced || row.at == null) return false;
+      return clock.now() - row.at < presenceTtlMs;
+    },
+
+    /**
+     * Epoch observed before a token check. A revoke bumps it, so a check
+     * that started earlier cannot clear the hold.
+     * @param {string} userId
+     * @returns {number}
+     */
+    presenceEpoch(userId) {
+      return presence.get(String(userId))?.epoch || 0;
+    },
+
+    /**
+     * Stamp last-seen and announce on the rising edge. `clearHold` lifts a
+     * revoke only when `epoch` is still the one captured before the check.
+     * @param {string} userId
+     * @param {{ clearHold?: boolean, epoch?: number }} [opts]
+     * @returns {boolean} false when a revoke won the race
+     */
+    noteAgentSeen(userId, opts = {}) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      if (opts.epoch != null && row.epoch !== opts.epoch) return false;
+      if (row.heldDown && opts.clearHold !== true) return false;
+      if (opts.clearHold === true) row.heldDown = false;
+      const rising = !row.announced;
+      row.at = clock.now();
+      row.announced = true;
+      armPresence(key, row);
+      if (rising) notifyTabs(key, true);
+      return true;
+    },
+
+    /**
+     * The agent called close_session. Offline immediately, reason closed.
+     * A later stamp can return. A following socket close cannot.
+     * @param {string} userId
+     * @returns {boolean}
+     */
+    endAgentSession(userId) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      if (row.heldDown) return false;
+      cancelPresenceTimer(row);
+      const was = row.announced;
+      row.announced = false;
+      row.at = null;
+      if (was) notifyTabs(key, false, 'closed');
+      return true;
+    },
+
+    /**
+     * Revoke. Offline immediately, reason revoked, and a closing socket
+     * cannot announce the agent again.
+     * @param {string} userId
+     */
+    dropAgentPresence(userId) {
+      const key = String(userId);
+      const row = presenceRow(key);
+      row.epoch += 1;
+      row.heldDown = true;
+      row.at = null;
+      cancelPresenceTimer(row);
+      if (!row.announced) return;
+      row.announced = false;
+      notifyTabs(key, false, 'revoked');
+    },
+
+    /**
+     * Progress stamps activity and tells tabs the agent is working.
+     * Text is never forwarded.
+     * @param {string} userId
+     * @param {{ clearHold?: boolean, epoch?: number }} [opts]
+     * @returns {boolean}
+     */
+    noteAgentProgress(userId, opts) {
+      if (!this.noteAgentSeen(userId, opts)) return false;
+      this.forwardToTabs(userId, { type: 'agent.progress', v: 1, working: true });
+      return true;
     },
 
     /**

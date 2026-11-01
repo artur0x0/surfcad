@@ -26,6 +26,9 @@ import {
   AGENT_CONNECTED_TOAST_MS,
   AGENT_CONNECTED_TOAST_COPY,
   AGENT_DISCONNECTED_TOAST_COPY,
+  agentDisconnectToastCopy,
+  mobileChatHideReason,
+  AGENT_PROGRESS_RECENT_MS,
   stepAgentSessionToast,
   shouldToastAgentConnected,
   shouldToastAgentDisconnect,
@@ -258,4 +261,15 @@ test('pairing toasts are transient and a reload grace is not a disconnect', () =
   assert.equal(shouldToastAgentDisconnect({ wasLive: true }), true);
   assert.equal(shouldToastAgentDisconnect({ wasLive: false }), false);
   assert.equal(shouldToastAgentDisconnect({}), false);
+  assert.equal(agentDisconnectToastCopy('inactive'), 'Agent disconnected: inactive for 10 min');
+  assert.equal(agentDisconnectToastCopy('closed'), 'Agent ended the session');
+  assert.equal(agentDisconnectToastCopy('revoked'), 'Agent access revoked');
+  assert.equal(agentDisconnectToastCopy(undefined), 'Agent disconnected');
+  const ended = stepAgentSessionToast(null, 'disconnected', 2000, { reason: 'closed' });
+  assert.equal(ended.reason, 'closed');
+  assert.equal(AGENT_PROGRESS_RECENT_MS, 60_000);
+  assert.equal(mobileChatHideReason({ isMobile: true, promptStarted: true }), 'prompt');
+  assert.equal(mobileChatHideReason({ isMobile: true, progressEdge: true }), 'progress');
+  assert.equal(mobileChatHideReason({ isMobile: false, promptStarted: true }), null);
+  assert.equal(mobileChatHideReason({ isMobile: true }), null);
 });

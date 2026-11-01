@@ -54,6 +54,7 @@ import {
   shouldShowPairingCode,
   shouldShowPairingPrompt,
   stepJoinConnection,
+  agentDisconnectToastCopy,
   shouldToastAgentConnected,
   shouldToastAgentDisconnect,
   stepAgentSessionToast,
@@ -750,7 +751,9 @@ export default function AgentBridgePairing({
             sawAgentUpRef.current = false;
             applyJoinEvent('agent-down');
             if (shouldToastAgentDisconnect({ wasLive })) {
-              setSessionToast(stepAgentSessionToast(null, 'disconnected', Date.now()));
+              setSessionToast(stepAgentSessionToast(null, 'disconnected', Date.now(), {
+                reason: info?.reason,
+              }));
             }
           }
         },
@@ -856,6 +859,9 @@ export default function AgentBridgePairing({
     ? createPortal(
       <AgentSessionToast
         kind={sessionToast.kind}
+        message={sessionToast.kind === 'disconnected'
+          ? agentDisconnectToastCopy(sessionToast.reason)
+          : undefined}
         onDismiss={dismissSessionToast}
         onDisconnect={disconnectFromUser}
         onReconnect={() => {

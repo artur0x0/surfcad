@@ -73,6 +73,7 @@ export function createAgentRelay(overrides = {}) {
     maxTabs: overrides.maxTabs,
     maxAgents: overrides.maxAgents,
     promptHoldMs: overrides.promptHoldMs,
+    presenceTtlMs: overrides.presenceTtlMs,
   });
   const agentSockets = createAgentSocketRegistry({
     maxPerUser: overrides.maxAgents,

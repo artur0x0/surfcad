@@ -19,7 +19,7 @@ import {
   SERVER_INSTRUCTIONS,
 } from '../src/prompt/guide.mjs';
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
-import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
+import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, SESSION_PRESENCE_GUIDANCE, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
 import { AGENT_PROMPT_STALL_MS, agentPromptStallMinutes } from '../src/prompt/promptStall.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -79,6 +79,11 @@ test('reply_to_user and the guide start topic require a closing reply, including
   assert.match(GUIDE_TOPICS.start.text, /set_status is for progress and does not close the task/);
   assert.ok(GUIDE_TOPICS.start.text.includes(BUILDING_STATUS_GUIDANCE));
   assert.ok(PROMPT_SERVER_INSTRUCTIONS.includes(BUILDING_STATUS_GUIDANCE));
+  assert.ok(PROMPT_SERVER_INSTRUCTIONS.includes(SESSION_PRESENCE_GUIDANCE));
+  assert.match(SESSION_PRESENCE_GUIDANCE, /fresh process per tool call is normal/);
+  assert.match(SESSION_PRESENCE_GUIDANCE, /long-lived process is optional, never required/);
+  assert.doesNotMatch(SESSION_PRESENCE_GUIDANCE, /when the runtime allows/);
+  assert.match(GUIDE_TOPICS.start.text, /long-lived process is optional and nothing depends on it/);
   assert.ok(defs.set_status.description.includes(BUILDING_STATUS_GUIDANCE));
   assert.match(PROMPT_SERVER_INSTRUCTIONS, /failure or partial completion/);
 });

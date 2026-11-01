@@ -143,8 +143,10 @@ has focus; both chevrons are focusable and Enter toggles; a polite live region
 "Agent replied". The folded choice is remembered per agent session in
 localStorage (`surfcadAgentPromptFolded`, `src/agent/agentPromptFold.js`) and
 cleared on disconnect. `agent_prompt { action: "fold" | "unfold" }` drives it;
-`dismiss` folds on desktop. On the phone the fold has not landed: the compact
-prompt keeps the X that hides the pane. Nothing else is stored.
+`dismiss` folds on desktop. On the phone the compact prompt keeps the X that
+hides the pane. While a prompt is in flight, or when progress arrives, that
+same hide runs and the middle bot button uses its existing spinner. A later
+tap can open the chat again until the next progress update. Nothing else is stored.
 A production build with no paired agent stays hidden and never uses the echo
 stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
 still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the
@@ -157,8 +159,10 @@ and the camera toggle stay. When the pairing dialog closes because the agent con
 (`data-agent-bridge-connected-toast`, `ErrorPopup` tone success, copy "Agent connected")
 offers Disconnect and X and dismisses after 3 seconds. It is not a banner.
 A live disconnect hides the chat and shows `data-agent-bridge-disconnected-toast`
-("Agent disconnected") with Reconnect, which opens the pairing dialog, and X,
-also for 3 seconds. The 3 second reload grace does not show that toast.
+with Reconnect, which opens the pairing dialog, and X, also for 3 seconds.
+The presence frame's `reason` picks the copy: `inactive` is "Agent disconnected: inactive for 10 min",
+`closed` is "Agent ended the session", and `revoked` is "Agent access revoked".
+A frame with no reason stays "Agent disconnected". The 3 second reload grace does not show that toast.
 The viewer stays interactive while the agent works.
 Agent-driven feature cards do not auto-open during that work. Agent paint still runs then: `paint_open` enters paint mode headless (no card, `paintMode.headless`), so a colour applied during a prompt is written like any other.
 The `agent_prompt` bridge command stays on the page (`action: 'screenshot'`

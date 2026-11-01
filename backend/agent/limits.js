@@ -123,6 +123,13 @@ export const PAIR_RETENTION_MS = PAIR_TTL_MS;
 export const SOCKET_PING_INTERVAL_MS = 30 * 1000;
 
 /**
+ * One presence clock for an account. Any agent socket frame, prompt poll,
+ * accepted relay command, or progress update stamps last-seen. The agent
+ * is offline after this with no activity. A socket close does not.
+ */
+export const AGENT_PRESENCE_TTL_MS = 10 * 60 * 1000;
+
+/**
  * @param {unknown} value
  * @returns {number}
  */
