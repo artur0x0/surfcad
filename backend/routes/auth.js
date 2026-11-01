@@ -431,24 +431,31 @@ router.post('/login', async (req, res, next) => {
 
 /**
  * POST /api/auth/logout
- * Logout current user
+ * End the browser session and revoke every agent token on the account.
+ * Same path as a password change or account deletion: join codes, tokens,
+ * open agent sockets, held prompts, and presence (reason revoked).
+ * Revoke runs before the session is destroyed so a failure can be retried,
+ * and before the tab sockets close so they still receive that frame.
  */
-router.post('/logout', (req, res) => {
+router.post('/logout', async (req, res) => {
   const userId = req.user?._id ?? req.user?.id;
+  try {
+    if (userId != null) await revokeUserAgentAccess(userId);
+  } catch (err) {
+    console.error('[Auth] Logout agent revoke error:', err);
+    return res.status(500).json({ error: 'Logout failed' });
+  }
   req.logout((err) => {
     if (err) {
       console.error('[Auth] Logout error:', err);
       return res.status(500).json({ error: 'Logout failed' });
     }
-    
+
     req.session.destroy((destroyErr) => {
       if (destroyErr) {
         console.error('[Auth] Session destroy error:', destroyErr);
       }
       res.clearCookie('surfcad.sid');
-      // Agent tokens are separate devices. Connected agents, surfcad-mcp
-      // logout, a password change, account delete, or credentialsRevokedAt
-      // revoke them. Signing out of the site does not.
       if (userId != null) closeUserTabSockets(userId);
       return res.json({ success: true });
     });
