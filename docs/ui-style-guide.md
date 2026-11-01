@@ -252,6 +252,8 @@ those utilities on the button yourself. `surface-success` is the solid
 dark green Allow control. It is not a rail toggle. The wash is a light
 surface, so the button does not take `text-on-dark` or `text-on-light`.
 
+Mold draft swatches are `mold-draft-swatch-above`, `mold-draft-swatch-below`, and `mold-draft-swatch-negative` (`--mold-draft-above`, `--mold-draft-below`, `--mold-draft-negative`, `--mold-draft-hatch`). Positive draft is one blue ramp. Negative draft is an orange hatch, so a back-draft does not depend on red versus green.
+
 Wall thickness, core and cavity, mold draft, and the report
 are not a column on that rail. Side actions are part of core and cavity,
 not their own flyout button. Those tools sit in the Molding

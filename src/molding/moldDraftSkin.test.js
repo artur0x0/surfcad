@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial } from 'three';
-import { MOLD_DRAFT_RGB } from './moldDraft.js';
-import { detachMoldDraftSkin, syncMoldDraftSkin, MOLD_DRAFT_SKIN_RENDER_ORDER } from './moldDraftSkin.js';
+import { BufferAttribute, BufferGeometry, FrontSide, Mesh, MeshStandardMaterial } from 'three';
+import {
+  MOLD_DRAFT_ABOVE_RGB,
+  MOLD_DRAFT_BELOW_RGB,
+  MOLD_DRAFT_NEGATIVE_RGB,
+} from './moldDraft.js';
+import { detachMoldDraftSkin, makeDraftSkinMaterial, syncMoldDraftSkin, MOLD_DRAFT_SKIN_RENDER_ORDER } from './moldDraftSkin.js';
 
 function hostWithPaint() {
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array([
     0, 0, 0, 1, 0, 0, 0, 1, 0,
     1, 0, 0, 1, 1, 0, 0, 1, 0,
+    0, 0, 1, 1, 0, 1, 0, 1, 1,
   ]), 3));
-  geometry.setIndex([0, 1, 2, 3, 4, 5]);
+  geometry.setIndex([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   const host = new Mesh(geometry, new MeshStandardMaterial());
   const paint = new Mesh(geometry, new MeshStandardMaterial());
   paint.name = 'face-color-skin';
@@ -21,22 +26,36 @@ function hostWithPaint() {
 }
 
 const report = {
-  violationCount: 1,
-  triangleCount: 1,
-  minDraftDeg: 0,
-  triangles: [{ index: 0, draftDeg: 0 }],
+  minDeg: 1,
+  positiveAbove: { count: 1, area: 0.5 },
+  positiveBelow: { count: 1, area: 0.5 },
+  negative: { count: 1, area: 0.5 },
+  triangles: [
+    { index: 0, signedDeg: 3, state: 'positiveAbove' },
+    { index: 1, signedDeg: 0.4, state: 'positiveBelow' },
+    { index: 2, signedDeg: -2, state: 'negative' },
+  ],
 };
 
-test('the mold-draft skin paints the violation and hides face paint', () => {
+test('the mold-draft skin paints the three signed states and hides face paint', () => {
   const host = hostWithPaint();
   const skin = syncMoldDraftSkin(host, report);
   assert.ok(skin);
   assert.equal(skin.name, 'mold-draft-skin');
   assert.equal(skin.renderOrder, MOLD_DRAFT_SKIN_RENDER_ORDER);
+  assert.equal(skin.material.customProgramCacheKey(), 'mold-draft-hatch-v1');
   assert.equal(host.userData.faceColorSkin.visible, false);
   const colors = skin.geometry.getAttribute('color').array;
-  assert.equal(colors.length, 9);
-  assert.ok(Math.abs(colors[0] - MOLD_DRAFT_RGB[0]) < 1e-6);
+  const hatch = skin.geometry.getAttribute('draftNegative').array;
+  assert.equal(colors.length, 27);
+  assert.ok(Math.abs(colors[0] - MOLD_DRAFT_ABOVE_RGB[0]) < 1e-6);
+  assert.ok(Math.abs(colors[10] - MOLD_DRAFT_BELOW_RGB[1]) < 1e-6);
+  assert.ok(Math.abs(colors[20] - MOLD_DRAFT_NEGATIVE_RGB[2]) < 1e-6);
+  assert.equal(hatch[0], 0);
+  assert.equal(hatch[3], 0);
+  assert.equal(hatch[6], 1);
+  const material = makeDraftSkinMaterial(FrontSide);
+  assert.match(material.customProgramCacheKey(), /mold-draft-hatch/);
 });
 
 test('turning the mold-draft skin off restores face paint', () => {
@@ -60,4 +79,23 @@ test('an empty report removes the skin', () => {
   syncMoldDraftSkin(host, report);
   assert.equal(syncMoldDraftSkin(host, { triangles: [] }), null);
   assert.equal(host.userData.faceColorSkin.visible, true);
+});
+
+test('a threshold change rebuilds the skin', () => {
+  const host = hostWithPaint();
+  syncMoldDraftSkin(host, report);
+  const first = host.userData.moldDraftSkin;
+  const next = {
+    ...report,
+    minDeg: 5,
+    triangles: [
+      { index: 0, signedDeg: 3, state: 'positiveBelow' },
+      { index: 1, signedDeg: 0.4, state: 'positiveBelow' },
+      { index: 2, signedDeg: -2, state: 'negative' },
+    ],
+  };
+  const skin = syncMoldDraftSkin(host, next);
+  assert.notEqual(skin, first);
+  const colors = skin.geometry.getAttribute('color').array;
+  assert.ok(Math.abs(colors[0] - MOLD_DRAFT_BELOW_RGB[0]) < 1e-6);
 });

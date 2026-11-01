@@ -18,6 +18,12 @@ function finite(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function bucketCount(bucket) {
+  if (bucket == null) return null;
+  if (typeof bucket === 'number') return finite(bucket);
+  return finite(bucket.count);
+}
+
 function roundTo(value, places) {
   const n = finite(value);
   if (n == null) return null;
@@ -102,6 +108,9 @@ export function dfmReport(analysis) {
       minDeg: finite(draft.minDeg) ?? 1,
       violationCount: finite(draft.violationCount) ?? 0,
       minDraftDeg: roundTo(draft.minDraftDeg, 1),
+      positiveAbove: bucketCount(draft.positiveAbove),
+      positiveBelow: bucketCount(draft.positiveBelow),
+      negative: bucketCount(draft.negative),
     },
     sideActions: {
       heuristic: true,

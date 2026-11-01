@@ -1,16 +1,64 @@
 /**
- * Mold-draft section of the molding results pane. Pin and sleeve counts
- * are a heuristic, and the section says so. This is not the CAD draft tool.
+ * Mold-draft section of the molding results pane.
+ *
+ * Threshold buttons rebucket the signed field. The reference plane is the
+ * shared pull control above this section. Pin and sleeve counts are a
+ * heuristic, and the section says so. This is not the CAD draft tool.
  */
 
 import React from 'react';
+import { MOLD_DRAFT_PRESETS } from '../../molding/moldDraft.js';
 
-export default function MoldDraftLegend({ legend }) {
+function areaText(area) {
+  const n = Number(area) || 0;
+  if (Math.abs(n) >= 100) return String(Math.round(n));
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function bucket(value) {
+  return {
+    count: value?.count || 0,
+    area: value?.area || 0,
+  };
+}
+
+export default function MoldDraftLegend({ legend, onThreshold = null }) {
   if (!legend) return null;
+  const minDeg = legend.minDeg ?? 1;
+  const presets = Array.isArray(legend.presets) && legend.presets.length
+    ? legend.presets
+    : MOLD_DRAFT_PRESETS;
+  const above = bucket(legend.positiveAbove);
+  const below = bucket(legend.positiveBelow);
+  const negative = bucket(legend.negative);
   const rows = [
-    { key: 'violations', label: `Below ${legend.minDeg}°`, count: legend.violations, swatch: true },
-    { key: 'pins', label: 'Ejector pin', count: legend.pins, swatch: false },
-    { key: 'sleeves', label: 'Sleeve', count: legend.sleeves, swatch: false },
+    {
+      key: 'positiveAbove',
+      label: `Positive ≥ ${minDeg}°`,
+      count: above.count,
+      area: above.area,
+      swatch: 'mold-draft-swatch-above',
+      state: 'above',
+    },
+    {
+      key: 'positiveBelow',
+      label: `Positive < ${minDeg}°`,
+      count: below.count,
+      area: below.area,
+      swatch: 'mold-draft-swatch-below',
+      state: 'below',
+    },
+    {
+      key: 'negative',
+      label: 'Negative',
+      count: negative.count,
+      area: negative.area,
+      swatch: 'mold-draft-swatch-negative',
+      state: 'negative',
+    },
+    { key: 'pins', label: 'Ejector pin', count: legend.pins || 0, swatch: null, state: null },
+    { key: 'sleeves', label: 'Sleeve', count: legend.sleeves || 0, swatch: null, state: null },
   ];
   return (
     <div
@@ -18,20 +66,42 @@ export default function MoldDraftLegend({ legend }) {
       className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Mold draft</div>
+      <div className="mt-1 flex flex-wrap gap-1" role="group" aria-label="Draft threshold">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className="mold-pull-choice text-ui-sm text-on-dark"
+            aria-pressed={Number(minDeg) === Number(preset)}
+            data-mold-draft-threshold={preset}
+            data-ui-action="data-mold-draft-threshold"
+            onClick={() => onThreshold?.(preset)}
+          >
+            {`${preset}°`}
+          </button>
+        ))}
+      </div>
       <ul className="mt-1 flex flex-col gap-1">
         {rows.map((row) => (
           <li key={row.key} className="flex items-center justify-between gap-2 text-ui-sm">
-            <span className="flex items-center gap-1 text-on-dark">
+            <span className="flex min-w-0 items-center gap-1 text-on-dark">
               {row.swatch && (
                 <span
-                  data-mold-draft-swatch=""
-                  className="inline-block h-2 w-4 rounded-sm"
-                  style={{ background: legend.css }}
+                  data-mold-draft-swatch={row.state}
+                  className={`inline-block h-2 w-4 rounded-sm ${row.swatch}`}
                 />
               )}
               {row.label}
             </span>
-            <span className="tabular-nums text-muted-on-dark">{row.count}</span>
+            <span
+              className="shrink-0 whitespace-nowrap tabular-nums text-muted-on-dark"
+              {...(row.state ? {
+                [`data-mold-draft-${row.state}`]: row.count,
+                [`data-mold-draft-${row.state}-area`]: row.area,
+              } : {})}
+            >
+              {row.area == null ? row.count : `${row.count} · ${areaText(row.area)} mm²`}
+            </span>
           </li>
         ))}
       </ul>

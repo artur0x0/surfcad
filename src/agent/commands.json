@@ -2534,7 +2534,7 @@
     },
     {
       "name": "mold_fit",
-      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters. Each group has an escape direction and an area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. A wall within 0.5° of vertical is not a side action. That split is a heuristic. count, slideCount, and lifterCount are the numbers the mold report reads. moldDraft on the same result flags side walls below 1° of draft and lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
+      "description": "Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. sideActions on the same result clusters those undercuts into slides and lifters. Each group has an escape direction and an area. A slide is an unobstructed move in the parting plane. A lifter is angled into the core. The escape is never the pull axis. A wall within 0.5° of vertical is not a side action. That split is a heuristic. count, slideCount, and lifterCount are the numbers the mold report reads. moldDraft on the same result classifies side walls by signed draft against that pull. Positive draft opens along the pull. Negative draft is back-draft. At the default 1° threshold each wall is positive above, positive below, or negative. A vertical wall is positive and below the threshold. There is no zero-draft class. It also lists ejector-pin and sleeve candidate positions. Those candidates are a heuristic. It does not edit CAD draft.",
       "args": {
         "type": "object",
         "additionalProperties": false,
@@ -2755,14 +2755,18 @@
     },
     {
       "name": "mold_draft",
-      "description": "Show or hide mold-draft violations on the active part, in the part local frame. on true flags side walls below 1° of draft relative to the mold-analysis pull and lists ejector-pin and sleeve candidate counts. Those candidates are a heuristic. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. Not CAD draft mode, not an automatic draft fix, and not a quote.",
+      "description": "Show or hide signed mold draft on the active part, in the part local frame. on true classifies each side wall against the mold-analysis pull. Positive draft opens along the pull, on an outside wall and on a hole wall. Negative draft is back-draft (the section closes along the pull). threshold is degrees in (0, 90]; the pane offers 0.5, 1, 2, 3, and 5, and 1 is the default. A side wall at or above the threshold is positive above. From 0 up to the threshold is positive below. A vertical wall is positive below. There is no zero-draft class. The result reports positiveAbove, positiveBelow, and negative, each with count and area, plus ejector-pin and sleeve candidate counts. Those candidates are a heuristic. Changing threshold rebuckets the stored field and does not measure the mesh again. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Pass threshold without on to show at that threshold. Read-only. Not CAD draft mode, not an automatic draft fix, and not a quote.",
       "args": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "on": {
             "type": "boolean",
-            "description": "true shows mold-draft violations and ejector counts. false restores paint and the part colour. Omit to toggle."
+            "description": "true shows signed mold draft and ejector counts. false restores paint and the part colour. Omit to toggle. Pass threshold without on to show at that threshold."
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Draft threshold in degrees, greater than 0 and at most 90. The pane offers 0.5, 1, 2, 3, and 5. Default is 1. A side wall at or above this angle is positive above. From 0 up to the threshold is positive below. Negative is back-draft. Omit to keep the current threshold. A change rebuckets the stored field and does not measure the mesh again."
           }
         }
       },
@@ -2772,6 +2776,7 @@
       },
       "errors": [
         "no_mesh",
+        "bad_args",
         "internal"
       ],
       "mutates": false,
@@ -2779,9 +2784,13 @@
       "confirm": false,
       "group": "measure",
       "immediate": true,
-      "uiEntry": "data-mold-draft",
+      "uiEntry": [
+        "data-mold-draft",
+        "data-mold-draft-threshold"
+      ],
       "example": {
-        "on": true
+        "on": true,
+        "threshold": 1
       }
     },
     {

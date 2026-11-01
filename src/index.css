@@ -85,6 +85,13 @@
   --agent-prompt-desktop-width: min(640px, calc(100% - 12rem));
   --agent-prompt-mobile-width: min(16rem, calc(100% - 9.5rem));
   --agent-prompt-rest-bottom: var(--agent-prompt-desktop-bottom);
+  /* Signed mold draft. Positive is one blue ramp (dark when the wall clears
+     the threshold, lighter when it does not). Negative is orange with a
+     dark hatch, so a back-draft is not red versus green. */
+  --mold-draft-above: 30 58 138; /* #1e3a8a */
+  --mold-draft-below: 59 130 246; /* #3b82f6 */
+  --mold-draft-negative: 234 88 12; /* #ea580c */
+  --mold-draft-hatch: 15 23 42; /* #0f172a */
 }
 
 /* html and body share the viewport ground. Safari 26 uses that color
@@ -530,6 +537,19 @@ textarea {
   }
   .mold-pull-choice[aria-pressed="true"] {
     background-color: rgb(var(--chrome-text) / 0.16);
+  }
+  .mold-draft-swatch-above {
+    background-color: rgb(var(--mold-draft-above));
+  }
+  .mold-draft-swatch-below {
+    background-color: rgb(var(--mold-draft-below));
+  }
+  .mold-draft-swatch-negative {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgb(var(--mold-draft-negative)) 0 3px,
+      rgb(var(--mold-draft-hatch)) 3px 5px
+    );
   }
   /* One results pane under the feature ribbon. The 4rem fallback is the
      w-16 rail (left-2, or left-4 from 1024px; right rail is right-2.5)

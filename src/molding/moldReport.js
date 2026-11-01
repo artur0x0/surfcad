@@ -60,6 +60,23 @@ function indexOf(indices) {
   return null;
 }
 
+function bucketCount(bucket) {
+  if (bucket == null) return null;
+  if (typeof bucket === 'number') return finite(bucket);
+  return finite(bucket.count);
+}
+
+/** Signed draft counts for the report row. Null when the analysis has no signed field. */
+function draftOf(moldDraft) {
+  if (!moldDraft || moldDraft.positiveAbove == null) return null;
+  return {
+    minDeg: finite(moldDraft.minDeg) ?? 1,
+    positiveAbove: bucketCount(moldDraft.positiveAbove) ?? 0,
+    positiveBelow: bucketCount(moldDraft.positiveBelow) ?? 0,
+    negative: bucketCount(moldDraft.negative) ?? 0,
+  };
+}
+
 function unit(pull) {
   const src = Array.isArray(pull) && pull.length >= 3 ? pull : [0, 0, 1];
   const x = finite(src[0]) ?? 0;
@@ -245,6 +262,7 @@ export function buildMoldReport(input = {}) {
   const sides = input.analysis?.sideActions;
   const sideActionCount = finite(sides?.count)
     ?? ((finite(sides?.slideCount) ?? 0) + (finite(sides?.lifterCount) ?? 0));
+  const draft = draftOf(input.analysis?.moldDraft);
   const tons = projected == null ? null : requiredTonnage(projected);
   const notes = {
     mass: null,
@@ -342,6 +360,7 @@ export function buildMoldReport(input = {}) {
       volumeCm3,
       projectedAreaMm2: projected,
       sideActionCount,
+      draft,
     },
     estimates,
     notes,

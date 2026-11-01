@@ -53,26 +53,51 @@ export function pullStamp(pull) {
   return parts.join(',');
 }
 
-function keyOf(tool, mesh, pull) {
+function draftThresholdKey(detail) {
+  const n = Number(detail);
+  if (!Number.isFinite(n) || n <= 0) return '1';
+  return String(n);
+}
+
+function keyOf(tool, mesh, pull, detail) {
   const stamp = meshStamp(mesh);
   if (!stamp) return null;
   const pullKey = PULL_TOOLS.has(tool) ? pullStamp(pull) : '';
+  if (tool === 'draft') return `${tool}|${stamp}|${pullKey}|${draftThresholdKey(detail)}`;
   return `${tool}|${stamp}|${pullKey}`;
+}
+
+function draftPrefix(mesh, pull) {
+  const stamp = meshStamp(mesh);
+  if (!stamp) return null;
+  return `draft|${stamp}|${pullStamp(pull)}|`;
 }
 
 export function createMoldToolCache() {
   const store = new Map();
   return {
-    get(tool, mesh, pull) {
-      const key = keyOf(tool, mesh, pull);
+    get(tool, mesh, pull, detail) {
+      const key = keyOf(tool, mesh, pull, detail);
       if (!key || !store.has(key)) return { hit: false, value: null };
       return { hit: true, value: store.get(key) };
     },
-    set(tool, mesh, pull, value) {
-      const key = keyOf(tool, mesh, pull);
+    set(tool, mesh, pull, value, detail) {
+      const key = keyOf(tool, mesh, pull, detail);
       if (!key) return false;
       store.set(key, value);
       return true;
+    },
+    /**
+     * Signed draft field for this mesh and reference plane, at any threshold.
+     * A threshold change rebuckets this field instead of measuring again.
+     */
+    findDraftBase(mesh, pull) {
+      const prefix = draftPrefix(mesh, pull);
+      if (!prefix) return null;
+      for (const [key, value] of store) {
+        if (key.startsWith(prefix) && value) return value;
+      }
+      return null;
     },
     /** Drop every tool stored for this mesh. Other meshes stay. */
     invalidateMesh(mesh) {

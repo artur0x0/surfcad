@@ -77,6 +77,13 @@ export default function MoldReportPanel({
           testId="sides"
           value={Number.isFinite(geometry.sideActionCount) ? String(geometry.sideActionCount) : null}
         />
+        {geometry.draft && (
+          <Row
+            label="Draft"
+            testId="draft"
+            value={`${geometry.draft.positiveAbove} above · ${geometry.draft.positiveBelow} below ${geometry.draft.minDeg}° · ${geometry.draft.negative} back-draft`}
+          />
+        )}
       </dl>
       <div className="my-2 border-t border-chrome-border" data-mold-report-break="" />
       <label className="block text-ui-sm text-muted-on-dark">
