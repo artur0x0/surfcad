@@ -355,6 +355,11 @@ jobs:
             echo "agent bridge h16 golden skipped because Chrome was not found; CI must launch it"
             exit 1
           fi
+          bounded "agent bridge h17" node scripts/golden/smoke_agent_bridge_h17.mjs | tee "${RUNNER_TEMP}/agent-bridge-h17.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h17.log"; then
+            echo "agent bridge h17 golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
           bounded "agent git consent" node scripts/golden/smoke_agent_git_consent.mjs | tee "${RUNNER_TEMP}/agent-git-consent.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-git-consent.log"; then
             echo "agent git consent golden skipped because Chrome was not found; CI must launch it"

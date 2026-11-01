@@ -365,3 +365,58 @@ test('loft and sweep previews follow the filled slots', () => {
   assert.ok(sweepPreview.payload.stations.length >= 2);
   assert.equal(sweepPreview.payload.closed, true);
 });
+
+test('an extrude slot keeps every assigned contour and one contour still emits c1.contours', () => {
+  const outer = composeContourProfile(STARTER, {
+    face: FACE,
+    tool: 'rectangle',
+    params: { width: 40, height: 24, centered: true },
+  });
+  const inner = composeContourProfile(outer.buffer, {
+    face: FACE,
+    tool: 'rectangle',
+    params: { width: 20, height: 12, centered: true },
+  });
+  const saved = listSavedContours(inner.buffer);
+  let card = emptyFeatureSlotCard('makeExtrude');
+  card = assignFeatureSlot(card, { role: 'profile' }, saved[0]);
+  assert.equal(card.profile.contourName, 'c1');
+  assert.equal(card.profiles.length, 1);
+  card = assignFeatureSlot(card, { role: 'profile', loopRole: 'hole' }, saved[1]);
+  assert.equal(card.profiles.length, 2);
+  assert.equal(card.profile.contourName, 'c1');
+  assert.equal(card.profiles[1].loopRole, 'hole');
+  const single = assignFeatureSlot(emptyFeatureSlotCard('makeExtrude'), { role: 'profile' }, saved[0]);
+  const one = composeContourExtrude(inner.buffer, featureSlotCommitPayload({
+    ...single,
+    extrude: { distance: 25, sense: 'positive', direction: 'normal' },
+  }));
+  assert.equal(one.ok, true, one.message);
+  assert.match(one.buffer, /makeExtrude\(c1\.contours, 25\)/);
+  assert.doesNotMatch(one.buffer, /concat/);
+  const both = composeContourExtrude(inner.buffer, featureSlotCommitPayload({
+    ...card,
+    extrude: { distance: 10, sense: 'positive', direction: 'normal' },
+  }));
+  assert.equal(both.ok, true, both.message);
+  assert.match(both.buffer, /makeExtrude\(\[\]\.concat\(c1\.contours, c2\.contours\), 10\)/);
+  const block = listContourExtrudeBlocks(both.buffer)[0].text;
+  const reopened = featureSlotCardFromEdit({
+    entry: 'makeExtrude',
+    block,
+  }, saved);
+  assert.equal(reopened.profiles.length, 2);
+  assert.equal(reopened.profiles[1].loopRole, 'hole');
+  assert.equal(reopened.profile.contourName, 'c1');
+  const filled = assignFeatureSlot(card, { role: 'profile', loopRole: 'outer' }, saved[1]);
+  assert.equal(filled.profiles.length, 2);
+  const union = composeContourExtrude(inner.buffer, featureSlotCommitPayload({
+    ...filled,
+    extrude: { distance: 10, sense: 'positive', direction: 'normal' },
+  }));
+  assert.equal(union.ok, true, union.message);
+  assert.match(union.buffer, /makeExtrude\(c1\.contours, 10\)\.add\(makeExtrude\(c2\.contours, 10\)\)/);
+  const dropped = assignFeatureSlot(reopened, { role: 'profile', remove: true }, saved[1]);
+  assert.equal(dropped.profiles.length, 1);
+  assert.equal(dropped.profile.contourName, 'c1');
+});

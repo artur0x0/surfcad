@@ -64,7 +64,7 @@ What the markers buy you:
 
 Script snippet feature. When no insert_* can do an operation, insert_code_snippet { gap, why, script } adds one block (its first line is // FEATURE-GAP: <missing feature or option> | <why the existing feature did not work>); script reads and sets part. Use set_script { part_id, source } only to rewrite a whole part; part_id must be the active part. Never redeclare a reserved helper name (cut, hole, shell, filletEdges, convexEdges, ...; the set_script description lists them): rename your variable.
 
-Sketch sessions. sketch_begin → sketch_add { tool, ... } / pick_points { kind, keys } → sketch_commit saves a contour; sketch_cancel leaves. In-contour entities are p0, e0, a0, ...; a saved contour is @contour id=c1 in the script.`;
+Sketch sessions. sketch_begin → sketch_add { tool, ... } / pick_points { kind, keys } → sketch_commit saves a contour; sketch_cancel leaves. A second closed sketch_add adds a loop on the same sketch. slot_assign_contour on Extrude accepts several contours; loop_role is auto, outer, or hole. In-contour entities are p0, e0, a0, ...; a saved contour is @contour id=c1 in the script.`;
 
 const SELECTION = `Selection. Faces and edges are addressed by keys that survive a rerun of the same script and are invalid after a remesh.
 
