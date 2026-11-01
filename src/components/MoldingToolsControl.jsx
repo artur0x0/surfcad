@@ -15,8 +15,8 @@ import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
   ArrowUpFromLine,
-  ClipboardList,
   Factory,
+  Receipt,
   SquareSplitHorizontal,
 } from 'lucide-react';
 import { pressMoldTool } from './pressMoldTool';
@@ -123,7 +123,7 @@ const MoldingToolsControl = ({
               data-mold-dfm-state={toolState(reportActive, reportPending)}
               data-ui-action="data-mold-dfm"
             >
-              <ClipboardList size={20} />
+              <Receipt size={20} />
             </button>
           )}
         </div>

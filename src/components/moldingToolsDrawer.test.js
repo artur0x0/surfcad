@@ -48,6 +48,8 @@ test('the molding drawer replaces the rail column and the triad', async () => {
   const drawer = read('src/components/MoldingToolsControl.jsx');
   const view = read('src/components/Viewport.jsx');
   assert.match(drawer, /data-mold-tools-popup/);
+  assert.match(drawer, /<Receipt size=\{20\} \/>/);
+  assert.doesNotMatch(drawer, /ClipboardList/);
   assert.match(drawer, /w-max flex-nowrap/);
   assert.match(drawer, /gap-1/);
   assert.doesNotMatch(drawer, /gap-2/);
