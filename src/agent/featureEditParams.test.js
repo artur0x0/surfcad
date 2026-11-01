@@ -25,6 +25,22 @@ test('cube pose and size pass, and an unknown key does not', () => {
   assert.match(featureEditParamError('cube', { center: 1 }).message, /center must be a boolean/);
 });
 
+test('a draft accepts the insert params as well as angle and flip', () => {
+  assert.equal(featureEditParamError('draft', { angle: -1 }), null);
+  assert.equal(featureEditParamError('draft', { draftDeg: -1, pull: '-z', reference: 'max', faceScope: 'sides' }), null);
+  assert.equal(featureEditParamError('draft', { flip: true, reference: 4 }), null);
+  for (const key of ['draftDeg', 'pull', 'reference', 'faceScope']) {
+    const bad = featureEditParamError('draft', { [key]: 'nope' });
+    assert.equal(bad.code, 'bad_args', key);
+    assert.match(bad.message, new RegExp(key));
+  }
+  const disagree = featureEditParamError('draft', { angle: 1, draftDeg: -1 });
+  assert.match(disagree.message, /disagree/);
+  const unknown = featureEditParamError('draft', { wall: 2 });
+  assert.match(unknown.message, /draft has no param wall/);
+  assert.match(unknown.message, /draftDeg/);
+});
+
 test('a fillet accepts radius; a kind with no list is left to its own writer', () => {
   assert.equal(featureEditParamError('fillet', { radius: 2 }), null);
   assert.equal(featureEditParamError('contour', { width: 44, distance: 5 }), null);

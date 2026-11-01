@@ -224,6 +224,13 @@ function topLevelArgs(src, fnName) {
   return splitArgs(loc.inner);
 }
 
+/** Replace `key: <literal>` inside a draftFaces options object. */
+function replaceDraftOption(block, key, literal) {
+  const re = new RegExp(`(${key}:\\s*)(?:'[^']*'|"[^"]*"|\\[[^\\]]*\\]|\\{[^}]*\\}|-?\\d+(?:\\.\\d+)?)`);
+  if (!re.test(block)) return block;
+  return block.replace(re, `$1${literal}`);
+}
+
 function replaceNthArg(block, fnName, index, literal) {
   const loc = locateCall(block, fnName);
   if (!loc) return block;
@@ -1179,8 +1186,25 @@ function rewriteBlock(block, session, draft) {
   } else if (kind === 'shell') {
     setNum(new RegExp(`(hollow\\s*\\(\\s*[^,]+,\\s*)(${NUM})`), 'wall');
   } else if (kind === 'draft') {
-    if (!sameValue(fields.angle, prev.angle) && fields.angle != null) {
-      next = replaceNthArg(next, 'draftFaces', 2, lit(fields.angle));
+    // insert_add_draft writes draftDeg; the card writes angle. Either edits
+    // the same argument. flip: true negates a positive angle and leaves an
+    // already-negative angle alone.
+    let angle = fields.draftDeg != null ? fields.draftDeg : fields.angle;
+    if (fields.flip === true && prev.flip !== true && angle != null && angle > 0) angle = -angle;
+    if (angle != null && !sameValue(angle, prev.angle)) {
+      next = replaceNthArg(next, 'draftFaces', 2, lit(angle));
+    }
+    if (typeof fields.pull === 'string') {
+      next = replaceDraftOption(next, 'pull', `'${fields.pull}'`);
+    }
+    if (fields.reference != null && (typeof fields.reference === 'string' || typeof fields.reference === 'number')) {
+      const refLit = typeof fields.reference === 'number' ? lit(fields.reference) : `'${fields.reference}'`;
+      next = replaceDraftOption(next, 'reference', refLit);
+    }
+    if (typeof fields.faceScope === 'string') {
+      const want = `'${fields.faceScope}'`;
+      const args = topLevelArgs(next, 'draftFaces');
+      if (args && args[1] !== want) next = replaceNthArg(next, 'draftFaces', 1, want);
     }
   } else if (kind === 'cut') {
     setNum(new RegExp(`(originOffset:\\s*)(${NUM})`), 'originOffset');
