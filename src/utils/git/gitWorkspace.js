@@ -51,13 +51,7 @@ export {
 } from './partIdentity.js';
 import { stringifySurfJson } from './surfJson.js';
 import { isV2SurfId, mintSurfId, partSurfId, readSurfId, stripSurfId, withSurfId } from './surfId.js';
-import {
-  detectVaultLayout,
-  isLegacyVaultTree,
-  listLegacyAssemblies,
-  openLegacyAssembly,
-  UnsupportedVaultLayoutError,
-} from './legacyVault/index.js';
+import { assertVaultOpenable } from './vaultUpgrade.js';
 import {
   listV2Assemblies,
   listV2BrowseItems,
@@ -71,7 +65,6 @@ import {
   captureBaselineFromTip,
   remapTipDocThroughPairs,
 } from './gitBaseline.js';
-import { sidecarIsDirty } from './workingSidecar.js';
 import { partScriptMatchesCommitted } from './planSave.js';
 export { baselineScriptsKeepingTip, captureBaseline, captureBaselineFromTip, remapTipDocThroughPairs };
 
@@ -191,48 +184,13 @@ export function isWorkspaceDirty(doc, scripts, baseline, opts) {
   return dirtyPartIds(doc, scripts, baseline, opts).size > 0;
 }
 
-/**
- * Follow-up Save after Upgrade: dirty vs the post-open baseline (ids after
- * collapse), not vs the pre-upgrade v1 path tree. Empty editor buffers are
- * not live edits — same rule as gitDirtyLiveScript / Save.
- * §4.3: a clean WC stops after the Upgrade commit.
- */
-export function isUpgradeWorkingCopyDirty({
-  sidecar = null,
-  doc = null,
-  scripts = null,
-  baseline = null,
-  liveId = null,
-  liveScript = null,
-  editorLive = false,
-} = {}) {
-  if (sidecarIsDirty(sidecar)) return true;
-  if (!doc || !baseline) return false;
-  const live = gitDirtyLiveScript({
-    source: doc.source,
-    activeId: doc.activeId,
-    highlightId: liveId != null ? liveId : doc.activeId,
-    editorLive: editorLive === true,
-    script: liveScript,
-  });
-  return isWorkspaceDirty(doc, scripts, baseline, {
-    liveId: doc.activeId,
-    liveScript: live,
-  });
-}
-
-/** Assembly names in the vault on `ref` (default branch). */
+/** Assembly names in the vault on `ref` (default branch). v2 id layout only. */
 export async function listVaultAssemblies(adapter, repo, ref) {
   assertGithubAdapter(adapter);
-  const detected = await detectVaultLayout(adapter, repo, ref || 'main');
-  if (detected.layout === 'legacy') {
-    return listLegacyAssemblies(adapter, repo, ref);
-  }
-  if (detected.layout === 'v2') {
-    const rows = await listV2Assemblies(adapter, repo, ref || 'main');
-    return rows.map((row) => row.name);
-  }
-  throw new UnsupportedVaultLayoutError(detected.layout);
+  const branch = ref || 'main';
+  await assertVaultOpenable(adapter, repo, branch);
+  const rows = await listV2Assemblies(adapter, repo, branch);
+  return rows.map((row) => row.name);
 }
 
 /**
@@ -318,20 +276,13 @@ export function seedEmptyVaultAssembly(assemblyName, {
 }
 
 /**
- * Open one vault assembly. v1 trees go through the isolated legacy reader
- * (missing blob → `missing` row, never ''). v2 opens by assembly id.
+ * Open one vault assembly by surf id. The version check lives in
+ * `openV2Assembly`. An older or unknown marker is not opened.
  */
 export async function openVaultAssembly(adapter, repo, assemblyName, opts = {}) {
   assertGithubAdapter(adapter);
   const branch = opts.branch || 'main';
-  const detected = await detectVaultLayout(adapter, repo, branch);
-  if (detected.layout === 'legacy') {
-    return openLegacyAssembly(adapter, repo, assemblyName, opts);
-  }
-  if (detected.layout === 'v2') {
-    return openV2Assembly(adapter, repo, assemblyName, { ...opts, branch });
-  }
-  throw new UnsupportedVaultLayoutError(detected.layout);
+  return openV2Assembly(adapter, repo, assemblyName, { ...opts, branch });
 }
 
 /** Suggest `parts/Part (n).js` for the next empty slot. */
@@ -396,50 +347,21 @@ export async function readVaultPart(adapter, repo, path, ref = 'main') {
 
 /**
  * G11: browse vault for Open — assemblies and part scripts on `ref`.
- * One listTree. v2 rows (`assemblies/<id>.surf.json`, `parts/<id>.js`)
- * come from `listV2BrowseItems`: id-keyed, named from the assembly files.
- * v1 folders are listed by name only while the tree still has them
- * (TEMPORARY until Artur's vault is upgraded; PR 10 drops that branch).
- * A tree or assembly read that fails throws; the caller shows the error.
+ * One listTree after the version check. v2 rows
+ * (`assemblies/<id>.surf.json`, `parts/<id>.js`) come from
+ * `listV2BrowseItems`: id-keyed, named from the assembly files.
+ * An older or unknown marker throws. A tree or assembly read that fails
+ * throws; the caller shows the error.
  * -> { assemblies: [{ kind:'assembly', name, label, id? , partIds? }],
  *      parts: [{ kind:'part', path, label, scope? , id?, name?, assemblies? }] }
  */
 export async function listVaultBrowseItems(adapter, repo, ref) {
   assertGithubAdapter(adapter);
+  await assertVaultOpenable(adapter, repo, ref);
   const tree = await adapter.listTree(repo, ref);
   const v2 = await listV2BrowseItems(adapter, repo, ref, { tree });
   const assemblies = [...v2.assemblies];
   const parts = [...v2.parts];
-  if (isLegacyVaultTree(tree)) {
-    const v2Paths = new Set(parts.map((item) => item.path));
-    assemblies.push(...listAssemblies(tree).map((name) => ({
-      kind: 'assembly',
-      name,
-      label: name,
-    })));
-    assemblies.sort((a, b) => a.name.localeCompare(b.name));
-    const { shared, byAssembly } = listPartScripts(tree);
-    for (const path of shared) {
-      // `parts/<id>.js` is already a v2 row; a name-stem file is v1.
-      if (v2Paths.has(path)) continue;
-      parts.push({
-        kind: 'part',
-        path,
-        label: path.split('/').pop() || path,
-        scope: 'shared',
-      });
-    }
-    for (const [asm, paths] of Object.entries(byAssembly)) {
-      for (const path of paths) {
-        parts.push({
-          kind: 'part',
-          path,
-          label: path.split('/').pop() || path,
-          scope: asm,
-        });
-      }
-    }
-  }
   parts.sort((a, b) => a.path.localeCompare(b.path));
   return { assemblies, parts };
 }

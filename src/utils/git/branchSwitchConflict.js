@@ -8,8 +8,8 @@
  *
  * Switch used to open two dialogs on the same popup: adoptVaultOpening's
  * outbox hold (Stay on branch / Open on GitHub / Overwrite main) and
- * checkGitRemoteBehind's main-moved check (Dismiss / Get latest / Save mine
- * / Overwrite). The second effect replaced the first. Neither runs on switch.
+ * checkGitRemoteBehind's main-moved notice. The second effect replaced the
+ * first. Neither runs on switch.
  */
 import { definitionStampName, partDefinitionId } from '../assembly.js';
 import { assemblyIdPath, partIdPath } from './idPaths.js';

@@ -11,12 +11,10 @@ import { buildFeatureTree } from '../agent/state/featureTree.js';
 import { runScript } from '../lib/surfcad/index.js';
 import { createMockGithubAdapter } from './git/mockGithubAdapter.js';
 import { findOrCreateVault } from './git/vault.js';
-import { dirtyPartIds, isWorkspaceDirty, openVaultAssembly } from './git/gitWorkspace.js';
-import { assembleCommitFiles } from './git/gitCommit.js';
+import { openVaultAssembly } from './git/gitWorkspace.js';
 import { fileWrite } from './git/githubAdapterInterface.js';
 import { stringifySurfJson } from './git/surfJson.js';
 import { assemblyFilePath, assemblyPartPath } from './git/vaultLayout.js';
-import { partRepoPath } from './git/partIdentity.js';
 import { mintSurfId, withSurfId } from './git/surfId.js';
 import {
   CODE_BEGIN,
@@ -25,7 +23,6 @@ import {
   scriptNeedsCodeWrap,
   unmarkedCodeChip,
   wrapRawScript,
-  wrapUnmarkedPartScripts,
 } from './wrapRawScript.js';
 
 const RAW = [
@@ -139,42 +136,14 @@ test('opening unmarked repo or browser source shows a Code chip with zero unsave
   assert.equal(localScripts[localId], RAW);
   assert.equal(scriptNeedsCodeWrap(RAW), true);
 
-  const { gh, vault, name, parts, headSha } = await seedUnmarkedVault();
-  const opened = await openVaultAssembly(gh, vault.repo, name, {
-    branch: 'main',
-    headSha,
-  });
-  const part = opened.doc.parts[0];
-  const id = part.id;
-  const path = partRepoPath(part) || parts[0].path;
-  assert.equal(opened.scripts[id], RAW);
-  const chips = featureStripChips(opened.scripts[id]);
-  assert.equal(chips.length, 1);
-  assert.equal(chips[0].kind, 'code');
-  assert.equal(chips[0].virtual, true);
-  const snap = snapshotPartScripts(opened.scripts);
-  const edited = editedPartIdsSinceSnapshot(snap, opened.scripts, { partIds: [id] });
-  const gitIds = [...dirtyPartIds(opened.doc, opened.scripts, opened.baseline)];
-  const dirty = buildDirtyState({
-    editedSinceLoad: edited,
-    partIds: gitIds,
-    workspaceDirty: isWorkspaceDirty(opened.doc, opened.scripts, opened.baseline),
-  });
-  assert.equal(dirty.unsaved, false);
-  assert.deepEqual(dirty.editedSinceLoad, []);
-  assert.equal(dirty.workspaceDirty, false);
-  assert.deepEqual(dirty.partIds, []);
-  const noop = await assembleCommitFiles(gh, vault.repo, {
-    doc: opened.doc,
-    scripts: opened.scripts,
-    baseline: opened.baseline,
-    message: 'noop',
-  });
-  assert.equal(noop.status, 'clean');
-  const onDisk = await gh.readFile(vault.repo, path, 'main');
-  assert.equal(onDisk.content, RAW);
-  const head = await gh.getBranch(vault.repo, 'main');
-  assert.equal(head.sha, headSha);
+  const { gh, vault, name, headSha } = await seedUnmarkedVault();
+  const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
+  assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
 });
 
 test('wrapping unmarked source does not change volume or mesh bytes', { timeout: 60_000 }, async () => {
@@ -193,50 +162,18 @@ test('wrapping unmarked source does not change volume or mesh bytes', { timeout:
   after.manifold?.delete?.();
 });
 
-test('Save of an opened unmarked part writes the wrapped script', async () => {
+test('opening a version-1 folder vault is refused and writes nothing', async () => {
   const { gh, vault, name, headSha } = await seedUnmarkedVault('wrap-save');
-  const opened = await openVaultAssembly(gh, vault.repo, name, {
-    branch: 'main',
-    headSha,
-  });
-  const part = opened.doc.parts[0];
-  const id = part.id;
-  const path = partRepoPath(part);
-  assert.equal(opened.scripts[id], RAW);
-  const edited = `${RAW}// edit\n`;
-  const scripts = { ...opened.scripts, [id]: edited };
-  const wrapIds = dirtyPartIds(opened.doc, scripts, opened.baseline);
-  assert.deepEqual([...wrapIds], [id]);
-  const wrappedScripts = wrapUnmarkedPartScripts(scripts, wrapIds);
-  assert.notEqual(wrappedScripts[id], edited);
-  assert.ok(wrappedScripts[id].includes(CODE_BEGIN));
-  const ready = await assembleCommitFiles(gh, vault.repo, {
-    doc: opened.doc,
-    scripts: wrappedScripts,
-    baseline: opened.baseline,
-    message: 'wrap markers',
-  });
-  assert.equal(ready.status, 'ready');
-  const file = ready.files.find((row) => row.path === path);
-  assert.ok(file);
-  assert.ok(file.content.includes(CODE_BEGIN));
-  assert.ok(file.content.includes('Manifold.cube([20, 20, 20], true)'));
-  const committed = await gh.commitFiles(vault.repo, {
-    branch: 'main',
-    message: ready.message,
-    files: ready.files,
-    baseSha: headSha,
-  });
-  const saved = await gh.readFile(vault.repo, path, 'main');
-  assert.ok(saved.content.includes(CODE_BEGIN));
-  assert.ok(saved.content.includes(CODE_END));
-  assert.ok(saved.content.includes('Manifold.cube([20, 20, 20], true)'));
-  const head = await gh.getBranch(vault.repo, 'main');
-  assert.equal(head.sha, committed.sha);
-  assert.notEqual(head.sha, headSha);
+  const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
+  assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
 });
 
-test('Save of edited part A does not wrap or rewrite untouched unmarked part B', async () => {
+test('a version-1 folder vault with two parts is refused and writes nothing', async () => {
   const { gh, vault, name, headSha } = await seedUnmarkedVault('wrap-scope', {
     name: 'WrapScope',
     rows: [
@@ -244,50 +181,13 @@ test('Save of edited part A does not wrap or rewrite untouched unmarked part B',
       { id: '5f0c3c1e-0000-4000-8000-0000000000bb', name: 'Untouched' },
     ],
   });
-  const opened = await openVaultAssembly(gh, vault.repo, name, {
-    branch: 'main',
-    headSha,
-  });
-  const partA = opened.doc.parts.find((row) => row.name === 'Edited');
-  const partB = opened.doc.parts.find((row) => row.name === 'Untouched');
-  const idA = partA.id;
-  const idB = partB.id;
-  const pathA = partRepoPath(partA);
-  const pathB = partRepoPath(partB);
-  assert.equal(opened.scripts[idA], RAW);
-  assert.equal(opened.scripts[idB], RAW);
-  const editedA = `${RAW}// save A\n`;
-  const live = { ...opened.scripts, [idA]: editedA };
-  assert.equal(wrapUnmarkedPartScripts(live)[idA], editedA);
-  const wrapIds = dirtyPartIds(opened.doc, live, opened.baseline);
-  assert.deepEqual([...wrapIds], [idA]);
-  const wrapped = wrapUnmarkedPartScripts(live, wrapIds);
-  assert.ok(wrapped[idA].includes(CODE_BEGIN));
-  assert.equal(wrapped[idB], RAW);
-  const ready = await assembleCommitFiles(gh, vault.repo, {
-    doc: opened.doc,
-    scripts: wrapped,
-    baseline: opened.baseline,
-    message: 'save A',
-  });
-  assert.equal(ready.status, 'ready');
-  const paths = ready.files.map((row) => row.path);
-  assert.ok(paths.includes(pathA));
-  assert.equal(paths.includes(pathB), false);
-  const fileA = ready.files.find((row) => row.path === pathA);
-  assert.ok(fileA.content.includes(CODE_BEGIN));
-  const committed = await gh.commitFiles(vault.repo, {
-    branch: 'main',
-    message: ready.message,
-    files: ready.files,
-    baseSha: headSha,
-  });
-  const savedA = await gh.readFile(vault.repo, pathA, 'main');
-  const savedB = await gh.readFile(vault.repo, pathB, 'main');
-  assert.ok(savedA.content.includes(CODE_BEGIN));
-  assert.equal(savedB.content, RAW);
-  const head = await gh.getBranch(vault.repo, 'main');
-  assert.equal(head.sha, committed.sha);
+  const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
+  assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
 });
 
 test('wrap-on-Save adopts wrapped text as undo head and leaves dirty clean', () => {

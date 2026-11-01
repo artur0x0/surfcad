@@ -842,7 +842,7 @@ export const COMMAND_META = {
   open_assembly: {
     description: 'Open a vault assembly by opaque assembly_id only. A name or path is unknown_assembly. Does not write git.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_assembly', 'git_only', 'git_blocked', 'internal'],
+    errors: ['bad_args', 'unknown_assembly', 'unsupported_vault_version', 'git_only', 'git_blocked', 'internal'],
     mutates: true,
   },
   open_part: {
@@ -862,9 +862,9 @@ export const COMMAND_META = {
     mutates: true,
   },
   list_assemblies: {
-    description: 'List the assemblies the Open picker shows as [{ id, name, open }]: saved v2 assemblies, the open working copy (also when it is not saved yet, or local), and on a legacy vault its name-only folders as { id: null, name, legacy: true }. id is an opaque surf id; name is a label, not a key. No path field.',
+    description: 'List the assemblies the Open picker shows as [{ id, name, open }]: saved v2 assemblies and the open working copy (also when it is not saved yet, or local). An older or unknown vault version returns unsupported_vault_version and is not listed. id is an opaque surf id; name is a label, not a key. No path field.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['git_blocked', 'internal'],
+    errors: ['unsupported_vault_version', 'git_blocked', 'internal'],
     mutates: false,
   },
   delete_part: {
@@ -878,7 +878,7 @@ export const COMMAND_META = {
   delete_assembly: {
     description: 'Delete an assembly by opaque assembly_id, whether it is open or not. Requires confirm: true. One commit deletes assemblies/<id>.surf.json. delete_parts also deletes parts/<id>.js when no other assembly references that id. A never-saved open assembly is removed from the working copy only. Returns the assemblies that use its parts. Nothing is written until confirm: true.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'conflict', 'pending_save', 'delete_refused', 'upgrade_required', 'no_assembly', 'internal'],
+    errors: ['bad_args', 'unknown_assembly', 'confirm_required', 'conflict', 'pending_save', 'delete_refused', 'unsupported_vault_version', 'no_assembly', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
@@ -1073,9 +1073,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_save: {
-    description: 'The only vault content write, same planSave path as the Save button. message required. Working-copy tools do not commit. consent_pending: Allow dialog is up; retry the same call after the user clicks Allow. pending_save: an offline plan is waiting; Save again when online. upgrade_required: legacy vault; call git_upgrade_vault { confirm: true } after the user agrees. conflict or repo-moved: a remote edit overlaps this Save; git_force_overwrite, or git_behind_resolve { action: "reload" | "branch", confirm: true }, or stop. Checked out on main: save_on_main and nothing is written; git_branch_create { name }, then git_save { message } on that branch. Results omit path fields. Over the wire a save is many GitHub round trips: when it is still running after about 20 s the call answers { status: "running", saveId } and the save keeps going; poll git_save_status { save_id } until it answers the save result (committed, clean, or the same errors).',
+    description: 'The only vault content write, same planSave path as the Save button. message required. Working-copy tools do not commit. consent_pending: Allow dialog is up; retry the same call after the user clicks Allow. pending_save: an offline plan is waiting; Save again when online. unsupported_vault_version: the vault marker is not the current format and no upgrade step is registered. conflict or repo-moved: a remote edit overlaps this Save; git_force_overwrite, or git_behind_resolve { action: "reload" | "branch", confirm: true }, or stop. Checked out on main: save_on_main and nothing is written; git_branch_create { name }, then git_save { message } on that branch. Results omit path fields. Over the wire a save is many GitHub round trips: when it is still running after about 20 s the call answers { status: "running", saveId } and the save keeps going; poll git_save_status { save_id } until it answers the save result (committed, clean, or the same errors).',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
+    errors: ['bad_args', 'unsupported_vault_version', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
     mutates: true,
   },
   git_save_status: {
@@ -1085,7 +1085,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   git_upgrade_vault: {
-    description: 'Upgrade a legacy (v1 folder-layout) vault to v2 in one commit of remote tip bytes, then Save a dirty working copy as a second commit under the same confirmation. Requires confirm: true. Never runs on load. On v2 returns already_upgraded. Success is a summary: status, commit SHAs, assemblyIds, counts, leftoverFiles paths, and warnings — not the full plan, file contents, meshes, partBindings paths, or rekey.scripts.',
+    description: 'Generic vault-format upgrade. Reads surfcad.json kind and version. No step is registered, so the current version returns already_upgraded and an older or unknown version returns unsupported_vault_version. confirm: true is required only when a step is registered for that version. Never runs on open. A step result is a summary: status, commit SHAs, assemblyIds, counts, leftoverFiles paths, and warnings — not the full plan, file contents, meshes, partBindings paths, or rekey.scripts.',
     result: {
       type: 'object',
       additionalProperties: false,
@@ -1114,7 +1114,7 @@ export const COMMAND_META = {
         error: { type: 'string' },
       },
     },
-    errors: ['confirm_required', 'upgrade_unavailable', 'conflict', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'git_error', 'working_copy_unpersisted', 'internal'],
+    errors: ['confirm_required', 'unsupported_vault_version', 'conflict', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'git_error', 'internal'],
     mutates: true,
     destructive: true,
     confirm: true,
@@ -1122,7 +1122,7 @@ export const COMMAND_META = {
   git_add_to_repo: {
     description: 'Alias of git_save. Prefer git_save. Same planSave / writeVaultCommit path. Message required. Checked out on main: save_on_main and nothing is written; git_branch_create { name }, then git_save { message } on that branch. Results omit path fields.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
+    errors: ['bad_args', 'unsupported_vault_version', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
     mutates: true,
   },
   git_behind_resolve: {

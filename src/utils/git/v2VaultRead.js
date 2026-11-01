@@ -4,6 +4,7 @@
  */
 import { assemblyName, partDefinitionId, serializeAssembly } from '../assembly.js';
 import { assertGithubAdapter } from './githubAdapterInterface.js';
+import { assertVaultOpenable } from './vaultUpgrade.js';
 import { assemblyIdPath, parseIdPath, partIdPath, partMeshIdPath } from './idPaths.js';
 import { mapLimit, VAULT_READ_CONCURRENCY } from './mapLimit.js';
 import { readMeshBytes } from './meshSync.js';
@@ -228,9 +229,10 @@ async function loadV2Meshes(adapter, repo, branch, parts) {
  */
 export async function openV2Assembly(adapter, repo, assemblyId, opts = {}) {
   assertGithubAdapter(adapter);
+  const branch = opts.branch || 'main';
+  await assertVaultOpenable(adapter, repo, branch);
   const id = typeof assemblyId === 'string' ? assemblyId.trim() : '';
   if (!isV2SurfId(id)) throw notFoundError(assemblyId);
-  const branch = opts.branch || 'main';
   const assemblyPath = assemblyIdPath(id);
   const file = await adapter.readFile(repo, assemblyPath, branch);
   if (!file || file.content == null) throw notFoundError(id);

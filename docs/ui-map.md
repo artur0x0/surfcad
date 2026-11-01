@@ -406,11 +406,8 @@ Desktop specifics:
   44px tall. It is hidden when the current branch is the default (`main`).
   Squash-merge behaviour is unchanged.
   Desktop git Save (`data-git-save`) is a split button; the chevron
-  (`data-assembly-save-menu`) opens **Rename assembly** and, when the open
-  vault is legacy, **Upgrade vault** (`data-assembly-upgrade-menu`). That
-  item is hidden on a v2 vault, when no git vault is connected, and on
-  mobile (the phone ribbon has Save without this menu). Clicking it opens
-  the existing Upgrade vault confirm (`data-git-upgrade-prompt`).
+  (`data-assembly-save-menu`) opens **Rename assembly**. There is no Upgrade
+  vault item. Mobile has Save without this menu.
   Signed out (local, no GitHub token), the **+** menu (`data-part-add-dropdown`)
   and the folder menu (`data-part-open-dropdown`) both offer **Part** and
   **Assembly**. Part opens the name dialog and creates a local-only part

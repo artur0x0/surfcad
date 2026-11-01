@@ -15,11 +15,8 @@ import {
   prepareVaultPartRename,
 } from '../src/utils/git/gitCommit.js';
 import { ensureAssemblyVaultPaths, allocateVaultPartPath } from '../src/utils/git/partVaultPath.js';
-import { findAssemblyPart } from '../src/utils/git/partIdentity.js';
-import { isSurfId } from '../src/utils/git/surfId.js';
 import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
 import { renamePartCommand } from '../src/agent/commands/document.js';
-import { buildPartsState } from '../src/agent/state/parts.js';
 
 const ASM = 'Kettle-MCP';
 const IDS = [
@@ -83,34 +80,15 @@ test('create -> git_save -> reload keeps the same id', async () => {
   ]);
   assert.equal(raw.parts.some((part) => String(part.path).startsWith('parts/')), false);
 
-  const opened = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: first.sha,
-  });
-  const openedIds = opened.doc.parts.map((part) => part.id);
-  assert.equal(openedIds.every((id) => isSurfId(id)), true);
-  assert.equal(opened.doc.parts[0].name, 'Kettle Body');
-  assert.equal(findAssemblyPart(opened.doc, opened.doc.parts[0].path)?.id, openedIds[0]);
-  const pathIndex = Object.fromEntries((opened.identities?.cached || []).map((hit) => [hit.path, hit.id]));
-  const reloaded = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: first.sha,
-    pathIndex,
-    knownAssemblyId: opened.doc.id,
-  });
-  assert.deepEqual(reloaded.doc.parts.map((part) => part.id), openedIds);
-  const listed = buildPartsState({
-    activeId: opened.doc.activeId,
-    assemblyName: opened.doc.name,
-    parts: opened.doc.parts.map((row) => ({
-      id: row.id,
-      name: row.name,
-      visible: row.visible,
-      path: row.path,
-    })),
-  });
-  assert.deepEqual(listed.parts.map((row) => row.id), openedIds);
-  assert.equal('path' in listed.parts[0], false);
+  const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, ASM, {
+      branch: 'main',
+      headSha: first.sha,
+    }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
 });
 
 test('second save after adopt does not mint -2 copies', async () => {

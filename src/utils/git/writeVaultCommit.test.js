@@ -8,7 +8,7 @@ import { createMockGithubAdapter } from './mockGithubAdapter.js';
 import { createSpyGithubAdapter, spyCalls } from './spyGithubAdapter.js';
 import { findOrCreateVault } from './vault.js';
 import { listVaultBranches } from './gitBranch.js';
-import { checkRemoteBehind, reloadFromRemote } from './gitPull.js';
+import { checkRemoteBehind } from './gitPull.js';
 import { openVaultAssembly } from './gitWorkspace.js';
 import { captureLastCommit } from './lastCommit.js';
 import { createSyncStore } from './syncStore.js';
@@ -285,7 +285,7 @@ test('marked default + missing target throws and does not seed', async () => {
   assert.equal(spyCalls(spy, 'commitFiles').length, 0);
   const marker = await inner.readFile(vault.repo, 'surfcad.json', 'main');
   assert.ok(marker);
-  assert.match(marker.content, /"version": 1/);
+  assert.match(marker.content, /"version": 2/);
 });
 
 test('createRepo refuses when repo.owner is not the signed-in user', async () => {
@@ -389,17 +389,13 @@ test('load, reload, online, and connect paths do not commitFiles or createRepo',
 
   const loaded = await findOrCreateVault(spy, { create: false });
   assert.equal(loaded.status, 'found');
-  const opened = await openVaultAssembly(spy, vault.repo, ASM, {
-    branch: 'main',
-    headSha: seeded.sha,
-  });
-  await reloadFromRemote(spy, vault.repo, {
-    path: opened.assemblyPath || ASM_PATH,
-    kind: 'assembly',
-    branch: 'main',
-    scripts: opened.scripts,
-    baseline: opened.baseline,
-  });
+  await assert.rejects(
+    () => openVaultAssembly(spy, vault.repo, ASM, {
+      branch: 'main',
+      headSha: seeded.sha,
+    }),
+    (err) => err?.code === 'unknown_assembly',
+  );
   const store = createSyncStore({ persist: false });
   const flushed = await flushSyncQueue({
     store,

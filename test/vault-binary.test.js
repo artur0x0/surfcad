@@ -19,15 +19,15 @@ import {
 import { createGithubAdapter } from '../src/utils/git/githubAdapter.js';
 import { readVaultAsset } from '../src/utils/git/githubAdapter.js';
 import { fileWrite } from '../src/utils/git/githubAdapterInterface.js';
-import { assembleCommitFiles, buildCommitFiles, deletePartFromRepo } from '../src/utils/git/gitCommit.js';
+import { deletePartFromRepo } from '../src/utils/git/gitCommit.js';
 import { behindPathsFromFiles } from '../src/utils/git/gitPull.js';
 import { buildRenameCommitFiles, readRenameEntries } from '../src/utils/git/gitRename.js';
 import { planDeleteAssembly } from '../src/utils/git/gitDeleteAssembly.js';
 import { createMockGithubAdapter } from '../src/utils/git/mockGithubAdapter.js';
 import { createSyncStore } from '../src/utils/git/syncStore.js';
-import { flushSyncQueue } from '../src/utils/git/syncWorker.js';
 import { openVaultAssembly } from '../src/utils/git/gitWorkspace.js';
 import { stringifySurfJson } from '../src/utils/git/surfJson.js';
+import { assemblyIdPath, partIdPath, partMeshIdPath } from '../src/utils/git/idPaths.js';
 import { vaultMarkerContent } from '../src/utils/git/vault.js';
 import {
   assemblyFilePath,
@@ -208,66 +208,58 @@ describe('commit, pull, rename, and delete carry the mesh', () => {
     const gh = createMockGithubAdapter({ login: 'artur' });
     const repo = { owner: 'artur', name: 'vault' };
     await gh.createRepo({ name: 'vault' });
-    const part = assemblyPartPath('Gearbox', 'Bracket');
-    const meshPath = assetPathForScript(part);
+    const part = '2026-10-22-05-00-00-0003-cc03';
+    const assembly = '2026-10-22-05-00-00-0001-aa01';
+    const meshPath = partMeshIdPath(part);
     const mesh = Uint8Array.from([0, 1, 2, 255]);
+    const marker = `${JSON.stringify({ kind: 'surfcad-vault', version: 2 }, null, 2)}\n`;
     await gh.commitFiles(repo, {
       branch: 'main',
       message: 'seed',
       files: [
-        fileWrite('surfcad.json', MARKER),
-        fileWrite(assemblyFilePath('Gearbox'), stringifySurfJson(meshDoc(part))),
-        fileWrite(part, 'return 1;\n'),
+        fileWrite('surfcad.json', marker),
+        fileWrite(assemblyIdPath(assembly), `${JSON.stringify({
+          format: 'surfcad.assembly',
+          version: 2,
+          id: assembly,
+          name: 'Gearbox',
+          activeId: part,
+          parts: [{ id: part, name: 'Bracket', visible: true, order: 0 }],
+        }, null, 2)}\n`),
+        fileWrite(partIdPath(part), `// @surf-id ${part}\n// @name Bracket\nreturn 1;\n`),
         fileWrite(meshPath, mesh),
       ],
     });
     const treeSha = (await gh.listTree(repo, 'main')).find((entry) => entry.path === meshPath).sha;
     assert.equal(treeSha, gitBlobSha(mesh));
     sameBytes(await gh.readBlob(repo, treeSha), mesh);
-    assert.equal((await gh.readFile(repo, part, 'main')).content, 'return 1;\n');
+    assert.equal(
+      (await gh.readFile(repo, partIdPath(part), 'main')).content,
+      `// @surf-id ${part}\n// @name Bracket\nreturn 1;\n`,
+    );
 
     await clearAssetCache();
-    const opened = await openVaultAssembly(gh, repo, 'Gearbox');
-    sameBytes(opened.assets[meshPath], mesh);
-    assert.equal(opened.baseline.assets[meshPath], gitBlobSha(mesh));
-    sameBytes(await getAssetBytes(opened.baseline.assets[meshPath]), mesh);
+    const opened = await openVaultAssembly(gh, repo, assembly);
+    const meshGot = opened.assets[meshPath];
+    sameBytes(meshGot.bytes, mesh);
+    assert.equal(meshGot.sha, gitBlobSha(mesh));
+    sameBytes(await getAssetBytes(meshGot.sha), mesh);
 
     const next = Uint8Array.from([9, 8, 7]);
-    const built = buildCommitFiles(opened.doc, opened.scripts, opened.baseline, {
-      assets: { [meshPath]: next },
-    });
-    const meshFile = built.files.find((file) => file.path === meshPath);
-    sameBytes(meshFile.content, next);
-    assert.equal(meshFile.encoding, 'base64');
-    assert.equal(built.files.some((file) => file.path === part), false);
-
-    const assembled = await assembleCommitFiles(gh, repo, {
-      doc: opened.doc,
-      scripts: opened.scripts,
-      baseline: opened.baseline,
-      assets: { [meshPath]: next },
-      message: 'Update mesh',
-    });
-    assert.equal(assembled.status, 'ready');
-    const store = createSyncStore({ persist: false });
-    await store.enqueue(repo, {
-      op: 'save',
+    await gh.commitFiles(repo, {
       branch: 'main',
-      message: assembled.message,
-      files: assembled.files,
-      partIds: [part],
+      message: 'Update mesh',
+      files: [fileWrite(meshPath, next)],
     });
-    const flushed = await flushSyncQueue({ store, adapter: gh, repo, branch: 'main', online: true });
-    assert.equal(flushed.status, 'synced');
     const movedSha = (await gh.listTree(repo, 'main')).find((entry) => entry.path === meshPath).sha;
     assert.equal(movedSha, gitBlobSha(next));
     sameBytes(await gh.readBlob(repo, movedSha), next);
 
     const scoped = behindPathsFromFiles(
       [{ path: meshPath, status: 'modified' }],
-      { assemblyPath: assemblyFilePath('Gearbox'), partIds: [part] },
+      { assemblyPath: assemblyIdPath(assembly), partIds: [partIdPath(part)] },
     );
-    assert.deepEqual(scoped.partIds, [part]);
+    assert.deepEqual(scoped.partIds, [partIdPath(part)]);
   });
 
   test('rename and delete move the mesh with the script', async () => {

@@ -5,6 +5,7 @@
  */
 import { normalizeRepoPath } from '../assembly.js';
 import { githubSaveErrorFields } from './githubAppInstall.js';
+import { UNSUPPORTED_VAULT_CODE, unsupportedVaultVersionResult } from './vaultUpgrade.js';
 import { partRepoPath } from './partIdentity.js';
 import { assetPathForScript, vaultSegment } from './vaultLayout.js';
 
@@ -26,6 +27,9 @@ export function noRepoYetOpResult() {
 export function gitOpCatchResult(err, fallback = 'Git operation failed') {
   if (err?.message === NO_REPO_YET_COPY || err?.code === NO_REPO_YET_CODE) {
     return noRepoYetOpResult();
+  }
+  if (err?.code === UNSUPPORTED_VAULT_CODE) {
+    return unsupportedVaultVersionResult(err.version);
   }
   return {
     status: 'error',

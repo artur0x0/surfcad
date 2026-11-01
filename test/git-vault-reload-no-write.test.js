@@ -56,24 +56,19 @@ async function seedKettle(gh) {
   return { vault, seedSha: committed.sha };
 }
 
-test('open and reload do not commit or move assembly-folder parts', async () => {
+test('open of a version-1 folder vault does not commit', async () => {
   const gh = createMockGithubAdapter({ login: 'agent' });
   const { vault, seedSha } = await seedKettle(gh);
   const writesBefore = commitsAfterSeed(gh).length;
-
-  const first = await openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: seedSha });
-  const second = await openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: seedSha });
-
-  assert.equal(commitsAfterSeed(gh).length, writesBefore, 'reload must not commit');
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: seedSha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(commitsAfterSeed(gh).length, writesBefore, 'a refused open must not commit');
   assert.equal((await gh.getBranch(vault.repo, 'main'))?.sha, seedSha);
   const tree = (await gh.listTree(vault.repo, 'main')).map((entry) => entry.path);
   assert.ok(tree.includes(BODY));
   assert.ok(tree.includes(LID));
-  assert.equal(tree.some((path) => path.startsWith('parts/') && path.endsWith('.js')), false);
-  assert.equal(first.doc.parts[0].id, BODY_ID);
-  assert.equal(second.doc.parts[0].id, BODY_ID);
-  assert.equal(first.doc.parts[0].path, BODY);
-  assert.equal(second.doc.parts[0].path, BODY);
 });
 
 test('queued layout/id migrations are retired and flush writes nothing', async () => {
@@ -143,7 +138,7 @@ test('path-keyed parse does not mint; two parses keep the same ids', () => {
   assert.deepEqual(first.parts.map((part) => part.path), [BODY, LID]);
 });
 
-test('id-less .surf.json opened twice keeps the same ids from @surf-id', async () => {
+test('an id-less folder .surf.json is refused and left unwritten', async () => {
   const gh = createMockGithubAdapter({ login: 'agent' });
   const vault = await findOrCreateVault(gh);
   const raw = {
@@ -167,22 +162,16 @@ test('id-less .surf.json opened twice keeps the same ids from @surf-id', async (
     ],
   });
   const writesBefore = commitsAfterSeed(gh).length;
-  const first = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-  });
-  const second = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-  });
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: committed.sha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
   assert.equal(commitsAfterSeed(gh).length, writesBefore);
-  assert.deepEqual(first.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
-  assert.deepEqual(second.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
   const onDisk = JSON.parse((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
   assert.equal(onDisk.parts[0].id, undefined);
 });
 
-test('id-less .surf.json without headers reuses a local pathIndex', async () => {
+test('a folder .surf.json without headers is refused before any write', async () => {
   const gh = createMockGithubAdapter({ login: 'agent' });
   const vault = await findOrCreateVault(gh);
   const raw = {
@@ -206,53 +195,26 @@ test('id-less .surf.json without headers reuses a local pathIndex', async () => 
     ],
   });
   const writesBefore = commitsAfterSeed(gh).length;
-  const first = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-  });
-  const pathIndex = Object.fromEntries(
-    (first.identities?.cached || []).map((hit) => [hit.path, hit.id]),
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: committed.sha }),
+    (err) => err?.code === 'unknown_assembly',
   );
-  const second = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-    pathIndex,
-  });
   assert.equal(commitsAfterSeed(gh).length, writesBefore);
-  assert.deepEqual(second.doc.parts.map((part) => part.id), first.doc.parts.map((part) => part.id));
-  assert.notEqual(first.doc.parts[0].id, BODY);
+  assert.equal((await gh.getBranch(vault.repo, 'main'))?.sha, committed.sha);
 });
 
-test('reload of an old path-keyed browser doc has zero unsaved parts', async () => {
-  const gh = createMockGithubAdapter({ login: 'agent' });
-  const vault = await findOrCreateVault(gh);
+test('rekey of a path-keyed browser doc onto tip ids is not dirty', () => {
   const bodyText = withSurfId('return 1;\n', BODY_ID);
   const lidText = withSurfId('return 2;\n', LID_ID);
-  const raw = {
-    format: 'surfcad.assembly',
-    version: 1,
+  const tipDoc = {
+    source: 'git',
     name: ASM,
-    activeId: BODY,
+    activeId: BODY_ID,
     parts: [
-      { path: BODY, name: 'Kettle Body', visible: true, order: 0 },
-      { path: LID, name: 'Kettle Lid', visible: true, order: 1 },
+      { id: BODY_ID, path: BODY, name: 'Kettle Body', visible: true, order: 0, surfId: BODY_ID },
+      { id: LID_ID, path: LID, name: 'Kettle Lid', visible: true, order: 1, surfId: LID_ID },
     ],
   };
-  const committed = await gh.commitFiles(vault.repo, {
-    branch: 'main',
-    message: 'legacy path-keyed',
-    baseSha: vault.headSha,
-    files: [
-      fileWrite(assemblyFilePath(ASM), `${JSON.stringify(raw, null, 2)}\n`),
-      fileWrite(BODY, bodyText),
-      fileWrite(LID, lidText),
-    ],
-  });
-  const writesBefore = commitsAfterSeed(gh).length;
-  const tip = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: committed.sha,
-  });
   const browserDoc = {
     source: 'git',
     name: ASM,
@@ -263,19 +225,18 @@ test('reload of an old path-keyed browser doc has zero unsaved parts', async () 
     ],
   };
   const browserScripts = { [BODY]: bodyText, [LID]: lidText };
-  const aligned = rekeyWorkingCopyToTip(browserDoc, browserScripts, tip.doc);
+  const aligned = rekeyWorkingCopyToTip(browserDoc, browserScripts, tipDoc);
   assert.deepEqual(aligned.doc.parts.map((part) => part.id), [BODY_ID, LID_ID]);
   const baseline = captureBaseline({
-    assemblyPath: tip.assemblyPath,
+    assemblyPath: assemblyFilePath(ASM),
     assemblyName: ASM,
-    doc: tip.doc,
-    scripts: tip.scripts,
+    doc: tipDoc,
+    scripts: { [BODY_ID]: bodyText, [LID_ID]: lidText },
     branch: 'main',
-    headSha: committed.sha,
+    headSha: 'abc',
   });
   assert.equal(dirtyPartIds(aligned.doc, aligned.scripts, baseline).size, 0);
   assert.equal(isWorkspaceDirty(aligned.doc, aligned.scripts, baseline), false);
-  assert.equal(commitsAfterSeed(gh).length, writesBefore);
 });
 
 test('leftover migrate ops are skipped even without retire', async () => {

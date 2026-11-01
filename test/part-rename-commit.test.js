@@ -244,12 +244,16 @@ test('rename commit is tip move + surf.json path/name; Save takes the edit and p
   assert.equal(isWorkspaceDirty(staged.doc, staged.scripts, nextBaseline), true);
   assert.deepEqual([...dirtyPartIds(staged.doc, staged.scripts, nextBaseline)].sort(), [IDS[0], IDS[1]].sort());
 
-  const open = await openVaultAssembly(gh, vault.repo, ASM, {
-    branch: 'main',
-    headSha: flushed.sha,
-  });
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore + 1);
-  assert.equal(findAssemblyPart(open.doc, staged.to)?.path, staged.to);
+  await assert.rejects(
+    () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: flushed.sha }),
+    (err) => err?.code === 'unknown_assembly',
+  );
+  assert.equal(
+    (await gh.readFile(vault.repo, staged.to, 'main')).content,
+    tipBody,
+    'refusing the folder vault leaves the renamed script in place',
+  );
 
   const assembled = await assembleCommitFiles(gh, vault.repo, {
     doc: staged.doc,

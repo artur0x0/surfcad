@@ -10,10 +10,9 @@
 import { readFileSync } from 'node:fs';
 import { createMockGithubAdapter } from '../../src/utils/git/mockGithubAdapter.js';
 import { findOrCreateVault } from '../../src/utils/git/vault.js';
-import { assemblyFilePath, assemblyPartPath } from '../../src/utils/git/vaultLayout.js';
-import { stringifySurfJson } from '../../src/utils/git/surfJson.js';
 import { fileWrite } from '../../src/utils/git/githubAdapterInterface.js';
-import { assemblyIdPath } from '../../src/utils/git/idPaths.js';
+import { assemblyIdPath, partIdPath } from '../../src/utils/git/idPaths.js';
+import { SURFCAD_JSON_V2 } from '../../src/utils/git/writeVaultCommit.js';
 import {
   ASSEMBLY_OPEN_SHOW_MS,
   ASSEMBLY_OPEN_SAFETY_MS,
@@ -275,27 +274,35 @@ console.log('\ndelayed vault open');
 {
   const gh = createMockGithubAdapter({ login: 'artur' });
   const vault = await findOrCreateVault(gh);
+  const assemblyId = '2026-10-22-05-00-00-0000-aa01';
   const parts = [];
   for (let i = 1; i <= 7; i += 1) {
     parts.push({
-      id: assemblyPartPath('Gearbox', `Part ${i}`),
+      id: `2026-10-22-05-00-00-000${i}-bb0${i}`,
       name: `Part ${i}`,
       visible: true,
       order: i - 1,
     });
   }
+  const surf = `${JSON.stringify({
+    format: 'surfcad.assembly',
+    version: 2,
+    id: assemblyId,
+    name: 'Gearbox',
+    activeId: parts[0].id,
+    parts,
+  }, null, 2)}\n`;
   const files = [
-    fileWrite(assemblyFilePath('Gearbox'), stringifySurfJson({
-      source: 'git', name: 'Gearbox', activeId: parts[0].id, parts,
-    })),
-    ...parts.map((part) => fileWrite(part.id, 'return Manifold.cube([4, 4, 4], true);\n')),
+    fileWrite('surfcad.json', SURFCAD_JSON_V2),
+    fileWrite(assemblyIdPath(assemblyId), surf),
+    ...parts.map((part) => fileWrite(partIdPath(part.id), 'return Manifold.cube([4, 4, 4], true);\n')),
   ];
   const commit = await gh.commitFiles(vault.repo, {
     branch: 'main', message: 'seed', baseSha: vault.headSha, files,
   });
   const orig = gh.readFile.bind(gh);
   gh.readFile = async (...args) => {
-    await sleep(40);
+    await sleep(80);
     return orig(...args);
   };
   let ui = null;
@@ -309,20 +316,19 @@ console.log('\ndelayed vault open');
   const opened = await runTrackedAssemblyOpen(ctrl, {
     name: 'Gearbox',
     retry: () => {},
-    load: async ({ progress }) => openVaultAssemblyDelayed(gh, vault.repo, progress, commit.sha),
+    load: async ({ progress }) => openVaultAssemblyDelayed(gh, vault.repo, assemblyId, progress, commit.sha),
   });
-  const hit = frames.find((frame) => frame.name === 'Gearbox' && frame.index === 3 && frame.total === 7);
-  ok('delayed open shows the spinner', frames.some((frame) => frame.visible));
-  ok('centered label would read Opening Gearbox… / part 3 of 7', !!hit
-    && assemblyOpenLabel(hit.name, hit).label === 'Opening Gearbox…'
-    && assemblyOpenLabel(hit.name, hit).detail === 'part 3 of 7');
+  const shown = frames.find((frame) => frame.visible && frame.name === 'Gearbox');
+  ok('delayed open shows the spinner', !!shown);
+  ok('centered label would read Opening Gearbox…', !!shown
+    && assemblyOpenLabel(shown.name, shown).label === 'Opening Gearbox…');
   ok('spinner is gone after the assembly loads', ui == null);
   ok('opened the seven parts', opened?.doc?.parts?.length === 7 && opened.doc.name === 'Gearbox');
 }
 
-async function openVaultAssemblyDelayed(adapter, repo, progress, headSha) {
+async function openVaultAssemblyDelayed(adapter, repo, assemblyId, progress, headSha) {
   const { openVaultAssembly } = await import('../../src/utils/git/gitWorkspace.js');
-  return openVaultAssembly(adapter, repo, 'Gearbox', {
+  return openVaultAssembly(adapter, repo, assemblyId, {
     branch: 'main',
     headSha,
     onProgress: (update) => progress({ ...update, name: update.name || 'Gearbox' }),

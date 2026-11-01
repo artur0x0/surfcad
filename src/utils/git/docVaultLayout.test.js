@@ -40,6 +40,10 @@ test('an unstamped git document is not a plan-save document (the bug this guards
 });
 
 test('detection maps to the two layouts; no repo yet is v2', () => {
+  assert.equal(vaultLayoutFromDetection({ state: 'current', version: 2 }), 'v2');
+  assert.equal(vaultLayoutFromDetection({ state: 'unmarked', version: null }), 'v2');
+  assert.equal(vaultLayoutFromDetection({ state: 'unsupported', version: 1 }), 'legacy');
+  assert.equal(vaultLayoutFromDetection({ state: 'upgrade', version: 1 }), 'legacy');
   assert.equal(vaultLayoutFromDetection({ layout: 'v2', markerVersion: 2 }), 'v2');
   assert.equal(vaultLayoutFromDetection({ layout: 'legacy', markerVersion: 1 }), 'legacy');
   assert.equal(vaultLayoutFromDetection(null), 'v2');

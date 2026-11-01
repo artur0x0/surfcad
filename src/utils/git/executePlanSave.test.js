@@ -571,7 +571,7 @@ test('Get latest replaces conflicting WC files and does not write git', async ()
   assert.equal(applied.doc.activeId, P);
 });
 
-test('Save mine to a new branch writes planned files off the last tip', async () => {
+test('Create a new branch writes planned files off the last tip', async () => {
   const before = doc(A, 'Gearbox', [row(P, 'Bracket')]);
   const { inner, spy, store, sha } = await seedA(before, { [P]: BODY });
   await inner.commitFiles(REPO, {
@@ -591,7 +591,7 @@ test('Save mine to a new branch writes planned files off the last tip', async ()
     branch: 'main',
     store,
     workingCopy: working,
-    message: 'Save mine',
+    message: 'Keep local edits',
     paths: blocked.paths,
     now: NOW,
   });

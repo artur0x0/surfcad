@@ -29,10 +29,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
  * Remaining adapter.commitFiles call sites (allowlist may only shrink):
  */
 const ALLOWED_COMMIT_FILES = Object.freeze([
-  // Upgrade (legacyVault/upgrade path) stays until PR 10
-  { file: 'src/utils/git/legacyVault/upgrade.js', fn: 'executeUpgrade', count: 2 },
-  { file: 'src/utils/git/legacyVault/upgrade.js', fn: 'executeUpgradeConflictChoice', count: 1 },
-  { file: 'src/utils/git/legacyVault/upgrade.js', fn: 'executeUpgradeFollowup', count: 1 },
+  // v1→v2 upgrade commits were removed with legacyVault/. New writers go
+  // through writeVaultCommit, which is not an adapter.commitFiles site.
 ]);
 
 const ALLOWED_CREATE_REPO = Object.freeze([

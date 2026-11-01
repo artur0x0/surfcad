@@ -262,7 +262,9 @@ export function gitOpResult(result, { commandName } = {}) {
     return { result: { status: 'error', error: 'No result' } };
   }
   const code = result.code;
-  const upgradeFailed = result.status === 'upgrade_required'
+  const upgradeFailed = result.status === 'unsupported_vault_version'
+    || code === 'unsupported_vault_version'
+    || result.status === 'upgrade_required'
     || result.status === 'upgrade_unavailable'
     || code === 'upgrade_required'
     || code === 'upgrade_unavailable';

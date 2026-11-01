@@ -1,7 +1,6 @@
 /**
  * Working-copy baseline taken at the last vault open (or explicit reset).
- * Shared so the legacy reader can capture without importing gitWorkspace
- * (openVaultAssembly dispatches into legacyVault).
+ * Shared so open can capture without importing gitWorkspace.
  */
 import { serializeAssembly } from '../assembly.js';
 import { gitBlobSha, isBinaryContent, toUint8Array } from './binaryContent.js';

@@ -12,12 +12,12 @@
 import { assertGithubAdapter, GitAdapterError } from './githubAdapterInterface.js';
 import { ASSEMBLIES_DIR, SHARED_PARTS_DIR, VAULT_MARKER_PATH } from './vaultLayout.js';
 import {
-  VAULT_MARKER_KIND,
   isVaultMarker,
+  vaultMarkerContent,
   vaultWriteRefusalMessage,
 } from './vaultNames.js';
 
-export const SURFCAD_JSON_V2 = `${JSON.stringify({ kind: VAULT_MARKER_KIND, version: 2 }, null, 2)}\n`;
+export const SURFCAD_JSON_V2 = vaultMarkerContent();
 
 /** Seed files for a new v2 vault. Never includes README.md. */
 export function vaultV2SeedFiles() {

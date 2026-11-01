@@ -120,7 +120,7 @@ test('isGitWorkingCopyDirty for v2 uses AssemblyCommit, not path-less first-comm
 });
 
 test('git_save uses handleGitCommit -> handleV2PlanSave -> executePlanSave', () => {
-  const save = sliceFn('async agentGitSave({ message })', 'async agentGitUpgradeVault()');
+  const save = sliceFn('async agentGitSave({ message })', 'async agentGitUpgradeVault(');
   assert.match(save, /handleGitCommit\(draft\)/);
   assert.match(save, /status: 'pending'/);
   assert.match(save, /code: 'pending_save'/);

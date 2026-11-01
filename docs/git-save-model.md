@@ -104,7 +104,7 @@ parts/<part-id>.mesh                    sidecar; same stem as the script
 
 **Path = `f(id)` only.** There is no occupancy, no `-2` suffix, no folder, no `vaultSegment` in a path. Two assemblies or two parts may share a display name.
 
-**Names never appear in paths.** Rename is an edit of a name field, never a move. No other file duplicates names — no README index, no catalog, no `surfcad.json` name list. Save does **not** write or regenerate `README.md`. A leftover `README.md` is never a planned file; Upgrade deletes it only when its bytes match a known old seed (§4.3).
+**Names never appear in paths.** Rename is an edit of a name field, never a move. No other file duplicates names — no README index, no catalog, no `surfcad.json` name list. Save does **not** write or regenerate `README.md`. A leftover `README.md` is never a planned file.
 
 Pickers and the Parts list show **names as written**. Duplicate names are allowed and are **not** disambiguated (no short-id suffix).
 
@@ -289,7 +289,7 @@ After success: set `BranchTip.tipSha` to the new sha; replace this `AssemblyComm
 | Overwrite (Save / main-moved conflict) | re-plan against current remote tip, then same write, `baseSha = remote tip` |
 | Get latest | **not a git write** — replace WC conflicting files from the remote tip (§2.9) |
 | Create a new branch | create branch from `branchTip.tipSha` (or merge base), write planned files, switch. Save-conflict only |
-| Upgrade vault | remote-bytes layout commit (§4.3); if WC is dirty, a normal Save follows under the same confirm (two commits) |
+| `git_upgrade_vault` | Runs only when a step is registered for that marker version and `confirm` is true (§4.3). The current version returns `already_upgraded` and writes nothing. |
 | Explicit branch create / switch / delete | branch APIs; dirty switch needs `confirm: true`. Use local and Use remote do not write git |
 | Explicit delete-assembly / delete-repo | own plan + `writeVaultCommit` / GitHub delete; confirms stay |
 | Move to Git | first Save of a local assembly (creates vault if needed) |
@@ -325,7 +325,7 @@ Copy: “There is a conflict between your local files and files in the repositor
 | **Create a new branch** | Write the planned files on a new branch and switch. Agent: `git_behind_resolve { action: "branch" }` + `confirm: true`. |
 | **Overwrite** | “My changed files win.” Re-plan against the **current remote tip** just before the forced write (`baseSha = remote tip`). Local bytes for planned paths; other remote files stay. Not per-part. Agent: `git_force_overwrite` + `confirm: true`. |
 
-The upgrade-conflict dialog keeps its own labels. Opening or reloading while the outbox is behind the tip still uses the legacy hold (Stay on branch / Open on GitHub / Overwrite main). No per-part overwrite chrome.
+There is no separate upgrade-conflict dialog. Opening or reloading while the outbox is behind the tip still uses the legacy hold (Stay on branch / Open on GitHub / Overwrite main). No per-part overwrite chrome.
 
 ### 2.10 Offline, seed, missing part
 
@@ -379,7 +379,7 @@ A git write of vault content happens only when:
 
 1. The user clicks Save, or
 2. The agent calls `git_save { message }` after write consent, or
-3. The user confirms **Upgrade vault** / the agent calls `git_upgrade_vault { confirm: true }` after consent (layout commit of remote bytes; a dirty WC then gets a normal Save under the same confirmation), or
+3. The agent calls `git_upgrade_vault { confirm: true }` and a step is registered for that marker version (none are registered; the current version returns `already_upgraded` and writes nothing), or
 4. The user confirms **Overwrite** / **Create a new branch** from the Save-conflict or main-moved dialog (agent: `git_force_overwrite` / `git_behind_resolve { action: "branch" }` + `confirm: true`). Use local and Use remote on a branch switch are not Saves.
 
 **Get latest** is not a git write. It still needs `confirm: true` for agents (`git_behind_resolve { action: "reload" }`).
@@ -388,8 +388,8 @@ No other tool may `commitFiles`, push, `createRepo`, seed, enqueue, or flush —
 
 | Tool | Git? |
 | --- | --- |
-| `git_save` | Yes — planner + one commit. Message required. On a **legacy** vault: do not write v1; return `upgrade_required` and let the host prompt Upgrade vault. |
-| `git_upgrade_vault` | Yes — one commit of **remote** bytes to v2 + deletes. `confirm: true`. Consent. If the WC is dirty, the host then runs a normal Save (second commit) under that same confirmation. |
+| `git_save` | Yes — planner + one commit. Message required. On a vault that is not the current format: do not write; return `unsupported_vault_version`. |
+| `git_upgrade_vault` | Only when a step is registered for that version and `confirm` is true. Current version: `already_upgraded`, no commit. No step: `unsupported_vault_version`, no commit. |
 | `git_add_to_repo` | Alias of `git_save`. Prefer `git_save`. |
 | `git_list_branches` | Read only. |
 | `git_branch_create` / `switch` / `delete` | Branch APIs only. Switch while dirty and delete need `confirm: true`. A file conflict returns `conflict` and does not switch until `choice` is `use_local` or `use_remote` (neither writes git). Create switches when clean (or with confirm if dirty). |
@@ -424,7 +424,6 @@ dirty: {
   workspaceDirty: boolean,
   partIds: string[],             // dirty part ids
   assemblyDirty: boolean,        // name / groups / colors / joints / order / placement
-  upgradeRequired: boolean       // legacy vault; Save will prompt Upgrade
 }
 ```
 
@@ -446,7 +445,7 @@ dirty: {
 - **`create_part`.** One row, one `id`, `activeId` + `cadPartId` set, then return. No git.
 - **`open_assembly`.** Requires `assembly_id`. Unknown → `unknown_assembly`. Read-only vs git.
 - **Idempotent Save.** `git_save` when `dirty.unsaved === false` and not `pendingSave` → `{ status: "clean" }`, no commit. `pendingSave` + Save again → push (or re-plan / conflict).
-- **Upgrade.** `git_upgrade_vault` without `confirm: true` → `confirm_required`. On v2 → `{ status: "already_upgraded" }`, no commit. The Upgrade commit is remote bytes only. A dirty WC then gets a normal `git_save` (or the host Save) as a second commit under that same confirmation.
+- **Upgrade hook.** `git_upgrade_vault` on the current version → `{ status: "already_upgraded" }`, no commit, and `confirm` is not required. An older version with a registered step and without `confirm: true` → `confirm_required`. With no step → `unsupported_vault_version`. The step, when one exists, is the only writer. Nothing runs on open.
 - **Get latest.** Confirmed replace of conflicting WC files from the remote tip. Allowed even if `rev` moved for those files. Does not `commitFiles`.
 
 ### 3.7 Error contract
@@ -459,13 +458,10 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `unknown_assembly` | `assembly_id` not known | `list_assemblies` |
 | `part_mismatch` | Tool implied active part ≠ `part_id` | Pass `part_id` |
 | `no_assembly` | No open document | `create_assembly` or `open_assembly` |
-| `unsupported_vault_version` | v1 / folder-layout vault after PR 10 removed the legacy module | Tell the user this app no longer opens that vault |
+| `unsupported_vault_version` | Marker is not the current format and no upgrade step is registered | Tell the user this app does not open that vault. Nothing was written. |
 | `missing_part` | Row exists, vault file does not | Do not `set_script` an empty body; tell the user |
 | `part_still_referenced` | Delete-from-repo but another assembly lists this id | `scope: "assembly"` or delete those parents first |
-| `upgrade_required` | `git_save` on a legacy vault | `git_upgrade_vault { confirm: true }` after the user agrees |
-| `already_upgraded` | Upgrade on v2 | Continue with `git_save` |
-| `working_copy_unpersisted` | IndexedDB missed a script put or saveDoc after Upgrade remapped the WC | Retry `git_upgrade_vault`; that retry does not write git and completes a partial persist |
-| `working_copy_unmapped` | Upgrade could not map every vault part onto the WC | Give the WC a row for each vault part, then retry |
+| `already_upgraded` | `git_upgrade_vault` on the current version (or a vault with no marker yet) | Continue. No commit happened. |
 | `git_only` | Vault-only tool in local mode | `git_move_to_repo` or stay local |
 | `save_on_main` | `git_save` or `git_add_to_repo` while the session is checked out on `main` | Nothing was written. `git_branch_create { name }`, then `git_save { message }` on that branch |
 | `consent_pending` | Real-repo write; Allow dialog up | Wait `retry_after_ms`, same call |
@@ -497,7 +493,7 @@ Never return a generic `"Feature failed"` as the only message. Never pass `confi
 | `git_behind_resolve` keep; per-part overwrite | Save: Go back / Get latest / Create a new branch / Overwrite. Switch: Go back / Use local / Use remote |
 | `online` flushing | Never |
 | Tip-vs-tip conflict | File-level compare of **this** Save’s paths |
-| Auto layout/id migrate commits | Explicit Upgrade vault only |
+| Auto layout/id migrate commits | No migrate on open. A future format registers a step and the user runs `git_upgrade_vault` |
 | README / index of names | Names only in headers and `.surf.json` |
 
 `T1` (create_part should run) and `T16` (real error text) stay on the MCP batch. The host must still expose `runState` / volume / bbox on create-if-run, and real error strings on `errors` / insert / run.
@@ -510,53 +506,43 @@ On first load after upgrade, **do not flush the outbox.** Never write git on ope
 
 ### 4.1 Working-copy ids (local + git, no vault write)
 
-For each IDB row, pick one part id and rekey scripts once: `// @surf-id` if valid → else existing `surfId` / surf-id-shaped `id` → else mint. Drop `surfId`. UUID-only and path-as-id rows take this once. Same id after a source flip. Stamp `// @name` (and the id header if missing) on the next **explicit** Save or on Upgrade vault — not on load.
+For each IDB row, pick one part id and rekey scripts once: `// @surf-id` if valid → else existing `surfId` / surf-id-shaped `id` → else mint. Drop `surfId`. UUID-only and path-as-id rows take this once. Same id after a source flip. Stamp `// @name` (and the id header if missing) on the next **explicit** Save — not on load.
 
 New Assembly / `create_assembly` / import already mint an assembly id onto the IDB document.
 
-### 4.2 Legacy vault = read-only git (legacy reader)
+### 4.2 Version check on open
 
-**Temporary.** The legacy reader and Upgrade vault live in **one isolated module**, `src/utils/git/legacyVault/`, with a **single entry point** (`index.js`). Every file in that folder starts with:
+Open reads `surfcad.json` (`kind` + `version`) in `src/utils/git/vaultUpgrade.js`. The current format is version 2.
 
-```
-// TEMPORARY: remove after Artur's vault is upgraded
-```
+| State | Marker | Open |
+| --- | --- | --- |
+| `unmarked` | File absent | Opens. The first Save writes version 2. |
+| `current` | `kind` is `surfcad-vault` and `version` is 2 | Opens on the v2 reader, same as before. |
+| `upgrade` | An older integer version that has a step in `vaultUpgrades` | Refused. The step does not run on open. |
+| `unsupported` | Older, unknown, unreadable, or the wrong `kind`, and no step | Refused. Host copy is **unsupported vault version**. Tools return `{ code: "unsupported_vault_version" }`. |
 
-Nothing outside that folder parses v1 paths or plans a v1→v2 commit. Callers import only the entry point (detect / open / plan-upgrade). PR 10 deletes the folder and those call sites (§6).
+`vaultUpgrades` is a `Map` from `fromVersion` to a step function. **No step is registered.** A future format calls `registerVaultUpgrade(fromVersion, step)`. Tests that register a step unregister it before they finish.
 
-A vault is **legacy** when `surfcad.json` is version `1`, or the tree still has `assemblies/<Name>/.surf.json`, `assemblies/<Name>/<Part>.js`, or `parts/<Name>.js` whose stem is not a surf-id.
+A missing v2 part blob is a `missing` row, not an empty script, not auto-removed.
 
-Until PR 10, the app **opens** it through that module (today’s path-keyed parse). Map into the WC by id (`// @surf-id` / backfill). The WC is editable. **No v1 write.** `dirty.upgradeRequired` is true.
+### 4.3 Generic upgrade hook
 
-A missing legacy blob is a `missing` row, not an empty script, not auto-removed.
+`git_upgrade_vault` is the entry point (`runVaultUpgrade`). It never runs on load, reload, connect, or Save.
 
-**After PR 10** (Artur has confirmed his vault is upgraded): a v1 / folder-layout tree is **not** opened. The host shows **unsupported vault version** and tools return `{ code: "unsupported_vault_version" }`. No Upgrade button, no `git_upgrade_vault`.
+| Marker | Call | Result |
+| --- | --- | --- |
+| Current, or no marker yet | confirm optional | `{ status: "already_upgraded" }`. No commit. |
+| Older version, step registered | `confirm` is not true | `confirm_required`. Nothing is written. |
+| Older version, step registered | `confirm: true` | The step runs. Its return value is the tool result. |
+| Older or unknown version, no step | confirm optional | `unsupported_vault_version`. Nothing is written. The host shows **unsupported vault version**. |
 
-### 4.3 Upgrade vault (the only v1→v2 writer)
+Save on a document stamped `legacy` (the host stamp for `unsupported` and `upgrade`) does not write v1 or v2. It returns `unsupported_vault_version`.
 
-One-time, explicit, user-confirmed. Agents: `git_upgrade_vault { confirm: true }` after consent. **Never** runs on load, reload, connect, or a quiet Save.
-
-**Save on a legacy vault** does not write v1. It **prompts Upgrade vault**. Dismiss → no write. Confirm → the split below.
-
-**Split (two commits when the WC is dirty):**
-
-1. **Upgrade** is a **pure layout migration of the remote / tip bytes** in one commit. It does not fold WC edits into that commit.
-2. If the WC has edits, a **normal Save** runs right after, under the **same** confirmation (second commit: WC vs the new v2 `AssemblyCommit`). If the WC is clean, stop after the Upgrade commit.
-
-Upgrade commit:
-
-1. Keep part ids from `// @surf-id` headers in the **remote** blobs. Mint where missing (no header, no `parts[].id`). Assembly ids: mint one per legacy folder; persist on IDB.
-2. Write `surfcad.json` version `2`.
-3. Write every `parts/<part-id>.js` (header id + `@name` from the remote row/header) and sidecar `parts/<part-id>.mesh` from the remote blob.
-4. Write every `assemblies/<assembly-id>.surf.json` (v2, no paths, `groups[].source` → minted assembly id when that folder still exists).
-5. **Delete** every legacy path in the same commit: `assemblies/<Name>/…`, name-based `parts/<Name>.js`, leftover `.gitkeep` optional. Do not invent a README index. **Delete `README.md` only if it is byte-identical to a known old seed text**; otherwise leave it. Save never writes README.
-6. Build `BranchTip` + every `AssemblyCommit` from the new tree.
-
-A second Upgrade is a no-op (`already_upgraded`). Partial failure: do not adopt v2 lastCommit; WC stays; user retries Upgrade (idempotent: writing the same `f(id)` bytes, deletes of already-gone paths are fine). If Upgrade succeeded and the follow-up Save conflicts, show §2.9 on that second commit only.
+There is no Upgrade vault menu item and no upgrade-conflict dialog. The v1 path parser and the v1→v2 planner are gone (`src/utils/git/legacyVault/` deleted).
 
 ### 4.4 leftover outbox / #585 flags
 
-Leave queued save/rename/delete **unflushed**. Do not replay stale snapshots. If `pendingRepoDeletes` exist, the WC already lacks those rows; after Upgrade / first v2 Save the planner deletes unreferenced files. `pendingOldAssemblyName` is meaningless (no moves); drop it.
+Leave queued save/rename/delete **unflushed**. Do not replay stale snapshots. If `pendingRepoDeletes` exist, the WC already lacks those rows; the next v2 Save’s planner deletes unreferenced files. `pendingOldAssemblyName` is meaningless (no moves); drop it.
 
 ---
 
@@ -578,7 +564,7 @@ After the sequence below is green:
 
 **Keep:** `mintSurfId` / `isSurfId` as **the** id; adapter (`compare` used for conflict); v2 list/open; consent modal; conflict UI (Save: Go back / Get latest / Create a new branch / Overwrite; switch: Go back / Use local / Use remote); delete-assembly / delete-repo confirms; reference-counting on delete; copy-or-reference prompt.
 
-**Keep only until PR 10:** `src/utils/git/legacyVault/` (reader + Upgrade). Then delete it.
+**Removed:** `src/utils/git/legacyVault/` (v1 reader and v1→v2 planner) and the upgrade-conflict dialog. **Kept:** the version check and `git_upgrade_vault` as the empty hook in §4.3.
 
 ---
 
@@ -595,25 +581,27 @@ Each PR has tests, keeps CI green, does not touch `src/fea/**` or `surfcad-fea/*
 | **4** | **Upgrade vault** inside `legacyVault/` + `git_upgrade_vault` (confirm). One commit of **remote** bytes → v2 + deletes. Dirty WC → normal Save as a second commit under the same confirm. Delete README only if it matches a known old seed. Idempotent retry. Save on legacy **prompts** Upgrade (no v1 write). | M | Remote tree is v2; WC edits land only in commit 2; no write on load; upgrade plan only exported from `legacyVault/` |
 | **5** | `writeVaultCommit` + adapter spy (allowlist shrinks). Seed without README index; seed-retry if createRepo succeeded. | S | Harness exists; seed retry unit |
 | **6** | Pure `planSave` + unit tests for the **12 cases** (§7). No moves. Shared-part adopt. Delete-from-repo reference rule. File-level compare input. | M | Tests pass; not wired |
-| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI as shipped then: Overwrite / Get latest / Save mine to a new branch / Dismiss (Save and main-moved). Button labels are now §2.9 (Go back / Get latest / Create a new branch / Overwrite, plus the separate branch-switch dialog). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
-| **8** | Agent contract: `part_id` / `assembly_id` only — **no `path` field or alias**; `unknown_*`; `upgrade_required`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side; `parts` / `list_assemblies` have no `path` |
-| **9** | Delete dead APIs: path planning, `planRenameVaultPartPath`, `gitRename`, `gitAssemblyRename`, outbox write path, dual-id helpers. Goldens expect WC-only then `git_save`. | M | Spy allowlist = `writeVaultCommit` + tests + Upgrade |
-| **10** | **Delete legacy reader + Upgrade vault once Artur confirms his vault is upgraded.** Remove the isolated module and every call site. After this, a v1 vault shows **unsupported vault version**. | S | `legacyVault/` gone; v1 open → `unsupported_vault_version`; no Upgrade UI or `git_upgrade_vault` |
+| **7** | Wire user Save + `git_save` on **v2** vaults. Conflict UI is §2.9 (Go back / Get latest / Create a new branch / Overwrite, plus the separate branch-switch dialog). Offline pending (second Save pushes). `online` not a writer. No repo create before first Save. | L | One commit; rename is not a move; sibling Save does not conflict; Get latest writes no git |
+| **8** | Agent contract: `part_id` / `assembly_id` only — **no `path` field or alias**; `unknown_*`; writers require `part_id`; single-flight `create_assembly`; versioned writes; `open_part` by id. | M | Agent goldens; T3/T17/T19 host-side; `parts` / `list_assemblies` have no `path` |
+| **9** | Delete dead APIs: path planning, `planRenameVaultPartPath`, `gitRename`, `gitAssemblyRename`, outbox write path, dual-id helpers. Goldens expect WC-only then `git_save`. | M | Spy allowlist = `writeVaultCommit` + tests |
+| **10** | **Delete the v1 reader, the v1→v2 planner, and the upgrade-conflict dialog.** Keep the version check and `git_upgrade_vault` as a generic hook with no steps registered (§4.2–§4.3). | S | `legacyVault/` gone; v2 open unchanged; unknown version → `unsupported_vault_version`; `already_upgraded` on v2; a test-only registered step runs when `confirm` is true |
 
-**PR 10 — exact removals** (landed by PRs 2 and 4; do not scatter v1 code elsewhere):
+**PR 10 — what landed.** The v1 reader and the v1→v2 planner are gone. The version check and the agent command stay, with an empty registry.
 
-| Remove | Why |
+| Removed | Why |
 | --- | --- |
-| `src/utils/git/legacyVault/` (entire dir: `index.js` entry, `reader.js`, `upgrade.js`, known-seed README bytes) | Temporary v1 reader + Upgrade planner |
-| `src/utils/git/upgradeVaultEnabled.js` | Upgrade feature flag; unused once Upgrade is gone |
-| `lastCommitBlobSources` import and call in `src/utils/git/lastCommit.js` | Drop the `legacyVault/reader.js` import and the `blobSources: lastCommitBlobSources(opened)` call; keep `lastCommit.js` (core v2 §2.4) |
-| Imports of `legacyVault` from `src/App.jsx` (open vault, Save-on-legacy prompt) | Only callers of detect / open / plan-upgrade |
-| `git_upgrade_vault` in `src/agent/commands/git.js`, `src/agent/commands.json`, `src/agent/export/commandMeta.js` | Agent Upgrade |
-| `upgradeRequired` / `vaultLayout: "legacy"` on `parts` / `dirty` (`src/agent/state/dirty.js` and `readParts` in `src/App.jsx`) | Agent flags for the temporary path |
-| Upgrade-vault UI in `src/components/PartFeed.jsx` (or the Save prompt that calls it) | User confirm for Upgrade |
-| Tests that import `legacyVault` (`test/legacy-vault*.js`, `test/git-upgrade-vault*.js`, and any goldens that Upgrade) | Dead with the module |
+| `src/utils/git/legacyVault/` (entire dir: `index.js`, `reader.js`, `upgrade.js`, `detect.js`, known-seed README bytes) | v1 path parser and v1→v2 planner |
+| `src/utils/git/upgradeVaultEnabled.js` | Flag for that planner |
+| `lastCommitBlobSources` import and call in `src/utils/git/lastCommit.js` | It imported the v1 reader. `lastCommit.js` stays (v2 §2.4) |
+| Upgrade-conflict dialog and the Upgrade vault item in `src/components/PartFeed.jsx` | v1 confirm UI |
+| Tests that imported `legacyVault` (`test/legacy-vault*.js`, `test/git-upgrade-vault.test.js`) | Dead with the module |
 
-Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 must precede Upgrade (4). Do not write v2 until 1 is in. PR 10 waits on Artur’s confirmation; it is not bundled with 9.
+| Kept | Why |
+| --- | --- |
+| `src/utils/git/vaultUpgrade.js` (`checkVaultVersion`, `assertVaultOpenable`, `vaultUpgrades`, `runVaultUpgrade`) | Version check on open, and the hook a future step registers in |
+| `git_upgrade_vault` | Generic entry point. Avoids removing the MCP tool. Current version → `already_upgraded`. No step → `unsupported_vault_version`. `confirm: true` only when a step is registered |
+
+Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 must precede Upgrade (4). Do not write v2 until 1 is in. PR 10 is not bundled with 9.
 
 ---
 
@@ -641,8 +629,8 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 ## 8. Test plan
 
 - **Harness.** Test adapter records `commitFiles` / `createRepo` / `compare`. Production import graph: only `writeVaultCommit` (plus test seed). CI fails on a new call site.
-- **Planner units.** All 12 cases. Delete last parent vs still-referenced. Shared-part adopt (B clean vs B dirty). Offline pending (no `online` flush). Seed retry. Missing part (no empty script). Legacy Save → no v1 write.
-- **Upgrade.** Remote bytes only in commit 1; dirty WC → commit 2 is a normal Save. Header ids kept; minted where missing; README deleted only when it matches a known old seed; second Upgrade no-op; no write on open.
+- **Planner units.** All 12 cases. Delete last parent vs still-referenced. Shared-part adopt (B clean vs B dirty). Offline pending (no `online` flush). Seed retry. Missing part (no empty script). A non-current marker → `unsupported_vault_version`, no write.
+- **Version check and hook.** v2 opens. Unknown version → `unsupported_vault_version`. A test-only registered step runs through `runVaultUpgrade` when `confirm` is true. Current version → `already_upgraded`. No step runs on open.
 - **Get latest.** Replaces only conflicting WC files; rebuilds `AssemblyCommit` + `BranchTip`; `commitFiles` count unchanged. UI confirm when those files are dirty; agent always `confirm: true`.
 - **Identity.** UUID/path rows → one surf-id on open, no git write. Source flip keeps ids. Copy mints + `copiedFrom`. v2 validator rejects `path` and missing `id`.
 - **Host.** Paint / group / create_* / `online` / reload: `commitFiles` count unchanged. Save: one commit. `create_assembly` overlap: one document. Stale `rev` write-back rejected.
@@ -655,16 +643,16 @@ Do not combine 7+8. Host contract (8) can start once 7 is on a branch. PR 1+2 mu
 
 | Risk | Mitigation |
 | --- | --- |
-| Old app cannot open a v2 vault | Upgrade is explicit; v1 bytes stay until the user confirms. Old app on a v2 remote is unsupported (same as any breaking vault bump). |
+| Old app cannot open a v2 vault | A future format bump is explicit: register a step, then `git_upgrade_vault` with confirm. An old app on a newer remote is unsupported (same as any breaking vault bump). |
 | Two clients mint the same surf-id | One process cannot repeat: the 4 hex digits are a counter seeded with 16 crypto-random bits, and the stamp steps one millisecond after a full pass. Two processes can still collide in the same millisecond (16 bits). Treat that as a compare conflict on that path. |
 | Shared part: B had local edits while A saved | B stays dirty; `BranchTip` advanced so B does not “conflict” with A; B’s next Save overwrites the shared file (last Save wins). |
 | Compare API truncated file list | If `compare.files` is incomplete, fail-closed: treat as conflict. |
 | Offline pending then remote overlap | Second Save re-plans / conflicts; `online` does not push. |
-| Upgrade crash mid-commit | Git commit is atomic. If the request failed, tree is still v1; retry Upgrade. |
+| A registered step fails mid-commit | Git commit is atomic. If the request failed, the tree is unchanged; retry `git_upgrade_vault`. |
 | MCP team still sends paths as ids | Schema rejects `path`; host returns `unknown_part` / `unknown_assembly` / `bad_args`. |
-| leftover README from old seed | Delete on Upgrade only if byte-identical to a known old seed; otherwise leave it. Save never touches it. |
+| Leftover README from an old seed | Save never writes or deletes `README.md`. |
 
-Rollback: revert PRs 9→4 in reverse (PR 10 only after Artur’s vault is v2). lastCommit in IDB is advisory. A vault that never ran Upgrade is still v1 and needs `legacyVault/` (or, after PR 10, shows **unsupported vault version**). A vault that ran Upgrade is v2; rolling back the app without the v2 reader cannot open it — say so in the Upgrade confirm.
+Rollback: revert PRs 9→4 in reverse. lastCommit in IDB is advisory. A vault whose marker is not version 2 shows **unsupported vault version** (no v1 reader to fall back to). A v2 vault needs the v2 reader.
 
 Feature flag optional (`SAVE_MODEL_V2`) around PR 7; default is sequential green PRs.
 
@@ -688,12 +676,12 @@ T7 / T8 / T9 are MCP-batch product work; §3 already requires `assembly_id`, `un
 
 ## 11. Open questions
 
-**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the upgrade marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Save and the main-moved notice are **Go back / Get latest / Create a new branch / Overwrite**. A dirty branch switch whose files differ from the target is a separate dialog, **Go back / Use local / Use remote**, shown once before anything changes; none of those three write git. Get latest never writes git; no per-part overwrite. MCP: `part_id` / `assembly_id` only — no `path` arg or result field. Names shown as written. Legacy reader + Upgrade are temporary (`src/utils/git/legacyVault/`); after PR 10 a v1 vault is **unsupported vault version**.
+**Resolved.** Surf-id format (not UUID). `.surf.json` **version 2** (v1 cannot express “no path”). `surfcad.json` version 2 is the current marker. `groups[].source` is an assembly id. Mesh sidecar stays `.mesh`. One row per part id per assembly. Save never writes or regenerates `README.md`. `online` never writes. Save and the main-moved notice are **Go back / Get latest / Create a new branch / Overwrite**. A dirty branch switch whose files differ from the target is a separate dialog, **Go back / Use local / Use remote**, shown once before anything changes; none of those three write git. Get latest never writes git; no per-part overwrite. MCP: `part_id` / `assembly_id` only — no `path` arg or result field. Names shown as written. The v1 reader and v1→v2 planner are gone. Open still reads the marker. `git_upgrade_vault` stays as the generic hook with no steps registered; a non-current marker with no step is **unsupported vault version**.
 
 1. Header is a separate `// @name <display>` line under `// @surf-id`.
-2. Upgrade is a pure layout migration of the **remote** bytes in one commit. If the WC has edits, a normal Save runs right after under the same confirmation (two commits).
+2. A future format registers one step in `vaultUpgrades`. `git_upgrade_vault` runs that step only with `confirm: true`. It does not run on open. The current version returns `already_upgraded`.
 3. A deleted assembly’s id in a sibling’s `groups[].source` is a dangling label, cleaned on that sibling’s next Save.
-4. On Upgrade, delete `README.md` only if it is byte-identical to a known old seed text; otherwise leave it.
+4. Save never writes or deletes `README.md`.
 5. **No `path` alias** and no `path` in results. Tools accept only `part_id` / `assembly_id` (pre-release; no deprecation cycle).
 6. Duplicate names are shown **as written**, with no short-id suffix or other disambiguation.
 

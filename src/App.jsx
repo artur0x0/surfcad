@@ -304,7 +304,6 @@ import {
   githubRedirectUri,
   dirtyPartIds,
   isWorkspaceDirty,
-  isUpgradeWorkingCopyDirty,
   listVaultAssemblies,
   takenAssemblyNames,
   resolveAssemblyFolderName,
@@ -439,19 +438,12 @@ import { titleFocusPartId } from './utils/titleFocus.js';
 import { partScriptMatchesCommitted } from './utils/git/planSave';
 import { makeBranchTip, scheduleLastCommitFromApp } from './utils/git/lastCommit';
 import {
-  detectVaultLayout,
-  executeUpgrade,
-  executeUpgradeConflictChoice,
-  applyUpgradeReload,
-  adoptUpgradeWorkingCopy,
-  upgradePersistIncomplete,
-  rollbackFailedUpgradeDocSave,
-  workingCopyUnpersistedResult,
-  openLegacyAssembly,
-  UnsupportedVaultLayoutError,
-  listLegacyAssemblyNames,
-} from './utils/git/legacyVault';
-import { upgradeVaultEnabled, UPGRADE_UNAVAILABLE } from './utils/git/upgradeVaultEnabled';
+  UNSUPPORTED_VAULT_CODE,
+  UNSUPPORTED_VAULT_COPY,
+  checkVaultVersion,
+  runVaultUpgrade,
+  unsupportedVaultVersionResult,
+} from './utils/git/vaultUpgrade.js';
 import PartFeed from './components/PartFeed';
 import manifoldContext from './utils/ManifoldWorker';
 import DEFAULT_SCRIPT, { blankPartStarter } from './utils/defaultScript';
@@ -549,18 +541,6 @@ const App = () => {
     }
     return out;
   }, []);
-  /** Scripts for these row ids (rows of the open document, else the id is its own definition), keyed by row id. */
-  const loadPartScripts = useCallback(async (ids, opts) => {
-    const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    const defs = [...new Set(list.map((id) => definitionIdFor(id)))];
-    const loaded = await loadPartScriptRecords(defs, opts);
-    const out = {};
-    for (const id of list) {
-      const text = loaded?.[definitionIdFor(id)];
-      if (typeof text === 'string') out[id] = text;
-    }
-    return out;
-  }, [definitionIdFor]);
   /** Per-part undo keys worth keeping: every row and every definition. */
   const historyKeepKeys = (parts, extra = []) => {
     const keep = new Set(extra);
@@ -4615,26 +4595,9 @@ const App = () => {
 
   const openNamedVaultAssembly = async (adapter, repo, name, opts = {}) => {
     const branch = opts.branch || 'main';
-    const store = gitSync();
-    const folder = vaultSegment(name);
-    const cached = assemblyRef.current;
-    const knownAssemblyId = opts.knownAssemblyId
-      || store.assemblyIdFor(repo, folder)
-      || (cached
-        && vaultSegment(cached.name) === folder
-        && isSurfId(cached.id)
-        ? cached.id
-        : undefined);
-    const assemblyIdIndex = opts.assemblyIdIndex || store.assemblyIdIndexFor(repo);
-    const detected = await detectVaultLayout(adapter, repo, branch);
-    if (detected.layout !== 'legacy') {
-      throw new UnsupportedVaultLayoutError(detected.layout);
-    }
-    return openLegacyAssembly(adapter, repo, name, {
-      ...opts,
-      knownAssemblyId,
-      assemblyIdIndex,
-    });
+    // Folder names are the old layout. The version check runs, then the
+    // v2 opener. An older or unknown marker is not opened.
+    return openV2Assembly(adapter, repo, name, { ...opts, branch });
   };
 
   const handleOpenVaultAssembly = async (name, adapter = null) => {
@@ -4685,6 +4648,7 @@ const App = () => {
     } catch (err) {
       console.warn('[App] Open assembly failed:', err?.message || err);
       if (err?.message === NO_REPO_YET_COPY) setUploadNotice(NO_REPO_YET_COPY);
+      if (err?.code === UNSUPPORTED_VAULT_CODE) setUploadError(UNSUPPORTED_VAULT_COPY);
       return gitOpCatchResult(err, 'Could not open assembly');
     }
   };
@@ -4953,8 +4917,7 @@ const App = () => {
    * Neither writes git. Switch does not open the outbox hold or the
    * save-conflict dialog. Create and merge call this without `preview`
    * and still load.
-   * v2 opens by assembly id (openV2Assembly). leftover switchVaultBranch
-   * opens by folder name and throws UnsupportedVaultLayoutError on v2.
+   * v2 opens by assembly id (openV2Assembly). A folder name is not a v2 id.
    */
   const handleSwitchBranch = async (branchName, { choice, preview = false } = {}) => {
     const doc = assemblyRef.current;
@@ -6493,7 +6456,8 @@ const App = () => {
   /**
    * A git document always carries `vaultLayout`. One persisted before the
    * stamp, or a local document that went git on connect, gets it from the
-   * vault here: surfcad.json v2 → 'v2', a v1 tree → 'legacy', no repo yet →
+   * vault here: current marker → 'v2', an older or unknown version →
+   * 'legacy' (Save then returns unsupported vault version), no repo yet →
    * 'v2' (the first Save creates a v2 vault). Read-only; nothing is written.
    */
   const ensureDocVaultLayout = async () => {
@@ -6502,7 +6466,7 @@ const App = () => {
     let detected = null;
     try {
       const vault = await ensureGitVault({ create: false });
-      detected = await detectVaultLayout(gitAdapterRef.current, vault.repo, gitWorkingBranch());
+      detected = await checkVaultVersion(gitAdapterRef.current, vault.repo, gitWorkingBranch());
     } catch (err) {
       if (err?.message !== NO_REPO_YET_COPY) throw err;
     }
@@ -6552,14 +6516,9 @@ const App = () => {
       if (!doc || doc.source !== 'git') return { status: 'error', error: 'Not in Git mode' };
     }
     if (isV2PlanSaveDoc(doc)) return handleV2PlanSave(message);
-    if (doc.vaultLayout === 'legacy' && upgradeVaultEnabled()) {
-      return {
-        status: 'upgrade_required',
-        code: 'upgrade_required',
-        error: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
-        message: 'This vault is still v1. Confirm Upgrade vault to rewrite it to v2. Nothing was written.',
-        hint: 'git_upgrade_vault { confirm: true } after the user agrees',
-      };
+    if (doc.vaultLayout === 'legacy') {
+      setUploadError(UNSUPPORTED_VAULT_COPY);
+      return unsupportedVaultVersionResult();
     }
     try {
       const vault = await ensureGitVault({ create: true });
@@ -6727,277 +6686,23 @@ const App = () => {
   };
 
   /**
-   * Crash-safe Upgrade re-key: snapshot was taken from IDB, then persist
-   * writes `to` and saveDoc before deleting `from`.
+   * git_upgrade_vault. Reads surfcad.json and runs a registered step.
+   * None are registered. The current version returns already_upgraded.
+   * An older or unknown version with no step returns unsupported_vault_version.
+   * A step runs only when confirm is true. Never runs on open.
    */
-  const persistUpgradeWorkingCopy = async ({
-    nextDoc,
-    nextScripts,
-    pairs = [],
-    sourceDoc,
-    sourceScripts,
-    partAssets = null,
-  }) => {
-    const persisted = await persistCollapsedWorkingCopy({
-      collapsed: { doc: nextDoc, scripts: nextScripts, pairs },
-      sourceDoc,
-      sourceScripts,
-      heldScripts: sourceScripts,
-      save: async (id, script) => {
-        const part = (nextDoc.parts || []).find((row) => row.id === id);
-        const from = pairs.find((row) => row.to === id)?.from || id;
-        const mesh = partAssets?.[id] || partAssets?.[from];
-        return savePartScript(id, script, {
-          ...(typeof part?.isSynced === 'boolean' ? { isSynced: part.isSynced } : {}),
-          ...(mesh || {}),
-        });
-      },
-      load: loadPartScript,
-      remove: async (id) => {
-        try { await deletePartScript(id); } catch { /* keep the new key */ }
-      },
-      saveDoc: saveAssemblyDocument,
-      live: () => {
-        const liveScripts = { ...partScriptsRef.current };
-        const id = assemblyRef.current?.activeId;
-        const text = codeEditorRef.current?.getContent?.();
-        if (
-          id
-          && typeof text === 'string'
-          && !suppressPartSaveRef.current
-          && editorLiveRef.current
-          && appModeRef.current !== 'game'
-        ) {
-          liveScripts[id] = text;
-        }
-        return liveScripts;
-      },
-      assemblyKey: assemblyRekeyKey(sourceDoc),
-      saveJournal: saveRekeyJournal,
-      clearJournal: clearRekeyJournal,
-      onFlight: (flightPairs, opts) => {
-        persistFlightPairsRef.current = Array.isArray(flightPairs) ? flightPairs : [];
-        persistFlightToOnlyRef.current = !!(opts && opts.toOnly);
-      },
-      apply: ({ doc: appliedDoc, scripts: appliedScripts }) => {
-        if (pairs.length) rekeyRuntime(pairs);
-        rememberScripts(appliedScripts);
-        rememberAssembly(appliedDoc, { persist: false });
-      },
-    });
-    if (persisted.docSaved === false) {
-      persistFlightPairsRef.current = [];
-      persistFlightToOnlyRef.current = false;
-      await rollbackFailedUpgradeDocSave(persisted, {
-        sourceDoc,
-        restore: async (id, bytes) => {
-          try { await savePartScript(id, bytes); } catch { /* same-key snapshot */ }
-        },
-        remove: async (id) => {
-          try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
-        },
-      });
-    }
-    return persisted;
-  };
-
-  /**
-   * Upgrade vault: one commit of remote bytes. Dirty WC → a second commit
-   * inside legacyVault/ (PR 7 replaces that follow-up with planSave).
-   * Never createRepo. Never flush the outbox.
-   */
-  const handleUpgradeVault = async ({ overwrite = false, message } = {}) => {
-    const doc = assemblyRef.current;
-    if (!doc || doc.source !== 'git') {
-      return {
-        status: 'error',
-        code: 'git_error',
-        error: 'Not in Git mode',
-        message: 'Not in Git mode',
-        hint: 'Open a git-backed assembly, then retry Upgrade vault.',
-      };
-    }
-    if (!upgradeVaultEnabled()) {
-      return { ...UPGRADE_UNAVAILABLE };
-    }
+  const handleUpgradeVault = async ({ confirm = false } = {}) => {
     try {
       const vault = await ensureGitVault({ create: false });
-      const adapter = gitAdapterRef.current;
-      const branch = gitWorkingBranch();
-      const store = gitSync();
-      const scripts = { ...partScriptsRef.current };
-      const live = codeEditorRef.current?.getContent?.();
-      const dirty = isUpgradeWorkingCopyDirty({
-        sidecar: gitSidecarRef.current,
-        doc,
-        scripts,
-        baseline: gitBaselineRef.current,
-        liveId: doc.activeId,
-        liveScript: typeof live === 'string' ? live : null,
-        editorLive: editorLiveRef.current === true,
-      });
-      if (dirty && typeof live === 'string' && doc.activeId && editorLiveRef.current === true) {
-        scripts[doc.activeId] = live;
-      }
-      const snapshotStatus = await loadAssemblyDocumentStatus();
-      const snapshotDoc = snapshotStatus.status === 'hit' ? snapshotStatus.doc : doc;
-      const snapshotIds = [...new Set([
-        ...(snapshotDoc?.parts || []).map((part) => part.id),
-        ...(doc.parts || []).map((part) => part.id),
-      ].filter(Boolean))];
-      const snapshotScripts = await loadPartScripts(snapshotIds);
-      const assets = await loadPartAssets((doc.parts || []).map((part) => part.id));
-      const workingCopy = { dirty, doc, scripts, assets, message };
-      const result = await executeUpgrade({
-        adapter,
-        repo: vault.repo,
-        branch,
-        store,
-        workingCopy,
-        followupOverwrite: overwrite === true,
-      });
-      const adopted = await adoptUpgradeWorkingCopy({
-        result,
-        workingCopy,
-        adapter,
-        repo: vault.repo,
-        branch,
-        store,
-        sourceDoc: snapshotDoc,
-        journalPairs: reusePairsFromJournal(await loadRekeyJournal(), doc),
-        persist: ({ nextDoc, nextScripts, pairs, assets: partAssets }) => persistUpgradeWorkingCopy({
-          nextDoc,
-          nextScripts,
-          pairs,
-          sourceDoc: snapshotDoc,
-          sourceScripts: snapshotScripts,
-          partAssets: partAssets || assets,
-        }),
-        restoreScripts: async (id, bytes) => {
-          try { await savePartScript(id, bytes); } catch { /* same-key snapshot */ }
-        },
-        removeOrphans: async (ids) => {
-          for (const id of ids || []) {
-            try { await deletePartScript(id); } catch { /* unreferenced to-key */ }
-          }
-        },
-      });
-      if (adopted.status === 'error') {
-        setUploadError(adopted.result?.error || adopted.result?.message || 'Could not save the upgraded working copy.');
-        return adopted.result;
-      }
-      if (adopted.persisted) {
-        rememberScripts(adopted.persisted.scripts);
-        rememberAssembly({ ...adopted.persisted.doc, source: 'git', vaultLayout: 'v2' });
-        const recapture = result.status !== 'conflict'
-          && (result.status !== 'already_upgraded' || !dirty);
-        if (recapture) {
-          const head = (await adapter.getBranch(vault.repo, branch))?.sha || result.sha || null;
-          rememberGitBaseline(captureBaseline({
-            assemblyPath: assemblyFilePath(vaultSegment(adopted.persisted.doc.name) || adopted.persisted.doc.name),
-            assemblyName: adopted.persisted.doc.name,
-            doc: adopted.persisted.doc,
-            scripts: adopted.persisted.scripts,
-            assets: adopted.rekey?.assets || assets,
-            branch,
-            headSha: head,
-          }));
-          await clearWorkingCopySidecar();
-        }
-      } else if (result.status === 'already_upgraded') {
-        rememberAssembly({ ...assemblyRef.current, vaultLayout: 'v2' });
-      }
-      return result;
-    } catch (err) {
-      if (err?.name === 'PersistCrash') {
-        setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
-        return workingCopyUnpersistedResult();
-      }
-      return gitOpCatchResult(err, 'Upgrade vault failed');
-    }
-  };
-
-  /** §2.9 on the follow-up Save only. Get latest never writes git. */
-  const handleUpgradeConflict = async ({ action, files, paths, message, tipSha } = {}) => {
-    const doc = assemblyRef.current;
-    if (!doc || doc.source !== 'git') {
-      return {
-        status: 'error',
-        code: 'git_error',
-        error: 'Not in Git mode',
-        message: 'Not in Git mode',
-      };
-    }
-    try {
-      const vault = await ensureGitVault({ create: false });
-      const store = gitSync();
-      const branch = gitWorkingBranch();
-      const snapshotStatus = await loadAssemblyDocumentStatus();
-      const snapshotDoc = snapshotStatus.status === 'hit' ? snapshotStatus.doc : doc;
-      const snapshotIds = [...new Set((snapshotDoc?.parts || []).map((part) => part.id).filter(Boolean))];
-      const snapshotScripts = await loadPartScripts(snapshotIds);
-      const result = await executeUpgradeConflictChoice({
-        action,
+      return await runVaultUpgrade({
         adapter: gitAdapterRef.current,
         repo: vault.repo,
-        branch,
-        files,
-        paths,
-        message,
-        store,
-        assemblyId: doc.id,
-        tipSha: tipSha || store.getBranchTip?.(vault.repo, branch)?.tipSha || null,
+        ref: gitWorkingBranch(),
+        confirm: confirm === true,
       });
-      const persistConflictWorkingCopy = async (nextDoc, nextScripts, pairs = []) => {
-        const persisted = await persistUpgradeWorkingCopy({
-          nextDoc: { ...nextDoc, source: 'git', vaultLayout: 'v2' },
-          nextScripts,
-          pairs,
-          sourceDoc: snapshotDoc,
-          sourceScripts: snapshotScripts,
-        });
-        if (upgradePersistIncomplete(persisted)) {
-          setUploadError('Could not save the upgraded working copy. The previous working copy was kept.');
-          return workingCopyUnpersistedResult();
-        }
-        rememberScripts(persisted.scripts);
-        rememberAssembly({ ...persisted.doc, source: 'git', vaultLayout: 'v2' });
-        return persisted;
-      };
-      if (result.status === 'reloaded' && result.contents) {
-        const applied = applyUpgradeReload(assemblyRef.current, partScriptsRef.current, result.contents);
-        const nextDoc = applied.doc
-          ? { ...applied.doc, vaultLayout: 'v2' }
-          : { ...assemblyRef.current, vaultLayout: 'v2' };
-        const persisted = await persistConflictWorkingCopy(nextDoc, applied.scripts, []);
-        if (persisted.status === 'error') return persisted;
-        const active = nextDoc?.parts?.find((part) => part.id === nextDoc.activeId)
-          || nextDoc?.parts?.[0];
-        const text = persisted.scripts?.[active?.id];
-        if (active && typeof text === 'string') {
-          focusPartHistory(active.id, text);
-          setCurrentFilename(active.name);
-          setCurrentScript(text);
-          codeEditorRef.current?.loadContent(text, active.name, false);
-        }
-      }
-      if (result.status === 'committed' || result.status === 'branched') {
-        const persisted = await persistConflictWorkingCopy(
-          { ...assemblyRef.current, vaultLayout: 'v2' },
-          { ...partScriptsRef.current },
-          [],
-        );
-        if (persisted.status === 'error') return persisted;
-      }
-      if (result.status === 'branched' && result.branch) {
-        const baseline = gitBaselineRef.current;
-        if (baseline) {
-          rememberGitBaseline({ ...baseline, branch: result.branch, headSha: result.sha || baseline.headSha });
-        }
-      }
-      return result;
     } catch (err) {
-      return gitOpCatchResult(err, 'Upgrade follow-up failed');
+      if (err?.code === UNSUPPORTED_VAULT_CODE) setUploadError(UNSUPPORTED_VAULT_COPY);
+      return gitOpCatchResult(err, 'Upgrade vault failed');
     }
   };
 
@@ -7805,6 +7510,7 @@ const App = () => {
     } catch (err) {
       console.warn('[App] Open assembly failed:', err?.message || err);
       if (err?.message === NO_REPO_YET_COPY) setUploadNotice(NO_REPO_YET_COPY);
+      if (err?.code === UNSUPPORTED_VAULT_CODE) setUploadError(UNSUPPORTED_VAULT_COPY);
       if (err?.code === 'unknown_assembly') {
         return { status: 'error', code: 'unknown_assembly', error: err.message };
       }
@@ -11349,9 +11055,6 @@ const App = () => {
         editedSinceLoad,
         pendingSave,
         ...(unsaved === true || unsaved === false ? { unsaved } : {}),
-        ...(doc?.vaultLayout === 'legacy' && upgradeVaultEnabled()
-          ? { upgradeRequired: true }
-          : {}),
       });
     },
     readToasts() {
@@ -11692,17 +11395,19 @@ const App = () => {
       }
       const ctx = await agentGitReadContext('open_assembly');
       if (ctx.error) return { error: ctx.error };
-      let layout = 'v2';
       try {
-        const detected = await detectVaultLayout(ctx.adapter, ctx.vault.repo, ctx.branch);
-        layout = detected.layout;
+        const checked = await checkVaultVersion(ctx.adapter, ctx.vault.repo, ctx.branch);
+        if (checked.state !== 'current' && checked.state !== 'unmarked') {
+          setUploadError(UNSUPPORTED_VAULT_COPY);
+          return { error: { code: UNSUPPORTED_VAULT_CODE, message: UNSUPPORTED_VAULT_COPY } };
+        }
       } catch (err) {
         if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
           setUploadNotice(NO_REPO_YET_COPY);
           return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
         }
       }
-      if (layout !== 'v2' || !isV2SurfId(assemblyId)) {
+      if (!isV2SurfId(assemblyId)) {
         return { error: unknownAssemblyError(assemblyId) };
       }
       const opened = await handleOpenV2VaultAssembly(assemblyId, ctx.adapter);
@@ -11771,18 +11476,18 @@ const App = () => {
       const ctx = await agentGitReadContext('list_assemblies');
       if (ctx.error) return { error: ctx.error };
       try {
-        // Saved v2 assemblies (id paths; empty on a fresh or legacy tree), the
-        // open unsaved one, and legacy folders by name. The detector calls a
-        // repo with no version marker legacy, so a fresh vault is not v2 yet.
-        const detected = await detectVaultLayout(ctx.adapter, ctx.vault.repo, ctx.branch);
-        const v2 = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
-        let legacyNames = [];
-        if (detected.legacyTree) {
-          const tree = await ctx.adapter.listTree(ctx.vault.repo, ctx.branch);
-          legacyNames = listLegacyAssemblyNames(tree);
+        const checked = await checkVaultVersion(ctx.adapter, ctx.vault.repo, ctx.branch);
+        if (checked.state !== 'current' && checked.state !== 'unmarked') {
+          setUploadError(UNSUPPORTED_VAULT_COPY);
+          return { error: { code: UNSUPPORTED_VAULT_CODE, message: UNSUPPORTED_VAULT_COPY } };
         }
-        return { result: { assemblies: assemblyRows({ v2, legacyNames, open: openRow }) } };
+        const v2 = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
+        return { result: { assemblies: assemblyRows({ v2, open: openRow }) } };
       } catch (err) {
+        if (err?.code === UNSUPPORTED_VAULT_CODE) {
+          setUploadError(UNSUPPORTED_VAULT_COPY);
+          return { error: { code: UNSUPPORTED_VAULT_CODE, message: UNSUPPORTED_VAULT_COPY } };
+        }
         if (err?.message === NO_REPO_YET_COPY || err?.code === 'git_blocked') {
           setUploadNotice(NO_REPO_YET_COPY);
           return { error: { code: 'git_blocked', message: NO_REPO_YET_COPY } };
@@ -12047,8 +11752,8 @@ const App = () => {
       }
       return out;
     },
-    async agentGitUpgradeVault() {
-      return handleUpgradeVault();
+    async agentGitUpgradeVault({ confirm } = {}) {
+      return handleUpgradeVault({ confirm });
     },
     async agentGitAddToRepo({ partId }) {
       if (!partId) return { status: 'error', error: 'part_id required' };
@@ -12876,12 +12581,9 @@ const App = () => {
       planSaveConflict={planSaveConflict}
       onPlanSaveConflict={handlePlanSaveConflict}
       onPlanSaveConflictClear={() => setPlanSaveConflict(null)}
-      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'v2' && gitSession.phase === 'connected') || (upgradeVaultEnabled() && assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'legacy' && gitSession.phase === 'connected')}
+      canCommit={assemblyDoc?.source === 'git' && !!sourceDirty && gitSession.phase === 'connected' || (assemblyDoc?.source === 'git' && assemblyDoc?.vaultLayout === 'v2' && gitSession.phase === 'connected')}
       vaultLayout={assemblyDoc?.vaultLayout || null}
-      upgradeAvailable={upgradeVaultEnabled()}
       onGitCommit={handleGitCommit}
-      onUpgradeVault={handleUpgradeVault}
-      onUpgradeConflict={handleUpgradeConflict}
       onOverwriteMain={handleOverwriteMain}
       behindPartIds={behindPartIdSet}
       assemblyBehind={!!behindMarkers.assemblyBehind}

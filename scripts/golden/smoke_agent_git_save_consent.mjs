@@ -7,7 +7,8 @@
  * with no vault paths in a new assembly, git_save returns consent_pending at
  * once, the user clicks Allow, the retry commits v2 f(id) files
  * (assemblies/<id>.surf.json + parts/<id>.js). The fake vault already
- * carries surfcad.json, so that Save commit does not re-write the marker.
+ * carries a version-2 surfcad.json, so that Save commit does not re-write
+ * the marker and a later branch switch can open the vault.
  * Save never writes README.md. Then rename_part updates the working copy
  * only (moved: false, no commit). A v2 name may match another part; it is
  * not numbered. A path is unknown_part.
@@ -108,7 +109,10 @@ if (!(await waitForServer())) {
   process.exit(1);
 }
 
-const fake = createFakeGithub({ login: 'golden-agent' });
+const fake = createFakeGithub({
+  login: 'golden-agent',
+  marker: `${JSON.stringify({ kind: 'surfcad-vault', version: 2 }, null, 2)}\n`,
+});
 const browser = await chromium.launch({
   executablePath: exe,
   headless: true,

@@ -136,7 +136,7 @@ test('a queued delete hides that assembly from the v2 list by name', async () =>
   assert.equal(hidden.parts.length, browse.parts.length, 'v2 parts live in parts/ and are not folder-scoped');
 });
 
-test('a mixed tree lists v1 folders and v2 files together; a v1-only tree still lists folders', async () => {
+test('an older marker is not browsed', async () => {
   const gh = createMockGithubAdapter({ login: 'artur' });
   const repo = gh._seedRepo({
     name: 'surfcad-vault',
@@ -147,10 +147,14 @@ test('a mixed tree lists v1 folders and v2 files together; a v1-only tree still 
       [assemblyIdPath(BIKE)]: v2Assembly(BIKE, 'Hubless Bike'),
     },
   });
-  const rows = vaultOpenAssemblies(await listVaultBrowseItems(gh, { owner: repo.owner, name: repo.name }, 'main'));
-  assert.deepEqual(rows.map((row) => [row.name, row.id || null]), [
-    ['Cover', null], ['Gearbox', null], ['Hubless Bike', BIKE],
-  ]);
+  await assert.rejects(
+    () => listVaultBrowseItems(gh, { owner: repo.owner, name: repo.name }, 'main'),
+    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
+  );
+  await assert.rejects(
+    () => listVaultAssemblies(gh, { owner: repo.owner, name: repo.name }, 'main'),
+    (err) => err?.code === 'unsupported_vault_version',
+  );
 });
 
 test('Open assembly wiring: rows open and insert by id, a read error is shown, the empty copy is the helper', () => {

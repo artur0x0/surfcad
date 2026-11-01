@@ -8,6 +8,7 @@
  * golden can assert exactly which files one commit wrote.
  */
 import { createHash } from 'node:crypto';
+import { vaultMarkerContent } from '../../../src/utils/git/vaultNames.js';
 
 const API = 'https://api.github.com';
 
@@ -43,7 +44,7 @@ export function createFakeGithub({ login = 'golden-agent', repo = 'surfcad-vault
     return sha;
   };
 
-  const seed = new Map([['surfcad.json', putBlob(marker || `${JSON.stringify({ kind: 'surfcad-vault', version: 1 }, null, 2)}\n`)]]);
+  const seed = new Map([['surfcad.json', putBlob(marker || vaultMarkerContent())]]);
   branches.set('main', putCommit({ tree: putTree(seed), parents: [], message: 'Create SurfCAD vault' }));
 
   const repoInfo = () => ({

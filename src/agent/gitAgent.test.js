@@ -311,80 +311,50 @@ test('git_branch_create failed switch stays created with switchError', async () 
   assert.equal(out.error, undefined);
 });
 
-test('git_upgrade_vault without confirm is refused', () => {
-  const missing = gitUpgradeVaultCommand.checkArgs({});
-  assert.equal(missing?.code, 'confirm_required');
-  assert.match(missing?.message || '', /confirm: true/);
-  assert.equal(gitUpgradeVaultCommand.checkArgs({ confirm: false })?.code, 'confirm_required');
+test('git_upgrade_vault checkArgs does not require confirm', () => {
+  assert.equal(gitUpgradeVaultCommand.checkArgs({}), null);
+  assert.equal(gitUpgradeVaultCommand.checkArgs({ confirm: false }), null);
   assert.equal(gitUpgradeVaultCommand.checkArgs({ confirm: true }), null);
 });
 
-test('git_upgrade_vault run refuses without confirm and does not call the host', async () => {
-  let called = false;
-  const ctx = {
-    readAgentGitAdapterKind: () => 'mock',
-    agentGitUpgradeVault: async () => {
-      called = true;
-      return { status: 'upgraded' };
-    },
-  };
-  const out = await gitUpgradeVaultCommand.run(ctx, {});
-  assert.equal(called, false);
-  assert.equal(out.error?.code, 'confirm_required');
-});
-
-test('git_upgrade_vault with confirm is upgrade_unavailable when the flag is off', async () => {
-  let called = false;
-  const ctx = {
-    readAgentGitAdapterKind: () => 'mock',
-    upgradeVaultEnv: { enabled: false },
-    agentGitUpgradeVault: async () => {
-      called = true;
-      return { status: 'upgraded' };
-    },
-  };
-  const out = await gitUpgradeVaultCommand.run(ctx, { confirm: true });
-  assert.equal(called, false);
-  assert.equal(out.error?.code, 'upgrade_unavailable');
-  assert.match(out.error?.message || '', /not available/);
-});
-
-test('gitOpResult treats upgrade_unavailable as an error with a hint', () => {
-  const out = gitOpResult({
-    status: 'error',
-    code: 'upgrade_unavailable',
-    message: 'Upgrade vault is not available in this build.',
-    hint: 'opt in from dev',
-  });
-  assert.equal(out.error?.code, 'upgrade_unavailable');
-  assert.equal(out.error?.hint, 'opt in from dev');
-  assert.equal(out.result, undefined);
-});
-
-test('git_upgrade_vault with confirm: true calls the host', async () => {
+test('git_upgrade_vault forwards confirm to the host', async () => {
   let args;
   const ctx = {
     readAgentGitAdapterKind: () => 'mock',
     agentGitUpgradeVault: async (a) => {
       args = a;
-      return { status: 'upgraded', sha: 'abc' };
+      return { status: 'already_upgraded' };
     },
   };
+  const plain = await gitUpgradeVaultCommand.run(ctx, {});
+  assert.equal(args.confirm, false);
+  assert.equal(plain.result?.status, 'already_upgraded');
   const out = await gitUpgradeVaultCommand.run(ctx, { confirm: true });
   assert.equal(args.confirm, true);
-  assert.equal(out.result?.status, 'upgraded');
+  assert.equal(out.result?.status, 'already_upgraded');
   assert.equal(out.error, undefined);
 });
 
-test('gitOpResult treats upgrade_required and upgrade conflict as errors with hints', () => {
+test('gitOpResult treats unsupported_vault_version as an error', () => {
+  const out = gitOpResult({
+    status: 'error',
+    code: 'unsupported_vault_version',
+    message: 'unsupported vault version',
+  }, { commandName: 'git_upgrade_vault' });
+  assert.equal(out.error?.code, 'unsupported_vault_version');
+  assert.equal(out.error?.message, 'unsupported vault version');
+  assert.equal(out.result, undefined);
+});
+
+test('gitOpResult treats unsupported vault version and upgrade conflict as errors with hints', () => {
   const required = gitOpResult({
-    status: 'upgrade_required',
-    code: 'upgrade_required',
-    message: 'This vault is still v1',
-    hint: 'git_upgrade_vault { confirm: true } after the user agrees',
+    status: 'error',
+    code: 'unsupported_vault_version',
+    message: 'unsupported vault version',
+    hint: 'No upgrade step is registered for this vault version.',
   });
-  assert.equal(required.error?.code, 'upgrade_required');
-  assert.equal(required.error?.hint, 'git_upgrade_vault { confirm: true } after the user agrees');
+  assert.equal(required.error?.code, 'unsupported_vault_version');
+  assert.equal(required.error?.hint, 'No upgrade step is registered for this vault version.');
   assert.equal(required.result, undefined);
 
   const conflict = gitOpResult({
