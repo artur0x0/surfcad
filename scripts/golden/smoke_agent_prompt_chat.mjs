@@ -85,11 +85,61 @@ const paneMetrics = (page) => page.evaluate(() => {
   } : null;
 });
 
+async function composerBox(page) {
+  return page.evaluate(() => {
+    const prompt = document.querySelector('[data-agent-prompt]');
+    const input = document.querySelector('[data-agent-prompt-input]');
+    const send = document.querySelector('[data-agent-prompt-send]');
+    const cam = document.querySelector('[data-agent-prompt-screenshot]');
+    const actions = document.querySelector('[data-agent-prompt-actions]');
+    if (!prompt || !input || !send || !cam || !actions) return null;
+    const ir = input.getBoundingClientRect();
+    const sr = send.getBoundingClientRect();
+    const cr = cam.getBoundingClientRect();
+    const pr = prompt.getBoundingClientRect();
+    const ar = actions.getBoundingClientRect();
+    const cs = window.getComputedStyle(input);
+    return {
+      inputLeft: ir.left,
+      inputRight: ir.right,
+      inputBottom: ir.bottom,
+      promptLeft: pr.left,
+      promptRight: pr.right,
+      promptWidth: pr.width,
+      sendTop: sr.top,
+      camTop: cr.top,
+      sendRight: sr.right,
+      sendLeft: sr.left,
+      camRight: cr.right,
+      actionsRight: ar.right,
+      sendW: sr.width,
+      sendH: sr.height,
+      camW: cr.width,
+      camH: cr.height,
+      fontSize: parseFloat(cs.fontSize),
+      clientHeight: input.clientHeight,
+      scrollHeight: input.scrollHeight,
+      viewportWidth: window.innerWidth,
+    };
+  });
+}
+
 async function run(page, label, { maxHeight }) {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[data-agent-prompt]', { timeout: 120000 });
   await page.waitForSelector('[data-agent-reply]', { timeout: 30000 });
   await page.waitForTimeout(300);
+  const laidOut = await composerBox(page);
+  check(`${label}: viewport is the expected width`, laidOut && (label === 'phone' ? laidOut.viewportWidth === 390 : laidOut.viewportWidth === 1280), JSON.stringify(laidOut && { viewportWidth: laidOut.viewportWidth }));
+  check(`${label}: input is the full width of the prompt`, laidOut && (laidOut.inputLeft - laidOut.promptLeft) <= 16 && (laidOut.promptRight - laidOut.inputRight) <= 16 && laidOut.inputRight - laidOut.inputLeft > laidOut.promptWidth * 0.8, JSON.stringify(laidOut));
+  check(`${label}: camera and send sit below the input and are right-aligned`, laidOut && laidOut.sendTop >= laidOut.inputBottom - 1 && laidOut.camTop >= laidOut.inputBottom - 1 && (laidOut.actionsRight - laidOut.sendRight) <= 12 && laidOut.camRight <= laidOut.sendLeft + 1, JSON.stringify(laidOut));
+  check(`${label}: camera and send are at least 44px and the field is at least 16px`, laidOut && laidOut.sendW >= 44 && laidOut.sendH >= 44 && laidOut.camW >= 44 && laidOut.camH >= 44 && laidOut.fontSize >= 16, JSON.stringify(laidOut));
+  if (label === 'phone') {
+    await page.fill('[data-agent-prompt-input]', Array.from({ length: 8 }, (_, i) => `line ${i} is long enough to wrap the phone field`).join('\n'));
+    await page.waitForTimeout(50);
+    const grown = await composerBox(page);
+    check('phone 390: the field grows to about five lines then scrolls', grown && grown.scrollHeight > grown.clientHeight && grown.clientHeight <= 140, JSON.stringify(grown && { clientHeight: grown.clientHeight, scrollHeight: grown.scrollHeight }));
+  }
   let m = await paneMetrics(page);
   check(`${label}: both senders in order`, m && m.roles.join(',') === 'user,agent,user,agent,user,agent,user,agent', JSON.stringify(m?.roles));
   check(`${label}: user messages sit right`, m?.lastUserRight === true);
@@ -144,6 +194,23 @@ async function run(page, label, { maxHeight }) {
   await page.waitForFunction(() => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= 14, null, { timeout: 10000 });
   m = await paneMetrics(page);
   check(`${label}: the history came back with the next message`, m && m.count === 14, JSON.stringify({ count: m?.count }));
+
+  if (label === 'phone') {
+    const touchText = 'Touch send from the phone keyboard.';
+    await page.focus('[data-agent-prompt-input]');
+    await page.fill('[data-agent-prompt-input]', touchText);
+    const box = await page.locator('[data-agent-prompt-send]').boundingBox();
+    check('phone 390: send button has a box to tap', !!box && box.width >= 44 && box.height >= 44, JSON.stringify(box));
+    if (box) {
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForFunction(() => {
+        const el = document.querySelector('[data-agent-prompt-input]');
+        return el && el.value === '';
+      }, null, { timeout: 5000 });
+      await page.waitForFunction(() => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= 16, null, { timeout: 10000 });
+      check('phone 390: a touch on Send clears the field and the agent receives it', true);
+    }
+  }
 }
 
 console.log('agent prompt chat golden');

@@ -107,14 +107,20 @@ test('Allow/Deny copy uses shared surface/text classes, not black on dark surfac
   assert.doesNotMatch(SRC, /text-chrome-text-secondary/);
 });
 
-test('popup auto-closes when connected, with no Agent connected banner or toast', () => {
+test('popup auto-closes when connected and shows the Agent connected toast, not a banner', () => {
   assert.match(SRC, /shouldClosePairingDialogOnConnect/);
   assert.match(SRC, /setFlowOpen\(false\)/);
   assert.doesNotMatch(SRC, /setToastOpen/);
-  assert.doesNotMatch(SRC, /data-agent-bridge-connected-toast/);
+  assert.match(SRC, /data-agent-bridge-connected-toast/);
+  assert.match(SRC, /data-agent-bridge-disconnected-toast/);
+  assert.match(SRC, /AGENT_CONNECTED_TOAST_COPY/);
+  assert.match(SRC, /AGENT_CONNECTED_TOAST_MS/);
+  assert.match(SRC, /AGENT_DISCONNECTED_TOAST_COPY/);
+  assert.match(SRC, /data-ui-action="data-agent-connected-toast-disconnect"/);
+  assert.match(SRC, /data-ui-action="data-agent-disconnected-toast-reconnect"/);
+  assert.match(SRC, /shouldToastAgentDisconnect/);
   assert.doesNotMatch(SRC, /data-agent-connected-banner/);
   assert.doesNotMatch(SRC, /data-agent-connected-disconnect/);
-  assert.doesNotMatch(SRC, /AGENT_CONNECTED_TOAST/);
 });
 
 test('connection ring is a wrap sibling with a glow, not a rotated child of the glass chip', () => {

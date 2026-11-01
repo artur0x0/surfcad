@@ -68,6 +68,19 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   // The dots, Stop, and the working hint follow one pending prompt (agentPromptTyping.js).
   assert.match(SRC, /dispatchTyping\(\{ type: 'stop' \}\)/);
   assert.match(SRC, /dispatchTyping\(\{ type: 'sent', id: sent\.id \}\)/);
+  assert.match(SRC, /promptDraftText\(/);
+  assert.match(SRC, /shouldClearPromptOnSend\(/);
+  assert.match(SRC, /AGENT_PROMPT_SEND_TIMEOUT_MS/);
+  assert.match(SRC, /stepPromptFlight\(flightRef\.current, \{ type: 'timeout', id: sentId \}\)/);
+  assert.match(SRC, /setAck\(timed\.ack\)/);
+  assert.match(SRC, /void transport\?\.cancel\?\.\(sentId\)/);
+  assert.match(SRC, /type: 'ack'/);
+  assert.match(SRC, /error: 'send_failed'/);
+  assert.match(SRC, /onPointerDown=\{keepFieldFocus\}/);
+  assert.match(SRC, /onPointerUp=\{onActionPointerUp\}/);
+  assert.match(SRC, /featureSheetEditLift\(/);
+  assert.match(SRC, /useModalViewport\(/);
+  assert.match(SRC, /data-agent-prompt-actions=""/);
   assert.match(SRC, /dispatchTyping\(\{ type: 'disconnect' \}\)/);
   assert.match(SRC, /const responding = typingShown\(typing\);/);
   assert.doesNotMatch(SRC, /setWorking\(/);
@@ -210,6 +223,17 @@ test('the pane reads like a chat: both senders in order, user bubbles right with
   assert.match(SRC, /dispatchChat\(\{ type: 'dismiss' \}\)/);
   assert.match(SRC, /stickToBottom\(el\)/);
   assert.match(SRC, /data-agent-prompt-jump=""/);
+});
+
+test('the composer is a full-width field with the buttons on a row below', () => {
+  assert.match(css, /--agent-prompt-btn: 44px;/);
+  assert.match(css, /--agent-prompt-max-input: min\(calc\(var\(--agent-prompt-line\) \* 5 \+ 12px\), 40vh\);/);
+  assert.match(css, /\.agent-prompt-row \{[^}]*flex-direction: column;/s);
+  assert.match(css, /\.agent-prompt-actions \{[^}]*justify-content: flex-end;/s);
+  assert.match(css, /\.agent-prompt-input \{[^}]*font-size: 16px;/s);
+  assert.match(css, /\.agent-prompt-input \{[^}]*min-height: var\(--agent-prompt-btn\);/s);
+  assert.match(css, /--agent-prompt-lift/);
+  assert.match(css, /bottom: calc\(var\(--agent-prompt-rest-bottom\) \+ var\(--agent-prompt-lift, 0px\)\)/);
 });
 
 test('the pane caps its height and scrolls inside; user bubbles are right-aligned', () => {
