@@ -489,6 +489,30 @@ export function stripBooleanBlock(buffer) {
 }
 
 /**
+ * Kernel sentence when `booleanBodies` has fewer than two solids. Sequential
+ * `insert_boolean` writes `booleanBodies(part, { op })`, which uses every
+ * body. One body throws this and the failed block used to stay in the script.
+ */
+export const BOOLEAN_INSERT_NEED_TOOL = 'booleanBodies: pick a target and at least one tool body';
+
+/**
+ * Refuse a sequential boolean insert that would throw
+ * {@link BOOLEAN_INSERT_NEED_TOOL}. `bodyCount` is the last successful run
+ * (null when this part has not been run, or the last run failed). The
+ * composer emits only `{ op }`. The second argument is the agent params bag:
+ * `body` is the script variable, and a `bodies` or `tools` field is not
+ * written, so neither counts as a second solid. An unknown count (null, or
+ * a failed run) does not refuse. A count of 0 does.
+ * @returns {string|null}
+ */
+export function booleanInsertRefusal(bodyCount, _) {
+  if (bodyCount == null || bodyCount === '') return null;
+  const n = Number(bodyCount);
+  if (!Number.isFinite(n) || n >= 2) return null;
+  return BOOLEAN_INSERT_NEED_TOOL;
+}
+
+/**
  * Confirm uses every body pick, in tap order across parts. The first is the
  * target and its part is the one written (`targetPartId`). Tools in that part
  * are named by centroid. Tools in other parts are `external`, grouped by part
