@@ -2,21 +2,26 @@
  * Local wall thickness for an injection-molded part.
  *
  * The mesh is the same one the pull scorer prepares (`analyzePullDirection`
- * in `src/molding/pullDirection.js`). Each triangle already carries the
- * normal that scorer picked: the stamped face normal from `stampedFaceTable`
- * (`src/utils/faceIdentity.js`) when the stamp did not cancel, otherwise the
- * triangle normal.
+ * in `src/molding/pullDirection.js`). Each triangle carries a geometric
+ * normal from its cross product and, when the stamp did not cancel, the
+ * stamped face normal from `stampedFaceTable` (`src/utils/faceIdentity.js`).
+ * The probe follows the geometric normal. The stamp only flips that side
+ * when the two point opposite ways.
  *
- * Two fields share each sample. The ray leaves an inset origin along −normal
- * and stops at the first back face (n · ray > 0) that does not share an edge
- * with the source. It is unstable when that hit is grazing
- * (|n_hit · ray| < 0.5). The sphere is an Inui shrinking ball: its center
- * stays on the same ray, it starts at half the ray hit (or the mesh diagonal
- * when the ray misses), and it shrinks against the closest BVH contact for
- * at most five iterations. Contacts omit the source triangle and edge
- * neighbors whose normals stay within 60° of the source, so a tessellated
- * fillet does not collapse the ball. Perpendicular skins stay in the query,
- * which is what bounds a rim, a plate edge, and a hole wall.
+ * Two fields share each sample. The ray leaves an inset origin along the
+ * triangle's own normal (the cross product; a stamp only flips that side
+ * when it points the other way). A curved face's single stamp is not the
+ * probe direction. The ray stops at the first back face (n · ray > 0) that
+ * does not share an edge with the source. It is unstable when that hit is
+ * grazing (|n_hit · ray| < 0.5). The sphere is an Inui shrinking ball: its
+ * center stays on the same ray, it starts at half the ray hit (or the mesh
+ * diagonal when the ray misses), and it shrinks against the closest BVH
+ * contact for at most five iterations. Contacts omit the source triangle and
+ * edge neighbors whose normals stay within 60° of the source. Any other
+ * contact whose normal still faces with the source is the same smooth
+ * surface and is ignored too, so a facet two rings along a fillet cannot
+ * collapse the ball. Perpendicular skins stay in the query, which is what
+ * bounds a rim, a plate edge, and a hole wall.
  *
  * The ray is kept only when it is stable and within 15% of the sphere
  * diameter. Otherwise the diameter is the thickness. A sample with no sphere
@@ -523,13 +528,18 @@ function closestOnTriangle(p, a, b, c, out) {
   out[2] = a[2] + ab[2] * v + ac[2] * w;
 }
 
-function closestContact(node, center, excluded, origin, dir, best, scratch) {
+function sameSurface(tri, srcN) {
+  if (!srcN) return false;
+  return dot(tri.n, srcN) >= MOLD_WALL_TANGENT_COS;
+}
+
+function closestContact(node, center, excluded, origin, dir, srcN, best, scratch) {
   if (!node) return;
   if (boxMaxAlong(node.min, node.max, origin, dir) <= 1e-6) return;
   if (boxDist2(node.min, node.max, center) >= best.d2) return;
   if (node.tris) {
     for (const tri of node.tris) {
-      if (excluded.has(tri.t)) continue;
+      if (excluded.has(tri.t) || sameSurface(tri, srcN)) continue;
       closestOnTriangle(center, tri.a, tri.b, tri.c, scratch);
       const along = (scratch[0] - origin[0]) * dir[0]
         + (scratch[1] - origin[1]) * dir[1]
@@ -552,11 +562,11 @@ function closestContact(node, center, excluded, origin, dir, best, scratch) {
   const leftD = node.left ? boxDist2(node.left.min, node.left.max, center) : Infinity;
   const rightD = node.right ? boxDist2(node.right.min, node.right.max, center) : Infinity;
   if (leftD < rightD) {
-    closestContact(node.left, center, excluded, origin, dir, best, scratch);
-    closestContact(node.right, center, excluded, origin, dir, best, scratch);
+    closestContact(node.left, center, excluded, origin, dir, srcN, best, scratch);
+    closestContact(node.right, center, excluded, origin, dir, srcN, best, scratch);
   } else {
-    closestContact(node.right, center, excluded, origin, dir, best, scratch);
-    closestContact(node.left, center, excluded, origin, dir, best, scratch);
+    closestContact(node.right, center, excluded, origin, dir, srcN, best, scratch);
+    closestContact(node.left, center, excluded, origin, dir, srcN, best, scratch);
   }
 }
 
@@ -572,7 +582,7 @@ function probeRay(tri, point, dir, grid, skip, seen, stamp) {
   return { dist: hit.dist + inset, nd: hit.nd };
 }
 
-function probeSphere(point, dir, ray, diag, bvh, excluded) {
+function probeSphere(point, dir, ray, diag, bvh, excluded, srcN) {
   const fromRay = !!(ray && ray.dist > 0);
   let radius = fromRay ? ray.dist * 0.5 : Math.max(diag * 0.5, 1);
   if (!(radius > 0)) return null;
@@ -587,7 +597,7 @@ function probeSphere(point, dir, ray, diag, bvh, excluded) {
     ];
     best.d2 = Infinity;
     best.hit = false;
-    closestContact(bvh, center, excluded, point, dir, best, scratch);
+    closestContact(bvh, center, excluded, point, dir, srcN, best, scratch);
     if (!best.hit) break;
     const dx = best.q[0] - center[0];
     const dy = best.q[1] - center[1];
@@ -798,9 +808,14 @@ export function measureWallThickness(tris, nTri, options) {
       seen.fill(0);
       stamp = 1;
     }
-    const dir = [-tri.n[0], -tri.n[1], -tri.n[2]];
+    // The triangle's own normal. A curved face keeps one stamp for every
+    // facet, and that vector does not pass through the wall.
+    const n = tri.nGeom || tri.n;
+    const side = tri.n && n && dot(tri.n, n) < 0 ? -1 : 1;
+    const dir = [-n[0] * side, -n[1] * side, -n[2] * side];
+    const srcN = [n[0] * side, n[1] * side, n[2] * side];
     const ray = probeRay(tri, point, dir, grid, raySkip.get(tri.t), seen, stamp);
-    const diameter = probeSphere(point, dir, ray, grid.diag, bvh, sphereSkip.get(tri.t));
+    const diameter = probeSphere(point, dir, ray, grid.diag, bvh, sphereSkip.get(tri.t), srcN);
     return combineProbe(ray, diameter);
   };
   const collect = (spacing) => {

@@ -387,6 +387,121 @@ test('a diagonal tunnel stays oblique when every axis still undercuts', () => {
   assert.ok(aligned > Math.cos((5 * Math.PI) / 180));
 });
 
+/**
+ * Open box with flat vertical walls plus quarter-round fillets on the
+ * four outer corners. The fillets sit above the floor and are stamped
+ * straight down, which is the false undercut the cell bbox used to count.
+ */
+function filletedCornerTray(segments, tiltDeg) {
+  const wall = 1.85;
+  const height = 8;
+  const outer = [[0, 0], [20, 0], [20, 16], [0, 16]];
+  const inner = outer.map(([x, y]) => [
+    x === 0 ? wall : 20 - wall,
+    y === 0 ? wall : 16 - wall,
+  ]);
+  const positions = [];
+  const indices = [];
+  const n = 4;
+  const bottom = addLoop(positions, outer, 0);
+  const floor = addLoop(positions, inner, wall);
+  const rimOut = addLoop(positions, outer, height);
+  const rimIn = addLoop(positions, inner, height);
+  capLoop(indices, bottom, n, false);
+  capLoop(indices, floor, n, true);
+  wallLoop(indices, bottom, rimOut, n, true);
+  wallLoop(indices, floor, rimIn, n, false);
+  annulus(indices, rimOut, rimIn, n, true);
+  const filletStart = indices.length / 3;
+  const radius = 1.5;
+  const lean = Math.tan((tiltDeg * Math.PI) / 180);
+  const z0 = 2;
+  const z1 = height;
+  const rTop = radius - (z1 - z0) * lean;
+  const corners = [
+    { c: [radius, radius], a0: Math.PI, a1: Math.PI * 1.5 },
+    { c: [20 - radius, radius], a0: Math.PI * 1.5, a1: Math.PI * 2 },
+    { c: [20 - radius, 16 - radius], a0: 0, a1: Math.PI * 0.5 },
+    { c: [radius, 16 - radius], a0: Math.PI * 0.5, a1: Math.PI },
+  ];
+  for (const corner of corners) {
+    const ring = (z, r) => {
+      const ids = [];
+      for (let i = 0; i <= segments; i++) {
+        const ang = corner.a0 + ((corner.a1 - corner.a0) * i) / segments;
+        const id = positions.length / 3;
+        positions.push(corner.c[0] + r * Math.cos(ang), corner.c[1] + r * Math.sin(ang), z);
+        ids.push(id);
+      }
+      return ids;
+    };
+    const bot = ring(z0, radius);
+    const top = ring(z1, rTop);
+    for (let i = 0; i < segments; i++) {
+      indices.push(bot[i], bot[i + 1], top[i + 1], bot[i], top[i + 1], top[i]);
+    }
+  }
+  const triCount = indices.length / 3;
+  const triFace = new Int32Array(triCount).fill(-1);
+  for (let t = filletStart; t < triCount; t++) triFace[t] = 0;
+  return {
+    positions,
+    indices,
+    stamped: { triFace, normals: [[0, 0, -1]] },
+  };
+}
+
+function geometricVerticalArea(mesh) {
+  const sin = Math.sin((0.5 * Math.PI) / 180);
+  const { positions, indices } = mesh;
+  let area = 0;
+  for (let t = 0; t < indices.length; t += 3) {
+    const at = (index) => [
+      positions[index * 3],
+      positions[index * 3 + 1],
+      positions[index * 3 + 2],
+    ];
+    const a = at(indices[t]);
+    const b = at(indices[t + 1]);
+    const c = at(indices[t + 2]);
+    const cr = [
+      (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
+      (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+      (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]),
+    ];
+    const length = Math.hypot(cr[0], cr[1], cr[2]);
+    if (!(length > 0)) continue;
+    if (Math.abs(cr[2] / length) <= sin) area += 0.5 * length;
+  }
+  return area;
+}
+
+test('vertical fillets and flat walls are zero-draft, and the snap lip stays', () => {
+  for (const segments of [2, 4, 8]) {
+    for (const tilt of segments === 4 ? [0, 0.25] : [0]) {
+      const mesh = filletedCornerTray(segments, tilt);
+      const result = analyzePullDirection({ ...mesh, pull: [0, 0, 1] });
+      assert.equal(result.error, undefined, `segments ${segments} tilt ${tilt}`);
+      assert.equal(result.undercutCount, 0, `segments ${segments} tilt ${tilt} count`);
+      assert.equal(result.undercutArea, 0, `segments ${segments} tilt ${tilt} area`);
+      assert.equal(result.fit, 'good');
+      assert.equal(result.parting.counts.parting, 0);
+      assert.ok(result.parting.triangles.every((row) => row.role === 'core' || row.role === 'cavity'));
+      assert.equal(result.parting.triangles.length, mesh.indices.length / 3);
+      const vertical = geometricVerticalArea(mesh);
+      const reported = result.parting.areas.zeroDraft;
+      assert.ok(vertical > 100, `vertical area ${vertical}`);
+      assert.ok(Math.abs(reported - vertical) <= Math.max(0.05, vertical * 1e-4),
+        `zero-draft ${reported} vs vertical ${vertical} segments ${segments} tilt ${tilt}`);
+      const flagged = result.parting.triangles.filter((row) => row.zeroDraft).length;
+      assert.ok(flagged > 0);
+    }
+  }
+  const hook = analyzePullDirection(snapHook());
+  assert.equal(hook.undercutCount, 1);
+  assert.equal(hook.undercutArea, 12);
+});
+
 test('a zero pull is bad_args and an empty mesh is no_mesh', () => {
   const mesh = boxMesh([0, 0, 0], [10, 10, 10]);
   const zero = analyzePullDirection({ ...mesh, pull: [0, 0, 0] });

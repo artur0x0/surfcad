@@ -20,9 +20,12 @@
  * every triangle, so a closed void counts even though it shares no vertices
  * with the outer shell.
  *
- * A triangle is an undercut along unit axis d when it faces that opening
- * (|n · d| > sin(10°)) and another triangle in the same projected cell sits
- * strictly beyond it. Near-parallel faces are left for draft analysis.
+ * A triangle is an undercut along unit axis d when its own normal is more
+ * than 0.5° off perpendicular to d, the facing normal (the stamp, when it
+ * did not cancel) leaves the 10° band, and another triangle covers that
+ * centroid and sits strictly beyond it. A cell's height range is not a
+ * cover: a vertical wall that only grazes the cell is not an undercut.
+ * Near-parallel faces are left for draft analysis.
  * Connected undercut triangles that share a vertex, face the same way, and
  * agree within 35° are one region. The count is regions.
  *
@@ -42,7 +45,7 @@
 
 import { meshBodyComponents } from '../utils/meshBodyComponents.js';
 import { measureWallThickness, resolveWallOptions } from './wallThickness.js';
-import { classifyParting } from './parting.js';
+import { classifyParting, PARTING_ZERO_DRAFT_DEG } from './parting.js';
 import { groupSideActions } from './sideActions.js';
 import { analyzeMoldDraft } from './moldDraft.js';
 
@@ -113,6 +116,8 @@ export const MOLD_MIN_CELL_MM = 0.25;
 export const MOLD_STAMP_MIN_LENGTH = 0.5;
 
 const NEUTRAL_SIN = Math.sin((MOLD_NEUTRAL_DEG * Math.PI) / 180);
+/** Same band as `PARTING_ZERO_DRAFT_DEG`. A facet this close to vertical is not an undercut. */
+const VERTICAL_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 const DEDUP_COS = Math.cos((MOLD_DIRECTION_DEDUP_DEG * Math.PI) / 180);
 const REGION_COS = Math.cos((MOLD_REGION_NORMAL_DEG * Math.PI) / 180);
 const AREA_EPS = 1e-12;
@@ -234,7 +239,7 @@ function prepareTriangles(positions, indices, stamped) {
     const geometric = unit(cr);
     const stampedN = stampedNormal(t, stamped);
     const n = stampedN || geometric;
-    if (!n) continue;
+    if (!n || !geometric) continue;
     if (stampedN) stampedCount += 1;
     else triangleCount += 1;
     tris.push({
@@ -247,6 +252,7 @@ function prepareTriangles(positions, indices, stamped) {
       c,
       area,
       n,
+      nGeom: geometric,
       centroid: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
     });
   }
@@ -386,6 +392,28 @@ function basisOf(d) {
 }
 
 /**
+ * Barycentric weights of `p` in the pull-perpendicular plane, as [a, b, c].
+ * Null when the triangle is edge-on (a vertical wall is not a cover) or the
+ * point misses it.
+ */
+function barycentricCover(p, a, b, c) {
+  const v0x = b[0] - a[0];
+  const v0y = b[1] - a[1];
+  const v1x = c[0] - a[0];
+  const v1y = c[1] - a[1];
+  const v2x = p[0] - a[0];
+  const v2y = p[1] - a[1];
+  const den = v0x * v1y - v1x * v0y;
+  if (!(Math.abs(den) > 1e-18)) return null;
+  const bu = (v2x * v1y - v1x * v2y) / den;
+  const bv = (v0x * v2y - v2x * v0y) / den;
+  const bw = 1 - bu - bv;
+  const eps = -1e-6;
+  if (bu < eps || bv < eps || bw < eps) return null;
+  return [bw, bu, bv];
+}
+
+/**
  * Projected height field. A triangle is inserted into every cell its
  * projected box touches, so a large outer face covers a recess.
  */
@@ -411,18 +439,28 @@ function undercutsAlong(d, tris, skin) {
     if (u1 > maxU) maxU = u1;
     if (v0 < minV) minV = v0;
     if (v1 > maxV) maxV = v1;
-    const hs = [height(tri.a), height(tri.b), height(tri.c)];
+    const ha = height(tri.a);
+    const hb = height(tri.b);
+    const hc = height(tri.c);
     return {
       tri,
+      pa,
+      pb,
+      pc,
+      ha,
+      hb,
+      hc,
       u0,
       u1,
       v0,
       v1,
       cu: dot(tri.centroid, u),
       cv: dot(tri.centroid, v),
-      hMin: Math.min(...hs),
-      hMax: Math.max(...hs),
+      h: height(tri.centroid),
+      hMin: Math.min(ha, hb, hc),
+      hMax: Math.max(ha, hb, hc),
       nd: dot(tri.n, d),
+      ndGeom: dot(tri.nGeom || tri.n, d),
     };
   });
   const spanU = Math.max(maxU - minU, 0);
@@ -435,10 +473,7 @@ function undercutsAlong(d, tris, skin) {
   if (nU > MOLD_GRID_CAP) nU = MOLD_GRID_CAP;
   if (nV > MOLD_GRID_CAP) nV = MOLD_GRID_CAP;
   const nCell = nU * nV;
-  const zMin = new Float64Array(nCell);
-  const zMax = new Float64Array(nCell);
-  zMin.fill(Infinity);
-  zMax.fill(-Infinity);
+  const buckets = Array.from({ length: nCell }, () => []);
   const clamp = (i, n) => (i < 0 ? 0 : i >= n ? n - 1 : i);
   const cellAt = (pu, pv) => {
     const iu = clamp(Math.floor((pu - minU) / cell), nU);
@@ -451,19 +486,29 @@ function undercutsAlong(d, tris, skin) {
     const iv0 = clamp(Math.floor((row.v0 - minV) / cell), nV);
     const iv1 = clamp(Math.floor((row.v1 - minV) / cell), nV);
     for (let iv = iv0; iv <= iv1; iv++) {
-      for (let iu = iu0; iu <= iu1; iu++) {
-        const id = iv * nU + iu;
-        if (row.hMin < zMin[id]) zMin[id] = row.hMin;
-        if (row.hMax > zMax[id]) zMax[id] = row.hMax;
-      }
+      for (let iu = iu0; iu <= iu1; iu++) buckets[iv * nU + iu].push(row);
     }
   }
   const hits = [];
   for (const row of prepared) {
+    if (Math.abs(row.ndGeom) <= VERTICAL_SIN) continue;
     if (Math.abs(row.nd) <= NEUTRAL_SIN) continue;
-    const id = cellAt(row.cu, row.cv);
     const facingOut = row.nd > 0;
-    const occluded = facingOut ? zMax[id] > row.hMax + skin : zMin[id] < row.hMin - skin;
+    const h = row.h;
+    let occluded = false;
+    const list = buckets[cellAt(row.cu, row.cv)];
+    for (let k = 0; k < list.length; k++) {
+      const other = list[k];
+      if (other === row) continue;
+      if (facingOut ? !(other.hMax > h + skin) : !(other.hMin < h - skin)) continue;
+      const bary = barycentricCover([row.cu, row.cv], other.pa, other.pb, other.pc);
+      if (!bary) continue;
+      const hOther = bary[0] * other.ha + bary[1] * other.hb + bary[2] * other.hc;
+      if (facingOut ? hOther > h + skin : hOther < h - skin) {
+        occluded = true;
+        break;
+      }
+    }
     if (!occluded) continue;
     hits.push({ ...row.tri, side: facingOut ? 1 : -1 });
   }

@@ -614,6 +614,97 @@ function throughHole() {
   return { positions: pos, indices: idx, holeWalls, plate, span: 9 };
 }
 
+/**
+ * Constant-thickness open corner: flat walls, a vertical fillet, and a
+ * bottom fillet. The inner skin is the outer skin offset by `wall`, so a
+ * fillet is at least that thick.
+ */
+function offsetFilletCorner(segs) {
+  const wall = 1.85;
+  const radius = 4;
+  const innerR = radius - wall;
+  const height = 12;
+  const length = 18;
+  const pos = [];
+  const idx = [];
+  const ring = (ang, rad) => [radius - rad * Math.cos(ang), radius - rad * Math.sin(ang)];
+  const vertical = markRange(idx);
+  for (let s = 0; s < segs; s++) {
+    const a0 = (Math.PI / 2) * s / segs;
+    const a1 = (Math.PI / 2) * (s + 1) / segs;
+    const o0 = ring(a0, radius);
+    const o1 = ring(a1, radius);
+    const i0 = ring(a0, innerR);
+    const i1 = ring(a1, innerR);
+    const mid = ring((a0 + a1) / 2, radius);
+    const outward = [mid[0] - radius, mid[1] - radius, 0];
+    pushQuad(pos, idx, [o0[0], o0[1], radius], [o1[0], o1[1], radius], [o1[0], o1[1], height], [o0[0], o0[1], height], outward);
+    pushQuad(pos, idx, [i0[0], i0[1], radius], [i0[0], i0[1], height], [i1[0], i1[1], height], [i1[0], i1[1], radius], [-outward[0], -outward[1], 0]);
+  }
+  closeRange(idx, vertical);
+  const flat = markRange(idx);
+  pushQuad(pos, idx, [0, radius, radius], [0, radius + length, radius], [0, radius + length, height], [0, radius, height], [-1, 0, 0]);
+  pushQuad(pos, idx, [wall, radius, radius], [wall, radius, height], [wall, radius + length, height], [wall, radius + length, radius], [1, 0, 0]);
+  pushQuad(pos, idx, [radius, 0, radius], [radius, 0, height], [radius + length, 0, height], [radius + length, 0, radius], [0, -1, 0]);
+  pushQuad(pos, idx, [radius, wall, radius], [radius + length, wall, radius], [radius + length, wall, height], [radius, wall, height], [0, 1, 0]);
+  closeRange(idx, flat);
+  const bottom = markRange(idx);
+  for (let s = 0; s < segs; s++) {
+    const a0 = (Math.PI / 2) * s / segs;
+    const a1 = (Math.PI / 2) * (s + 1) / segs;
+    const y0 = radius;
+    const y1 = radius + length;
+    const outerAt = (ang, y) => [radius - radius * Math.cos(ang), y, radius - radius * Math.sin(ang)];
+    const innerAt = (ang, y) => [radius - innerR * Math.cos(ang), y, radius - innerR * Math.sin(ang)];
+    const n = [-Math.cos((a0 + a1) / 2), 0, -Math.sin((a0 + a1) / 2)];
+    pushQuad(pos, idx, outerAt(a0, y0), outerAt(a0, y1), outerAt(a1, y1), outerAt(a1, y0), n);
+    pushQuad(pos, idx, innerAt(a0, y0), innerAt(a1, y0), innerAt(a1, y1), innerAt(a0, y1), [-n[0], 0, -n[2]]);
+  }
+  closeRange(idx, bottom);
+  const floor = markRange(idx);
+  pushQuad(pos, idx, [radius, radius, 0], [radius + length, radius, 0], [radius + length, radius + length, 0], [radius, radius + length, 0], [0, 0, -1]);
+  pushQuad(pos, idx, [radius, radius, wall], [radius, radius + length, wall], [radius + length, radius + length, wall], [radius + length, wall, wall], [0, 0, 1]);
+  closeRange(idx, floor);
+  return { positions: pos, indices: idx, vertical, flat, bottom, floor, wall };
+}
+
+test('fillets read at least the wall they join, at several tessellations', () => {
+  for (const segs of [2, 4, 8]) {
+    const tray = offsetFilletCorner(segs);
+    const wall = analyzeWallOnly({
+      positions: tray.positions,
+      indices: tray.indices,
+      wallPass: 'centroid',
+    }).wall;
+    assert.ok(Math.abs(wall.nominal - tray.wall) < 0.15, `segs ${segs} nominal ${wall.nominal}`);
+    const floor = sliceRange(wall.field, tray.floor);
+    for (const sample of floor) {
+      assert.ok(Math.abs(sample.thickness - tray.wall) < 0.15, `floor ${segs} ${sample.thickness}`);
+    }
+    for (const sample of sliceRange(wall.field, tray.flat)) {
+      assert.equal(sample.flag, 'nominal', `flat ${segs} ${sample.thickness} ${sample.flag}`);
+      assert.ok(Math.abs(sample.thickness - tray.wall) < 0.15, `flat ${segs} ${sample.thickness}`);
+    }
+    for (const range of [tray.vertical, tray.bottom]) {
+      for (const sample of sliceRange(wall.field, range)) {
+        assert.ok(
+          sample.thickness >= wall.nominal - 0.15,
+          `fillet segs ${segs} ${sample.thickness} nominal ${wall.nominal} ${sample.source}`,
+        );
+      }
+    }
+  }
+  const rib = score(thinRib()).wall;
+  assert.ok(rib.min > 0.7 && rib.min < 0.85, `rib ${rib.min}`);
+  assert.equal(rib.thinCount, 1);
+  const hook = snapHook();
+  const beam = score(hook).wall;
+  const sides = beam.field.filter((sample) => sample.index >= hook.beam.start && sample.index < hook.end.start);
+  for (const sample of sides) {
+    assert.equal(sample.flag, 'thin', `${sample.index} ${sample.thickness}`);
+  }
+});
+
 test('a through-hole wall reads the plate, not the span across the hole', () => {
   const part = throughHole();
   const wall = score(part).wall;
