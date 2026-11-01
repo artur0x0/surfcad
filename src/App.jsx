@@ -485,7 +485,7 @@ import { composeMultiPartEdgeCommit } from './utils/multiPartEdges';
 import { composeShellCommit } from './utils/shellMode';
 import { composeDraftCommit } from './utils/draftMode';
 import { composeCutCommit } from './utils/cutMode';
-import { composeBooleanCommit, validateBooleanAccept } from './utils/booleanMode';
+import { booleanInsertRefusal, composeBooleanCommit, validateBooleanAccept } from './utils/booleanMode';
 import { crossPartSubtractWrites, externalBodyRotationBlock, planCrossPartSubtract } from './utils/externalCopy';
 import { FEATURE_MARKER_KINDS } from './utils/featureMarkers';
 import { composeMoveCommit } from './utils/moveMode';
@@ -10658,6 +10658,17 @@ const App = () => {
       const rolledBack = stored === null || typeof stored === 'string';
       const caret = rolledBack ? rollbackInsertCaret(buffer, stored) : null;
       const placeAtBar = rolledBack && typeof caret === 'number';
+      if (helperId === 'boolean') {
+        // booleanBodies throws once the part is one solid, and the failed
+        // block used to stay in the script. Refuse before compose.
+        const activeId = assemblyRef.current?.activeId;
+        const run = activeId ? partRunsRef.current?.[activeId] : null;
+        const why = booleanInsertRefusal(
+          finishedRunBodyCount(run, run?.mesh ? bodyCountOfWorkerMesh(run.mesh) : null),
+          params,
+        );
+        if (why) return { error: { code: 'insert_failed', message: why } };
+      }
       const content = composeHelperInsert(
         buffer,
         helperId,
