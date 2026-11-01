@@ -589,7 +589,7 @@ function _c4ResolveFaceSelection(md, spec, opts = {}) {
  * float32 — a shelled cube came out right and a shelled cylinder came out 0.1mm
  * thick. Going through the mesh keeps positions and indices in lockstep.
  */
-function _c4RebuildWithVerts(md, verts, label, triVerts = null) {
+function _c4RebuildWithVerts(md, verts, label, triVerts = null, lineage = null) {
   const { Manifold, Mesh } = manifoldModule;
   const vp = new Float32Array(verts.length * 3);
   for (let i = 0; i < verts.length; i++) {
@@ -597,11 +597,27 @@ function _c4RebuildWithVerts(md, verts, label, triVerts = null) {
     vp[i * 3 + 1] = verts[i][1];
     vp[i * 3 + 2] = verts[i][2];
   }
-  const out = new Manifold(new Mesh({
+  const meshIn = {
     numProp: 3,
     vertProperties: vp,
     triVerts: new Uint32Array(triVerts || md.T),
-  }));
+  };
+  // Draft must keep the source faceID and run originalIDs. A bare mesh
+  // allocates a new original inside the draft block, and _synthesizeStamps
+  // then names every non-coplanar facet `<draft>.fN` — a filleted round
+  // becomes a few hundred faces. Positions are already world-space, so the
+  // source runTransform is not copied (it would apply twice).
+  if (lineage) {
+    const nTri = meshIn.triVerts.length / 3;
+    if (!lineage.faceID || lineage.faceID.length !== nTri
+      || !lineage.runIndex || !lineage.runOriginalID) {
+      throw new Error(`${label}: cannot keep face names — the rebuilt mesh lost its face ids`);
+    }
+    meshIn.faceID = lineage.faceID;
+    meshIn.runIndex = lineage.runIndex;
+    meshIn.runOriginalID = lineage.runOriginalID;
+  }
+  const out = new Manifold(new Mesh(meshIn));
   const se = _c4StatusError(out);
   if (se) {
     throw new Error(
@@ -1429,7 +1445,10 @@ function _c4PushDraftDir(list, n, tRef) {
  * so the achieved angle is `angleDeg` on EVERY selected wall regardless of its
  * width (the old scale-based taper only hit the angle on the narrowest one).
  * When a fillet or chamfer sits between that plane and the face, the hinge
- * moves to the blend–wall tangency; the blend face is not drafted.
+ * moves to the blend–wall tangency; the blend face is not drafted. A blend
+ * that `'sides'` (or any wide pick) swept in with the walls is the same
+ * blend: it is left out of the plane solve so the hinge can see it, and the
+ * fillet endpoint stays on that tangency instead of being sheared.
  * Vertices shared by two selected faces get both displacements solved together,
  * which is what keeps a drafted corner sharp.
  *
@@ -1455,6 +1474,70 @@ function draftFaces(manifold, faces, angleDeg, opts = {}) {
   return _perBodyFaceOp(manifold, faces, (body, sel) => _draftFacesOne(body, sel, angleDeg, opts));
 }
 
+/**
+ * Fillet (and chamfer) facets a wide pick such as `'sides'` selected along
+ * with the walls. Each facet drafted as its own plane shears the round, and
+ * the tangency hinge never fires because it ignores selected neighbors.
+ *
+ * A facet is a blend when it is many times smaller than a selected neighbor
+ * and meets that neighbor smoothly (a fillet chord) or at a chamfer angle.
+ * The chain then walks other small smooth neighbors, and stops at a real
+ * wall. A tessellated cylinder has no face many times larger than its
+ * neighbors, so the whole wall still drafts. A short box wall meets the long
+ * wall at 90°, so it is not absorbed.
+ *
+ * @returns {Set<number>} face indices to drop from the plane solve
+ */
+function _c4DraftBlendFaces(md, sel) {
+  if (!sel || sel.size < 2) return new Set();
+  const area = new Float64Array(md.faces.length);
+  for (let fi = 0; fi < md.faces.length; fi++) {
+    let a = 0;
+    const face = md.faces[fi];
+    for (const t of face.tris) {
+      const i0 = md.T[t * 3];
+      const i1 = md.T[t * 3 + 1];
+      const i2 = md.T[t * 3 + 2];
+      a += 0.5 * _c4Len(_c4Cross(_c4Sub(md.V[i1], md.V[i0]), _c4Sub(md.V[i2], md.V[i0])));
+    }
+    area[fi] = a;
+  }
+  const adj = _c4FaceAdj(md);
+  const SMOOTH = Math.cos((28 * Math.PI) / 180);
+  const CHAMFER_HI = Math.cos((20 * Math.PI) / 180);
+  const CHAMFER_LO = Math.cos((75 * Math.PI) / 180);
+  const blend = new Set();
+  const wallArea = new Map();
+  const stack = [];
+  for (const fi of sel) {
+    if (blend.has(fi)) continue;
+    for (const ni of adj.get(fi) || []) {
+      if (!sel.has(ni) || blend.has(ni)) continue;
+      const dot = _c4Dot(md.faces[fi].normal, md.faces[ni].normal);
+      const smoothFacet = dot >= SMOOTH && area[ni] >= area[fi] * 8;
+      const chamfer = dot < CHAMFER_HI && dot > CHAMFER_LO && area[ni] >= area[fi] * 2 && area[fi] * 2 >= area[ni] * 0.15;
+      if (!smoothFacet && !chamfer) continue;
+      blend.add(fi);
+      wallArea.set(fi, area[ni]);
+      if (smoothFacet) stack.push(fi);
+      break;
+    }
+  }
+  while (stack.length) {
+    const fi = stack.pop();
+    const wallA = wallArea.get(fi);
+    for (const ni of adj.get(fi) || []) {
+      if (!sel.has(ni) || blend.has(ni)) continue;
+      if (!(area[ni] < wallA / 8)) continue;
+      if (_c4Dot(md.faces[fi].normal, md.faces[ni].normal) < SMOOTH) continue;
+      blend.add(ni);
+      wallArea.set(ni, wallA);
+      stack.push(ni);
+    }
+  }
+  return blend;
+}
+
 function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
   if (!manifoldModule) throw new Error('Manifold not initialized');
   if (typeof angleDeg !== 'number' || !Number.isFinite(angleDeg)) {
@@ -1462,9 +1545,17 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
   }
   if (Math.abs(angleDeg) >= 89) throw new Error(`draftFaces: angleDeg ${angleDeg} is past vertical`);
   const pull = _c4DirVec(opts.pull ?? 'z', 'draftFaces: pull');
-  const md = c4MeshData(manifold);
+  const md = c4MeshData(manifold, { lineage: true });
   const sel = _c4ResolveFaceSelection(md, faces, { label: 'draftFaces: faces', pull });
   if (!sel.size) throw new Error('draftFaces: face selection is empty — nothing to draft');
+  // Walls only. Blend facets stay out of `draftSel` so the tangency hinge
+  // can see them and so they are not sheared as extra planes.
+  const blendFaces = _c4DraftBlendFaces(md, sel);
+  const draftSel = new Set(sel);
+  for (const fi of blendFaces) draftSel.delete(fi);
+  if (!draftSel.size) {
+    for (const fi of sel) draftSel.add(fi);
+  }
 
   // Reference ("neutral") plane level, measured along pull.
   const bb = manifold.boundingBox();
@@ -1515,7 +1606,7 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
     (bb.min[2] + bb.max[2]) / 2,
   ];
   let drafted = 0;
-  for (const fi of sel) {
+  for (const fi of draftSel) {
     const f = md.faces[fi];
     // In-plane part of the face normal: the direction the face slides. A face
     // perpendicular to pull (a cap) has none — it cannot be drafted.
@@ -1543,7 +1634,7 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
       if (_c4Len(rIn) > 1e-9 && _c4Dot(u, rIn) < 0) u = _c4Mul(-1, u);
     }
     drafted++;
-    const tRef = _c4BlendHingePull(md, fi, pull, t0, sel, () => {
+    const tRef = _c4BlendHingePull(md, fi, pull, t0, draftSel, () => {
       if (!faceAdj) faceAdj = _c4FaceAdj(md);
       return faceAdj;
     }) ?? t0;
@@ -1574,7 +1665,10 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
     moved[vi] = _c4Add(md.V[vi], _c4SolvePlaneMoves(us.map((u) => u.n), rhs));
   }
   _c4RequireNoFold(md, moved, 'draftFaces', `${angleDeg}°`);
-  return _c4RequireValidSolid(_c4RebuildWithVerts(md, moved, 'draftFaces'), 'draftFaces');
+  return _c4RequireValidSolid(
+    _c4RebuildWithVerts(md, moved, 'draftFaces', null, md.lineage),
+    'draftFaces',
+  );
 }
 
 /**
@@ -3667,7 +3761,7 @@ function _c4PlanarGroupNormal(trisSub, mesh, V, cn, areaSum) {
   return _c4Norm(sum);
 }
 
-function c4MeshData(m) {
+function c4MeshData(m, opts = null) {
   const mesh = m.getMesh();
   const triBody = _triComponentIds(mesh.triVerts, mesh.numTri);
   const np = mesh.numProp;
@@ -3982,7 +4076,21 @@ function c4MeshData(m) {
   // vertices (shell skin prisms, draftFaces vertex sets) do not have to call
   // getMesh() again and risk a DIFFERENT welding than the faces above.
   if (_s23CaptureFaceSoupOn) _s23RememberFaceSoup(m, faces, V, mesh.triVerts);
-  return { V, faces, edges, faceIdxById, T: mesh.triVerts, numTri: mesh.numTri };
+  const result = { V, faces, edges, faceIdxById, T: mesh.triVerts, numTri: mesh.numTri };
+  // Same getMesh() as T. A second call can weld differently, and the face
+  // ids would no longer line up with the triangles draft rebuilds.
+  if (opts && opts.lineage && mesh.faceID && mesh.runIndex && mesh.runOriginalID
+      && mesh.faceID.length >= mesh.numTri) {
+    const ids = mesh.faceID.length === mesh.numTri
+      ? mesh.faceID
+      : mesh.faceID.subarray(0, mesh.numTri);
+    result.lineage = {
+      faceID: new Uint32Array(ids),
+      runIndex: new Uint32Array(mesh.runIndex),
+      runOriginalID: new Uint32Array(mesh.runOriginalID),
+    };
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------- selectors
