@@ -49,6 +49,19 @@ return part;`;
   assert.equal(scraps.length, 2);
 });
 
+test('a picture-frame lip welds on without filling its hole', async () => {
+  const src = `${CUBE}
+const lip = makeExtrude([].concat(profileRectangle(50, 50, true).contours, profileRectangle(40, 40, true).contours), 5).translate([0, 0, 10]);
+part = part.add(lip, { merge: true });
+return part;`;
+  const ran = await runScript(src);
+  assert.equal(ran.status, 'NoError', ran.status);
+  assert.equal(ran.bodyCount, 1);
+  // Border only: (50*50 - 40*40) * 5 = 4500, on the 32000 cube. A filled hole
+  // would add the whole 50*50*5 plate (12500) and land near 44500.
+  assert.ok(Math.abs(ran.volume - 36500) < 5, `volume ${ran.volume} filled the lip hole`);
+});
+
 test('a proper frame on the face stays one solid, and a real gap stays separate', async () => {
   const frame = await runScript(`${CUBE}
 const frame = makeExtrude([].concat(profileRectangle(50, 40, true).contours, profileRectangle(30, 20, true).contours), 5).translate([0, 0, 10]);

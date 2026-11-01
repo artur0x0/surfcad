@@ -517,7 +517,8 @@ export function installSeparateBodies(module) {
 
   // Nudge `tool` toward `targetBox` on axes where the two only meet, so a
   // later boolean overlaps. Axes that already overlap by more than eps are
-  // left alone, and the far faces stay put (hull against one translated copy).
+  // left alone. The far faces stay put: one shifted copy is unioned back,
+  // which keeps a hole open (a convex hull would fill it).
   const fattenToward = (tool, targetBox, eps) => {
     const box = boxOf(tool);
     const delta = [0, 0, 0];
@@ -529,11 +530,13 @@ export function installSeparateBodies(module) {
       delta[k] = toolMid >= tgtMid ? -eps : eps;
     }
     if (delta[0] === 0 && delta[1] === 0 && delta[2] === 0) return tool;
+    // Union with one shifted copy. A convex hull would fill a frame's hole
+    // and turn the lip into a solid plate.
     const moved = tool.translate(delta);
-    let hull = null;
-    try { hull = Manifold.hull([tool, moved]); } catch (_) { hull = null; }
+    let thicker = null;
+    try { thicker = rawAdd.call(tool, moved); } catch (_) { thicker = null; }
     del(moved);
-    return hull || tool;
+    return thicker || tool;
   };
 
   // Tool components that merely touch `selfBox` become overlapping copies.
