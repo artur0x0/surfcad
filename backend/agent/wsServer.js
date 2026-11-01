@@ -209,6 +209,84 @@ function closeOpen(ws, code, reason) {
 }
 
 /**
+ * A close frame was received. `ws` does not pass `wasClean` to the close
+ * listener; the library flag is the same fact. Unknown when the flag is absent.
+ * @param {import('ws').WebSocket} ws
+ */
+function closeWasClean(ws) {
+  const flag = /** @type {{ _closeFrameReceived?: boolean }} */ (ws)._closeFrameReceived;
+  if (flag === true || flag === false) return flag;
+  return null;
+}
+
+/**
+ * True when a ping has gone out without a pong, including the tick that
+ * terminates the socket for a missed pong.
+ * @param {import('ws').WebSocket} ws
+ */
+function pingOutstanding(ws) {
+  return ws.missedPong === true || ws.isAlive === false;
+}
+
+/**
+ * @param {import('ws').WebSocket} ws
+ */
+function socketSide(ws) {
+  if (ws.tabSession && !ws.agentAuth) return 'tab';
+  return 'agent';
+}
+
+/**
+ * Account id only. Never the bearer or the token hash.
+ * @param {import('ws').WebSocket} ws
+ */
+function socketUserId(ws) {
+  const auth = /** @type {{ userId?: string } | undefined} */ (ws.agentAuth);
+  if (auth?.userId) return String(auth.userId);
+  const tab = /** @type {{ userId?: string } | undefined} */ (ws.tabSession);
+  if (tab?.userId) return String(tab.userId);
+  return undefined;
+}
+
+/**
+ * Server decided this socket missed a pong. Logged once, before terminate,
+ * so the following close line can also say a ping was outstanding.
+ * @param {import('ws').WebSocket & { missedPong?: boolean }} ws
+ */
+function noteMissedPong(ws) {
+  if (ws.missedPong) return;
+  ws.missedPong = true;
+  logRelay({
+    event: 'socket-terminate',
+    userId: socketUserId(ws),
+    side: socketSide(ws),
+    message: 'missed pong',
+  });
+}
+
+/**
+ * @param {import('ws').WebSocket} ws
+ * @param {number} openedAt
+ * @param {{ side: 'agent' | 'tab', userId?: string, hello: boolean }} fields
+ * @param {number} code
+ * @param {Buffer | string} reason
+ */
+function logSocketClose(ws, openedAt, fields, code, reason) {
+  const lived = Date.now() - openedAt;
+  logRelay({
+    event: 'socket-close',
+    userId: fields.userId,
+    side: fields.side,
+    code,
+    reason,
+    wasClean: closeWasClean(ws),
+    livedMs: lived > 0 ? lived : 0,
+    hello: fields.hello,
+    pingOutstanding: pingOutstanding(ws),
+  });
+}
+
+/**
  * Ping every socket. Terminate one that missed the previous pong.
  * An agent whose token is revoked or expired is closed with 4001 even
  * when it has sent no further frame. A tab whose session is gone is
@@ -300,6 +378,7 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
     if (dropping.has(ws)) continue;
     if (ws.readyState !== WebSocket.OPEN) continue;
     if (ws.isAlive === false) {
+      noteMissedPong(ws);
       ws.terminate();
       continue;
     }
@@ -307,6 +386,7 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
     try {
       ws.ping();
     } catch {
+      noteMissedPong(ws);
       ws.terminate();
     }
   }
@@ -327,25 +407,36 @@ async function sweepSockets(wss, relay, authenticateUpgrade) {
  * }} relay
  */
 function bindAgent(ws, auth, relay) {
+  const openedAt = Date.now();
+  let ready = false;
+  let hello = false;
+  /** @type {string | null} */
+  let agentId = null;
+  ws.on('error', (err) => {
+    logRelay({
+      event: 'agent-ws-error',
+      userId: auth.userId,
+      side: 'agent',
+      message: err?.message || err,
+    });
+  });
+  ws.on('close', (code, reason) => {
+    logSocketClose(ws, openedAt, { side: 'agent', userId: auth.userId, hello }, code, reason);
+    if (!agentId) return;
+    relay.registry.unregisterAgent(auth.userId, agentId);
+    agentId = null;
+  });
   if (!relay.agentSockets.add(auth.id, ws, auth.userId)) {
     ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
     return;
   }
   ws.agentAuth = auth;
-  let ready = false;
-  /** @type {string | null} */
-  let agentId = null;
-  ws.on('error', () => {});
-  ws.on('close', () => {
-    if (!agentId) return;
-    relay.registry.unregisterAgent(auth.userId, agentId);
-    agentId = null;
-  });
   ws.on('message', (data, isBinary) => {
     handleAgentMessage(ws, auth, relay, data, isBinary, {
       isReady: () => ready,
       markReady() {
         ready = true;
+        hello = true;
         const id = randomUUID();
         const accepted = relay.registry.registerAgent({
           userId: auth.userId,
@@ -527,6 +618,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
  * @param {import('node:http').IncomingMessage} req
  */
 function bindTab(ws, user, relay, req) {
+  const openedAt = Date.now();
   const headers = {};
   if (typeof req.headers.cookie === 'string') headers.cookie = req.headers.cookie;
   const testUser = req.headers['x-test-user'];
@@ -534,7 +626,24 @@ function bindTab(ws, user, relay, req) {
   ws.tabSession = { userId: String(user.id), headers };
   relay.tabSockets?.add(user.id, ws);
   const tabId = randomUUID();
-  ws.on('error', () => {});
+  let registered = false;
+  ws.on('error', (err) => {
+    logRelay({
+      event: 'tab-ws-error',
+      userId: String(user.id),
+      side: 'tab',
+      message: err?.message || err,
+    });
+  });
+  ws.on('close', (code, reason) => {
+    logSocketClose(ws, openedAt, {
+      side: 'tab',
+      userId: String(user.id),
+      hello: false,
+    }, code, reason);
+    if (!registered) return;
+    relay.registry.unregisterTab(user.id, tabId);
+  });
   const accepted = relay.registry.registerTab({
     userId: user.id,
     tabId,
@@ -546,6 +655,7 @@ function bindTab(ws, user, relay, req) {
     ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
     return;
   }
+  registered = true;
   sendJson(ws, {
     type: 'registered',
     v: 1,
@@ -575,8 +685,5 @@ function bindTab(ws, user, relay, req) {
       ? commandResponse({ id: parsed.id, ok: true, result: parsed.result })
       : commandResponse({ id: parsed.id, ok: false, error: parsed.error });
     relay.registry.complete(user.id, parsed.id, response);
-  });
-  ws.on('close', () => {
-    relay.registry.unregisterTab(user.id, tabId);
   });
 }

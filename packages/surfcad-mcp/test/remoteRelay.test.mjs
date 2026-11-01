@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 import express from 'express';
+import { WebSocketServer } from 'ws';
 import { commandResponse } from '../src/commandProtocol.mjs';
 import { runCli } from '../src/cli.mjs';
 import { configDir, normalizeServer, resolveAgentName, selectRelayMode, tokenPath } from '../src/remote/config.mjs';
@@ -536,7 +537,70 @@ test('blocked websocket falls back to HTTPS POST and SSE', async () => {
   assert.ok(hits.events >= 1);
   assert.equal(hits.poll, 0);
   assert.match(logs.join('\n'), /https fallback/);
+  assert.match(logs.join('\n'), /prompt poll started/);
   assert.equal(logs.join('\n').includes(issued.token), false);
+});
+
+test('a paired websocket close logs the code and reason, then starts the poll', async () => {
+  const relay = createAgentRelay();
+  const { origin } = await listen(relay);
+  const issued = await relay.tokens.issue({ userId: 'user-a', label: 'diag' });
+  /** @type {string[]} */
+  const logs = [];
+  const session = new RemoteSession({
+    serverUrl: origin,
+    token: issued.token,
+    onLog: (line) => logs.push(line),
+  });
+  sessions.push(session);
+  await session.connect();
+  assert.equal(session.status().transport, 'ws');
+  assert.match(logs.join('\n'), /remote agent connected via websocket/);
+  relay.agentSockets.closeToken(issued.id, 1011, `diag-reason ${issued.token} ABCD-EFGH`);
+  const started = Date.now();
+  let text = logs.join('\n');
+  while (!/later commands use https/.test(text) && Date.now() - started < 2000) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    text = logs.join('\n');
+  }
+  assert.match(text, /websocket closed \(1011\) diag-reason; later commands use https/);
+  assert.match(text, /prompt poll started/);
+  assert.equal(text.includes(issued.token), false);
+  assert.equal(text.includes('ABCD-EFGH'), false);
+  assert.equal(text.includes('Bearer'), false);
+  assert.equal(session.status().transport, 'http');
+});
+
+test('a websocket that closes before hello logs the code and reason', async () => {
+  const token = 'raw-token-value-raw-token-value-raw1';
+  const httpServer = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('ok');
+  });
+  const wss = new WebSocketServer({ server: httpServer });
+  wss.on('connection', (ws) => {
+    ws.once('message', () => {
+      ws.close(1001, `early-drop ${token} ABCD-EFGH`);
+    });
+  });
+  servers.push(httpServer);
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const port = /** @type {import('node:net').AddressInfo} */ (httpServer.address()).port;
+  /** @type {string[]} */
+  const logs = [];
+  const session = new RemoteSession({
+    serverUrl: `http://127.0.0.1:${port}`,
+    token,
+    onLog: (line) => logs.push(line),
+  });
+  sessions.push(session);
+  await session.connect();
+  const text = logs.join('\n');
+  assert.match(text, /websocket closed before hello \(1001\) early-drop/);
+  assert.match(text, /prompt poll started/);
+  assert.equal(text.includes(token), false);
+  assert.equal(text.includes('ABCD-EFGH'), false);
+  assert.equal(session.status().transport, 'http');
 });
 
 test('SSE failure uses long-poll, and asleep and too_many_pending stay clear', async () => {

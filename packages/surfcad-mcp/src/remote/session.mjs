@@ -86,6 +86,48 @@ function defaultLog(line) {
   console.error(`${new Date().toISOString()} [surfcad-mcp] ${line}`);
 }
 
+/**
+ * Newlines and other controls become spaces so one close stays one log line.
+ * @param {string} text
+ */
+function singleLine(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i += 1) {
+    out += text.charCodeAt(i) < 32 ? ' ' : text[i];
+  }
+  return out;
+}
+
+/**
+ * Close reason for stderr. The bearer, this session's token, a join code,
+ * and any other long token-shaped run are removed. Newlines cannot break
+ * the line into a second record.
+ * @param {Buffer | string | undefined} reason
+ * @param {string} [token]
+ */
+function clipCloseReason(reason, token) {
+  let text = Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason || '');
+  if (token) text = text.split(token).join('');
+  text = text.replace(/Bearer\s+\S+/gi, '');
+  text = text.replace(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g, '');
+  text = text.replace(/\b[A-Za-z0-9_-]{32,}\b/g, '');
+  text = singleLine(text).replace(/\s+/g, ' ').trim();
+  if (text.length > 120) text = text.slice(0, 120);
+  return text;
+}
+
+/**
+ * @param {number} code
+ * @param {Buffer | string | undefined} reason
+ * @param {string} [token]
+ */
+function formatClose(code, reason, token) {
+  const numeric = Number(code);
+  const shown = Number.isInteger(numeric) ? numeric : 1006;
+  const why = clipCloseReason(reason, token);
+  return { code: shown, why };
+}
+
 export class RemoteSession {
   /** @type {WebSocket | null} */
   #ws = null;
@@ -386,6 +428,11 @@ export class RemoteSession {
   #onClose(code, reason) {
     const why = Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason || '');
     const hello = this.#hello;
+    const closed = formatClose(code, reason, this.#token);
+    if (hello) {
+      const detail = closed.why ? ` ${closed.why}` : '';
+      this.#log(`websocket closed before hello (${closed.code})${detail}`);
+    }
     this.#hello = null;
     this.#early = [];
     this.#ws = null;
@@ -413,7 +460,8 @@ export class RemoteSession {
     }
     if (this.#state === 'paired' && this.#transport === 'ws') {
       this.#transport = 'http';
-      this.#log('websocket closed; later commands use https');
+      const detail = closed.why ? ` ${closed.why}` : '';
+      this.#log(`websocket closed (${closed.code})${detail}; later commands use https`);
       this.#failPending(pairingLostError('socket closed'));
       this.#startPromptPull();
     }
@@ -458,6 +506,7 @@ export class RemoteSession {
    * A websocket session receives them on the socket instead.
    */
   #startPromptPull() {
+    this.#log('prompt poll started');
     this.#stopPromptPull();
     const generation = this.#promptPull;
     const run = async () => {

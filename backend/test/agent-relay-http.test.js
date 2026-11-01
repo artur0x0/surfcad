@@ -794,6 +794,71 @@ describe('agent relay HTTP', () => {
       assert.match(line, /"event":"command"/);
       assert.equal(line.includes('payload-secret'), false);
       assert.equal(line.includes('raw-token'), false);
+      const secret = 'raw-token-value-raw-token-value-raw1';
+      logRelay({
+        event: 'socket-close',
+        userId: 'user-a',
+        side: 'agent',
+        code: 1011,
+        reason: `diag-reason Bearer ${secret} ABCD-EFGH`,
+        token: secret,
+        args: { secret: 'payload-secret' },
+      });
+      const closeLine = lines[lines.length - 1];
+      assert.match(closeLine, /"code":1011/);
+      assert.match(closeLine, /diag-reason/);
+      assert.equal(closeLine.includes(secret), false);
+      assert.equal(closeLine.includes('ABCD-EFGH'), false);
+      assert.equal(closeLine.includes('payload-secret'), false);
+      assert.equal(closeLine.includes('Bearer'), false);
+    } finally {
+      console.info = original;
+    }
+  });
+
+  test('GET /agent/prompts logs poll start and end without the token or body', async () => {
+    const lines = [];
+    const original = console.info;
+    console.info = (...args) => lines.push(args.map(String).join(' '));
+    try {
+      const relay = createAgentRelay();
+      const port = await listen(relay);
+      const issued = await relay.tokens.issue({ userId: 'user-a', label: 'poller' });
+      const anon = await send(port, '/agent/prompts?timeout=0&code=ABCD-EFGH', {});
+      assert.equal(anon.status, 401);
+      assert.equal(lines.some((line) => line.includes('prompt-poll')), false);
+
+      relay.registry.holdPrompt('user-a', {
+        type: 'agent.prompt',
+        v: 1,
+        id: 'p1',
+        text: 'draw-a-secret-box',
+      });
+      const polled = await send(port, `/agent/prompts?timeout=0&code=ABCD-EFGH&token=${issued.token}`, {
+        token: issued.token,
+      });
+      assert.equal(polled.status, 200);
+      assert.equal(polled.body.messages[0].text, 'draw-a-secret-box');
+      const again = await send(port, '/agent/prompts?timeout=0', { token: issued.token });
+      assert.equal(again.status, 200);
+      assert.deepEqual(again.body.messages, []);
+
+      const events = lines
+        .filter((line) => line.includes('[agent-relay]'))
+        .map((line) => JSON.parse(line.slice(line.indexOf('{'))));
+      const starts = events.filter((event) => event.event === 'prompt-poll-start');
+      const ends = events.filter((event) => event.event === 'prompt-poll-end');
+      assert.equal(starts.length, 2);
+      assert.equal(ends.length, 2);
+      assert.equal(starts[0].userId, 'user-a');
+      assert.equal(starts[0].timeoutMs, 0);
+      assert.equal(ends[0].status, 'messages');
+      assert.equal(ends[1].status, 'empty');
+      const logged = lines.join('\n');
+      assert.equal(logged.includes(issued.token), false);
+      assert.equal(logged.includes('ABCD-EFGH'), false);
+      assert.equal(logged.includes('draw-a-secret-box'), false);
+      assert.equal(logged.includes('Bearer'), false);
     } finally {
       console.info = original;
     }
