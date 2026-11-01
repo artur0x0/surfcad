@@ -744,6 +744,7 @@ part = filletAlongPath(part, makeSweepPath(edgesNamed(part, 'plate.top~fillet-2.
 
 - Face order inside a name does not matter (`a~b` is `b~a`). Names come from `faceNames(part)`, `list_feature_edges`, or the Fillet card.
 - A bare pair returns every chain between those faces. `[k]` picks one chain and throws when the pair no longer has that many chains (the pieces changed): re-pick, or use the bare name. `*` globs either side.
+- A face role may already end in `[i]` (`extrude1.wall[0]~extrude1.wall[1]`). That index stays on the face. The chain ordinal is a further `[k]` only when that pair meets in more than one chain.
 - Returns the same segment rows `edge()` returns (`a`, `b`, `va`, `vb`, `length`, `mid`, plus `n0` / `n1` and `name`), so `makeSweepPath` and `filletAlongPath` are unchanged. `result.names` lists the chains it matched.
 - Throws, listing the edges that exist, when a name matches nothing. It never substitutes a nearby edge.
 - Every face has a name: helper roles (`cube1.top`), fillet and chamfer surfaces (`fillet1.round`, `chamfer2.bevel`, and the spherical corner balls of `filletEdges(..., { sphericalCorners: true })` as `fillet1.corner[k]`; the block id Accept mints, positional like `fillet-16` only on an older block with no `id=`, one piece per contiguous strip), uploads by coplanar group (`import@1.f3`), and freehand `Manifold.*` runs by their block (`snippet2.f7`, else `script.f7`).
