@@ -173,7 +173,7 @@ import {
 } from './agent/state/editedSinceLoad';
 import { buildFeatureTree } from './agent/state/featureTree';
 import { buildJointHealth } from './agent/state/jointHealth.js';
-import { resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
+import { planStripDelete, resolveRollbackTarget, resolveStripTarget } from './agent/featureStripAgent';
 import { buildPartsState, partRunState } from './agent/state/parts';
 import { withUnjointedParts } from './agent/state/unjointedParts';
 import { reportFeatureGaps } from './utils/featureGaps.js';
@@ -3228,9 +3228,13 @@ const App = () => {
         return { error: { code: 'bad_args', message: 'delete_feature needs id or index when no edit is open' } };
       }
     } else {
-      const resolved = resolveStripTarget(buf, args);
-      if (resolved.error) return resolved;
-      feature = resolved.feature;
+      const planned = planStripDelete(buf, args);
+      if (planned.error) return planned;
+      setFeatureSheet(null);
+      setFeatureStripActiveId(null);
+      agentFeatureDraftRef.current = null;
+      agentFeatureTargetRef.current = null;
+      return planned;
     }
     const live = liveSheetFeature(buf, feature);
     if (!live) return { error: { code: 'delete_failed', message: STALE_FEATURE_MSG } };
