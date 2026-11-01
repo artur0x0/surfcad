@@ -254,6 +254,12 @@ part = draftFaces(part, [
 - Vertices shared by two selected faces are solved once against both, so drafted
   corners stay sharp instead of doubling up.
 - An angle the body cannot take throws instead of returning a folded solid.
+- A fillet or chamfer between the neutral plane and a selected wall is not
+  drafted. The wall hinges on the blend tangency, so the fillet endpoint stays
+  on that line and the requested angle is the wall's angle from there. This
+  holds when the blend was part of the selection (`'sides'` after a fillet):
+  those facets are not tilted as their own planes, and the face names from
+  before the draft (`cube1.top`, `fillet1.round`) stay.
 
 ---
 
