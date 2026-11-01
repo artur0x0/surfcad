@@ -1,18 +1,16 @@
 /**
- * Viewport legend for side-action groups. The chip is dark glass so the
- * labels stay `text-on-dark` over the model. Slide versus lifter is a
- * heuristic, and the chip says so.
+ * Side-action section of the molding results pane. Labels stay
+ * `text-on-dark`. Slide versus lifter is a heuristic, and the section says so.
  */
 
 import React from 'react';
-import MoldAnalysisPane from './MoldAnalysisPane';
 
-export default function SideActionLegend({ legend, belowPull = false }) {
+export default function SideActionLegend({ legend }) {
   if (!legend) return null;
   return (
-    <MoldAnalysisPane
+    <div
       data-side-action-legend=""
-      className={`pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark${belowPull ? ' mold-below-pull' : ''}`}
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Side actions</div>
       {legend.rows.length === 0 ? (
@@ -42,6 +40,6 @@ export default function SideActionLegend({ legend, belowPull = false }) {
       <div className="mt-1 text-ui-sm text-muted-on-dark" data-side-action-heuristic="" data-mold-pane-end="">
         Heuristic
       </div>
-    </MoldAnalysisPane>
+    </div>
   );
 }

@@ -1,17 +1,16 @@
 /**
- * Viewport legend for the core / cavity split. The chip is dark glass so
- * the labels stay `text-on-dark` over the model.
+ * Core / cavity section of the molding results pane. Labels stay
+ * `text-on-dark`.
  */
 
 import React from 'react';
-import MoldAnalysisPane from './MoldAnalysisPane';
 
-export default function PartingLegend({ legend, belowPull = false }) {
+export default function PartingLegend({ legend }) {
   if (!legend) return null;
   return (
-    <MoldAnalysisPane
+    <div
       data-parting-legend=""
-      className={`pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark${belowPull ? ' mold-below-pull' : ''}`}
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Core and cavity</div>
       <ul className="mt-1 flex flex-col gap-1">
@@ -32,6 +31,6 @@ export default function PartingLegend({ legend, belowPull = false }) {
       <div className="mt-1 text-ui-sm text-muted-on-dark" data-parting-lines="" data-mold-pane-end="">
         {`Parting line · ${legend.lineCount}`}
       </div>
-    </MoldAnalysisPane>
+    </div>
   );
 }

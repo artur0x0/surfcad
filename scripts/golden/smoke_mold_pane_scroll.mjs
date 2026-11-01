@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Phone molding panes at 390×844.
- * A tool press closes the drawer. Each pane scrolls to its last control.
+ * Phone molding results pane at 390×844, and the same pane at 1280×800.
+ * A tool press closes the drawer. The one pane scrolls to its last control.
  * Wheel and drag on the pane leave the TrackballControls camera where it was.
- * Desktop keeps the legend click-through and the 32rem / 70vh quote cap.
+ * The pane stays out of the left and right toolbars at both sizes.
+ * Desktop uses the feature-sheet card height cap.
  *
  * Screenshots: GOLDEN_SHOT_DIR or os.tmpdir(). Requires system Chrome.
  */
@@ -162,6 +163,8 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import MoldingToolsControl from './src/components/MoldingToolsControl.jsx';
+import MoldResultsPane from './src/components/molding/MoldResultsPane.jsx';
+import PullReference from './src/components/molding/PullReference.jsx';
 import WallLegend from './src/components/molding/WallLegend.jsx';
 import PartingLegend from './src/components/molding/PartingLegend.jsx';
 import SideActionLegend from './src/components/molding/SideActionLegend.jsx';
@@ -173,14 +176,31 @@ const sideRows = ${JSON.stringify(sideRows)};
 const dfmReport = ${JSON.stringify(dfmReport)};
 const quoteState = ${JSON.stringify(quoteState)};
 
+function Pane({ children }) {
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 768px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const apply = () => setCompact(mq.matches);
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  return <MoldResultsPane compact={compact}>{children}</MoldResultsPane>;
+}
+
 function Harness() {
   const canvasRef = useRef(null);
   const [which, setWhich] = useState(null);
   const [on, setOn] = useState({});
+  const [pullMode, setPullMode] = useState('auto');
+  const [pullPlane, setPullPlane] = useState('top');
   const press = (key) => {
     setOn((prev) => ({ ...prev, [key]: !prev[key] }));
     setWhich(key);
   };
+  useEffect(() => {
+    window.__moldShow = (key) => setWhich(key);
+    return () => { delete window.__moldShow; };
+  }, []);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
@@ -229,36 +249,82 @@ function Harness() {
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
       />
       {which === 'wall' && (
-        <WallLegend legend={{ css: 'linear-gradient(#5b21b6, #fde68a)', thinMm: 0.8, nominalMm: 2.4, thickMm: 4.5 }} />
+        <Pane>
+          <WallLegend legend={{ css: 'linear-gradient(#5b21b6, #fde68a)', thinMm: 0.8, nominalMm: 2.4, thickMm: 4.5 }} />
+        </Pane>
       )}
       {which === 'parting' && (
-        <PartingLegend legend={{
-          lineCount: 12,
-          rows: [
-            { role: 'cavity', css: '#60a5fa', label: 'Cavity', count: 40 },
-            { role: 'core', css: '#f87171', label: 'Core', count: 38 },
-            { role: 'parting', css: '#fbbf24', label: 'Parting', count: 6 },
-          ],
-        }} />
+        <Pane>
+          <PartingLegend legend={{
+            lineCount: 12,
+            rows: [
+              { role: 'cavity', css: '#60a5fa', label: 'Cavity', count: 40 },
+              { role: 'core', css: '#f87171', label: 'Core', count: 38 },
+              { role: 'parting', css: '#fbbf24', label: 'Parting', count: 6 },
+            ],
+          }} />
+        </Pane>
       )}
-      {which === 'sides' && <SideActionLegend legend={{ more: 4, rows: sideRows }} />}
+      {which === 'sides' && (
+        <Pane>
+          <SideActionLegend legend={{ more: 4, rows: sideRows }} />
+        </Pane>
+      )}
       {which === 'draft' && (
-        <MoldDraftLegend legend={{ minDeg: 1, violations: 14, pins: 8, sleeves: 2, css: '#f97316' }} />
+        <Pane>
+          <MoldDraftLegend legend={{ minDeg: 1, violations: 14, pins: 8, sleeves: 2, css: '#f97316' }} />
+        </Pane>
       )}
-      {which === 'dfm' && <DfmReportPanel report={dfmReport} />}
+      {which === 'dfm' && (
+        <Pane>
+          <DfmReportPanel report={dfmReport} />
+        </Pane>
+      )}
       {which === 'quote' && (
-        <MoldQuotePanel
-          state={quoteState}
-          onQuantity={() => {}}
-          onCavity={() => {}}
-          onGrade={() => {}}
-          onSelect={() => {}}
-          onFirmQuote={() => {}}
-          onHumanReview={() => {}}
-          onPayReview={() => {}}
-        />
+        <Pane>
+          <MoldQuotePanel
+            state={quoteState}
+            onQuantity={() => {}}
+            onCavity={() => {}}
+            onGrade={() => {}}
+            onSelect={() => {}}
+            onFirmQuote={() => {}}
+            onHumanReview={() => {}}
+            onPayReview={() => {}}
+          />
+        </Pane>
       )}
-      <div style={{ position: 'absolute', right: 8, top: 168, zIndex: 40 }}>
+      {which === 'results' && (
+        <Pane>
+          <PullReference
+            mode={pullMode}
+            plane={pullPlane}
+            waiting={pullMode === 'face'}
+            onAuto={() => setPullMode('auto')}
+            onPlane={() => setPullMode('plane')}
+            onFace={() => setPullMode('face')}
+            onPickPlane={(id) => { setPullMode('plane'); setPullPlane(id); }}
+          />
+          <PartingLegend legend={{
+            lineCount: 12,
+            rows: [
+              { role: 'cavity', css: '#60a5fa', label: 'Cavity', count: 40 },
+              { role: 'core', css: '#f87171', label: 'Core', count: 38 },
+              { role: 'parting', css: '#fbbf24', label: 'Parting', count: 6 },
+            ],
+          }} />
+        </Pane>
+      )}
+      <div
+        data-rail-pair="left"
+        className="absolute left-2 lg:left-4 z-30 w-16 rounded-lg bg-white/60"
+        style={{ top: 112, bottom: 10 }}
+      />
+      <div
+        data-rail-pair="right"
+        className="absolute right-2.5 z-40 w-16 overflow-visible rounded-lg bg-white/60 p-1"
+        style={{ top: 112, bottom: 10 }}
+      >
         <MoldingToolsControl
           defaultOpen
           showWall
@@ -311,9 +377,29 @@ function Harness() {
 createRoot(document.getElementById('root')).render(<Harness />);
 `;
 
+function railsClear() {
+  const pane = document.querySelector('[data-mold-results-pane]');
+  const left = document.querySelector('[data-rail-pair="left"]');
+  const right = document.querySelector('[data-rail-pair="right"]');
+  if (!pane || !left || !right) return { missing: true };
+  const a = pane.getBoundingClientRect();
+  const l = left.getBoundingClientRect();
+  const r = right.getBoundingClientRect();
+  const hit = (b) => a.left < b.right - 0.5 && a.right > b.left + 0.5 && a.top < b.bottom - 0.5 && a.bottom > b.top + 0.5;
+  return {
+    placed: pane.getAttribute('data-mold-results-placed'),
+    hitLeft: hit(l),
+    hitRight: hit(r),
+    gapLeft: a.left - l.right,
+    gapRight: r.left - a.right,
+    pane: { left: a.left, right: a.right, top: a.top, bottom: a.bottom, width: a.width, height: a.height },
+  };
+}
+
 function measureInPage(selector) {
-  const pane = document.querySelector(selector);
-  const end = pane.querySelector('[data-mold-pane-end]');
+  const section = document.querySelector(selector);
+  const pane = (section && section.closest('[data-mold-results-pane]')) || section;
+  const end = (section && section.querySelector('[data-mold-pane-end]')) || pane.querySelector('[data-mold-pane-end]');
   const controls = [...pane.querySelectorAll('button, input, select')];
   const last = controls.length ? controls[controls.length - 1] : end;
   const target = last || end || pane;
@@ -323,7 +409,6 @@ function measureInPage(selector) {
   const endBox = target.getBoundingClientRect();
   const cs = getComputedStyle(pane);
   const rootCs = getComputedStyle(document.documentElement);
-  const rem = parseFloat(rootCs.fontSize) || 16;
   const probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;visibility:hidden;height:100dvh;';
   document.body.appendChild(probe);
@@ -339,8 +424,7 @@ function measureInPage(selector) {
   const reserve = 30 + Math.max(8, safeBottom) + 10;
   const modalVvh = parseFloat(rootCs.getPropertyValue('--modal-vvh')) || dvh;
   const modalTop = parseFloat(rootCs.getPropertyValue('--modal-vv-top')) || 0;
-  const shifted = pane.classList.contains('dfm-report-shifted');
-  const expected = Math.min(dvh, modalVvh) - modalTop - safeTop - anchorTop - (shifted ? 12 * rem : 0) - reserve;
+  const expected = Math.min(dvh, modalVvh) - modalTop - safeTop - anchorTop - reserve;
   const pill = document.querySelector('[data-home-indicator-pill]');
   const pillTop = pill ? pill.getBoundingClientRect().top : window.innerHeight;
   return {
@@ -451,6 +535,13 @@ try {
     ));
     const popup = await page.locator('[data-mold-tools-popup]').count();
     check(`${tool.name} press closes the drawer`, popup === 0);
+    await page.waitForFunction(() => (
+      document.querySelector('[data-mold-results-pane]')?.getAttribute('data-mold-results-placed') === '1'
+    ));
+    const clear = await page.evaluate(railsClear);
+    check(`${tool.name} pane misses both toolbars`,
+      clear.placed === '1' && !clear.hitLeft && !clear.hitRight && clear.gapLeft >= 9 && clear.gapRight >= 9,
+      JSON.stringify(clear));
 
     const box = await page.locator(tool.pane).boundingBox();
     check(`${tool.name} pane has a box`, !!box && box.height > 20, JSON.stringify(box));
@@ -466,7 +557,11 @@ try {
     check(`${tool.name} hit target is the pane`, hit.inPane && !hit.onCanvas, JSON.stringify(hit));
 
     if (tool.shots) {
-      await page.evaluate((sel) => { document.querySelector(sel).scrollTop = 0; }, tool.pane);
+      await page.evaluate((sel) => {
+        const section = document.querySelector(sel);
+        const scroller = section.closest('[data-mold-results-pane]') || section;
+        scroller.scrollTop = 0;
+      }, tool.pane);
       await page.screenshot({ path: join(shotDir, 'mold-quote-390-top.png') });
     }
 
@@ -545,19 +640,21 @@ try {
     && inset.maxHeight < 844 - 148,
     JSON.stringify({ maxHeight: inset.maxHeight, expected: inset.expected }));
 
-  await page.locator('[data-mold-tools-toggle]').click();
-  await page.waitForSelector('[data-mold-tools-popup]');
-  await page.locator('[data-mold-quote]').click();
-  await page.evaluate(() => {
-    const pane = document.querySelector('[data-mold-quote-panel]');
-    pane.classList.add('dfm-report-shifted');
-  });
-  const shifted = await page.evaluate(measureInPage, '[data-mold-quote-panel]');
-  check('a shifted quote still ends above the home pill',
-    Number.isFinite(shifted.maxHeight)
-    && Math.abs(shifted.maxHeight - shifted.expected) < 2
-    && shifted.paneBottom <= shifted.pillTop - 8,
-    JSON.stringify({ maxHeight: shifted.maxHeight, expected: shifted.expected, bottom: shifted.paneBottom, pill: shifted.pillTop }));
+  await page.evaluate(() => window.__moldShow('results'));
+  await page.waitForSelector('[data-mold-pull]');
+  await page.waitForSelector('[data-parting-legend]');
+  await page.waitForFunction(() => (
+    document.querySelector('[data-mold-results-pane]')?.getAttribute('data-mold-results-placed') === '1'
+  ));
+  await page.locator('[data-mold-pull-choice="plane"]').click();
+  const pullMode = await page.locator('[data-mold-pull]').getAttribute('data-mold-pull-mode');
+  check('pull Plane still presses inside the pane', pullMode === 'plane', String(pullMode));
+  const phoneClear = await page.evaluate(railsClear);
+  check('390×844 pull and core/cavity miss both toolbars',
+    phoneClear.placed === '1' && !phoneClear.hitLeft && !phoneClear.hitRight
+    && phoneClear.gapLeft >= 9 && phoneClear.gapRight >= 9,
+    JSON.stringify(phoneClear));
+  await page.screenshot({ path: join(shotDir, 'mold-results-390.png') });
 
   await context.close();
 
@@ -568,34 +665,47 @@ try {
   await desk.waitForSelector('[data-mold-tools-popup]');
   await desk.locator('[data-wall-heatmap]').click();
   await desk.waitForSelector('[data-wall-legend]');
+  await desk.waitForFunction(() => (
+    document.querySelector('[data-mold-results-pane]')?.getAttribute('data-mold-results-placed') === '1'
+  ));
   const legend = await desk.evaluate(() => {
-    const pane = document.querySelector('[data-wall-legend]');
-    const cs = getComputedStyle(pane);
-    return { pointerEvents: cs.pointerEvents, maxHeight: cs.maxHeight };
-  });
-  check('desktop legend stays click-through and uncapped',
-    legend.pointerEvents === 'none' && legend.maxHeight === 'none',
-    JSON.stringify(legend));
-  await desk.locator('[data-mold-tools-toggle]').click();
-  await desk.waitForSelector('[data-mold-tools-popup]');
-  await desk.locator('[data-mold-quote]').click();
-  await desk.waitForSelector('[data-mold-quote-panel]');
-  const quoteCap = await desk.evaluate(() => {
-    const pane = document.querySelector('[data-mold-quote-panel]');
+    const pane = document.querySelector('[data-mold-results-pane]');
     const probe = document.createElement('div');
-    probe.style.maxHeight = 'min(32rem, 70vh)';
+    probe.style.maxHeight = 'min(22.5rem, calc(var(--modal-vvh, 100dvh) - var(--modal-vv-top, 0px) - var(--feature-sheet-bottom, 0px) - 5.5rem))';
     document.body.appendChild(probe);
     const expected = parseFloat(getComputedStyle(probe).maxHeight);
     probe.remove();
+    const cs = getComputedStyle(pane);
     return {
-      maxHeight: parseFloat(getComputedStyle(pane).maxHeight),
+      pointerEvents: cs.pointerEvents,
+      maxHeight: parseFloat(cs.maxHeight),
       expected,
+      placed: pane.getAttribute('data-mold-results-placed'),
       popup: document.querySelector('[data-mold-tools-popup]') ? 1 : 0,
     };
   });
-  check('desktop quote keeps the 32rem / 70vh cap and the drawer closes',
-    quoteCap.popup === 0 && Math.abs(quoteCap.maxHeight - quoteCap.expected) < 1,
-    JSON.stringify(quoteCap));
+  check('desktop results pane uses the feature-sheet cap and the drawer closes',
+    legend.popup === 0
+    && legend.pointerEvents === 'auto'
+    && legend.placed === '1'
+    && Math.abs(legend.maxHeight - legend.expected) < 1,
+    JSON.stringify(legend));
+  const deskWall = await desk.evaluate(railsClear);
+  check('1280×800 wall legend misses both toolbars',
+    !deskWall.hitLeft && !deskWall.hitRight && deskWall.gapLeft >= 9 && deskWall.gapRight >= 9,
+    JSON.stringify(deskWall));
+  await desk.evaluate(() => window.__moldShow('results'));
+  await desk.waitForSelector('[data-mold-pull]');
+  await desk.waitForSelector('[data-parting-legend]');
+  await desk.locator('[data-mold-pull-choice="plane"]').click();
+  const deskMode = await desk.locator('[data-mold-pull]').getAttribute('data-mold-pull-mode');
+  check('desktop pull Plane still presses inside the pane', deskMode === 'plane', String(deskMode));
+  const deskClear = await desk.evaluate(railsClear);
+  check('1280×800 pull and core/cavity miss both toolbars',
+    deskClear.placed === '1' && !deskClear.hitLeft && !deskClear.hitRight
+    && deskClear.gapLeft >= 9 && deskClear.gapRight >= 9,
+    JSON.stringify(deskClear));
+  await desk.screenshot({ path: join(shotDir, 'mold-results-1280.png') });
   await desktop.close();
 
   check('the page did not throw', pageErrors.length === 0, pageErrors.join(' | '));

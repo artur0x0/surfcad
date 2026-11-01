@@ -9,6 +9,7 @@ import { importJsx } from '../../../test/jsxTestModule.js';
 import {
   MOLD_PANE_GESTURES,
   bindMoldPaneGestures,
+  moldPaneEventOnControl,
   stopMoldPaneGesture,
 } from './moldPaneScroll.js';
 
@@ -36,6 +37,17 @@ test('mold pane gestures stop wheel, touch, and pointer without cancelling scrol
     assert.equal(stopped, true, type);
     assert.equal(prevented, false, type);
   }
+  const button = {
+    closest(sel) { return sel.includes('button') ? this : null; },
+  };
+  let controlStopped = false;
+  stopMoldPaneGesture({
+    target: button,
+    stopPropagation() { controlStopped = true; },
+  });
+  assert.equal(controlStopped, false);
+  assert.equal(moldPaneEventOnControl({ target: button }), true);
+  assert.equal(moldPaneEventOnControl({ target: null }), false);
   assert.equal(stopMoldPaneGesture(null), undefined);
 
   const listeners = [];
@@ -61,7 +73,7 @@ test('mold pane gestures stop wheel, touch, and pointer without cancelling scrol
 test('phone molding panes cap height and keep the scroll off the canvas', () => {
   const css = read('src/index.css');
   const pane = read('src/components/molding/MoldAnalysisPane.jsx');
-  const block = css.slice(css.indexOf('Phone molding panes'), css.indexOf('Order-flow sheets'));
+  const block = css.slice(css.indexOf('Phone molding results pane'), css.indexOf('Order-flow sheets'));
   assert.match(pane, /bindMoldPaneGestures\(ref\.current\)/);
   assert.match(pane, /useModalViewport\(\)/);
   assert.match(pane, /mold-analysis-pane/);
@@ -78,19 +90,30 @@ test('phone molding panes cap height and keep the scroll off the canvas', () => 
   assert.match(block, /overscroll-behavior: contain/);
   assert.match(block, /touch-action: pan-y/);
   assert.match(block, /pointer-events: auto/);
-  assert.match(block, /- 12rem/);
   assert.match(block, /@supports not \(height: 100dvh\)/);
-  const desktop = css.slice(css.indexOf('.dfm-report-panel,'), css.indexOf('.dfm-report-shifted'));
-  assert.match(desktop, /max-height: min\(32rem, 70vh\)/);
+  assert.doesNotMatch(block, /dfm-report-shifted/);
+  const shell = read('src/components/molding/MoldResultsPane.jsx');
+  assert.match(shell, /measureFeatureSheetWidth/);
+  assert.match(shell, /MoldAnalysisPane/);
+  assert.match(shell, /feature-sheet-card/);
+  assert.match(shell, /data-mold-results-pane/);
+  assert.match(css, /\.mold-results-pane/);
+  assert.match(css, /4rem/);
+  assert.match(css, /22rem/);
+  const card = css.slice(css.indexOf('.feature-sheet-card {'), css.indexOf('.feature-sheet-card[data-feature-field-edit]'));
+  assert.match(card, /max-height:/);
   for (const [file, marker] of PANES) {
     const src = read(file);
-    assert.match(src, /MoldAnalysisPane/, file);
+    assert.match(src, /mold-results-section/, file);
     assert.match(src, new RegExp(marker), file);
     assert.match(src, /data-mold-pane-end/, file);
+    assert.doesNotMatch(src, /wall-legend-anchor/, file);
+    assert.doesNotMatch(src, /MoldAnalysisPane/, file);
   }
-  for (const file of PANES.slice(0, 4).map(([file]) => file)) {
-    assert.match(read(file), /pointer-events-none/, file);
-  }
+  const pull = read('src/components/molding/PullReference.jsx');
+  assert.match(pull, /mold-results-section/);
+  assert.match(pull, /data-mold-pull/);
+  assert.doesNotMatch(pull, /wall-legend-anchor/);
 });
 
 test('each molding pane renders the scroll container and its last control', async () => {
@@ -104,10 +127,9 @@ test('each molding pane renders the scroll container and its last control', asyn
   const wall = renderToStaticMarkup(React.createElement(WallLegend, {
     legend: { css: 'linear-gradient(black, white)', thinMm: 1, nominalMm: 2, thickMm: 4 },
   }));
-  assert.match(wall, /data-mold-analysis-pane/);
-  assert.match(wall, /mold-analysis-pane/);
+  assert.match(wall, /mold-results-section/);
   assert.match(wall, /data-wall-legend/);
-  assert.match(wall, /pointer-events-none/);
+  assert.doesNotMatch(wall, /wall-legend-anchor/);
   assert.match(wall, /data-mold-pane-end/);
 
   const parting = renderToStaticMarkup(React.createElement(PartingLegend, {
@@ -151,8 +173,8 @@ test('each molding pane renders the scroll container and its last control', asyn
     },
   }));
   assert.match(dfm, /data-mold-dfm-report/);
-  assert.match(dfm, /mold-analysis-pane/);
-  assert.match(dfm, /overflow-y-auto/);
+  assert.match(dfm, /mold-results-section/);
+  assert.doesNotMatch(dfm, /wall-legend-anchor/);
   assert.match(dfm, /data-mold-pane-end/);
   assert.match(dfm, /Face names are not available/);
 
@@ -189,11 +211,36 @@ test('each molding pane renders the scroll container and its last control', asyn
     onPayReview() {},
   }));
   assert.match(quote, /data-mold-quote-panel/);
-  assert.match(quote, /mold-analysis-pane/);
-  assert.match(quote, /overflow-y-auto/);
+  assert.match(quote, /mold-results-section/);
+  assert.doesNotMatch(quote, /wall-legend-anchor/);
   assert.match(quote, /data-mold-pay-review/);
   assert.match(quote, /data-mold-pane-end/);
   const payAt = quote.indexOf('data-mold-pay-review');
   const endAt = quote.indexOf('data-mold-pane-end');
   assert.ok(payAt > 0 && endAt > payAt);
+
+  const { default: MoldResultsPane } = await importJsx(new URL('./MoldResultsPane.jsx', import.meta.url));
+  const { default: PullReference } = await importJsx(new URL('./PullReference.jsx', import.meta.url));
+  const pane = renderToStaticMarkup(React.createElement(
+    MoldResultsPane,
+    { compact: true },
+    React.createElement(PullReference, { mode: 'plane', plane: 'top' }),
+    React.createElement(PartingLegend, {
+      legend: {
+        lineCount: 3,
+        rows: [{ role: 'core', css: '#abc', label: 'Core', count: 2 }],
+      },
+    }),
+  ));
+  assert.equal((pane.match(/data-mold-analysis-pane/g) || []).length, 1);
+  assert.match(pane, /data-mold-results-pane/);
+  assert.match(pane, /mold-analysis-pane/);
+  assert.match(pane, /feature-sheet-card/);
+  assert.match(pane, /overflow-y-auto/);
+  assert.match(pane, /data-mold-pull/);
+  assert.match(pane, /data-parting-legend/);
+  assert.match(pane, /Core and cavity/);
+  const pullAt = pane.indexOf('data-mold-pull');
+  const legendAt = pane.indexOf('data-parting-legend');
+  assert.ok(pullAt > 0 && legendAt > pullAt);
 });

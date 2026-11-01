@@ -1,11 +1,10 @@
 /**
- * Budgetary molding quote. Dark glass, text only. It does not paint a skin
- * and it does not take a card. A partner name shows only after the review
- * fee is paid. The label stays "Budgetary, not binding."
+ * Budgetary molding quote, a section of the molding results pane. Text only.
+ * It does not paint a skin and it does not take a card. A partner name shows
+ * only after the review fee is paid. The label stays "Budgetary, not binding."
  */
 
 import React, { useEffect, useState } from 'react';
-import MoldAnalysisPane from './MoldAnalysisPane';
 import { PART_QUOTE_CONSTANTS } from '../../molding/partQuote.js';
 import { formatStudyHint } from '../../molding/resinSuggest.js';
 import { TOOLING_CONSTANTS } from '../../molding/toolingEstimate.js';
@@ -51,8 +50,6 @@ function Field({ label, value, min, max, onCommit, testId }) {
 
 export default function MoldQuotePanel({
   state,
-  shifted = false,
-  belowPull = false,
   onQuantity,
   onCavity,
   onGrade,
@@ -71,9 +68,9 @@ export default function MoldQuotePanel({
   const selectedName = selected ? (revealed[selected.anonLabel] || '') : '';
 
   return (
-    <MoldAnalysisPane
+    <div
       data-mold-quote-panel=""
-      className={`pointer-events-auto absolute wall-legend-anchor z-30 mold-quote-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}${belowPull ? ' dfm-report-below-pull' : ''}`}
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm" data-mold-quote-framing="">{quote?.framing || 'Budgetary quote'}</div>
       <p className="mt-0.5 text-ui-sm text-muted-on-dark" data-mold-quote-disclaimer="">
@@ -242,6 +239,6 @@ export default function MoldQuotePanel({
         </div>
       )}
       <div data-mold-pane-end="" className="h-px" aria-hidden="true" />
-    </MoldAnalysisPane>
+    </div>
   );
 }

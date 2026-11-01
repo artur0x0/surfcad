@@ -1,11 +1,9 @@
 /**
- * Viewport legend for the wall heatmap. Thin is the purple end, nominal
- * the middle, thick the yellow end. The chip is dark glass so the labels
- * stay `text-on-dark` over the model.
+ * Wall-thickness section of the molding results pane. Thin is the purple
+ * end, nominal the middle, thick the yellow end. Labels stay `text-on-dark`.
  */
 
 import React from 'react';
-import MoldAnalysisPane from './MoldAnalysisPane';
 
 function mm(value) {
   const n = Number(value);
@@ -16,9 +14,9 @@ function mm(value) {
 export default function WallLegend({ legend }) {
   if (!legend) return null;
   return (
-    <MoldAnalysisPane
+    <div
       data-wall-legend=""
-      className="pointer-events-none absolute wall-legend-anchor z-30 w-44 rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Wall thickness</div>
       <div
@@ -39,6 +37,6 @@ export default function WallLegend({ legend }) {
         <span>{mm(legend.nominalMm)}</span>
         <span>{mm(legend.thickMm)}</span>
       </div>
-    </MoldAnalysisPane>
+    </div>
   );
 }
