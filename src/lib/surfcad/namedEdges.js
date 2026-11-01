@@ -167,7 +167,15 @@ export function nameGlob(pattern) {
   return new RegExp(`^${esc}$`);
 }
 
-/** `a~b[k]` → `{ base: 'a~b', faces: ['a', 'b'], ordinal: k | null }`; null when there is no `~`. */
+/**
+ * `a~b[k]` → `{ base: 'a~b', faces: ['a', 'b'], ordinal: k | null }`; null when there is no `~`.
+ *
+ * A trailing `[k]` is the chain ordinal (`plate.top~plate.front[1]`). A face
+ * role can carry its own index (`extrude1.wall[0]~extrude1.wall[1]`), and
+ * that index is the same spelling. `parseEdgeName` keeps the ordinal reading;
+ * `matchEdgeName` puts the index back on the right-hand face when no chain
+ * has that ordinal.
+ */
 export function parseEdgeName(name) {
   const text = String(name ?? '').trim();
   const m = /^(.*?)(?:\[(\d+)\])?$/.exec(text);
@@ -179,6 +187,13 @@ export function parseEdgeName(name) {
   const b = body.slice(tilde + 1);
   if (!a || !b) return null;
   return { base: canonicalEdgeName(a, b), faces: [a, b], ordinal: m[2] != null ? Number(m[2]) : null };
+}
+
+/** Trailing `[k]` read as the right-hand face's own index, not a chain ordinal. */
+function faceIndexOnRight(parsed) {
+  if (!parsed || parsed.ordinal == null) return null;
+  const b = `${parsed.faces[1]}[${parsed.ordinal}]`;
+  return { base: canonicalEdgeName(parsed.faces[0], b), faces: [parsed.faces[0], b], ordinal: null };
 }
 
 /**
@@ -198,10 +213,19 @@ export function matchEdgeName(edges, pattern) {
   if (!parsed) return { error: 'bad_name', message: `'${want}' is not an edge name (faceA~faceB, with [k] for one chain of a pair)` };
   if (parsed.ordinal != null) {
     const siblings = edges.filter((e) => e.base === parsed.base);
-    if (!siblings.length) return { error: 'unknown', message: `no edge between ${parsed.faces[0]} and ${parsed.faces[1]}` };
     const hit = siblings.find((e) => e.ordinal === parsed.ordinal && e.chains > 1);
     if (hit) return { hits: [hit] };
     if (siblings.length === 1 && parsed.ordinal === 0 && siblings[0].chains === 1) return { hits: siblings };
+    // `wall[0]~wall[1]` is two indexed faces, not chain 1 of `wall[0]~wall`.
+    const asFaces = faceIndexOnRight(parsed);
+    if (asFaces) {
+      const alt = edges.filter((e) => e.base === asFaces.base);
+      if (alt.length) return { hits: alt };
+    }
+    if (!siblings.length) {
+      const right = `${parsed.faces[1]}[${parsed.ordinal}]`;
+      return { error: 'unknown', message: `no edge between ${parsed.faces[0]} and ${right}` };
+    }
     return {
       error: 'ordinal',
       message: `edge ${parsed.base} has ${siblings.length} chain${siblings.length === 1 ? '' : 's'} on this solid, so [${parsed.ordinal}] names none of them — re-pick the edge (the pieces changed), or use the bare name for every chain`,
