@@ -149,6 +149,7 @@ export const ERROR_HINTS = Object.freeze({
   git_blocked: { hint: 'Git is unavailable here (local document or no vault): git_move_to_repo first, or keep working locally; nothing was written.' },
   git_only: { hint: 'This tool needs a vault: git_move_to_repo first, or stay local and use create_part / insert_* instead.' },
   git_error: { hint: 'The git handler failed (message): retry once; stop and tell the user with the message if it repeats.' },
+  save_on_main: { hint: 'git_save does not commit on main. Nothing was written. Create a branch first with git_branch_create { name }, then git_save { message } on that branch.' },
   working_copy_unpersisted: { hint: 'The working copy has not been written yet: git_save { message } (the user clicks Allow), then retry.' },
   not_found: { hint: 'The id or path does not exist in the vault: list_assemblies {} / parts {} and use a listed id.' },
   bind_failed: { hint: 'The part could not be bound to the vault: retry once; tell the user if it repeats.' },

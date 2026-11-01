@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   requireDestructiveConfirm,
   agentGitRealOptIn,
@@ -8,6 +11,8 @@ import {
   gitOpResult,
   summarizeUpgradeVaultResult,
   AGENT_GIT_REAL_SESSION_KEY,
+  AGENT_SAVE_ON_MAIN_MESSAGE,
+  refuseAgentSaveOnMain,
 } from './gitAgent.js';
 import { COMMAND_META } from './export/commandMeta.js';
 import {
@@ -16,6 +21,7 @@ import {
   gitBranchDeleteCommand,
   gitListBranchesCommand,
   gitMoveToRepoCommand,
+  gitAddToRepoCommand,
   gitSaveCommand,
   gitUpgradeVaultCommand,
 } from './commands/git.js';
@@ -83,7 +89,7 @@ test('git_save blocked on real adapter without opt-in (headless consent)', async
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => false,
     readAgentGitSessionDenied: () => false,
-    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'feature/x', checkedOut: true }),
     promptAgentGitWriteConsent: () => 'unavailable',
     agentGitSave: async () => {
       saved = true;
@@ -103,7 +109,7 @@ test('git_save returns consent_pending at once while the modal is up', async () 
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => false,
     readAgentGitSessionDenied: () => false,
-    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'feature/x', checkedOut: true }),
     promptAgentGitWriteConsent: (args) => {
       prompts.push(args);
       return 'shown';
@@ -121,8 +127,8 @@ test('git_save returns consent_pending at once while the modal is up', async () 
   assert.equal(out.error?.details?.retry, true);
   assert.equal(out.error?.details?.command, 'git_save');
   assert.ok(out.error?.details?.retry_after_ms > 0);
-  assert.match(out.error?.message || '', /o\/r\/main/);
-  assert.deepEqual(prompts, [{ command: 'git_save', repo: 'o/r', branch: 'main' }]);
+  assert.match(out.error?.message || '', /o\/r\/feature\/x/);
+  assert.deepEqual(prompts, [{ command: 'git_save', repo: 'o/r', branch: 'feature/x', checkedOut: true }]);
 });
 
 test('git_save runs on retry after session allow', async () => {
@@ -132,7 +138,7 @@ test('git_save runs on retry after session allow', async () => {
     readAgentGitAdapterKind: () => 'real',
     readAgentGitRealOptIn: () => allowed,
     readAgentGitSessionDenied: () => false,
-    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'feature/x', checkedOut: true }),
     promptAgentGitWriteConsent: () => 'shown',
     agentGitSave: async () => {
       saved = true;
@@ -145,6 +151,90 @@ test('git_save runs on retry after session allow', async () => {
   const out = await gitSaveCommand.run(ctx, { message: 'test' });
   assert.equal(saved, true);
   assert.equal(out.result?.status, 'committed');
+});
+
+test('git_save on a main checkout is refused and writes nothing', async () => {
+  let saved = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'real',
+    readAgentGitRealOptIn: () => true,
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main', checkedOut: true }),
+    promptAgentGitWriteConsent: () => {
+      throw new Error('consent modal must not open');
+    },
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
+  };
+  const out = await gitSaveCommand.run(ctx, { message: 'test' });
+  assert.equal(saved, false);
+  assert.equal(out.error?.code, 'save_on_main');
+  assert.equal(out.error?.message, AGENT_SAVE_ON_MAIN_MESSAGE);
+  assert.equal(out.error?.hint, AGENT_SAVE_ON_MAIN_MESSAGE);
+  assert.match(out.error.message, /git_branch_create \{ name \}/);
+  assert.equal(/allowMain/i.test(JSON.stringify(out)), false);
+  assert.equal(refuseAgentSaveOnMain({ branch: 'main', checkedOut: true })?.error.code, 'save_on_main');
+});
+
+test('git_add_to_repo on a main checkout is the same refusal and writes nothing', async () => {
+  let saved = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main', checkedOut: true }),
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
+  };
+  const out = await gitAddToRepoCommand.run(ctx, { message: 'test' });
+  assert.equal(saved, false);
+  assert.equal(out.error?.code, 'save_on_main');
+  assert.equal(out.error?.message, AGENT_SAVE_ON_MAIN_MESSAGE);
+  assert.equal(/allowMain/i.test(out.error.message + out.error.hint), false);
+});
+
+test('git_save still commits on a non-main checkout', async () => {
+  let saved = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'feature/x', checkedOut: true }),
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
+  };
+  const out = await gitSaveCommand.run(ctx, { message: 'test' });
+  assert.equal(saved, true);
+  assert.equal(out.result?.status, 'committed');
+});
+
+test('a branch label of main without a checkout is not refused', async () => {
+  let saved = false;
+  const ctx = {
+    readAgentGitAdapterKind: () => 'mock',
+    readAgentGitWriteTarget: () => ({ repo: 'o/r', branch: 'main' }),
+    agentGitSave: async () => {
+      saved = true;
+      return { status: 'committed' };
+    },
+  };
+  const out = await gitSaveCommand.run(ctx, { message: 'test' });
+  assert.equal(saved, true);
+  assert.equal(out.result?.status, 'committed');
+  assert.equal(refuseAgentSaveOnMain(null), null);
+  assert.equal(refuseAgentSaveOnMain({ branch: 'main', checkedOut: false }), null);
+  assert.equal(refuseAgentSaveOnMain({ checkedOut: true }), null);
+});
+
+test('agentGitSave refuses a main checkout before the commit', () => {
+  const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../App.jsx'), 'utf8');
+  const save = app.slice(app.indexOf('async agentGitSave({ message })'), app.indexOf('async agentGitUpgradeVault()'));
+  const guardAt = save.indexOf('refuseAgentSaveOnMain(readAgentGitWriteTarget())');
+  const commitAt = save.indexOf('handleGitCommit(draft)');
+  assert.ok(guardAt >= 0 && commitAt > guardAt);
+  const commit = app.slice(app.indexOf('const handleGitCommit'), app.indexOf('const absorbOverwriteFiles'));
+  assert.equal(commit.includes('refuseAgentSaveOnMain'), false);
 });
 
 test('git_save skips consent when session already denied', async () => {

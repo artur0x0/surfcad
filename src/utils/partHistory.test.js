@@ -5,6 +5,7 @@ import {
   editorMountSeedsHistory,
   emptyPartHistory,
   historyForPart,
+  openedPartHistory,
   pushPartHistory,
 } from './partHistory.js';
 
@@ -17,6 +18,18 @@ test('a remount does not stack the boot script on the live step', () => {
   const live = pushPartHistory(emptyPartHistory(), 'return bump;', 'Agent script');
   assert.equal(editorMountSeedsHistory(live), false);
   assert.equal(live.commits[live.head].message, 'Agent script');
+});
+
+test('openedPartHistory keeps a matching head and drops a different branch', () => {
+  const opened = 'return part;\n';
+  const fresh = openedPartHistory(null, opened);
+  assert.equal(fresh.commits[fresh.head].code, opened);
+  const same = openedPartHistory(fresh, opened);
+  assert.equal(same, fresh);
+  const other = pushPartHistory(emptyPartHistory(), 'return other;\n', 'Other branch');
+  const replaced = openedPartHistory(other, opened);
+  assert.equal(replaced.commits[replaced.head].code, opened);
+  assert.equal(replaced.commits.some((row) => row.code === 'return other;\n'), false);
 });
 
 test('adoptSavedScript records a new Save head and is a no-op for the same text', () => {
