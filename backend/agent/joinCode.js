@@ -148,6 +148,9 @@ export function createJoinCodeService(opts) {
   const byId = new Map();
   /** @type {Map<string, any>} */
   const byUser = new Map();
+  /** Bumped by clearUser. An in-flight redeem captured the previous value. */
+  /** @type {Map<string, number>} */
+  const userEpoch = new Map();
   const createLimiter = createRateLimiter({
     limit: opts.createLimit ?? JOIN_CREATE_LIMIT,
     windowMs: opts.createWindowMs ?? JOIN_CREATE_WINDOW_MS,
@@ -334,6 +337,7 @@ export function createJoinCodeService(opts) {
       const name = cleanLabel(fields.name, 'an agent');
       const machine = cleanLabel(fields.machine, 'an unknown machine');
       const label = `${name} on ${machine}`.slice(0, 160);
+      const epoch = userEpoch.get(record.userId) || 0;
       const issued = await opts.tokens.issue({
         userId: record.userId,
         label,
@@ -341,6 +345,10 @@ export function createJoinCodeService(opts) {
         city: cleanCity(fields.city),
         ip: cleanIp(fields.ip),
       });
+      if (record.cleared || (userEpoch.get(record.userId) || 0) !== epoch) {
+        await opts.tokens.revoke(record.userId, issued.id);
+        return { ok: false, error: 'invalid_code' };
+      }
       return {
         ok: true,
         token: issued.token,
@@ -351,15 +359,20 @@ export function createJoinCodeService(opts) {
 
     /**
      * Password change, account delete, and OAuth credential revoke.
-     * Drops every code for the account, including a superseded one.
+     * Synchronous. Marks every code for the account cleared, including
+     * one an in-flight redeem still holds, then drops the map entries.
      * @param {string} userId
      */
     clearUser(userId) {
       const id = String(userId || '');
       if (!id) return;
+      userEpoch.set(id, (userEpoch.get(id) || 0) + 1);
+      const current = byUser.get(id);
+      if (current) current.cleared = true;
       byUser.delete(id);
       for (const [codeHash, record] of byHash) {
         if (String(record.userId) !== id) continue;
+        record.cleared = true;
         byHash.delete(codeHash);
         byId.delete(record.id);
       }

@@ -60,12 +60,14 @@ export async function revokeUserAgentAccess(userId) {
  */
 export async function revokeRelayUser(relay, userId) {
   const id = String(userId);
+  // Before any await, so an in-flight redeem still inside tokens.issue
+  // sees the account as cleared and revokes the token it is about to insert.
+  relay.joinCodes.clearUser(id);
   const ids = await relay.tokens.revokeAll(id);
   for (const tokenId of ids) {
     relay.registry.abortToken(tokenId);
     relay.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
   }
-  relay.joinCodes.clearUser(id);
   return ids;
 }
 

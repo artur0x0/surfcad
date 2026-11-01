@@ -926,6 +926,39 @@ describe('agent relay HTTP', () => {
     assert.equal(still.userId, 'user-c');
   });
 
+  test('an in-flight redeem cannot keep a token issued after revokeRelayUser', async () => {
+    const relay = createAgentRelay();
+    const created = relay.joinCodes.create({ userId: 'user-a' });
+    assert.equal(created.ok, true);
+    /** @type {() => void} */
+    let release = () => {};
+    const gate = new Promise((resolve) => { release = resolve; });
+    const realIssue = relay.tokens.issue.bind(relay.tokens);
+    /** @type {string | null} */
+    let issuedToken = null;
+    relay.tokens.issue = async (fields) => {
+      await gate;
+      const issued = await realIssue(fields);
+      issuedToken = issued.token;
+      return issued;
+    };
+    const pending = relay.joinCodes.redeem({
+      code: created.code,
+      name: 'Cursor',
+      machine: 'laptop',
+      ip: '203.0.113.9',
+    });
+    await revokeRelayUser(relay, 'user-a');
+    release();
+    const result = await pending;
+    assert.deepEqual(result, { ok: false, error: 'invalid_code' });
+    assert.equal(result.token, undefined);
+    assert.equal(typeof issuedToken, 'string');
+    assert.equal(await relay.tokens.authenticate(issuedToken), null);
+    const live = (await relay.tokens.list('user-a')).filter((row) => !row.revokedAt);
+    assert.equal(live.length, 0);
+  });
+
   test('cookie routes reject a foreign Origin and are rate limited per IP', async () => {
     const relay = createAgentRelay({ browserLimit: 1 });
     const port = await listen(relay);
