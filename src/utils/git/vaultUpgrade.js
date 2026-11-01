@@ -11,9 +11,9 @@
  * A registered step runs only when `confirm` is true.
  */
 import { assertGithubAdapter } from './githubAdapterInterface.js';
-import { VAULT_MARKER_KIND, VAULT_MARKER_PATH } from './vaultNames.js';
+import { VAULT_MARKER_KIND, VAULT_MARKER_PATH, VAULT_MARKER_VERSION } from './vaultNames.js';
 
-export const CURRENT_VAULT_VERSION = 2;
+export const CURRENT_VAULT_VERSION = VAULT_MARKER_VERSION;
 export const UNSUPPORTED_VAULT_COPY = 'unsupported vault version';
 export const UNSUPPORTED_VAULT_CODE = 'unsupported_vault_version';
 

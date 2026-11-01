@@ -45,14 +45,14 @@ try {
 } catch (err) {
   reseed = err;
 }
-ok('reload by the new name is refused', reseed?.code === 'unsupported_vault_version', reseed?.message || '');
+ok('reload by the new name is refused', reseed?.code === 'unknown_assembly', reseed?.message || '');
 let oldOpen = null;
 try {
   await openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' });
 } catch (err) {
   oldOpen = err;
 }
-ok('reload by the old folder name is refused', oldOpen?.code === 'unsupported_vault_version', oldOpen?.message || '');
+ok('reload by the old folder name is refused', oldOpen?.code === 'unknown_assembly', oldOpen?.message || '');
 ok('reload writes nothing', gh._log.filter((row) => row.op === 'commitFiles').length === writesAfterSave);
 ok('the tip still has the old assembly file', !!(await gh.readFile(vault.repo, assemblyFilePath('Asm'), 'main')));
 

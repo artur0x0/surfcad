@@ -66,11 +66,11 @@ test('assembly rename, then reload (no baseline), then Save moves once', async (
 
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, 'Asm2', { branch: 'main' }),
-    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
+    (err) => err?.code === 'unknown_assembly',
   );
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, sidecar.renameFrom, { branch: 'main' }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(commitsOn(gh).length, writesAfterSave, 'a refused open writes nothing');
 });

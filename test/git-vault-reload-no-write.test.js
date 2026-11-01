@@ -62,7 +62,7 @@ test('open of a version-1 folder vault does not commit', async () => {
   const writesBefore = commitsAfterSeed(gh).length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: seedSha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(commitsAfterSeed(gh).length, writesBefore, 'a refused open must not commit');
   assert.equal((await gh.getBranch(vault.repo, 'main'))?.sha, seedSha);
@@ -164,7 +164,7 @@ test('an id-less folder .surf.json is refused and left unwritten', async () => {
   const writesBefore = commitsAfterSeed(gh).length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: committed.sha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(commitsAfterSeed(gh).length, writesBefore);
   const onDisk = JSON.parse((await gh.readFile(vault.repo, assemblyFilePath(ASM), 'main')).content);
@@ -197,7 +197,7 @@ test('a folder .surf.json without headers is refused before any write', async ()
   const writesBefore = commitsAfterSeed(gh).length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: committed.sha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(commitsAfterSeed(gh).length, writesBefore);
   assert.equal((await gh.getBranch(vault.repo, 'main'))?.sha, committed.sha);

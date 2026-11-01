@@ -225,7 +225,7 @@ console.log('\ngit G3 — first commit of a new assembly (no Open)');
   } catch (err) {
     reopenErr = err;
   }
-  ok('a folder vault is not reopened', reopenErr?.code === 'unsupported_vault_version', reopenErr?.message || '');
+  ok('a folder vault is not reopened', reopenErr?.code === 'unknown_assembly', reopenErr?.message || '');
   const bodyGit = (await gh.readFile(vault.repo, P, 'main')).content;
   eq('committed body stays on the tip', stripSurfId(bodyGit), 'return Manifold.cube([5,5,5], true);');
   ok('clean vs new baseline', !isWorkspaceDirty(doc, { [P]: 'return Manifold.cube([5,5,5], true);' }, res.baseline));

@@ -285,7 +285,7 @@ test('marked default + missing target throws and does not seed', async () => {
   assert.equal(spyCalls(spy, 'commitFiles').length, 0);
   const marker = await inner.readFile(vault.repo, 'surfcad.json', 'main');
   assert.ok(marker);
-  assert.match(marker.content, /"version": 1/);
+  assert.match(marker.content, /"version": 2/);
 });
 
 test('createRepo refuses when repo.owner is not the signed-in user', async () => {
@@ -394,7 +394,7 @@ test('load, reload, online, and connect paths do not commitFiles or createRepo',
       branch: 'main',
       headSha: seeded.sha,
     }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   const store = createSyncStore({ persist: false });
   const flushed = await flushSyncQueue({

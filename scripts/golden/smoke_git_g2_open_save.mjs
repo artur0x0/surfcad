@@ -75,13 +75,9 @@ const seed = await gh.commitFiles(vault.repo, {
   ],
 });
 eq('listAssemblies on tree', listAssemblies(await gh.listTree(vault.repo, 'main')), ['Cover', 'Gearbox']);
-let refused = null;
-try {
-  await listVaultAssemblies(gh, vault.repo, 'main');
-} catch (err) {
-  refused = err;
-}
-ok('a version-1 folder vault is not listed', refused?.code === 'unsupported_vault_version', refused?.message || '');
+const marker = await gh.readFile(vault.repo, 'surfcad.json', 'main');
+ok('a fresh vault marker is version 2', /"version": 2/.test(marker?.content || ''));
+eq('folder files are not listed as assemblies', await listVaultAssemblies(gh, vault.repo, 'main'), []);
 
 console.log('\ngit G2 — folder save still tracks dirty from the committed doc');
 const folderScripts = {

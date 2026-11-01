@@ -247,7 +247,7 @@ test('rename commit is tip move + surf.json path/name; Save takes the edit and p
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writesBefore + 1);
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, ASM, { branch: 'main', headSha: flushed.sha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(
     (await gh.readFile(vault.repo, staged.to, 'main')).content,

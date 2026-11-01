@@ -15,7 +15,8 @@
 export const DEFAULT_VAULT_NAME = 'surfcad-vault';
 export const LEGACY_VAULT_NAME = 'surfcad';
 export const VAULT_MARKER_KIND = 'surfcad-vault';
-export const VAULT_MARKER_VERSION = 1;
+/** Written into a new vault. Open accepts this version. An older marker is not opened. */
+export const VAULT_MARKER_VERSION = 2;
 export const VAULT_MARKER_PATH = 'surfcad.json';
 
 /** GitHub repo name: [A-Za-z0-9._-], max 100. '' when nothing is left. */

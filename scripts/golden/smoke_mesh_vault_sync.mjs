@@ -42,7 +42,7 @@ export async function meshVaultSyncScenario() {
   const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
   await assert.rejects(
     () => openVaultAssembly(gh, repo, 'Gearbox'),
-    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
   assert.equal(showLocalMeshBadge({

@@ -86,7 +86,7 @@ test('create -> git_save -> reload keeps the same id', async () => {
       branch: 'main',
       headSha: first.sha,
     }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
 });

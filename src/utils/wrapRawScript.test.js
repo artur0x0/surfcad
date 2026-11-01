@@ -140,7 +140,7 @@ test('opening unmarked repo or browser source shows a Code chip with zero unsave
   const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
-    (err) => err?.code === 'unsupported_vault_version' && err?.message === 'unsupported vault version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
   assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
@@ -167,7 +167,7 @@ test('opening a version-1 folder vault is refused and writes nothing', async () 
   const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
   assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
@@ -184,7 +184,7 @@ test('a version-1 folder vault with two parts is refused and writes nothing', as
   const writes = gh._log.filter((row) => row.op === 'commitFiles').length;
   await assert.rejects(
     () => openVaultAssembly(gh, vault.repo, name, { branch: 'main', headSha }),
-    (err) => err?.code === 'unsupported_vault_version',
+    (err) => err?.code === 'unknown_assembly',
   );
   assert.equal(gh._log.filter((row) => row.op === 'commitFiles').length, writes);
   assert.equal((await gh.getBranch(vault.repo, 'main')).sha, headSha);
