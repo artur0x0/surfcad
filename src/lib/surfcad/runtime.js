@@ -1429,12 +1429,61 @@ function _c4BlendHingePull(md, fi, pull, t0, sel, getAdj) {
   return pulls.reduce((a, b) => a + b, 0) / pulls.length;
 }
 
-/** One slide direction per vertex. Same normal keeps the first hinge. */
-function _c4PushDraftDir(list, n, tRef) {
-  for (const m of list) {
-    if (Math.abs(m.n[0] - n[0]) < 1e-6 && Math.abs(m.n[1] - n[1]) < 1e-6 && Math.abs(m.n[2] - n[2]) < 1e-6) return;
+/** How far `f` sits from the neutral plane, and how tall it is along pull. */
+function _c4FacePullSpan(md, f, pull, t0) {
+  let minAbs = Infinity;
+  let maxAbs = 0;
+  for (const vi of _c4FaceVertIndices(md, f)) {
+    const a = Math.abs(_c4Dot(md.V[vi], pull) - t0);
+    if (a < minAbs) minAbs = a;
+    if (a > maxAbs) maxAbs = a;
   }
-  list.push({ n, tRef });
+  return { minAbs, extent: maxAbs - minAbs };
+}
+
+/**
+ * One slide per wall at a vertex.
+ *
+ * Exact-equal normals already shared a hinge. A hollow also leaves several
+ * faces of the SAME wall a fraction of a degree apart, and the tangency walk
+ * does not succeed on every one of them. Two hinges on normals that close
+ * make the least-squares solve run away along the wall (a 1° draft of the
+ * shelled box moved a rim vertex 17 mm). Faces within 3° are one wall: a
+ * detected tangency wins over a face that fell back to the neutral plane,
+ * unless the tallest face already meets that plane. A real corner is 90°
+ * and stays two slides.
+ */
+function _c4ClusterDraftDirs(us, t0) {
+  if (us.length < 2) return us;
+  const COS = Math.cos((3 * Math.PI) / 180);
+  const clusters = [];
+  for (const u of us) {
+    let hit = null;
+    for (const c of clusters) {
+      if (_c4Dot(c.n, u.n) >= COS) { hit = c; break; }
+    }
+    if (!hit) {
+      clusters.push({ n: u.n.slice(), w: 1, members: [u] });
+      continue;
+    }
+    const w = hit.w + 1;
+    hit.n = _c4Norm(_c4Add(_c4Mul(hit.w, hit.n), u.n));
+    hit.w = w;
+    hit.members.push(u);
+  }
+  return clusters.map((c) => ({ n: c.n, tRef: _c4ClusterHinge(c.members, t0) }));
+}
+
+function _c4ClusterHinge(members, t0) {
+  if (members.length === 1) return members[0].tRef;
+  // The tallest face is the wall. A sliver that still touches the neutral
+  // plane must not drag that wall off the tangency it already found.
+  let wall = members[0];
+  for (const m of members) if (m.extent > wall.extent) wall = m;
+  if (wall.minAbs <= 1e-3) return t0;
+  const tang = members.filter((m) => m.extent + 1e-6 >= wall.extent * 0.5 && Math.abs(m.tRef - t0) > 0.5);
+  if (!tang.length) return wall.tRef;
+  return tang.reduce((a, m) => a + m.tRef, 0) / tang.length;
 }
 
 /**
@@ -1449,6 +1498,11 @@ function _c4PushDraftDir(list, n, tRef) {
  * that `'sides'` (or any wide pick) swept in with the walls is the same
  * blend: it is left out of the plane solve so the hinge can see it, and the
  * fillet endpoint stays on that tangency instead of being sheared.
+ * A hollow splits one wall into several faces whose normals differ by a
+ * fraction of a degree, and only some of them see the tangency. Those faces
+ * share one hinge; solving them as two planes throws the corner out along
+ * the wall. A tangency edge that is only a sliver along the pull is not a
+ * second wall.
  * Vertices shared by two selected faces get both displacements solved together,
  * which is what keeps a drafted corner sharp.
  *
@@ -1634,14 +1688,20 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
       if (_c4Len(rIn) > 1e-9 && _c4Dot(u, rIn) < 0) u = _c4Mul(-1, u);
     }
     drafted++;
+    const span = _c4FacePullSpan(md, f, pull, t0);
+    // The fillet's tangency edge is its own face, a fraction of a millimetre
+    // tall along the pull. It is not a wall: hinging it on itself pins the
+    // edge while the wall beside it wants to slide, and the solve runs away.
+    if (span.extent < 0.5 && span.minAbs > 1e-3) continue;
     const tRef = _c4BlendHingePull(md, fi, pull, t0, draftSel, () => {
       if (!faceAdj) faceAdj = _c4FaceAdj(md);
       return faceAdj;
     }) ?? t0;
+    const slide = { n: u, tRef, minAbs: span.minAbs, extent: span.extent };
     for (const vi of _c4FaceVertIndices(md, f)) {
       let list = dirs.get(vi);
       if (!list) { list = []; dirs.set(vi, list); }
-      _c4PushDraftDir(list, u, tRef);
+      list.push(slide);
     }
   }
   if (!drafted) {
@@ -1657,9 +1717,10 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
   // coordinate-keyed lookup misses every non-exact vertex (see
   // _c4RebuildWithVerts).
   const moved = md.V.map((v) => v.slice());
-  for (const [vi, us] of dirs) {
+  for (const [vi, raw] of dirs) {
     // Each selected plane slides by tan(angle) × the vertex's distance along
     // pull from THAT face's hinge (neutral plane, or the blend tangency).
+    const us = _c4ClusterDraftDirs(raw, t0);
     const s = _c4Dot(md.V[vi], pull);
     const rhs = us.map((u) => -tan * (s - u.tRef));
     moved[vi] = _c4Add(md.V[vi], _c4SolvePlaneMoves(us.map((u) => u.n), rhs));
