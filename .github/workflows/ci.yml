@@ -484,6 +484,15 @@ jobs:
             echo "agent prompt chat golden did not pass (see log above)"
             exit 1
           fi
+          bounded "agent prompt tail" npm run golden:agent-prompt-tail | tee "${RUNNER_TEMP}/agent-prompt-tail.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-prompt-tail.log"; then
+            echo "agent prompt tail golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'agent prompt tail golden: all passed' "${RUNNER_TEMP}/agent-prompt-tail.log"; then
+            echo "agent prompt tail golden did not pass (see log above)"
+            exit 1
+          fi
           bounded "geometry worker crash" npm run golden:geometry-worker-crash | tee "${RUNNER_TEMP}/geometry-worker-crash.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/geometry-worker-crash.log"; then
             echo "geometry worker crash golden skipped because Chrome was not found; CI must launch it"

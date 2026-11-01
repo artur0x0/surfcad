@@ -112,7 +112,10 @@ error. It follows
 new messages unless the user scrolled up, then a sticky arrow
 (`data-agent-prompt-jump`) offers the way back down. Disconnect clears the
 history. A session note from the paired agent (`agent.message`, no prompt id)
-is its own agent bubble. The text is plain text.
+is its own agent bubble. The text is plain text. On a phone the open chat
+grows a small obtuse tail (`data-agent-prompt-tail`) from its bottom edge,
+aimed at the Bot button in the stage pill and stopping just short of it.
+The outline runs around the tail on the same glass fill. Desktop has no tail.
 **Two agent states** (`data-agent-prompt-state`, from `state` on the MCP
 status message, `src/agent/agentPromptTyping.js`): **typing** (the agent called
 it responding) keeps the chat open with bouncing dots and a normal input;

@@ -749,6 +749,72 @@ textarea {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
   }
+  /* Phone speech bubble. The glass fill is one clipped shape (box + tail)
+     and the stroke is that same path, so the outline does not cross the
+     tail base. Desktop keeps the rectangular border and shadow. */
+  .agent-prompt.agent-prompt--compact {
+    overflow: visible;
+    border: none;
+    background-color: transparent;
+    box-shadow: none;
+  }
+  .agent-prompt-face {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    border-radius: var(--agent-prompt-radius);
+    overflow: hidden;
+  }
+  .agent-prompt-tail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] {
+    visibility: hidden;
+  }
+  .agent-prompt-bubble-shadow,
+  .agent-prompt-bubble-fill {
+    position: absolute;
+    inset: 0;
+  }
+  .agent-prompt-bubble-shadow {
+    z-index: 0;
+    background: rgb(0 0 0 / 0.28);
+    transform: translateY(6px);
+    filter: blur(9px);
+  }
+  .agent-prompt-bubble-fill {
+    z-index: 0;
+  }
+  .agent-prompt-bubble-stroke {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: visible;
+    pointer-events: none;
+    color: rgb(var(--agent-prompt-border));
+  }
+  .agent-prompt-bubble-stroke path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1;
+    stroke-linejoin: miter;
+    stroke-miterlimit: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .agent-prompt-tail-tip {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
   .agent-prompt--away {
     transform: translateX(-50%) translateY(calc(100% + var(--agent-prompt-rest-bottom) + 16px));
     pointer-events: none;

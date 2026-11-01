@@ -158,6 +158,18 @@ while focused on a touch device, `featureSheetEditLift` plus `useModalViewport`
 (the feature-card keyboard lift) so the field stays on screen. Camera and Send
 are at least 44px on the row under the field.
 
+**Phone agent chat tail.** On a phone the open agent chat is one speech
+bubble. A small obtuse triangle (`data-agent-prompt-tail`) sits on the
+bottom edge and points down at the horizontal centre of the stage pill's
+Bot button (`data-agent-chat-open`). The tip stops a few pixels short of
+the button so the bubble reads as floating. The outline is a single path
+around the box and the tail: `surface-glass` fills both, and the stroke
+is `--agent-prompt-border`. There is no hairline across the tail base.
+The tail's horizontal place is measured from that button, including after
+a resize, a rotation, and when the keyboard lifts the field. Desktop has
+no tail. Those are the same tokens in light and dark. Do not paint the
+tail with its own hex or a Tailwind colour utility.
+
 **Focused fields and selects.** A focused text field or select stays
 readable, and iOS Safari does not zoom the page.
 
