@@ -262,8 +262,9 @@ the left rail on a 390px phone. A press on one of those tools closes the
 flyout, then opens or toggles its pane. At 768px and under that pane is
 `mold-analysis-pane`: a vertical scroller capped to the visible viewport
 (`100dvh` or `visualViewport`), clear of the safe areas and the
-home-indicator pill. The scroll stays in the pane. Desktop keeps the
-legend chips and the `min(32rem, 70vh)` report and quote height.
+home-indicator pill. The scroll stays in the pane. Every molding result is a section of
+that one pane (`data-mold-results-pane`), a feature-sheet card between
+the rails. Desktop keeps the feature-sheet card height cap.
 
 ## Popups
 

@@ -1,10 +1,9 @@
 /**
- * Budgetary DFM panel. Dark glass, scrollable, text only. It does not
+ * Budgetary DFM section of the molding results pane. Text only. It does not
  * paint a skin. Draft, side actions, and ejectors stay labeled heuristic.
  */
 
 import React from 'react';
-import MoldAnalysisPane from './MoldAnalysisPane';
 
 function pullText(pull) {
   if (!Array.isArray(pull)) return '—';
@@ -15,7 +14,7 @@ function kindLabel(kind) {
   return kind === 'lifter' ? 'Lifter' : 'Slide';
 }
 
-export default function DfmReportPanel({ report, shifted = false, belowPull = false }) {
+export default function DfmReportPanel({ report }) {
   if (!report) return null;
   const wall = report.wall || {};
   const draft = report.draft || {};
@@ -33,9 +32,9 @@ export default function DfmReportPanel({ report, shifted = false, belowPull = fa
   const pullSource = report.pullSource === 'override' ? 'Override' : 'Search';
 
   return (
-    <MoldAnalysisPane
+    <div
       data-mold-dfm-report=""
-      className={`pointer-events-auto absolute wall-legend-anchor z-30 dfm-report-panel overflow-y-auto rounded-md surface-glass surface-glass-chip px-3 py-2 font-ui text-on-dark${shifted ? ' dfm-report-shifted' : ''}${belowPull ? ' dfm-report-below-pull' : ''}`}
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm" data-mold-dfm-framing="">{report.framing}</div>
       <p className="mt-0.5 text-ui-sm text-muted-on-dark" data-mold-dfm-disclaimer="">
@@ -113,6 +112,6 @@ export default function DfmReportPanel({ report, shifted = false, belowPull = fa
           )}
         </div>
       </dl>
-    </MoldAnalysisPane>
+    </div>
   );
 }

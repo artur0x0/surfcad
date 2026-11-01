@@ -3,8 +3,9 @@
  *
  * Listeners are capture-phase so a wheel, touch, or pointer gesture that
  * starts on the pane does not bubble to the viewport shell. They do not
- * call preventDefault: the pane still scrolls. `gesture*` is iOS Safari's
- * pinch stream; React does not bind those.
+ * call preventDefault: the pane still scrolls. A gesture whose target is a
+ * button, field, link, or label is not stopped, so that control still runs.
+ * `gesture*` is iOS Safari's pinch stream; React does not bind those.
  */
 
 export const MOLD_PANE_GESTURES = [
@@ -22,8 +23,20 @@ export const MOLD_PANE_GESTURES = [
   'gestureend',
 ];
 
+const MOLD_PANE_CONTROL = 'button, input, select, textarea, a, label';
+
+/** A press on a control still reaches React. Wheel and drag on the pane do not. */
+export function moldPaneEventOnControl(event) {
+  const node = event?.target;
+  const el = node && node.nodeType === 3 ? node.parentElement : node;
+  if (!el || typeof el.closest !== 'function') return false;
+  return !!el.closest(MOLD_PANE_CONTROL);
+}
+
 export function stopMoldPaneGesture(event) {
-  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+  if (!event || typeof event.stopPropagation !== 'function') return;
+  if (moldPaneEventOnControl(event)) return;
+  event.stopPropagation();
 }
 
 /**

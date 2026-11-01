@@ -1,6 +1,6 @@
 /**
  * Auto | Plane | Face pull used by core/cavity, side actions, and mold draft.
- * Dark glass, same corner as the mold legends. Light text only.
+ * First section of the molding results pane. Light text only.
  */
 
 import React from 'react';
@@ -30,7 +30,7 @@ export default function PullReference({
     <div
       data-mold-pull=""
       data-mold-pull-mode={mode}
-      className="pointer-events-auto absolute wall-legend-anchor z-30 mold-pull-chip rounded-md surface-glass surface-glass-chip px-2 py-1.5 font-ui text-on-dark"
+      className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Pull</div>
       <div className="mt-1 flex gap-1" role="group" aria-label="Pull direction">

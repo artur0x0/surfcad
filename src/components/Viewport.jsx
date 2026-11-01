@@ -628,6 +628,7 @@ import MoldDraftLegend from './molding/MoldDraftLegend';
 import DfmReportPanel from './molding/DfmReportPanel';
 import MoldQuotePanel from './molding/MoldQuotePanel';
 import PullReference from './molding/PullReference';
+import MoldResultsPane from './molding/MoldResultsPane';
 import { annotateFeatureEdges } from '../utils/boundaryEdgeIds.js';
 import { buildFeatureEdges } from '../utils/selectEdge.js';
 import { featureBlockText, listFeatureSheetTargets } from '../utils/featureSheetWriteback';
@@ -16953,43 +16954,37 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {mode !== 'game' && <WallLegend legend={wallLegend} />}
-      {mode !== 'game' && pullToolsOn && (
-        <PullReference
-          mode={pullReference.mode}
-          plane={pullReference.plane}
-          waiting={pullReference.mode === 'face' && !pullReference.pull}
-          onAuto={() => applySharedPullRef.current({ mode: 'auto' })}
-          onPlane={() => applySharedPullRef.current({ mode: 'plane', plane: pullReference.plane || 'top' })}
-          onFace={() => applySharedPullRef.current({ mode: 'face' })}
-          onPickPlane={(plane) => applySharedPullRef.current({ mode: 'plane', plane })}
-        />
-      )}
-      {mode !== 'game' && <PartingLegend legend={partingLegend} belowPull={pullToolsOn} />}
-      {mode !== 'game' && <SideActionLegend legend={sideActionLegend} belowPull={pullToolsOn} />}
-      {mode !== 'game' && <MoldDraftLegend legend={moldDraftLegend} belowPull={pullToolsOn} />}
-      {mode !== 'game' && (
-        <DfmReportPanel
-          report={dfmReportState}
-          shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
-          belowPull={pullToolsOn}
-        />
-      )}
-      {mode !== 'game' && (
-        <MoldQuotePanel
-          state={moldQuote}
-          shifted={!!(wallLegend || partingLegend || sideActionLegend || moldDraftLegend)}
-          belowPull={pullToolsOn}
-          onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
-          onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
-          onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
-          onSelect={(selected) => {
-            setMoldQuote((prev) => (prev ? { ...prev, selected } : prev));
-          }}
-          onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
-          onHumanReview={() => agentMoldHumanReviewRef.current({})}
-          onPayReview={() => agentMoldPayReviewRef.current({})}
-        />
+      {mode !== 'game' && (wallLegend || partingLegend || sideActionLegend || moldDraftLegend || dfmReportState || moldQuote) && (
+        <MoldResultsPane compact={isMobile}>
+          {pullToolsOn && (
+            <PullReference
+              mode={pullReference.mode}
+              plane={pullReference.plane}
+              waiting={pullReference.mode === 'face' && !pullReference.pull}
+              onAuto={() => applySharedPullRef.current({ mode: 'auto' })}
+              onPlane={() => applySharedPullRef.current({ mode: 'plane', plane: pullReference.plane || 'top' })}
+              onFace={() => applySharedPullRef.current({ mode: 'face' })}
+              onPickPlane={(plane) => applySharedPullRef.current({ mode: 'plane', plane })}
+            />
+          )}
+          <WallLegend legend={wallLegend} />
+          <PartingLegend legend={partingLegend} />
+          <SideActionLegend legend={sideActionLegend} />
+          <MoldDraftLegend legend={moldDraftLegend} />
+          <DfmReportPanel report={dfmReportState} />
+          <MoldQuotePanel
+            state={moldQuote}
+            onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
+            onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
+            onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
+            onSelect={(selected) => {
+              setMoldQuote((prev) => (prev ? { ...prev, selected } : prev));
+            }}
+            onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
+            onHumanReview={() => agentMoldHumanReviewRef.current({})}
+            onPayReview={() => agentMoldPayReviewRef.current({})}
+          />
+        </MoldResultsPane>
       )}
 
       {/* Cross-Section Panel */}
