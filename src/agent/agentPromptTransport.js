@@ -147,6 +147,11 @@ export function createAgentPromptTransport(bridge) {
 
   const unsubscribe = bridge.subscribe((msg) => {
     if (!msg || typeof msg !== 'object') return;
+    if (msg.type === PAIR_MSG.AGENT_MESSAGE && msg.v === 1 && typeof msg.text === 'string' && msg.text.length > 0) {
+      if (msg.id != null) return;
+      emitTo(replyListeners, { text: msg.text, final: true, session: true });
+      return;
+    }
     if (msg.type === PAIR_MSG.AGENT_REPLY && msg.v === 1 && typeof msg.id === 'string' && typeof msg.text === 'string') {
       if (!sentIds.has(msg.id)) return;
       if (msg.final === true) finalIds.add(msg.id);

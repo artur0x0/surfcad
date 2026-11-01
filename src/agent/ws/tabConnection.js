@@ -211,7 +211,8 @@ export function createAgentBridgeTabConnection(opts) {
       markDropped();
       return;
     }
-    if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_STATUS
+    if (msg.type === PAIR_MSG.AGENT_REPLY || msg.type === PAIR_MSG.AGENT_MESSAGE
+      || msg.type === PAIR_MSG.AGENT_STATUS
       || msg.type === PAIR_MSG.AGENT_PROMPT_ACK || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT
       || msg.type === PAIR_MSG.AGENT_ACTIVITY) {
       emitPrompt(msg);

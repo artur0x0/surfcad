@@ -39,6 +39,21 @@ test('a reply to an unknown prompt id is not shown', () => {
   assert.deepEqual(fromPage.messages.map((m) => [m.role, m.text]), [['agent', 'from the agent']]);
 });
 
+test('a session note is its own agent bubble and keeps the text as plain text', () => {
+  const html = '<img src=x onerror="alert(1)"><b>hello</b>';
+  const chat = run([{ type: 'reply', text: html, session: true }]);
+  assert.deepEqual(chat.messages.map((m) => [m.role, m.id, m.text]), [['agent', '', html]]);
+  assert.equal(chat.messages[0].key, 's:0');
+  assert.equal(chat.hidden, false);
+  const again = conversationReducer(chat, { type: 'reply', text: 'second', session: true });
+  assert.equal(again.messages[1].key, 's:1');
+  assert.equal(again.messages[1].text, 'second');
+  const ignored = conversationReducer(again, { type: 'reply', id: 'x', text: 'probe', final: true });
+  assert.equal(ignored, again);
+  const blank = conversationReducer(chat, { type: 'reply', text: '', session: true });
+  assert.equal(blank, chat);
+});
+
 test('dismiss hides the pane and keeps the history; the next message shows it again', () => {
   const chat = run([{ type: 'sent', id: 'p1', text: 'hi' }, { type: 'reply', id: 'p1', text: 'hello', final: true }]);
   const hidden = conversationReducer(chat, { type: 'dismiss' });

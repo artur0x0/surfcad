@@ -19,6 +19,8 @@ export const PAIR_MSG = Object.freeze({
   AGENT_PROMPT_ACK: 'agent.prompt.ack',
   /** Agent → page. Contract v:1. Several replies may share one prompt id. */
   AGENT_REPLY: 'agent.reply',
+  /** Agent → page. Contract v:1. A plain-text note for this paired session, with no prompt id. */
+  AGENT_MESSAGE: 'agent.message',
   /** Agent → page. Contract v:1. */
   AGENT_STATUS: 'agent.status',
   /** Agent → page, or the page noting a bridge call. Contract v:1. Refreshes the working deadline. */

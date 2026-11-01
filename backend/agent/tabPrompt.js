@@ -1,3 +1,5 @@
+import { PAIR_MSG } from '../../packages/surfcad-mcp/src/relayMessages.mjs';
+
 /**
  * Tab → agent prompt frames on the server relay.
  *
@@ -14,6 +16,7 @@
  */
 export function deliverTabAgentFrame(registry, userId, frame, reply) {
   const type = typeof frame?.type === 'string' ? frame.type : '';
+  if (type === PAIR_MSG.AGENT_MESSAGE) return;
   if (type !== 'agent.prompt' && type !== 'agent.prompt.cancel') {
     registry.forwardToAgents(userId, frame);
     return;

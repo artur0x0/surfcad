@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { importJsx } from '../../test/jsxTestModule.js';
-import { AGENT_PROMPT_TYPED } from '../agent/agentPromptDemo.js';
+import { AGENT_PROMPT_SESSION_NOTE, AGENT_PROMPT_TYPED } from '../agent/agentPromptDemo.js';
 
 const SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'PromptInput.jsx'),
@@ -244,4 +244,18 @@ test('the pane caps its height and scrolls inside; user bubbles are right-aligne
   assert.match(css, /\.agent-prompt-msg--user \{[^}]*align-self: flex-end;/s);
   assert.match(css, /\.agent-prompt-msg--agent \{[^}]*align-self: flex-start;/s);
   assert.match(css, /\.agent-prompt-jump \{[^}]*position: sticky;/s);
+});
+
+test('a session note renders as text, including markup', async () => {
+  if (!PromptInput) {
+    ({ default: PromptInput } = await importJsx(new URL('./PromptInput.jsx', import.meta.url)));
+  }
+  const markup = renderPrompt('?agentPromptDemo=1&agentPromptState=session-note');
+  assert.match(markup, /data-agent-msg="agent"/);
+  assert.match(markup, /data-agent-chat-count="1"/);
+  assert.match(markup, /&lt;b&gt;hello&lt;\/b&gt;/);
+  assert.match(markup, /&lt;img/);
+  assert.doesNotMatch(markup, /<b>hello<\/b>/);
+  assert.doesNotMatch(markup, /<img[\s>]/);
+  assert.equal(markup.includes(AGENT_PROMPT_SESSION_NOTE), false);
 });

@@ -292,3 +292,93 @@ test('read_messages lists prompt ids in recent after the ack over the remote rel
     await session.close();
   }
 });
+
+/**
+ * An idle session has recent: []. Omitting in_reply_to posts one plain-text
+ * note with no prompt id. A second note inside the rate window is refused
+ * and sends nothing. A later prompt still shows up in recent.
+ * @param {{ client: Client, tab: import('ws').WebSocket, inbound: object[] }} session
+ */
+async function sessionNote(session) {
+  const before = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.equal(before.isError, false, JSON.stringify(before).slice(0, 240));
+  const idle = jsonBlocks(before)[0];
+  assert.deepEqual(idle.recent, []);
+
+  const empty = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: '', text: 'nope' },
+  });
+  assert.equal(empty.isError, true);
+  assert.equal(JSON.parse(texts(empty)[0]).code, 'bad_args');
+
+  const unknown = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: 'x', text: 'probe' },
+  });
+  assert.equal(unknown.isError, true);
+  assert.equal(JSON.parse(texts(unknown)[0]).code, 'unknown_prompt');
+
+  const posted = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { text: '<b>hello</b>' },
+  });
+  assert.equal(posted.isError, false, JSON.stringify(posted).slice(0, 240));
+  assert.deepEqual(JSON.parse(texts(posted)[0]), { ok: true, session: true });
+  const frame = await waitFor(session.inbound, (msg) => msg.type === PAIR_MSG.AGENT_MESSAGE);
+  assert.equal(frame.v, 1);
+  assert.equal(frame.text, '<b>hello</b>');
+  assert.equal(frame.id, undefined);
+
+  const mark = session.inbound.length;
+  const limited = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { text: 'again' },
+  });
+  assert.equal(limited.isError, true);
+  assert.equal(JSON.parse(texts(limited)[0]).code, 'rate_limited');
+  await settle(200);
+  assert.equal(session.inbound.slice(mark).some((msg) => msg.type === PAIR_MSG.AGENT_MESSAGE), false);
+  assert.equal(session.inbound.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+
+  const still = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.deepEqual(jsonBlocks(still)[0].recent, []);
+
+  await sendPrompt(session.tab, session.inbound, PROMPT_A, 'draw a box');
+  const read = await session.client.callTool({ name: 'read_messages', arguments: {} });
+  assert.equal(read.isError, false, JSON.stringify(read).slice(0, 400));
+  const summary = jsonBlocks(read).at(-1);
+  assert.deepEqual(summary.recent, [{ id: PROMPT_A, state: 'delivered' }]);
+  const reply = await session.client.callTool({
+    name: 'reply_to_user',
+    arguments: { in_reply_to: PROMPT_A, text: 'made a box', final: true },
+  });
+  assert.equal(reply.isError, false, JSON.stringify(reply).slice(0, 240));
+  const answered = await waitFor(
+    session.inbound,
+    (msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === PROMPT_A && msg.text === 'made a box',
+  );
+  assert.equal(answered.final, true);
+}
+
+test('reply_to_user can post a session note when recent is empty', async () => {
+  const session = await pairedSession();
+  try {
+    await sessionNote(session);
+  } finally {
+    await session.close();
+  }
+});
+
+test('reply_to_user can post a session note on a remote session when recent is empty', async () => {
+  const session = await openRemoteStdio({
+    serverBin: SERVER_BIN,
+    clientName: 'surfcad-mcp-session-note',
+    onTabMessage: answerCommand,
+  });
+  try {
+    await sessionNote(session);
+  } finally {
+    await session.close();
+  }
+});

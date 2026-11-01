@@ -17,7 +17,7 @@ test('page and MCP relay message names stay in sync', () => {
   assert.deepEqual(BROWSER_MSG, NODE_MSG);
   const browser = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../src/agent/ws/relayMessages.js'), 'utf8');
   const node = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/relayMessages.mjs'), 'utf8');
-  for (const name of ['agent.prompt', 'agent.prompt.ack', 'agent.prompt.cancel', 'agent.prompt.cancel.result', 'agent.reply', 'agent.status', 'agent.activity']) {
+  for (const name of ['agent.prompt', 'agent.prompt.ack', 'agent.prompt.cancel', 'agent.prompt.cancel.result', 'agent.reply', 'agent.message', 'agent.status', 'agent.activity']) {
     assert.equal(browser.includes(name), true);
     assert.equal(node.includes(name), true);
   }

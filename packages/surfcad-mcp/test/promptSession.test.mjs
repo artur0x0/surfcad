@@ -937,3 +937,57 @@ test('an unknown reply id is rejected before send, and recent ids survive the ac
     { id: pid(3), state: 'delivered' },
   ]);
 });
+
+test('a session note posts without a prompt id, stays plain text, and is rate limited', async () => {
+  const time = clock();
+  const { session, sent } = harness({ clock: time });
+  const defs = Object.fromEntries(promptToolDefinitions().map((tool) => [tool.name, tool]));
+  assert.deepEqual(defs.reply_to_user.inputSchema.required, ['text']);
+  assert.match(defs.reply_to_user.description, /Omit in_reply_to/);
+  assert.match(defs.read_messages.description, /idle session that has not received a prompt has recent: \[\]/);
+
+  const idle = await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(JSON.parse(idle.content[0].text).recent, []);
+
+  await assert.rejects(
+    () => session.reply({ text: '' }),
+    (err) => err.code === 'bad_args',
+  );
+  assert.throws(
+    () => session.reply({ in_reply_to: '', text: 'nope' }),
+    (err) => err.code === 'bad_args',
+  );
+  assert.throws(
+    () => session.reply({ in_reply_to: 'x', text: 'probe' }),
+    (err) => err.code === 'unknown_prompt',
+  );
+  assert.equal(sent.length, 0);
+
+  const first = session.reply({ text: '<b>hi</b>', final: true });
+  const second = session.reply({ text: 'again' });
+  assert.deepEqual(await first, { ok: true, session: true });
+  await assert.rejects(second, (err) => err.code === 'rate_limited');
+  const notes = sent.filter((msg) => msg.type === PAIR_MSG.AGENT_MESSAGE);
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].v, 1);
+  assert.equal(notes[0].text, '<b>hi</b>');
+  assert.equal(notes[0].id, undefined);
+  assert.equal(notes[0].final, undefined);
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_REPLY), false);
+  assert.deepEqual(session.recentPrompts(), []);
+  assert.equal(session.deliveryStatus().last, null);
+
+  time.advance(1000);
+  assert.deepEqual(await session.reply({ text: 'later' }), { ok: true, session: true });
+  assert.equal(sent.filter((msg) => msg.type === PAIR_MSG.AGENT_MESSAGE).at(-1).text, 'later');
+
+  await session.acceptPrompt(prompt(1));
+  const read = await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(JSON.parse(read.content.at(-1).text).recent, [
+    { id: pid(1), state: 'delivered' },
+  ]);
+  assert.deepEqual(session.reply({ in_reply_to: pid(1), text: 'done', final: true }), {
+    id: pid(1),
+    final: true,
+  });
+});

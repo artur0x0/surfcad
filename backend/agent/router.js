@@ -17,6 +17,7 @@ import {
 import { approvalFetchAllowed, browserReadAllowed, checkApprovalPost, ensureCsrfToken } from './csrf.js';
 import { logRelay } from './log.js';
 import { messageByteLength } from './limits.js';
+import { sessionMessageProblem } from './sessionMessage.js';
 
 /**
  * @param {import('express').Request} req
@@ -597,6 +598,13 @@ export function createAgentRouter(deps) {
       }
       const type = req.body && typeof req.body.type === 'string' ? req.body.type : '';
       if (!type.startsWith('agent.')) return res.status(400).json({ error: 'bad_call' });
+      if (type === 'agent.message') {
+        const problem = sessionMessageProblem(req.body);
+        if (problem) return res.status(400).json({ error: problem });
+        if (!deps.registry.allowSessionMessage(auth.userId)) {
+          return res.status(429).json({ error: 'rate_limited' });
+        }
+      }
       deps.registry.forwardToTabs(auth.userId, req.body);
       await deps.tokens.markUsed(auth);
       logRelay({ event: 'prompt', userId: auth.userId, type, bytes });

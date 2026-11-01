@@ -7,6 +7,7 @@ import {
   AGENT_PROMPT_CHAT_LONG,
   AGENT_PROMPT_REPLY_LONG,
   AGENT_PROMPT_REPLY_SHORT,
+  AGENT_PROMPT_SESSION_NOTE,
   AGENT_PROMPT_TYPED,
   agentPromptDemoAllowed,
   readAgentPromptDemo,
@@ -130,6 +131,16 @@ function demoSeed(state) {
   }
   if (state === 'folded') {
     return { input: '', reply: '', messages: AGENT_PROMPT_CHAT, working: false, shotOn: false, streaming: false, folded: true };
+  }
+  if (state === 'session-note') {
+    return {
+      input: '',
+      reply: '',
+      messages: [{ role: 'agent', text: AGENT_PROMPT_SESSION_NOTE }],
+      working: false,
+      shotOn: false,
+      streaming: false,
+    };
   }
   return { input: '', reply: '', working: false, shotOn: false, streaming: false };
 }
@@ -298,7 +309,13 @@ export default function PromptInput({
       onReply(msg) {
         if (!msg || typeof msg !== 'object') return;
         const text = typeof msg.text === 'string' ? msg.text : '';
-        dispatchChat({ type: 'reply', id: msg.id, text });
+        const session = msg.session === true;
+        dispatchChat({ type: 'reply', id: session ? undefined : msg.id, text, session });
+        if (session) {
+          if (foldedRef.current) setUnread(true);
+          setAnnounce('Agent replied');
+          return;
+        }
         // A reply is activity. A final one closes; a partial one restarts the deadline.
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
         if (msg.final === true) {

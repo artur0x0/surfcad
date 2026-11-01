@@ -77,6 +77,12 @@ export const PROMPT_HOLD_MS = 8_000;
 /** Tab prompts held for one account while no agent socket is up. */
 export const MAX_HELD_PROMPTS = 20;
 
+/**
+ * Minimum gap between unsolicited agent messages for one account.
+ * A paired agent can post without a prompt id; this stops a flood.
+ */
+export const SESSION_MESSAGE_GAP_MS = 1000;
+
 /** Pending device codes held in this process. */
 export const MAX_PENDING_PAIRINGS = 500;
 
