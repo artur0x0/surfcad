@@ -29,7 +29,7 @@ export const BUILDING_STATUS_GUIDANCE = 'Call set_status { state: "building" } o
  * Session presence. Kept short: it is part of the initialize instructions,
  * which hosts truncate past 2 KB.
  */
-export const SESSION_PRESENCE_GUIDANCE = 'Be interactive: post_progress while working, especially during long reasoning. Keep one surfcad-mcp process per session when the runtime allows. Call close_session when done, never on exit.';
+export const SESSION_PRESENCE_GUIDANCE = 'Be interactive: post_progress while working, especially during long reasoning. A fresh process per tool call is normal and stays present. A long-lived process is optional, never required. Call close_session when done, never on exit.';
 
 /**
  * First paragraph of the MCP initialize `instructions`.
