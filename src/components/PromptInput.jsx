@@ -40,6 +40,7 @@ import { shouldOpenAgentChatOnConnect, shouldShowAgentBridgeDisconnect } from '.
 import { featureSheetEditLift, isTouchEditDevice } from '../utils/featureFieldEdit.js';
 import { useModalViewport } from '../hooks/useModalViewport.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
+import { AgentPromptFrame } from './AgentPromptTail.jsx';
 
 /** Keep the caret in the field. A tap that blurs first is dropped on iOS.
  *  Cancelling pointerdown also drops the click on WebKit, so the button
@@ -731,8 +732,8 @@ export default function PromptInput({
     {fieldFocused && touchEdit ? <AgentPromptFocusLift rootRef={rootRef} /> : null}
     <div
       ref={rootRef}
-      className={`agent-prompt surface-glass text-on-dark font-ui ${
-        isMobile ? 'agent-prompt--compact' : ''
+      className={`agent-prompt text-on-dark font-ui ${
+        isMobile ? 'agent-prompt--compact' : 'surface-glass'
       }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}${folded && foldSettled ? ' agent-prompt--folded-hidden' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
@@ -746,6 +747,7 @@ export default function PromptInput({
       onKeyDown={onRootKeyDown}
       {...(hiddenAway ? { inert: '' } : {})}
     >
+      <AgentPromptFrame isMobile={isMobile} rootRef={rootRef}>
       {showReply ? (
         <div
           className="agent-prompt-reply rail-scroll"
@@ -951,6 +953,7 @@ export default function PromptInput({
           )}
         </div>
       </form>
+      </AgentPromptFrame>
     </div>
     {foldable ? (
       <button
