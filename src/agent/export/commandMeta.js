@@ -1073,9 +1073,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_save: {
-    description: 'The only vault content write, same planSave path as the Save button. message required. Working-copy tools do not commit. consent_pending: Allow dialog is up; retry the same call after the user clicks Allow. pending_save: an offline plan is waiting; Save again when online. upgrade_required: legacy vault; call git_upgrade_vault { confirm: true } after the user agrees. conflict or repo-moved: a remote edit overlaps this Save; git_force_overwrite, or git_behind_resolve { action: "reload" | "branch", confirm: true }, or stop. Results omit path fields. Over the wire a save is many GitHub round trips: when it is still running after about 20 s the call answers { status: "running", saveId } and the save keeps going; poll git_save_status { save_id } until it answers the save result (committed, clean, or the same errors).',
+    description: 'The only vault content write, same planSave path as the Save button. message required. Working-copy tools do not commit. consent_pending: Allow dialog is up; retry the same call after the user clicks Allow. pending_save: an offline plan is waiting; Save again when online. upgrade_required: legacy vault; call git_upgrade_vault { confirm: true } after the user agrees. conflict or repo-moved: a remote edit overlaps this Save; git_force_overwrite, or git_behind_resolve { action: "reload" | "branch", confirm: true }, or stop. Checked out on main: save_on_main and nothing is written; git_branch_create { name }, then git_save { message } on that branch. Results omit path fields. Over the wire a save is many GitHub round trips: when it is still running after about 20 s the call answers { status: "running", saveId } and the save keeps going; poll git_save_status { save_id } until it answers the save result (committed, clean, or the same errors).',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
     mutates: true,
   },
   git_save_status: {
@@ -1120,9 +1120,9 @@ export const COMMAND_META = {
     confirm: true,
   },
   git_add_to_repo: {
-    description: 'Alias of git_save. Prefer git_save. Same planSave / writeVaultCommit path. Message required. Results omit path fields.',
+    description: 'Alias of git_save. Prefer git_save. Same planSave / writeVaultCommit path. Message required. Checked out on main: save_on_main and nothing is written; git_branch_create { name }, then git_save { message } on that branch. Results omit path fields.',
     result: { type: 'object', additionalProperties: true },
-    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'internal'],
+    errors: ['bad_args', 'upgrade_required', 'conflict', 'repo-moved', 'pending_save', 'git_blocked', 'consent_pending', 'real_repo_blocked', 'save_on_main', 'internal'],
     mutates: true,
   },
   git_behind_resolve: {

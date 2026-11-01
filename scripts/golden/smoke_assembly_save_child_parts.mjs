@@ -105,8 +105,8 @@ const partPath = (id) => `parts/${id}.js`;
 const sameList = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 /** Save button in the Parts strip: message dialog, confirm, wait for the commit. */
-async function uiSave(page, fake, message) {
-  const before = fake.log().length;
+async function uiSave(page, fake, message, branch = 'main') {
+  const before = fake.log(branch).length;
   await page.waitForSelector('[data-ui-action="data-git-save"]:not([disabled])', { timeout: 15000 });
   await page.click('[data-ui-action="data-git-save"]');
   await page.waitForSelector('[data-git-commit-message]', { timeout: 10000 });
@@ -114,7 +114,7 @@ async function uiSave(page, fake, message) {
   await page.click('[data-ui-action="data-git-commit-confirm"]');
   const started = Date.now();
   while (Date.now() - started < 30000) {
-    if (fake.log().length > before) break;
+    if (fake.log(branch).length > before) break;
     await new Promise((r) => setTimeout(r, 100));
   }
   // The dialog shows the result on its done stage; wait for it, then close.
@@ -125,7 +125,7 @@ async function uiSave(page, fake, message) {
   await page.waitForSelector('[data-git-dialog="commit"]', { state: 'detached', timeout: 10000 }).catch(() => {});
   // Let adoptV2SaveResult settle the baseline and the strip re-render.
   await page.waitForTimeout(400);
-  const commit = fake.log().find((row) => row.message === message) || null;
+  const commit = fake.log(branch).find((row) => row.message === message) || null;
   if (commit) {
     commit.uiStatus = done;
     commit.uiText = doneText || '';
@@ -352,14 +352,21 @@ try {
   check('S2 clean after save', dirtyAfter2.parsed?.unsaved === false && dots2 === 0, JSON.stringify({ dirty: dirtyAfter2.parsed, dots: dots2 }));
   check('S2 save does not claim an overwrite', saveDidNotClaimOverwrite(s2), s2?.uiText);
 
-  // ---- S3: the same shape through git_save.
+  // ---- S3: the same shape through git_save. The session is checked out
+  // on main after the UI saves, so leave main before the agent write.
+  const leftMain = await mcp(client, 'git_branch_create', { name: 'feature/child-parts' });
+  check(
+    'S3 git_save is off main',
+    leftMain.isError !== true && leftMain.parsed?.switched === true,
+    JSON.stringify(leftMain.parsed),
+  );
   await mcp(client, 'set_active_part', { part_id: A });
   await mcp(client, 'set_script', { part_id: A, source: cube(12, 12, 46) });
   await mcp(client, 'set_active_part', { part_id: B });
   await mcp(client, 'set_script', { part_id: B, source: cube(32, 32, 7) });
   await mcp(client, 'set_active_part', { part_id: C });
   const saved3 = await mcp(client, 'git_save', { message: 'S3 git_save' });
-  const s3 = fake.log().find((row) => row.message === 'S3 git_save') || null;
+  const s3 = fake.log('feature/child-parts').find((row) => row.message === 'S3 git_save') || null;
   const s3Paths = sortedPaths(s3);
   const s3Expected = [partPath(A), partPath(B)];
   check(
@@ -373,13 +380,13 @@ try {
 
   // ---- S4: edit the active part, Save inside the 600 ms draft debounce.
   const editC4 = await mcp(client, 'set_script', { part_id: C, source: cube(13, 9, 5) });
-  const s4 = await uiSave(page, fake, 'S4 active part fast save');
+  const s4 = await uiSave(page, fake, 'S4 active part fast save', 'feature/child-parts');
   const s4Paths = sortedPaths(s4);
   check(
     'S4 UI Save right after an active-part edit writes that part',
     editC4.isError !== true && !!s4 && s4Paths.includes(partPath(C))
-      && String(fake.readFile(partPath(C)) || '').includes('cube([13, 9, 5]'),
-    JSON.stringify({ got: s4Paths, C: fake.readFile(partPath(C)) }),
+      && String(fake.readFile(partPath(C), 'feature/child-parts') || '').includes('cube([13, 9, 5]'),
+    JSON.stringify({ got: s4Paths, C: fake.readFile(partPath(C), 'feature/child-parts') }),
   );
   const dirtyAfter4 = await mcp(client, 'dirty');
   const dots4 = await stripDirtyCount(page);
@@ -447,10 +454,17 @@ try {
   const dots5 = await stripDirtyCount(page);
   check('S5 clean after save', dirtyAfter5.parsed?.unsaved === false && dots5 === 0, JSON.stringify({ dirty: dirtyAfter5.parsed, dots: dots5 }));
   check('S5 save does not claim an overwrite', saveDidNotClaimOverwrite(s5), s5?.uiText);
+  // The new assembly's UI Save checked out main. The agent write is off main.
+  const leftMain5 = await mcp(client, 'git_branch_create', { name: 'feature/child-parts-s5' });
+  check(
+    'S5 git_save is off main',
+    leftMain5.isError !== true && leftMain5.parsed?.switched === true,
+    JSON.stringify(leftMain5.parsed),
+  );
   // The agent path on the same document is the same v2 writer.
   const editE5 = await mcp(client, 'set_script', { part_id: E, source: cube(7, 7, 21) });
   const saved5 = await mcp(client, 'git_save', { message: 'S5 git_save after UI save' });
-  const s5b = fake.log().find((row) => row.message === 'S5 git_save after UI save') || null;
+  const s5b = fake.log('feature/child-parts-s5').find((row) => row.message === 'S5 git_save after UI save') || null;
   check(
     'S5 git_save on the UI-created assembly writes the edited part by id',
     editE5.isError !== true && saved5.isError !== true && !!s5b && sameList(sortedPaths(s5b), [partPath(E)]),
@@ -458,7 +472,7 @@ try {
   );
   check(
     'S5 no v1 name-path file ever landed on the v2 vault',
-    fake.log().every((row) => sortedPaths(row).every((path) => !/^assemblies\/[^/]+\/(\.surf\.json|[^/]+\.js)$/.test(path) && !/^parts\/(?!\d{4}-)[^/]+\.js$/.test(path))),
+    ['main', 'feature/child-parts', 'feature/child-parts-s5'].every((branch) => fake.log(branch).every((row) => sortedPaths(row).every((path) => !/^assemblies\/[^/]+\/(\.surf\.json|[^/]+\.js)$/.test(path) && !/^parts\/(?!\d{4}-)[^/]+\.js$/.test(path)))),
     JSON.stringify(fake.log().map((row) => [row.message, sortedPaths(row)])),
   );
 

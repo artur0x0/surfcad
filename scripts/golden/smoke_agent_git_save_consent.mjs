@@ -217,6 +217,12 @@ check(
 );
 const history = fake.log();
 check('exactly one new commit', history.length === seedCommits + 1, JSON.stringify(history.map((c) => c.message)));
+const leftMain = await agentCall(page, 'git_branch_create', { name: 'feature/kettle' });
+check(
+  'session leaves main before another git_save',
+  leftMain.out.ok === true && leftMain.out.result?.switched === true && fake.log().length === seedCommits + 1,
+  JSON.stringify(leftMain.out),
+);
 const commitFiles = history[0]?.files || [];
 const scriptsWritten = commitFiles.filter((f) => f.path.endsWith('.js'));
 const surfWritten = commitFiles.filter((f) => f.path.endsWith('.surf.json'));

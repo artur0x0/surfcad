@@ -197,6 +197,12 @@ check('set_script edit', edited.ok === true, JSON.stringify(edited));
 
 const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
 check('git_move_to_repo', moved.ok === true && moved.result?.status === 'moved', JSON.stringify(moved));
+const leftMain = await agentCall(page, 'git_branch_create', { name: 'feature/h12-save' });
+check(
+  'git_save runs off main',
+  leftMain.ok === true && leftMain.result?.status === 'created' && leftMain.result?.switched === true,
+  JSON.stringify(leftMain),
+);
 await agentCall(page, 'run', {});
 
 const afterMove = await agentCall(page, 'parts', {});

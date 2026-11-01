@@ -74,6 +74,32 @@ export function agentGitConsentPrompt(commandName, repo, branch) {
 export const AGENT_GIT_CONSENT_RETRY_MS = 3000;
 
 /**
+ * git_save / git_add_to_repo on a checkout of `main`. The host returns this
+ * as both message and hint so a published surfcad-mcp keeps it (a host hint
+ * wins) and the agent sees the next call without a package publish.
+ */
+export const AGENT_SAVE_ON_MAIN_MESSAGE = 'git_save does not commit on main. Nothing was written. Create a branch first with git_branch_create { name }, then git_save { message } on that branch.';
+
+/**
+ * Refusal for an agent save whose session is checked out on main.
+ * A missing checkout (`checkedOut` not true) is not main: the branch label
+ * falls back to "main" before any vault branch is checked out.
+ * No bypass argument. Returns null when the save may proceed.
+ * @param {{ branch?: string, checkedOut?: boolean } | null | undefined} target
+ * @returns {{ error: { code: string, message: string, hint: string } } | null}
+ */
+export function refuseAgentSaveOnMain(target) {
+  if (!target || target.checkedOut !== true || target.branch !== 'main') return null;
+  return {
+    error: {
+      code: 'save_on_main',
+      message: AGENT_SAVE_ON_MAIN_MESSAGE,
+      hint: AGENT_SAVE_ON_MAIN_MESSAGE,
+    },
+  };
+}
+
+/**
  * The consent modal is up in the tab; nothing was written. The agent should
  * ask the user to click Allow, then call the same command again.
  */

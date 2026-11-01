@@ -142,6 +142,7 @@ import {
   adoptSavedScript,
   editorMountSeedsHistory,
   historyForPart,
+  openedPartHistory,
   pushPartHistory,
   redoPartHistory,
   undoPartHistory,
@@ -159,6 +160,7 @@ import {
   agentGitSessionDenied,
   agentGitSetSessionAllow,
   agentGitSetSessionDenied,
+  refuseAgentSaveOnMain,
 } from './agent/gitAgent.js';
 import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
 import AgentGitConsentModal from './components/AgentGitConsentModal';
@@ -2972,9 +2974,18 @@ const App = () => {
     if (!active) return;
     setCurrentFilename(active.name);
     const picked = scriptForRow(saved, opened, active.id);
+    const openedCode = picked.ok ? picked.script : '// This part has no file yet.\n';
     if (picked.ok) setCurrentScript(picked.script);
-    else setCurrentScript('// This part has no file yet.\n');
-    focusPartHistory(active.id, picked.ok ? picked.script : '');
+    else setCurrentScript(openedCode);
+    // The editor is about to show openedCode. A stack left from the other
+    // branch, or from a mount that seeded before this file arrived, must
+    // not stay as the head — dirty() would call the open an unsaved edit.
+    if (appModeRef.current !== 'game') {
+      const key = active.id ? definitionIdFor(active.id) : '__cad__';
+      const openedHist = openedPartHistory(partHistoriesRef.current[key], openedCode);
+      partHistoriesRef.current[key] = openedHist;
+      applyPartHistory(openedHist);
+    }
     // Opening an assembly lands in assembly mode: no part is selected, the
     // title is the assembly name, and the ribbon shows the joints. A part is
     // selected by a row tap, a body tap, or an agent set_active_part.
@@ -2985,7 +2996,6 @@ const App = () => {
       // Kill a superseded run before this build posts, or it sits in front
       // of the script the spinner is waiting on.
       await preemptInflightAssemblyRun();
-      const note = '// This part has no file yet.\n';
       const script = picked.ok ? picked.script : undefined;
       if (picked.ok) {
         suppressPartSaveRef.current = false;
@@ -2993,8 +3003,8 @@ const App = () => {
         else setEditorInitialScript(picked.script);
       } else {
         suppressPartSaveRef.current = true;
-        if (codeEditorRef.current?.setTextOnly) codeEditorRef.current.setTextOnly(note);
-        else setEditorInitialScript(note);
+        if (codeEditorRef.current?.setTextOnly) codeEditorRef.current.setTextOnly(openedCode);
+        else setEditorInitialScript(openedCode);
       }
       // This open's own build. Not the editor's 100ms auto-run: that one is
       // dropped when the generation changes, and the spinner used to wait
@@ -3934,7 +3944,9 @@ const App = () => {
     const repo = vault?.repo
       ? `${vault.repo.owner}/${vault.repo.name}`
       : 'your repo';
-    return { repo, branch: gitWorkingBranch() };
+    const baselineBranch = gitBaselineRef.current?.branch;
+    const checkedOut = typeof baselineBranch === 'string' && baselineBranch.length > 0;
+    return { repo, branch: gitWorkingBranch(), checkedOut };
   };
 
   const pumpAgentGitConsent = () => {
@@ -12016,6 +12028,15 @@ const App = () => {
     async agentGitSave({ message }) {
       const draft = String(message || '').trim();
       if (!draft) return { status: 'error', error: 'Commit message required' };
+      const onMain = refuseAgentSaveOnMain(readAgentGitWriteTarget());
+      if (onMain) {
+        return {
+          status: 'error',
+          code: onMain.error.code,
+          error: onMain.error.message,
+          hint: onMain.error.hint,
+        };
+      }
       const out = await handleGitCommit(draft);
       if (out?.status === 'queued' || out?.status === 'pending') {
         return {
