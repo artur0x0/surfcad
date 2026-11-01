@@ -134,18 +134,27 @@ function specOfState(state) {
 
 function boundsOf(spec) {
   const pts = spec?.points || [];
-  if (!pts.length) return null;
   let minU = Infinity;
   let minV = Infinity;
   let maxU = -Infinity;
   let maxV = -Infinity;
-  for (const point of pts) {
-    const u = num(point?.at?.[0]);
-    const v = num(point?.at?.[1]);
+  const add = (u, v) => {
+    if (!Number.isFinite(u) || !Number.isFinite(v)) return;
     if (u < minU) minU = u;
     if (v < minV) minV = v;
     if (u > maxU) maxU = u;
     if (v > maxV) maxV = v;
+  };
+  for (const point of pts) add(num(point?.at?.[0]), num(point?.at?.[1]));
+  // A circle is one center point plus an arc. The center alone has no area.
+  for (const arc of spec?.arcs || []) {
+    const center = pts.find((point) => point?.id === arc?.center);
+    const radius = Number(arc?.radius);
+    if (!center || !(radius > 0)) continue;
+    const u = num(center.at?.[0]);
+    const v = num(center.at?.[1]);
+    add(u - radius, v - radius);
+    add(u + radius, v + radius);
   }
   if (!Number.isFinite(minU) || maxU - minU < 1e-6 || maxV - minV < 1e-6) return null;
   return {

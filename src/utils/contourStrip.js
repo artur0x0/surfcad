@@ -383,7 +383,13 @@ export function deleteContourEntity(state, id) {
       return { state, dependents: contourDependents(null, id), label: null, removed: [] };
     }
     return {
-      state: { ...state, params: { points: [] }, picks: [], dimensionLive: null },
+      state: {
+        ...state,
+        params: { points: [] },
+        picks: [],
+        dimensionLive: null,
+        profileSet: false,
+      },
       dependents: contourDependents(null, id),
       label: null,
       removed: ['shape'],

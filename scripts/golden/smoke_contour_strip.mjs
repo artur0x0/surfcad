@@ -345,8 +345,6 @@ async function runSize(browser, label, contextOptions) {
     shapeBack.pressed.join(',') === 'shape' && shapeBack.undo === true && shapeBack.chips[0]?.label === 'Circle',
     JSON.stringify(shapeBack));
 
-  await tapSelector(client, page, '[data-contour-tool="circle"]');
-  await page.waitForFunction(() => window.__VIEWPORT__.stageContourSketch().tool === 'circle', null, { timeout: 4000 });
   await tapSelector(client, page, '[data-contour-tool="cursor"]');
   await page.waitForFunction(() => (
     window.__VIEWPORT__.stageContourSketch().tool === 'cursor'

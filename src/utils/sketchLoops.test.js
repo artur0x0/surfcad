@@ -91,6 +91,21 @@ test('a UI inset click puts the next rectangle inside the first', () => {
   assert.ok(Math.abs(areas[1] - 60) < 1, String(areas[1]));
 });
 
+test('a circle then an inset rectangle adds a loop inside the circle', () => {
+  const sketch = enterContourState('crossSection');
+  const circle = applySketchAdd(sketch, 'circle', { radius: 10, segments: 16 });
+  assert.equal(circle.state.profileSet, true);
+  const inner = applySketchAdd(
+    circle.state,
+    'rectangle',
+    { width: 20, height: 12, centered: true },
+    { inset: true },
+  );
+  assert.equal(inner.ok, true, inner.message);
+  assert.equal(inner.appended, true);
+  assert.equal(inner.loops, 2);
+});
+
 test('hole sketches and an explicit contour still replace', () => {
   const hole = enterContourState('hole');
   const rect = applySketchAdd(hole, 'rectangle', { width: 30, height: 20, centered: true });
