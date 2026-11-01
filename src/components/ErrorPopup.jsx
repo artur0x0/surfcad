@@ -9,16 +9,20 @@ import { X } from 'lucide-react';
  * soft-fail toasts. layout="stacked" is the execution-error toast: one
  * two-line card (label, then description) whose width comes from the
  * portal, not from the message.
+ *
+ * The inline card's default inset is `--toast-pad` (`toast-card`). The
+ * tint and the blur live on `.toast-glass`, behind the words, so a 44px
+ * hit target can hang outside the card. See docs/ui-style-guide.md.
  */
 // Same glass card as the mode chips in docs/ui-style-guide.md. Not a rounded pill.
-const TONE_CLASS = {
-  error: 'bg-red-950/80 border border-red-400/70 text-red-50',
-  scrap: 'bg-red-950/80 border border-red-400/70 text-red-50',
-  warn: 'bg-amber-950/80 border border-amber-400/70 text-amber-50',
-  amber: 'bg-amber-950/80 border border-amber-400/70 text-amber-50',
-  success: 'bg-emerald-950/80 border border-emerald-400/70 text-emerald-50',
-  cyan: 'bg-cyan-950/80 border border-cyan-400/70 text-cyan-50',
-  banner: 'bg-red-950/80 border border-red-400/70 text-red-50',
+const TONE = {
+  error: { bg: 'bg-red-950/80', edge: 'border border-red-400/70', text: 'text-red-50' },
+  scrap: { bg: 'bg-red-950/80', edge: 'border border-red-400/70', text: 'text-red-50' },
+  warn: { bg: 'bg-amber-950/80', edge: 'border border-amber-400/70', text: 'text-amber-50' },
+  amber: { bg: 'bg-amber-950/80', edge: 'border border-amber-400/70', text: 'text-amber-50' },
+  success: { bg: 'bg-emerald-950/80', edge: 'border border-emerald-400/70', text: 'text-emerald-50' },
+  cyan: { bg: 'bg-cyan-950/80', edge: 'border border-cyan-400/70', text: 'text-cyan-50' },
+  banner: { bg: 'bg-red-950/80', edge: 'border border-red-400/70', text: 'text-red-50' },
 };
 
 export default function ErrorPopup({
@@ -95,7 +99,7 @@ export default function ErrorPopup({
           onClick={onDismiss}
           className={roomy
             ? 'inline-flex min-w-[44px] items-center justify-center rounded-md border-0 px-0 py-0 text-white/80 hover:text-white'
-            : 'text-white/80 hover:text-white p-0.5'}
+            : 'text-white/80 hover:text-white'}
           title="Dismiss"
           aria-label="Dismiss"
         >
@@ -105,8 +109,25 @@ export default function ErrorPopup({
     </div>
   );
 
-  const shell = `${TONE_CLASS[tone] || TONE_CLASS.error} surface-glass-chip text-xs font-sans font-medium shadow-lg rounded-lg ${layout === 'stacked' ? 'w-full' : ''} ${roomy ? 'flex items-center px-3 py-0' : ''} ${className}`;
+  const toneStyle = TONE[tone] || TONE.error;
+  const shell = [
+    'toast-card relative overflow-visible',
+    toneStyle.edge,
+    toneStyle.text,
+    'text-xs font-sans font-medium shadow-lg rounded-lg',
+    layout === 'stacked' ? 'w-full' : '',
+    roomy ? 'flex items-center px-3 py-0' : '',
+    className,
+  ].filter(Boolean).join(' ');
   const roomyStyle = roomy && roomyMinPx ? { minHeight: `${roomyMinPx}px` } : undefined;
+
+  const glass = (
+    <div
+      aria-hidden="true"
+      data-toast-glass=""
+      className={`toast-glass pointer-events-none surface-glass-chip ${toneStyle.bg}`}
+    />
+  );
 
   // Execution errors: one shape. Label and actions share the first line;
   // the description is the full-width second line, so a short message and a
@@ -114,18 +135,23 @@ export default function ErrorPopup({
   if (layout === 'stacked') {
     return (
       <div
+        ref={shellRef}
         role="alert"
         data-error-popup=""
         data-error-tone={tone}
         data-error-layout="stacked"
         className={shell}
         {...rest}
+        style={roomyStyle}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="font-bold text-left">{title}</div>
-          {actions}
+        {glass}
+        <div className="relative z-[1] w-full min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-bold text-left">{title}</div>
+            {actions}
+          </div>
+          <div className="text-left mt-1 break-words">{children}</div>
         </div>
-        <div className="text-left mt-1 break-words">{children}</div>
       </div>
     );
   }
@@ -141,16 +167,19 @@ export default function ErrorPopup({
       {...rest}
       style={roomyStyle}
     >
-      <div
-        ref={rowRef}
-        data-error-popup-row=""
-        className={`flex w-full gap-2 ${roomy ? 'items-center' : 'items-start'}`}
-      >
-        <div className="flex-1 min-w-0">
-          {title ? <div className="font-bold mb-1">{title}</div> : null}
-          <div data-error-popup-text="" className={`text-left ${roomy ? 'whitespace-nowrap' : ''}`}>{children}</div>
+      {glass}
+      <div className="relative z-[1] w-full min-w-0">
+        <div
+          ref={rowRef}
+          data-error-popup-row=""
+          className="flex w-full items-center gap-2"
+        >
+          <div className="flex-1 min-w-0">
+            {title ? <div className="font-bold mb-1">{title}</div> : null}
+            <div data-error-popup-text="" className={`text-left ${roomy ? 'whitespace-nowrap' : ''}`}>{children}</div>
+          </div>
+          {actions}
         </div>
-        {actions}
       </div>
     </div>
   );

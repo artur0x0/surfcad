@@ -457,6 +457,37 @@ Errors use this same glass card. They are not a blue rounded pill.
   justified, with Undo and the dismiss X right justified and a wider gap
   between those two controls. The description is the second line.
 
+### Toast padding, height, and hit area
+
+Inline toasts share one card (`ErrorPopup`). The default inset is
+`--toast-pad` (4px) on every side, from `toast-card` in `src/index.css`.
+The message sits in from the left edge and is vertically centred with the
+actions. A caller that passes its own padding keeps it: notice cards use
+`px-4 py-2`, soft-fail cards use `px-3 py-2`, the roomy delete card uses
+`py-0`, and the stacked execution card uses `p-3`. Those utilities win
+over `toast-card`.
+
+Disconnect, Reconnect, Undo, and the dismiss X use that same inset, so the
+gap from the controls to the top, right, and bottom edges of the card is
+even. The default gap between those controls is `gap-1` (4px), the same
+as `--toast-pad`. The roomy card keeps `gap-4`. The stacked card keeps
+`gap-5`.
+
+The agent session card (Agent connected / Agent disconnected) is one text
+line plus that inset and the 1px border: about half the previous card,
+which grew to the 44px `min-h` on Disconnect and Reconnect. The visual
+control stays inside the shorter card (`toast-action` and the dismiss
+box are 16px).
+
+The hit target stays 44×44 (`--toast-hit`). A `::before` on each action
+button covers the control and grows to 44px. It is anchored at the
+button's left edge, so a narrow X grows to the right and outside the
+card, not into the neighbouring control. A label that is already wider
+than 44px (Disconnect, Reconnect, Undo) keeps that width and only grows
+the hit taller. The blur lives on `.toast-glass`, a sibling behind the
+words. `surface-glass-chip` clips overflow, so the hit is not a child of
+that layer.
+
 ### Placement
 
 | Context | Classes (chip root) |

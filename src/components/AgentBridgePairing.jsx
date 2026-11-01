@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Plug } from 'lucide-react';
-import ErrorPopup from './ErrorPopup.jsx';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { createAgentBridgeTransport } from '../agent/ws/agentBridgeTransport.js';
@@ -55,9 +54,6 @@ import {
   shouldShowPairingCode,
   shouldShowPairingPrompt,
   stepJoinConnection,
-  AGENT_CONNECTED_TOAST_COPY,
-  AGENT_CONNECTED_TOAST_MS,
-  AGENT_DISCONNECTED_TOAST_COPY,
   shouldToastAgentConnected,
   shouldToastAgentDisconnect,
   stepAgentSessionToast,
@@ -65,6 +61,7 @@ import {
 import { CONNECT_AGENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
 import AgentBridgeApprovalPopup from './AgentBridgeApprovalPopup.jsx';
+import AgentSessionToast from './AgentSessionToast.jsx';
 import AgentBridgeDisconnectMenuItem from './AgentBridgeDisconnectMenuItem.jsx';
 import AgentBridgePairingDialog from './AgentBridgePairingDialog.jsx';
 import { approvalPopupReducer } from '../agent/ws/agentBridgeChrome.js';
@@ -857,41 +854,15 @@ export default function AgentBridgePairing({
   };
   const sessionToastEl = sessionToast.open && typeof document !== 'undefined'
     ? createPortal(
-      <div
-        className="fixed top-16 left-1/2 z-[140] w-[min(100vw-1.5rem,24rem)] -translate-x-1/2"
-        data-agent-toast-ms={AGENT_CONNECTED_TOAST_MS}
-        data-agent-bridge-connected-toast={sessionToast.kind === 'connected' ? '' : undefined}
-        data-agent-bridge-disconnected-toast={sessionToast.kind === 'disconnected' ? '' : undefined}
-      >
-        <ErrorPopup
-          tone="success"
-          onDismiss={dismissSessionToast}
-          action={sessionToast.kind === 'connected' ? (
-            <button
-              type="button"
-              className="min-h-[44px] min-w-[44px] rounded-md px-3 text-ui-sm font-semibold text-on-dark surface-quiet"
-              onClick={disconnectFromUser}
-              data-ui-action="data-agent-connected-toast-disconnect"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="min-h-[44px] min-w-[44px] rounded-md px-3 text-ui-sm font-semibold text-on-dark surface-quiet"
-              onClick={() => {
-                dismissSessionToast();
-                beginConnectFlow();
-              }}
-              data-ui-action="data-agent-disconnected-toast-reconnect"
-            >
-              Reconnect
-            </button>
-          )}
-        >
-          {sessionToast.kind === 'connected' ? AGENT_CONNECTED_TOAST_COPY : AGENT_DISCONNECTED_TOAST_COPY}
-        </ErrorPopup>
-      </div>,
+      <AgentSessionToast
+        kind={sessionToast.kind}
+        onDismiss={dismissSessionToast}
+        onDisconnect={disconnectFromUser}
+        onReconnect={() => {
+          dismissSessionToast();
+          beginConnectFlow();
+        }}
+      />,
       document.body,
     )
     : null;
