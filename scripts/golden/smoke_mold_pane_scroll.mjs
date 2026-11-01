@@ -36,8 +36,7 @@ const TOOLS = [
   { name: 'wall thickness', button: '[data-wall-heatmap]', pane: '[data-wall-legend]', scroll: false },
   { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: true },
   { name: 'mold draft', button: '[data-mold-draft]', pane: '[data-mold-draft-legend]', scroll: false },
-  { name: 'DFM report', button: '[data-mold-dfm]', pane: '[data-mold-dfm-report]', scroll: true },
-  { name: 'quote', button: '[data-mold-quote]', pane: '[data-mold-quote-panel]', scroll: true, shots: true },
+  { name: 'report', button: '[data-mold-dfm]', pane: '[data-mold-report]', scroll: true, shots: true },
 ];
 
 let failed = 0;
@@ -66,7 +65,7 @@ console.log('mold pane scroll — source');
   check('a tool press closes the drawer then toggles',
     /export function pressMoldTool/.test(press)
     && /setOpen\(false\)/.test(press)
-    && /pressMoldTool\(setOpen, onQuoteToggle\)/.test(drawer));
+    && /pressMoldTool\(setOpen, onReportToggle\)/.test(drawer));
   check('phone panes cap to dvh, visualViewport, safe area, and the home pill',
     /mold-analysis-pane/.test(css)
     && /100dvh/.test(css)
@@ -100,71 +99,28 @@ const partingLegend = {
   })),
 };
 
-const faceNames = Array.from({ length: 28 }, (_, i) => `Parting face ${i + 1}`);
-
-const vendors = ['North shop', 'East shop', 'South shop', 'West shop'].map((anonLabel, index) => ({
-  anonLabel,
-  region: 'US',
-  machineCount: 2 + index,
-  aluminumUsd: 1.2 + index,
-  steelUsd: 3.4 + index,
-  range: { lowUsd: 8 + index, highUsd: 22 + index * 3 },
-  steelCheaperAt: 400 + index * 50,
-  grade: 'ABS',
-  grades: [
-    { grade: 'ABS', usdPerKg: 2.1 },
-    { grade: 'PP', usdPerKg: 1.6 },
-  ],
-}));
-
 const quoteState = {
-  quantity: 250,
-  cavityCount: 2,
+  quantity: 1000,
+  cavityCount: 1,
   status: 'ready',
   selected: 'North shop',
-  quote: {
-    framing: 'Budgetary quote',
-    disclaimer: 'Budgetary, not binding.',
-    vendors,
-  },
-  suggestion: {
-    status: 'ready',
-    fill: {
-      disclaimer: 'Heuristic fill. Not a mold-flow result.',
-      flags: [
-        { code: 'thin', text: 'A thin wall may short-shot this grade.' },
-        { code: 'stress', text: 'A thin-wall triangle carries high stress. Heuristic.' },
-      ],
-    },
-    suggestions: [
-      { grade: 'ABS', reason: 'General purpose, heuristic' },
-      { grade: 'PP', reason: 'Living hinge, heuristic' },
-      { grade: 'PC', reason: 'Impact, heuristic' },
-    ],
-  },
+  quote: { vendors: [{ anonLabel: 'North shop' }] },
   reviewPayable: true,
   reviewFeeUsd: 49,
 };
 
-const dfmReport = {
-  framing: 'Budgetary analysis',
-  disclaimer: 'Not a binding supplier DFM.',
-  fitLabel: 'Slides',
-  undercutCount: 4,
-  pull: [0, 0, 1],
-  pullSource: 'search',
-  wall: { nominalKnown: true, nominal: 2.4, nominalMethod: 'median', thinCount: 3, thickCount: 1, max: 6.2 },
-  draft: { violationCount: 2, minDeg: 1, minDraftDeg: 0.4 },
-  sideActions: {
-    slideCount: 2,
-    lifterCount: 1,
-    groups: [
-      { kind: 'slide', pull: [1, 0, 0] },
-      { kind: 'lifter', pull: [0, 1, 0] },
-    ],
+const moldReport = {
+  framing: 'Mold report',
+  disclaimer: `${'Budgetary, not binding. '.repeat(28)}`,
+  grade: 'PC/ABS',
+  quantity: 1000,
+  geometry: { volumeCm3: 0.8, projectedAreaMm2: 400, sideActionCount: 1 },
+  estimates: { pressTons: 2.04 },
+  notes: {
+    mass: 'The resin library has no density, so part mass is not computed.',
+    tooling: 'No tooling rate card was loaded, so the tooling estimate is not computed.',
+    price: 'No partner catalog is loaded, so the part price is not computed.',
   },
-  ejectors: { pinCount: 6, sleeveCount: 1 },
-  naming: { stamped: true, names: faceNames, extra: 2 },
 };
 
 const harness = `import { createRoot } from 'react-dom/client';
@@ -177,12 +133,12 @@ import PullReference from './src/components/molding/PullReference.jsx';
 import WallLegend from './src/components/molding/WallLegend.jsx';
 import PartingLegend from './src/components/molding/PartingLegend.jsx';
 import MoldDraftLegend from './src/components/molding/MoldDraftLegend.jsx';
-import DfmReportPanel from './src/components/molding/DfmReportPanel.jsx';
-import MoldQuotePanel from './src/components/molding/MoldQuotePanel.jsx';
+import MoldReportPanel from './src/components/molding/MoldReportPanel.jsx';
 
 const partingLegend = ${JSON.stringify(partingLegend)};
-const dfmReport = ${JSON.stringify(dfmReport)};
+const moldReport = ${JSON.stringify(moldReport)};
 const quoteState = ${JSON.stringify(quoteState)};
+const resins = [{ grade: 'ABS' }, { grade: 'PC/ABS' }];
 
 function Pane({ children }) {
   const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 768px)').matches);
@@ -271,19 +227,15 @@ function Harness() {
           <MoldDraftLegend legend={{ minDeg: 1, violations: 14, pins: 8, sleeves: 2, css: '#f97316' }} />
         </Pane>
       )}
-      {which === 'dfm' && (
+      {which === 'report' && (
         <Pane>
-          <DfmReportPanel report={dfmReport} />
-        </Pane>
-      )}
-      {which === 'quote' && (
-        <Pane>
-          <MoldQuotePanel
-            state={quoteState}
-            onQuantity={() => {}}
-            onCavity={() => {}}
+          <MoldReportPanel
+            report={moldReport}
+            resins={resins}
+            quoteState={quoteState}
             onGrade={() => {}}
-            onSelect={() => {}}
+            onQuantity={() => {}}
+            onExport={() => {}}
             onFirmQuote={() => {}}
             onHumanReview={() => {}}
             onPayReview={() => {}}
@@ -319,18 +271,15 @@ function Harness() {
           showWall
           showParting
           showMoldDraft
-          showDfm
-          showQuote
+          showReport
           wallActive={!!on.wall}
           partingActive={!!on.parting}
           moldDraftActive={!!on.draft}
-          dfmActive={!!on.dfm}
-          quoteActive={!!on.quote}
+          reportActive={!!on.report}
           onWallToggle={() => press('wall')}
           onPartingToggle={() => press('parting')}
           onMoldDraftToggle={() => press('draft')}
-          onDfmToggle={() => press('dfm')}
-          onQuoteToggle={() => press('quote')}
+          onReportToggle={() => press('report')}
         />
       </div>
       <div
@@ -548,7 +497,7 @@ try {
         const scroller = section.closest('[data-mold-results-pane]') || section;
         scroller.scrollTop = 0;
       }, tool.pane);
-      await page.screenshot({ path: join(shotDir, 'mold-quote-390-top.png') });
+      await page.screenshot({ path: join(shotDir, 'mold-report-390-top.png') });
     }
 
     const before = await page.evaluate(() => window.__moldSync());
@@ -612,7 +561,7 @@ try {
     check(`${tool.name} camera stays put after the scroll`, sameCam(before, still));
 
     if (tool.shots) {
-      await page.screenshot({ path: join(shotDir, 'mold-quote-390-bottom.png') });
+      await page.screenshot({ path: join(shotDir, 'mold-report-390-bottom.png') });
     }
   }
 
@@ -620,8 +569,8 @@ try {
     document.documentElement.style.setProperty('--safe-area-top', '47px');
     document.documentElement.style.setProperty('--safe-area-bottom', '34px');
   });
-  const inset = await page.evaluate(measureInPage, '[data-mold-quote-panel]');
-  check('safe areas shrink the quote cap',
+  const inset = await page.evaluate(measureInPage, '[data-mold-report]');
+  check('safe areas shrink the report cap',
     Number.isFinite(inset.maxHeight) && Math.abs(inset.maxHeight - inset.expected) < 2
     && inset.maxHeight < 844 - 148,
     JSON.stringify({ maxHeight: inset.maxHeight, expected: inset.expected }));

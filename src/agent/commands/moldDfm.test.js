@@ -2,23 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { moldDfmCommand } from './moldDfm.js';
 
-test('mold_dfm forwards on and returns the report', () => {
+test('mold_dfm forwards grade and quantity and returns the report', () => {
   const seen = [];
   const ctx = {
-    moldDfm: ({ on }) => {
-      seen.push(on);
+    moldDfm: (args) => {
+      seen.push(args);
       return {
         on: true,
-        framing: 'Budgetary analysis',
-        fit: 'good',
-        undercutCount: 0,
+        framing: 'Mold report',
+        grade: args.grade,
+        quantity: args.quantity,
       };
     },
   };
-  const out = moldDfmCommand.run(ctx, { on: true });
-  assert.deepEqual(seen, [true]);
-  assert.equal(out.result.framing, 'Budgetary analysis');
-  assert.equal(out.result.fit, 'good');
+  const out = moldDfmCommand.run(ctx, { on: true, grade: 'PC/ABS', quantity: 1000 });
+  assert.equal(seen[0].on, true);
+  assert.equal(seen[0].grade, 'PC/ABS');
+  assert.equal(seen[0].quantity, 1000);
+  assert.equal(out.result.framing, 'Mold report');
+  assert.equal(out.result.quantity, 1000);
   assert.equal(out.error, undefined);
 });
 

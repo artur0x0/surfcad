@@ -92,15 +92,19 @@ when a session exists and by IP otherwise. The body is the part measurements,
 runner stays out of the total unless a later caller turns it on. This route
 does not turn it on.
 
-The quote button on the right rail opens a glass panel. It says Budgetary, not
-binding. Quantity and cavity count send a new request. The resin menu is the
-selected vendor’s grade list. Opening the quote closes the DFM report, and
-opening the DFM report closes the quote. Neither one clears a mold skin.
+The report button in the molding tools flyout opens one glass section. It says
+Mold report and Budgetary, not binding. The top lists part volume, projected
+area along the pull, and the side-action count. The resin menu is the public
+library, default PC/ABS. Quantity is 25, 100, 1000, 5000, 10000, or a custom
+positive integer. Changing resin or quantity sends a new quote request and
+rebuilds the estimates. There is no separate quote button. Opening the report
+clears the other molding tools, and opening one of those clears the report.
 
 ## Resin suggestions
 
-The quote panel also shows heuristic fill flags and up to three grades from
-`GET /api/molding/resin-library`. The flags are thin sections from the wall
+The quote request still computes heuristic fill flags. The report pane does
+not show them. The resin menu is the public library. The flags are thin
+sections from the wall
 check, a high aspect ratio of the outside box, and a long stand-in flow. The
 stand-in is the longest outside edge, not a melt path. A structural study
 that is still in memory can add a stiffness hint from that study's modulus
@@ -112,8 +116,8 @@ It is not a mold-flow result. Modal, stale, and missing results add nothing.
 With no study, or with a study that has no field in memory, the flags and
 the hint stay on the wall check, the outside box, and the stored summary.
 
-The suggestions do not change the partner resin menu or the quote request.
-The panel says they are heuristic and not a mold-flow result.
+Those flags do not change the resin menu or the quote request. They are
+heuristic and not a mold-flow result. The pane does not list them.
 
 ## Firm quote and human review
 

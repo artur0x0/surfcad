@@ -615,7 +615,15 @@ import { splitLegendModel } from '../molding/sideActions.js';
 import { detachSideActionSkin } from '../molding/sideActionSkin.js';
 import { moldDraftLegendModel } from '../molding/moldDraft.js';
 import { detachMoldDraftSkin, syncMoldDraftSkin } from '../molding/moldDraftSkin.js';
+import { saveAs } from 'file-saver';
 import { dfmReport } from '../molding/dfmReport.js';
+import { createMoldToolCache } from '../molding/moldToolCache.js';
+import {
+  DEFAULT_REPORT_QUANTITY,
+  buildMoldReport,
+  defaultReportGrade,
+  parseReportQuantity,
+} from '../molding/moldReport.js';
 import { heuristicFillFlags, studyStiffnessHint, suggestResins } from '../molding/resinSuggest.js';
 import { fetchMoldingResinLibrary } from '../utils/moldingResinLibraryClient.js';
 import { boundsFromPositions, postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
@@ -623,8 +631,7 @@ import { PAY_FOR_REVIEW_MESSAGE, checkoutUrlAllowed, clearReviewLabel, leadBody,
 import WallLegend from './molding/WallLegend';
 import PartingLegend from './molding/PartingLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
-import DfmReportPanel from './molding/DfmReportPanel';
-import MoldQuotePanel from './molding/MoldQuotePanel';
+import MoldReportPanel from './molding/MoldReportPanel';
 import PullReference from './molding/PullReference';
 import MoldResultsPane from './molding/MoldResultsPane';
 import MoldProgress from './molding/MoldProgress';
@@ -1446,6 +1453,11 @@ const Viewport = forwardRef(({
   const wallJobGenRef = useRef(0);
   const moldJobGenRef = useRef(0);
   const moldAnalysisRef = useRef(null);
+  const moldCacheRef = useRef(null);
+  if (!moldCacheRef.current) moldCacheRef.current = createMoldToolCache();
+  const partingShowRef = useRef(0);
+  const draftShowRef = useRef(0);
+  const reportShowRef = useRef(0);
   const [moldProgress, setMoldProgress] = useState(null);
   const moldProgressRef = useRef(null);
   const putMoldProgress = (value) => {
@@ -1497,6 +1509,7 @@ const Viewport = forwardRef(({
     dfmFieldRef.current = null;
     quoteFieldRef.current = null;
     moldAnalysisRef.current = null;
+    moldCacheRef.current.invalidatePull();
     dropMoldJobs();
     const geometry = resultRef.current?.geometry;
     const waiting = choice === 'face' && !pull;
@@ -1511,9 +1524,8 @@ const Viewport = forwardRef(({
     }
     const tool = partingOnRef.current ? 'parting'
       : moldDraftOnRef.current ? 'draft'
-          : dfmOnRef.current ? 'dfm'
-            : quoteOnRef.current ? 'quote'
-              : 'pull';
+        : reportOnRef.current ? 'report'
+          : 'pull';
     const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, pull, tool);
     const analyzed = await promise;
     if (gen != null && moldJobGenRef.current !== gen) {
@@ -1554,12 +1566,14 @@ const Viewport = forwardRef(({
       setMoldDraftLegend(moldDraftLegendModel(analyzed.moldDraft));
       syncMoldDraftSkin(resultRef.current, analyzed.moldDraft);
     }
-    if (dfmOnRef.current) {
-      const report = analyzed.dfm || dfmReport(analyzed);
-      if (report) {
-        dfmFieldRef.current = { geometry, report };
-        setDfmReportState(report);
-      }
+    if (reportOnRef.current) {
+      const prev = moldReportRef.current;
+      await openMoldReportRef.current({
+        on: true,
+        quantity: prev?.quantity,
+        grade: prev?.grade,
+        cavityCount: prev?.cavityCount,
+      });
     }
     if (gen != null) endMoldProgress(gen);
     return {
@@ -1584,17 +1598,23 @@ const Viewport = forwardRef(({
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
-  const pullToolsOn = mode !== 'game' && !!(partingLegend || moldDraftLegend);
+  const pullToolsOn = mode !== 'game' && !!(partingLegend || moldDraftLegend || moldReport);
   const agentMoldDfmRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const openMoldReportRef = useRef(async () => ({ on: false }));
   const dfmOnRef = useRef(false);
   const dfmFieldRef = useRef(null);
   const clearDfmRef = useRef(() => {});
   const refreshDfmRef = useRef(() => {});
-  const [dfmReportState, setDfmReportState] = useState(null);
+  const [moldReport, setMoldReport] = useState(null);
+  const moldReportRef = useRef(null);
+  moldReportRef.current = moldReport;
+  const reportOnRef = useRef(false);
+  const resinLibraryRef = useRef(null);
+  const [reportResins, setReportResins] = useState([]);
   const agentMoldQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
-  const agentMoldFirmQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
-  const agentMoldHumanReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
-  const agentMoldPayReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the budgetary quote first' } }));
+  const agentMoldFirmQuoteRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the report first' } }));
+  const agentMoldHumanReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the report first' } }));
+  const agentMoldPayReviewRef = useRef(() => ({ error: { code: 'no_mesh', message: 'Open the report first' } }));
   const reviewReturnSeenRef = useRef(new Set());
   const reviewPollRef = useRef(0);
   const startReviewPollRef = useRef(async () => {});
@@ -13921,6 +13941,23 @@ const Viewport = forwardRef(({
     }
     const report = analyzed.dfm || dfmReport(analyzed);
     if (report) dfmFieldRef.current = { geometry, report };
+    const pull = sharedMoldPull();
+    if (analyzed.parting) {
+      moldCacheRef.current.set('parting', geometry, pull, {
+        parting: analyzed.parting,
+        sideActions: analyzed.sideActions || null,
+        pull: analyzed.pull,
+      });
+    }
+    if (analyzed.moldDraft) moldCacheRef.current.set('draft', geometry, pull, analyzed.moldDraft);
+    const cachedReport = moldCacheRef.current.get('report', geometry, pull);
+    moldCacheRef.current.set('report', geometry, pull, {
+      analysis: analyzed,
+      quotes: cachedReport.hit && cachedReport.value?.quotes ? cachedReport.value.quotes : {},
+      grade: cachedReport.hit ? cachedReport.value?.grade : null,
+      quantity: cachedReport.hit ? cachedReport.value?.quantity : null,
+      cavityCount: cachedReport.hit ? cachedReport.value?.cavityCount : null,
+    });
     const quote = quoteFieldRef.current;
     if (!quote || quote.geometry !== geometry) quoteFieldRef.current = { geometry, analysis: analyzed };
     else quote.analysis = analyzed;
@@ -14013,6 +14050,7 @@ const Viewport = forwardRef(({
   clearWallMapRef.current = clearWallMap;
 
   const clearParting = () => {
+    partingShowRef.current += 1;
     partingOnRef.current = false;
     partingFieldRef.current = null;
     selectedSideGroupRef.current = null;
@@ -14035,6 +14073,7 @@ const Viewport = forwardRef(({
   clearSideActionsRef.current = clearSideActions;
 
   const clearMoldDraft = () => {
+    draftShowRef.current += 1;
     moldDraftOnRef.current = false;
     moldDraftFieldRef.current = null;
     setMoldDraftLegend(null);
@@ -14048,7 +14087,12 @@ const Viewport = forwardRef(({
     clearParting();
     clearSideActions();
     clearMoldDraft();
+    clearDfm();
+    clearQuote();
     wallMapOnRef.current = true;
+    if (!pending && wall?.nominal != null) {
+      moldCacheRef.current.set('wall', geometry, sharedMoldPull(), wall);
+    }
     wallFieldRef.current = { geometry, wall, pending: !!pending };
     setWallLegend(thicknessLegendModel(wall));
     syncThicknessSkin(resultRef.current, wall);
@@ -14057,6 +14101,8 @@ const Viewport = forwardRef(({
   const showParting = (parting, geometry, sideActions = null) => {
     clearWallMap();
     clearMoldDraft();
+    clearDfm();
+    clearQuote();
     detachSideActionSkin(resultRef.current);
     partingOnRef.current = true;
     const groups = sideActions?.groups || [];
@@ -14090,7 +14136,6 @@ const Viewport = forwardRef(({
     wallJobGenRef.current = gen;
     wallFieldRef.current = { geometry, pending: true };
     dropMoldJobs();
-    moldAnalysisRef.current = null;
     putMoldProgress({ tool: 'wall', stage: 'Wall thickness', percent: 0, gen });
     requestWallField({
       ...message,
@@ -14161,15 +14206,19 @@ const Viewport = forwardRef(({
     if (!message) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const gen = wallJobGenRef.current + 1;
-    wallJobGenRef.current = gen;
+    wallJobGenRef.current += 1;
+    const gen = wallJobGenRef.current;
     wallMapOnRef.current = true;
+    const wallHit = moldCacheRef.current.get('wall', geometry, sharedMoldPull());
+    if (wallHit.hit && wallHit.value?.nominal != null) {
+      paintWallField(wallHit.value, geometry, false);
+      return wallLegendPayload(wallHit.value);
+    }
     wallFieldRef.current = { geometry, pending: true };
     clearParting();
     clearSideActions();
     clearMoldDraft();
     dropMoldJobs();
-    moldAnalysisRef.current = null;
     putMoldProgress({ tool: 'wall', stage: 'Wall thickness', percent: 0, gen });
     let analyzed;
     try {
@@ -14271,10 +14320,28 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
+    const partingHit = moldCacheRef.current.get('parting', geometry, sharedMoldPull());
+    if (partingHit.hit && partingHit.value?.parting) {
+      if (Number.isInteger(group)) {
+        const exists = (partingHit.value.sideActions?.groups || []).some((row) => row.id === group);
+        if (!exists) return { error: { code: 'bad_args', message: 'group is not a side action on this part' } };
+        selectedSideGroupRef.current = group;
+      } else if (group === null) {
+        selectedSideGroupRef.current = null;
+      }
+      showParting(partingHit.value.parting, geometry, partingHit.value.sideActions);
+      return partingPayload({
+        pull: partingHit.value.pull,
+        parting: partingHit.value.parting,
+        sideActions: partingHit.value.sideActions,
+      }, selectedSideGroupRef.current);
+    }
     clearWallMap();
     clearMoldDraft();
+    const showToken = ++partingShowRef.current;
     const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'parting');
     const analyzed = await promise;
+    if (showToken !== partingShowRef.current) return { on: false };
     if (gen != null && moldJobGenRef.current !== gen) return { on: !!partingOnRef.current };
     if (analyzed?.dropped) return { on: !!partingOnRef.current };
     if (analyzed?.error) {
@@ -14331,6 +14398,8 @@ const Viewport = forwardRef(({
     clearWallMap();
     clearParting();
     clearSideActions();
+    clearDfm();
+    clearQuote();
     moldDraftOnRef.current = true;
     moldDraftFieldRef.current = { geometry, moldDraft };
     setMoldDraftLegend(moldDraftLegendModel(moldDraft));
@@ -14378,11 +14447,25 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
+    const draftHit = moldCacheRef.current.get('draft', geometry, sharedMoldPull());
+    if (draftHit.hit && draftHit.value) {
+      showMoldDraft(draftHit.value, geometry);
+      return {
+        on: true,
+        violations: draftHit.value.violationCount,
+        minDeg: draftHit.value.minDeg,
+        minDraftDeg: draftHit.value.minDraftDeg,
+        pins: draftHit.value.ejectors.pinCount,
+        sleeves: draftHit.value.ejectors.sleeveCount,
+      };
+    }
     clearWallMap();
     clearParting();
     clearSideActions();
+    const showToken = ++draftShowRef.current;
     const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'draft');
     const analyzed = await promise;
+    if (showToken !== draftShowRef.current) return { on: false };
     if (gen != null && moldJobGenRef.current !== gen) return { on: !!moldDraftOnRef.current };
     if (analyzed?.dropped) return { on: !!moldDraftOnRef.current };
     if (analyzed?.error) {
@@ -14407,91 +14490,41 @@ const Viewport = forwardRef(({
   };
 
   const clearDfm = () => {
+    reportShowRef.current += 1;
     dfmOnRef.current = false;
+    reportOnRef.current = false;
     dfmFieldRef.current = null;
-    setDfmReportState(null);
-    putMoldProgress((cur) => (cur && cur.tool === 'dfm' ? null : cur));
+    setMoldReport(null);
+    putMoldProgress((cur) => (cur && (cur.tool === 'dfm' || cur.tool === 'report') ? null : cur));
   };
   clearDfmRef.current = clearDfm;
 
-  const publishDfm = (geometry, analyzed) => {
-    const report = analyzed?.dfm || dfmReport(analyzed);
-    if (!report) {
-      clearDfm();
-      return { error: { code: 'no_mesh', message: 'No DFM report on that mesh' } };
-    }
-    dfmOnRef.current = true;
-    dfmFieldRef.current = { geometry, report };
-    setDfmReportState(report);
-    return { on: true, ...report };
-  };
-
   refreshDfmRef.current = (host) => {
-    if (!dfmOnRef.current || !host || host !== resultRef.current) return;
+    if (!reportOnRef.current || !host || host !== resultRef.current) return;
     const geometry = host.geometry;
     if (!geometry?.attributes?.position) {
       clearDfm();
       return;
     }
-    const cached = dfmFieldRef.current;
-    if (cached && cached.geometry === geometry) return;
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'dfm');
-    promise.then((analyzed) => {
-      if (!dfmOnRef.current || resultRef.current?.geometry !== geometry) return;
-      if (gen != null && moldJobGenRef.current !== gen) return;
-      if (analyzed?.dropped) return;
-      if (analyzed?.error) {
-        clearDfm();
-        return;
-      }
-      rememberMoldAnalysis(geometry, analyzed);
-      publishDfm(geometry, analyzed);
-      if (gen != null) endMoldProgress(gen);
-    }).catch(() => {
-      if (gen != null && moldJobGenRef.current === gen) clearDfm();
-    });
+    const hit = moldCacheRef.current.get('report', geometry, sharedMoldPull());
+    if (hit.hit && hit.value?.analysis) return;
+    void openMoldReportRef.current({ on: true });
   };
 
-  agentMoldDfmRef.current = async ({ on } = {}) => {
-    const next = typeof on === 'boolean' ? on : !dfmOnRef.current;
-    if (!next) {
-      clearDfm();
-      return { on: false };
-    }
-    const geometry = resultRef.current?.geometry;
-    if (!geometry?.attributes?.position) {
-      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
-    }
-    const cached = dfmFieldRef.current;
-    if (cached && cached.geometry === geometry && cached.report) {
-      clearQuoteRef.current();
-      dfmOnRef.current = true;
-      setDfmReportState(cached.report);
-      return { on: true, ...cached.report };
-    }
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'dfm');
-    const analyzed = await promise;
-    if (gen != null && moldJobGenRef.current !== gen) return { on: !!dfmOnRef.current };
-    if (analyzed?.dropped) return { on: !!dfmOnRef.current };
-    if (analyzed?.error) {
-      if (gen != null) endMoldProgress(gen);
-      return analyzed;
-    }
-    rememberMoldAnalysis(geometry, analyzed);
-    clearQuoteRef.current();
-    const published = publishDfm(geometry, analyzed);
-    if (gen != null) endMoldProgress(gen);
-    return published;
-  };
+  agentMoldDfmRef.current = (args = {}) => openMoldReportRef.current(args);
 
   const clearQuote = () => {
+    reportShowRef.current += 1;
     reviewPollRef.current += 1;
     reviewReturnSeenRef.current.clear();
     quoteSeqRef.current += 1;
     quoteOnRef.current = false;
+    reportOnRef.current = false;
+    dfmOnRef.current = false;
     quoteFieldRef.current = null;
     setMoldQuote(null);
-    putMoldProgress((cur) => (cur && cur.tool === 'quote' ? null : cur));
+    setMoldReport(null);
+    putMoldProgress((cur) => (cur && (cur.tool === 'quote' || cur.tool === 'report') ? null : cur));
   };
   clearQuoteRef.current = clearQuote;
 
@@ -14642,41 +14675,12 @@ const Viewport = forwardRef(({
     };
   };
 
-  refreshQuoteRef.current = (host) => {
-    if (!quoteOnRef.current || !host || host !== resultRef.current) return;
-    const geometry = host.geometry;
-    if (!geometry?.attributes?.position) {
-      clearQuote();
-      return;
-    }
-    const cached = quoteFieldRef.current;
-    if (cached && cached.geometry === geometry && cached.analysis) return;
-    const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'quote');
-    promise.then((analyzed) => {
-      if (!quoteOnRef.current || resultRef.current?.geometry !== geometry) return;
-      if (gen != null && moldJobGenRef.current !== gen) return;
-      if (analyzed?.dropped) return;
-      if (analyzed?.error) {
-        clearQuote();
-        return;
-      }
-      rememberMoldAnalysis(geometry, analyzed);
-      const prev = moldQuoteRef.current;
-      if (gen != null) endMoldProgress(gen);
-      publishQuote(geometry, analyzed, {
-        quantity: prev?.quantity ?? 1,
-        cavityCount: prev?.cavityCount ?? 1,
-        grade: prev?.grade || '',
-        selected: prev?.selected || '',
-      });
-    }).catch(() => {
-      if (gen != null && moldJobGenRef.current === gen) clearQuote();
-    });
-  };
+  refreshQuoteRef.current = () => {};
 
-  agentMoldQuoteRef.current = async ({ on, quantity, cavityCount, grade } = {}) => {
-    const next = typeof on === 'boolean' ? on : !quoteOnRef.current;
+  const openMoldReport = async ({ on, quantity, cavityCount, grade } = {}) => {
+    const next = typeof on === 'boolean' ? on : !reportOnRef.current;
     if (!next) {
+      clearDfm();
       clearQuote();
       return { on: false };
     }
@@ -14684,16 +14688,28 @@ const Viewport = forwardRef(({
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
     }
-    const prev = moldQuoteRef.current;
-    const nextQuantity = quantity == null ? (prev?.quantity ?? 1) : quantity;
-    const nextCavity = cavityCount == null ? (prev?.cavityCount ?? 1) : cavityCount;
-    const nextGrade = grade == null ? (prev?.grade || '') : grade;
-    let analysis = quoteFieldRef.current?.geometry === geometry ? quoteFieldRef.current.analysis : null;
-    if (!analysis) {
-      const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'quote');
+    const parsedQty = quantity == null ? null : parseReportQuantity(quantity);
+    if (parsedQty?.error) return parsedQty;
+    const parsedCavity = cavityCount == null ? null : Number(cavityCount);
+    if (parsedCavity != null && (!Number.isInteger(parsedCavity) || parsedCavity < 1)) {
+      return { error: { code: 'bad_args', message: 'cavityCount must be an integer from 1' } };
+    }
+    clearWallMap();
+    clearParting();
+    clearMoldDraft();
+    const showToken = ++reportShowRef.current;
+    const reportStale = () => showToken !== reportShowRef.current;
+    const pull = sharedMoldPull();
+    let analysis = null;
+    const cached = moldCacheRef.current.get('report', geometry, pull);
+    if (cached.hit && cached.value?.analysis) {
+      analysis = cached.value.analysis;
+    } else {
+      const { gen, promise } = loadMoldAnalysis(geometry, faceIDsRef.current, sharedMoldPull(), 'report');
       analysis = await promise;
-      if (gen != null && moldJobGenRef.current !== gen) return { on: !!quoteOnRef.current };
-      if (analysis?.dropped) return { on: !!quoteOnRef.current };
+      if (reportStale()) return { on: false };
+      if (gen != null && moldJobGenRef.current !== gen) return { on: !!reportOnRef.current };
+      if (analysis?.dropped) return { on: !!reportOnRef.current };
       if (analysis?.error) {
         if (gen != null) endMoldProgress(gen);
         return analysis;
@@ -14701,19 +14717,94 @@ const Viewport = forwardRef(({
       rememberMoldAnalysis(geometry, analysis);
       if (gen != null) endMoldProgress(gen);
     }
-    clearDfm();
-    return publishQuote(geometry, analysis, {
+    const library = resinLibraryRef.current || await (async () => {
+      const fetched = await fetchMoldingResinLibrary();
+      const resins = fetched?.error ? [] : (fetched.resins || []);
+      resinLibraryRef.current = resins;
+      setReportResins(resins);
+      return resins;
+    })();
+    if (reportStale()) return { on: false };
+    if (library !== reportResins) setReportResins(library);
+    const slot = moldCacheRef.current.get('report', geometry, pull);
+    const prevReport = moldReportRef.current;
+    const remembered = slot.hit ? slot.value : null;
+    const nextGrade = grade == null
+      ? (prevReport?.grade || remembered?.grade || defaultReportGrade(library))
+      : grade;
+    const nextQuantity = parsedQty?.quantity
+      ?? prevReport?.quantity
+      ?? remembered?.quantity
+      ?? DEFAULT_REPORT_QUANTITY;
+    const nextCavity = parsedCavity ?? prevReport?.cavityCount ?? remembered?.cavityCount ?? 1;
+    const quoteKey = `${nextGrade}|${nextQuantity}|${nextCavity}`;
+    const quotes = remembered?.quotes ? { ...remembered.quotes } : {};
+    let ranked = quotes[quoteKey] || null;
+    if (!ranked) {
+      const published = await publishQuote(geometry, analysis, {
+        quantity: nextQuantity,
+        cavityCount: nextCavity,
+        grade: nextGrade,
+        selected: moldQuoteRef.current?.selected || '',
+      });
+      if (reportStale()) return { on: false };
+      if (published?.on === false && !published?.error) return { on: false };
+      ranked = published?.error
+        ? { error: published.error }
+        : { vendors: published.vendors, disclaimer: published.disclaimer, quantity: published.quantity, cavityCount: published.cavityCount };
+      quotes[quoteKey] = ranked;
+    } else if (!ranked.error) {
+      const vendors = Array.isArray(ranked.vendors) ? ranked.vendors : [];
+      quoteFieldRef.current = { geometry, analysis };
+      setMoldQuote((prev) => ({
+        quantity: nextQuantity,
+        cavityCount: nextCavity,
+        grade: nextGrade,
+        selected: vendors.some((row) => row.anonLabel === prev?.selected)
+          ? prev.selected
+          : (vendors[0]?.anonLabel || ''),
+        status: 'ready',
+        quote: ranked,
+        error: null,
+        revealed: prev?.revealed || {},
+        suggestion: prev?.suggestion || { status: 'unavailable', suggestions: [] },
+        reviewFeeUsd: Number.isFinite(prev?.reviewFeeUsd) ? prev.reviewFeeUsd : null,
+        reviewPayable: prev?.reviewPayable === true,
+        payForReview: prev?.payForReview === true,
+      }));
+    }
+    const report = buildMoldReport({
+      positions: geometry.attributes.position,
+      indices: geometry.index,
+      analysis,
+      grade: nextGrade,
       quantity: nextQuantity,
       cavityCount: nextCavity,
-      grade: nextGrade,
-      selected: prev?.selected || '',
+      library,
+      ranked: ranked?.error ? null : ranked,
     });
+    if (report.error) return report;
+    if (reportStale()) return { on: false };
+    moldCacheRef.current.set('report', geometry, pull, {
+      analysis,
+      quotes,
+      grade: nextGrade,
+      quantity: nextQuantity,
+      cavityCount: nextCavity,
+    });
+    reportOnRef.current = true;
+    dfmOnRef.current = true;
+    quoteOnRef.current = true;
+    setMoldReport(report);
+    return { on: true, ...report };
   };
+  openMoldReportRef.current = openMoldReport;
+  agentMoldQuoteRef.current = (args = {}) => openMoldReport(args);
 
   const requestLead = async (type, anonLabel) => {
     const current = moldQuoteRef.current;
     if (!current?.quote) {
-      return { error: { code: 'no_mesh', message: 'Open the budgetary quote first' } };
+      return { error: { code: 'no_mesh', message: 'Open the report first' } };
     }
     const label = anonLabel || current.selected;
     const vendor = (current.quote.vendors || []).find((row) => row.anonLabel === label);
@@ -14835,7 +14926,7 @@ const Viewport = forwardRef(({
   const payReview = async (anonLabel) => {
     const current = moldQuoteRef.current;
     if (!current?.quote) {
-      return { error: { code: 'no_mesh', message: 'Open the budgetary quote first' } };
+      return { error: { code: 'no_mesh', message: 'Open the report first' } };
     }
     const label = anonLabel || current.selected;
     const vendor = (current.quote.vendors || []).find((row) => row.anonLabel === label);
@@ -14946,6 +15037,7 @@ const Viewport = forwardRef(({
     }
 
     const prevGeometry = resultRef.current.geometry;
+    if (prevGeometry && prevGeometry !== geometry) moldCacheRef.current.invalidateMesh(prevGeometry);
     resultRef.current.geometry = geometry;
     if (prevGeometry !== geometry) releaseGeometryIn(solidCacheRef.current, prevGeometry);
     pruneSolidCacheIn(solidCacheRef.current, resultRef.current, assemblyExtrasRef.current);
@@ -17243,7 +17335,7 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || moldDraftLegend || dfmReportState || moldQuote) && (
+      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || moldDraftLegend || moldReport) && (
         <MoldResultsPane compact={isMobile}>
           <MoldProgress progress={moldProgress} />
           {pullToolsOn && (
@@ -17257,25 +17349,33 @@ const Viewport = forwardRef(({
               onPickPlane={(plane) => applySharedPullRef.current({ mode: 'plane', plane })}
             />
           )}
-          <WallLegend legend={wallLegend} />
-          <PartingLegend
-            legend={partingLegend}
-            onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
-          />
-          <MoldDraftLegend legend={moldDraftLegend} />
-          <DfmReportPanel report={dfmReportState} />
-          <MoldQuotePanel
-            state={moldQuote}
-            onQuantity={(quantity) => agentMoldQuoteRef.current({ on: true, quantity })}
-            onCavity={(cavityCount) => agentMoldQuoteRef.current({ on: true, cavityCount })}
-            onGrade={(grade) => agentMoldQuoteRef.current({ on: true, grade })}
-            onSelect={(selected) => {
-              setMoldQuote((prev) => (prev ? { ...prev, selected } : prev));
-            }}
-            onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
-            onHumanReview={() => agentMoldHumanReviewRef.current({})}
-            onPayReview={() => agentMoldPayReviewRef.current({})}
-          />
+          {wallLegend && <WallLegend legend={wallLegend} />}
+          {partingLegend && (
+            <PartingLegend
+              legend={partingLegend}
+              onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
+            />
+          )}
+          {moldDraftLegend && <MoldDraftLegend legend={moldDraftLegend} />}
+          {moldReport && (
+            <MoldReportPanel
+              report={moldReport}
+              resins={reportResins}
+              quoteState={moldQuote}
+              onGrade={(nextGrade) => openMoldReportRef.current({ on: true, grade: nextGrade })}
+              onQuantity={(nextQuantity) => openMoldReportRef.current({ on: true, quantity: nextQuantity })}
+              onExport={async (current) => {
+                const { moldReportXlsx } = await import('../molding/moldReportXlsx.js');
+                const bytes = moldReportXlsx(current);
+                saveAs(new Blob([bytes], {
+                  type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                }), 'mold-report.xlsx');
+              }}
+              onFirmQuote={() => agentMoldFirmQuoteRef.current({})}
+              onHumanReview={() => agentMoldHumanReviewRef.current({})}
+              onPayReview={() => agentMoldPayReviewRef.current({})}
+            />
+          )}
         </MoldResultsPane>
       )}
 
@@ -17323,14 +17423,10 @@ const Viewport = forwardRef(({
           moldDraftActive={!!moldDraftLegend}
           moldDraftPending={moldProgress?.tool === 'draft'}
           onMoldDraftToggle={() => agentMoldDraftRef.current({})}
-          showDfm={mode !== 'game'}
-          dfmActive={!!dfmReportState}
-          dfmPending={moldProgress?.tool === 'dfm'}
-          onDfmToggle={() => agentMoldDfmRef.current({})}
-          showQuote={mode !== 'game'}
-          quoteActive={!!moldQuote}
-          quotePending={moldProgress?.tool === 'quote'}
-          onQuoteToggle={() => agentMoldQuoteRef.current({})}
+          showReport={mode !== 'game'}
+          reportActive={!!moldReport}
+          reportPending={moldProgress?.tool === 'report' || moldProgress?.tool === 'dfm'}
+          onReportToggle={() => openMoldReportRef.current({})}
           onPickModeChange={(mode) => {
             const next = mode === 'edge' ? 'edge' : 'face';
             if (next === 'edge') feaCloseRef.current();

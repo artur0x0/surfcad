@@ -15,8 +15,7 @@ const MOLD_TOGGLES = [
   ['data-wall-heatmap', 'wallActive'],
   ['data-mold-parting', 'partingActive'],
   ['data-mold-draft', 'moldDraftActive'],
-  ['data-mold-dfm', 'dfmActive'],
-  ['data-mold-quote', 'quoteActive'],
+  ['data-mold-dfm', 'reportActive'],
 ];
 
 function buttonOpenTag(html, marker) {
@@ -77,8 +76,7 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
     showWall: true,
     showParting: true,
     showMoldDraft: true,
-    showDfm: true,
-    showQuote: true,
+    showReport: true,
   };
   const handlers = {
     onToggle: () => {},
@@ -88,8 +86,7 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
     onWallToggle: () => {},
     onPartingToggle: () => {},
     onMoldDraftToggle: () => {},
-    onDfmToggle: () => {},
-    onQuoteToggle: () => {},
+    onReportToggle: () => {},
   };
 
   function rail(props) {
@@ -108,8 +105,7 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
       wallActive: true,
       partingActive: true,
       moldDraftActive: true,
-      dfmActive: true,
-      quoteActive: true,
+      reportActive: true,
     });
     const offHtml = rail({ verticalRail, enabled: false });
     const sectionOn = buttonClass(onHtml, 'data-ui-action="data-cross-section-toggle"');

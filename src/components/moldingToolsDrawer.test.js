@@ -16,7 +16,6 @@ const MOLD_MARKERS = [
   'data-mold-parting',
   'data-mold-draft',
   'data-mold-dfm',
-  'data-mold-quote',
 ];
 
 /** Closed vertical rail, every CAD inspection tool shown, sketch normal hidden. */
@@ -72,8 +71,7 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     showWall: true,
     showParting: true,
     showMoldDraft: true,
-    showDfm: true,
-    showQuote: true,
+    showReport: true,
     onPickModeChange: () => {},
     onToggle: () => {},
     onZoomToFit: () => {},
@@ -82,8 +80,7 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     onWallToggle: () => {},
     onPartingToggle: () => {},
     onMoldDraftToggle: () => {},
-    onDfmToggle: () => {},
-    onQuoteToggle: () => {},
+    onReportToggle: () => {},
     verticalRail: true,
   };
   const closed = renderToStaticMarkup(React.createElement(CrossSectionPanel, show));
@@ -116,8 +113,7 @@ test('the molding drawer replaces the rail column and the triad', async () => {
     showWall: false,
     showParting: false,
     showMoldDraft: false,
-    showDfm: false,
-    showQuote: false,
+    showReport: false,
   }));
   assert.doesNotMatch(hidden, /data-mold-tools-toggle/);
 });
@@ -133,8 +129,7 @@ test('a molding tool press closes the drawer before it toggles the pane', () => 
     'onWallToggle',
     'onPartingToggle',
     'onMoldDraftToggle',
-    'onDfmToggle',
-    'onQuoteToggle',
+    'onReportToggle',
   ]) {
     assert.match(drawer, new RegExp(`onClick=\\{\\(\\) => pressMoldTool\\(setOpen, ${name}\\)\\}`));
   }

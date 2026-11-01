@@ -57,16 +57,11 @@ const CrossSectionPanel = forwardRef(({
   moldDraftActive = false,
   moldDraftPending = false,
   onMoldDraftToggle = null,
-  /** Budgetary DFM report. Inspection group, immediately after mold draft. Hidden in game. */
-  showDfm = false,
-  dfmActive = false,
-  dfmPending = false,
-  onDfmToggle = null,
-  /** Budgetary quote. Inspection group, immediately after the DFM report. Hidden in game. */
-  showQuote = false,
-  quoteActive = false,
-  quotePending = false,
-  onQuoteToggle = null,
+  /** Mold report. Inspection group, immediately after mold draft. Hidden in game. */
+  showReport = false,
+  reportActive = false,
+  reportPending = false,
+  onReportToggle = null,
   /** Initial Molding tools flyout. The rail leaves this unset. */
   moldToolsOpen = false,
   /** Stack tools vertically on the right edge. Both shells pass this now — desktop
@@ -564,14 +559,10 @@ const handleButtonClick = () => {
           moldDraftActive={moldDraftActive}
           moldDraftPending={moldDraftPending}
           onMoldDraftToggle={onMoldDraftToggle}
-          showDfm={showDfm}
-          dfmActive={dfmActive}
-          dfmPending={dfmPending}
-          onDfmToggle={onDfmToggle}
-          showQuote={showQuote}
-          quoteActive={quoteActive}
-          quotePending={quotePending}
-          onQuoteToggle={onQuoteToggle}
+          showReport={showReport}
+          reportActive={reportActive}
+          reportPending={reportPending}
+          onReportToggle={onReportToggle}
           defaultOpen={moldToolsOpen}
         />
         <button
