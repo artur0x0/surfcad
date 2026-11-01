@@ -83,6 +83,27 @@ export function historyForPart(histories, partId, script) {
 }
 
 /**
+ * History after an assembly open or a branch switch.
+ *
+ * The file just loaded is the head. A stack whose head is already that text
+ * stays, so Undo of earlier steps on this same file still works. A different
+ * head — the other branch, or an editor seed from before the file arrived —
+ * is dropped. Keeping it would make dirty() treat the open as an unsaved edit.
+ */
+export function openedPartHistory(existing, script) {
+  const code = typeof script === 'string' ? script : '';
+  const head = existing && Number.isInteger(existing.head) ? existing.head : -1;
+  const top = head >= 0 && Array.isArray(existing.commits)
+    ? existing.commits[head]?.code
+    : undefined;
+  if (top === code && Array.isArray(existing.commits) && existing.commits.length) {
+    return existing;
+  }
+  const commits = featureHistoryCommits(code);
+  return { commits, head: commits.length - 1 };
+}
+
+/**
  * True only when this part has no commits yet.
  *
  * Monaco calls this from `editorDidMount`. A later mount — the mobile shell

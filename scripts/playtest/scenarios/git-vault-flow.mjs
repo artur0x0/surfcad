@@ -30,6 +30,7 @@ function gitCleanDetail(dirty, badge) {
     `assemblyDirty=${result.assemblyDirty}`,
     `unsaved=${result.unsaved}`,
     `partIds=${JSON.stringify(result.partIds || [])}`,
+    `undoStackDirty=${result.undoStackDirty === true}`,
     `gitDirty=${badge.gitDirty}`,
     `hasBadge=${badge.hasBadge}`,
     `partDirty=${JSON.stringify(badge.partDirty)}`,
@@ -221,13 +222,26 @@ export async function run(ctx) {
     });
     const switched = back.ok === true
       && (back.result?.status === 'switched' || back.result?.status === 'same');
+    // The undo head is only compared once Monaco is mounted. Checking before
+    // that reports clean while the editor is still booting.
+    // The drawer stays mounted while closed, so Monaco is in the DOM but not
+    // visible. Attached is enough: that mount is what makes dirty() compare
+    // the undo head to the buffer.
+    const editorUp = await page.waitForSelector('.monaco-editor', {
+      timeout: 20000,
+      state: 'attached',
+    }).then(() => true).catch(() => false);
     const snap = await waitForGitClean(page);
+    // A programmatic editor write debounces a history step for 1s. Stay clean
+    // across that window so a late buffer change cannot pass the check.
+    if (snap.ok) await new Promise((resolve) => { setTimeout(resolve, 1200); });
+    const held = snap.ok ? await waitForGitClean(page) : snap;
     return {
-      ok: n >= 2 && switched && snap.ok,
+      ok: n >= 2 && switched && editorUp && held.ok,
       call: 'git_branch_switch',
       args: { branch: 'feature/playtest-save', confirm: true },
-      envelope: switched ? snap.dirty : back,
-      detail: `parts=${n} switch=${back.result?.status || back.error?.code} ${snap.detail}`,
+      envelope: switched ? held.dirty : back,
+      detail: `parts=${n} switch=${back.result?.status || back.error?.code} editor=${editorUp} ${held.detail}`,
     };
   });
 
