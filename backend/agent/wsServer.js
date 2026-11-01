@@ -434,7 +434,10 @@ function bindAgent(ws, auth, relay) {
   ws.on('message', (data, isBinary) => {
     handleAgentMessage(ws, auth, relay, data, isBinary, {
       isReady: () => ready,
-      markReady() {
+      /**
+       * @param {{ clearHold?: boolean, epoch?: number }} [seen]
+       */
+      markReady(seen) {
         ready = true;
         hello = true;
         const id = randomUUID();
@@ -444,9 +447,13 @@ function bindAgent(ws, auth, relay) {
           send(frame) {
             sendJson(ws, frame);
           },
-        });
-        if (!accepted) {
+        }, seen);
+        if (accepted === false) {
           ws.close(TOO_MANY_CONNECTIONS_CODE, TOO_MANY_CONNECTIONS_REASON);
+          return;
+        }
+        if (accepted !== true) {
+          refuseDeadToken(ws, 'revoked');
           return;
         }
         agentId = id;
@@ -511,6 +518,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
   } catch {
     msg = null;
   }
+  const epoch = relay.registry.presenceEpoch(auth.userId);
   const live = await relay.tokens.status(auth.tokenHash);
   if (live !== 'ok') {
     refuseDeadToken(ws, live, msg?.id);
@@ -528,11 +536,29 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
       ws.close(1008, error);
       return;
     }
-    ready.markReady();
+    ready.markReady({ clearHold: true, epoch });
+    if (ws.readyState !== WebSocket.OPEN) return;
     sendJson(ws, { type: 'hello', v: version.v });
     for (const frame of relay.registry.drainPrompts(auth.userId)) {
       sendJson(ws, frame);
     }
+    return;
+  }
+  if (msg?.type === 'agent.close_session') {
+    if (relay.registry.presenceEpoch(auth.userId) !== epoch) {
+      refuseDeadToken(ws, 'revoked', msg?.id);
+      return;
+    }
+    relay.registry.endAgentSession(auth.userId);
+    sendJson(ws, { type: 'agent.close_session', v: 1, ok: true });
+    return;
+  }
+  if (!relay.registry.noteAgentSeen(auth.userId, { clearHold: true, epoch })) {
+    refuseDeadToken(ws, 'revoked', msg?.id);
+    return;
+  }
+  if (msg?.type === 'agent.progress') {
+    relay.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true });
     return;
   }
   if (msg?.type === 'agent.message') {

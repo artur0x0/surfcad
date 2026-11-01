@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createManualClock } from '../agent/clock.js';
-import { MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
+import { AGENT_PRESENCE_TTL_MS, MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
 import { TAB_ASLEEP_ERROR, createMemoryTabRegistry } from '../agent/registry.js';
 
 function setup() {
@@ -256,8 +256,8 @@ describe('tab registry', () => {
     registry.unregisterAgent('user-a', 'ag1');
     assert.equal(tab.filter((frame) => frame.type === 'agent').at(-1).connected, true);
     registry.unregisterAgent('user-a', 'ag2');
-    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false });
-    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === false).length, 0);
+    assert.equal(registry.agentConnected('user-a'), true);
     assert.equal(other.length, 0);
   });
 
@@ -330,5 +330,96 @@ describe('tab registry', () => {
     clock.advance(1);
     assert.equal(registry.allowSessionMessage('user-a'), true);
     assert.equal(registry.allowSessionMessage('user-b'), true);
+  });
+
+  test('repeated socket closes stay present and a 10 minute lapse goes inactive', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    for (let i = 0; i < 3; i += 1) {
+      registry.registerAgent({ userId: 'user-a', agentId: `ag-${i}`, send() {} });
+      registry.unregisterAgent('user-a', `ag-${i}`);
+      clock.advance(2000);
+    }
+    assert.equal(registry.agentConnected('user-a'), true);
+    assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === false).length, 0);
+    assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === true).length, 1);
+    clock.advance(AGENT_PRESENCE_TTL_MS - 2001);
+    assert.equal(registry.agentConnected('user-a'), true);
+    clock.advance(1);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false, reason: 'inactive' });
+  });
+
+  test('an open idle socket expires without a close', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag', send() {} });
+    clock.advance(AGENT_PRESENCE_TTL_MS);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(tab.at(-1).reason, 'inactive');
+    assert.equal(registry.noteAgentSeen('user-a'), true);
+    assert.equal(registry.agentConnected('user-a'), true);
+  });
+
+  test('an open idle socket expires and a close does not refresh the window', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag', send() {} });
+    clock.advance(AGENT_PRESENCE_TTL_MS - 1000);
+    registry.unregisterAgent('user-a', 'ag');
+    assert.equal(registry.agentConnected('user-a'), true);
+    assert.equal(tab.some((frame) => frame.connected === false), false);
+    clock.advance(1000);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(tab.at(-1).reason, 'inactive');
+  });
+
+  test('close_session is offline immediately and a following close does not restore it', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag', send() {} });
+    assert.equal(registry.endAgentSession('user-a'), true);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false, reason: 'closed' });
+    registry.unregisterAgent('user-a', 'ag');
+    clock.advance(1000);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(tab.filter((frame) => frame.connected === true).length, 1);
+    assert.equal(tab.filter((frame) => frame.reason === 'closed').length, 1);
+  });
+
+  test('revoke is immediate and progress stamps activity without text', () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock });
+    const tab = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag', send() {} });
+    const epoch = registry.presenceEpoch('user-a');
+    registry.dropAgentPresence('user-a');
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false, reason: 'revoked' });
+    registry.unregisterAgent('user-a', 'ag');
+    assert.equal(registry.noteAgentSeen('user-a', { clearHold: true, epoch }), false);
+    assert.equal(registry.agentConnected('user-a'), false);
+    assert.equal(registry.noteAgentSeen('user-a', { clearHold: true, epoch: registry.presenceEpoch('user-a') }), true);
+    assert.equal(registry.agentConnected('user-a'), true);
+
+    clock.advance(AGENT_PRESENCE_TTL_MS - 1);
+    assert.equal(registry.noteAgentProgress('user-a'), true);
+    const progress = tab.at(-1);
+    assert.deepEqual(progress, { type: 'agent.progress', v: 1, working: true });
+    assert.equal(Object.hasOwn(progress, 'text'), false);
+    clock.advance(AGENT_PRESENCE_TTL_MS - 1);
+    assert.equal(registry.agentConnected('user-a'), true);
+    clock.advance(1);
+    assert.equal(tab.at(-1).reason, 'inactive');
   });
 });

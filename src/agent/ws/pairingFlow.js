@@ -133,12 +133,47 @@ export const AGENT_CONNECTED_TOAST_MS = 3000;
 export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
 export const AGENT_DISCONNECTED_TOAST_COPY = 'Agent disconnected';
 
+/** Presence-frame reasons. Older frames omit `reason` and use the generic copy. */
+export const AGENT_DISCONNECT_REASON_COPY = Object.freeze({
+  inactive: 'Agent disconnected: inactive for 10 min',
+  closed: 'Agent ended the session',
+  revoked: 'Agent access revoked',
+});
+
+/**
+ * @param {unknown} reason
+ * @param {string} [fallback]
+ */
+export function agentDisconnectToastCopy(reason, fallback = AGENT_DISCONNECTED_TOAST_COPY) {
+  if (typeof reason === 'string' && Object.prototype.hasOwnProperty.call(AGENT_DISCONNECT_REASON_COPY, reason)) {
+    return AGENT_DISCONNECT_REASON_COPY[reason];
+  }
+  return fallback;
+}
+
+/**
+ * Phone chat hides on a prompt that just started, and again on each
+ * progress update. Desktop fold is separate.
+ * @param {{ isMobile?: boolean, promptStarted?: boolean, progressEdge?: boolean }} [input]
+ * @returns {'prompt' | 'progress' | null}
+ */
+export function mobileChatHideReason(input = {}) {
+  if (input.isMobile !== true) return null;
+  if (input.progressEdge === true) return 'progress';
+  if (input.promptStarted === true) return 'prompt';
+  return null;
+}
+
+/** How long a progress update keeps the phone spinner after the frame. */
+export const AGENT_PROGRESS_RECENT_MS = 60_000;
+
 /**
  * @param {{ open?: boolean, kind?: string | null, hideAt?: number } | null | undefined} state
  * @param {'connected' | 'disconnected' | 'dismiss' | 'tick'} event
  * @param {number} now
+ * @param {{ reason?: string | null }} [extra]
  */
-export function stepAgentSessionToast(state, event, now) {
+export function stepAgentSessionToast(state, event, now, extra) {
   const cur = state && typeof state === 'object'
     ? state
     : { open: false, kind: null, hideAt: 0 };
@@ -149,7 +184,11 @@ export function stepAgentSessionToast(state, event, now) {
     return cur;
   }
   if (event === 'connected' || event === 'disconnected') {
-    return { open: true, kind: event, hideAt: at + AGENT_CONNECTED_TOAST_MS };
+    const next = { open: true, kind: event, hideAt: at + AGENT_CONNECTED_TOAST_MS };
+    if (event === 'disconnected' && extra && typeof extra.reason === 'string' && extra.reason) {
+      next.reason = extra.reason;
+    }
+    return next;
   }
   return cur;
 }

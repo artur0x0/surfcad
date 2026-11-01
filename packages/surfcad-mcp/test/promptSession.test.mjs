@@ -991,3 +991,20 @@ test('a session note posts without a prompt id, stays plain text, and is rate li
     final: true,
   });
 });
+
+test('post_progress sends no text and close_session does not exit the process', async () => {
+  const { session, sent } = harness();
+  const exited = [];
+  const original = process.exit;
+  process.exit = ((code) => { exited.push(code); });
+  try {
+    assert.deepEqual(await session.postProgress({ text: 'thinking about the fillet' }), { ok: true, working: true });
+    assert.deepEqual(sent.at(-1), { type: PAIR_MSG.AGENT_PROGRESS, v: 1, working: true });
+    assert.equal(Object.hasOwn(sent.at(-1), 'text'), false);
+    assert.deepEqual(await session.closeSession(), { ok: true, closed: true });
+    assert.deepEqual(sent.at(-1), { type: PAIR_MSG.AGENT_CLOSE_SESSION, v: 1 });
+    assert.deepEqual(exited, []);
+  } finally {
+    process.exit = original;
+  }
+});

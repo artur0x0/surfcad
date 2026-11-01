@@ -656,8 +656,9 @@ describe('agent relay HTTP', () => {
         body: { v: 1, id: 'c1', command: 'list_faces', args: { secret: 'payload-secret' } },
       });
       assert.equal(ok.status, 202);
-      assert.equal(seen.length, 1);
-      assert.equal(seen[0].command, 'list_faces');
+      const commands = seen.filter((frame) => frame.command === 'list_faces');
+      assert.equal(commands.length, 1);
+      assert.equal(seen.some((frame) => frame.type === 'agent' && frame.connected === true), true);
       const logged = lines.filter((line) => line.includes('[agent-relay]')).join('\n');
       assert.match(logged, /list_faces/);
       assert.equal(logged.includes('payload-secret'), false);
@@ -771,8 +772,8 @@ describe('agent relay HTTP', () => {
       token: issued.token,
       body: { v: 1, id: 'c1', command: 'status', args: {} },
     });
-    assert.equal(first.length, 1);
-    assert.equal(second.length, 0);
+    assert.equal(first.filter((frame) => frame.command === 'status').length, 1);
+    assert.equal(second.filter((frame) => frame.command === 'status').length, 0);
     const foreign = await send(port, '/agent/tabs', { user: 'user-b' });
     assert.deepEqual(foreign.body.tabs, []);
   });
@@ -1060,5 +1061,34 @@ describe('agent relay HTTP', () => {
     const second = await send(port, '/agent/commands/missing', { token: issued.token });
     assert.equal(second.status, 429);
     assert.equal(second.body.error, 'rate_limited');
+  });
+
+  test('a prompt poll stays present, progress drops text, and close_session ends it', async () => {
+    const clock = createManualClock(1_000);
+    const relay = createAgentRelay({ clock });
+    const tab = [];
+    relay.registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => tab.push(frame) });
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const polled = await send(port, '/agent/prompts?timeout=0', { token: issued.token });
+    assert.equal(polled.status, 200);
+    assert.equal(relay.registry.agentConnected('user-a'), true);
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: true });
+    const progress = await send(port, '/agent/prompts', {
+      method: 'POST',
+      token: issued.token,
+      body: { type: 'agent.progress', v: 1, text: 'secret thinking', working: true },
+    });
+    assert.equal(progress.status, 202);
+    assert.deepEqual(tab.at(-1), { type: 'agent.progress', v: 1, working: true });
+    const closed = await send(port, '/agent/prompts', {
+      method: 'POST',
+      token: issued.token,
+      body: { type: 'agent.close_session', v: 1 },
+    });
+    assert.equal(closed.status, 202);
+    assert.equal(relay.registry.agentConnected('user-a'), false);
+    assert.deepEqual(tab.at(-1), { type: 'agent', v: 1, connected: false, reason: 'closed' });
+    assert.equal(tab.some((frame) => frame.text === 'secret thinking'), false);
   });
 });

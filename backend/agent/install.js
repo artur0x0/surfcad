@@ -54,7 +54,9 @@ export async function revokeUserAgentAccess(userId) {
 
 /**
  * Revoke every agent token for the account, close its sockets with 4001,
- * and drop its join codes.
+ * drop its join codes, and mark the agent offline at once.
+ * Presence drops after the token status is revoked, so a check that
+ * already passed still loses to the epoch bump instead of clearing the hold.
  * @param {NonNullable<typeof state.relay>} relay
  * @param {string | { toString(): string }} userId
  */
@@ -68,6 +70,7 @@ export async function revokeRelayUser(relay, userId) {
     relay.registry.abortToken(tokenId, id);
     relay.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
   }
+  relay.registry.dropAgentPresence(id);
   return ids;
 }
 

@@ -782,6 +782,36 @@ export function createPromptSession(options) {
   }
 
   /**
+   * Working signal only. Optional text is accepted and never sent.
+   * @param {{ text?: unknown }} [args]
+   */
+  function postProgress(args = {}) {
+    if (args?.text != null && typeof args.text !== 'string') {
+      throw Object.assign(new Error('text must be a string'), { code: 'bad_args' });
+    }
+    if (typeof args?.text === 'string' && args.text.length > 500) {
+      throw Object.assign(new Error('text must be at most 500 characters'), { code: 'bad_args' });
+    }
+    const sent = emit({ type: PAIR_MSG.AGENT_PROGRESS, v: 1, working: true }, { required: true });
+    const payload = { ok: true, working: true };
+    if (sent && typeof sent.then === 'function') return sent.then(() => payload);
+    if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+    return payload;
+  }
+
+  /**
+   * Deliberate end of the session. Not called from process exit, stdin
+   * end, or SIGTERM.
+   */
+  function closeSession() {
+    const sent = emit({ type: PAIR_MSG.AGENT_CLOSE_SESSION, v: 1 }, { required: true });
+    const payload = { ok: true, closed: true };
+    if (sent && typeof sent.then === 'function') return sent.then(() => payload);
+    if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
+    return payload;
+  }
+
+  /**
    * A tool call after a prompt. A call that changes the model (`mutates`)
    * enters building if the agent has not already, so a missed set_status
    * still collapses the chat while geometry changes. A read never does: it
@@ -870,6 +900,8 @@ export function createPromptSession(options) {
     recentPrompts,
     reply,
     setStatus,
+    postProgress,
+    closeSession,
     noteToolCall,
     holdWork,
     registerWebhook,

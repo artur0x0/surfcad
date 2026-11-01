@@ -17,6 +17,7 @@ import { attachAgentWebSocket } from '../agent/wsServer.js';
 import { revokeRelayUser } from '../agent/install.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from '../agent/tabSockets.js';
 import { hashToken } from '../agent/tokens.js';
+import { AGENT_PRESENCE_TTL_MS } from '../agent/limits.js';
 
 /** @type {import('node:http').Server[]} */
 const servers = [];
@@ -1101,5 +1102,93 @@ describe('agent relay websocket', () => {
     } finally {
       console.info = original;
     }
+  });
+
+  test('repeated hellos do not go offline, and close_session does', async () => {
+    const clock = createManualClock(10_000);
+    const relay = createAgentRelay({ clock });
+    const tab = [];
+    relay.registry.registerTab({
+      userId: 'user-a',
+      tabId: 'tab-a',
+      send: (frame) => tab.push(frame),
+    });
+    const port = await listen(relay, async () => null);
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'harness' });
+    const headers = { authorization: `Bearer ${issued.token}`, origin: 'https://evil.example' };
+
+    for (let i = 0; i < 3; i += 1) {
+      const shot = openSocket(url, headers);
+      await shot.opened;
+      const hello = shot.nextMessage();
+      shot.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+      assert.equal((await hello).type, 'hello');
+      const closed = closeEvent(shot.ws, 'one-shot');
+      shot.ws.close();
+      await closed;
+      await sleep(30);
+      clock.advance(2000);
+    }
+    assert.equal(relay.registry.agentConnected('user-a'), true);
+    assert.equal(tab.some((frame) => frame.type === 'agent' && frame.connected === false), false);
+
+    const agent = openSocket(url, headers);
+    await agent.opened;
+    const hello = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await hello).type, 'hello');
+    agent.ws.send(JSON.stringify({
+      type: 'agent.progress',
+      v: 1,
+      working: true,
+      text: 'thinking about the fillet',
+    }));
+    await sleep(50);
+    assert.deepEqual(
+      tab.filter((frame) => frame.type === 'agent.progress').at(-1),
+      { type: 'agent.progress', v: 1, working: true },
+    );
+    const ack = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ type: 'agent.close_session', v: 1 }));
+    assert.equal((await ack).ok, true);
+    await sleep(20);
+    assert.equal(relay.registry.agentConnected('user-a'), false);
+    assert.equal(tab.at(-1).reason, 'closed');
+    const closed = closeEvent(agent.ws, 'after close_session');
+    agent.ws.close();
+    await closed;
+    await sleep(30);
+    assert.equal(relay.registry.agentConnected('user-a'), false);
+    assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === true).length, 1);
+    clock.advance(AGENT_PRESENCE_TTL_MS);
+    assert.equal(tab.filter((frame) => frame.reason === 'inactive').length, 0);
+  });
+
+  test('revoke marks the agent offline immediately', async () => {
+    const clock = createManualClock(10_000);
+    const relay = createAgentRelay({ clock });
+    const tab = [];
+    relay.registry.registerTab({
+      userId: 'user-a',
+      tabId: 'tab-a',
+      send: (frame) => tab.push(frame),
+    });
+    const port = await listen(relay, async () => null);
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'harness' });
+    const agent = openSocket(url, {
+      authorization: `Bearer ${issued.token}`,
+      origin: 'https://evil.example',
+    });
+    await agent.opened;
+    const hello = agent.nextMessage();
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await hello).type, 'hello');
+    await revokeRelayUser(relay, 'user-a');
+    assert.equal(relay.registry.agentConnected('user-a'), false);
+    assert.equal(tab.at(-1).reason, 'revoked');
+    await sleep(40);
+    assert.equal(tab.filter((frame) => frame.type === 'agent' && frame.connected === true).length, 1);
   });
 });
