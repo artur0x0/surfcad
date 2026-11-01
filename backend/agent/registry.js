@@ -2,8 +2,10 @@ import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/
 import { createSystemClock } from './clock.js';
 import {
   MAX_AGENTS_PER_USER,
+  MAX_HELD_PROMPTS,
   MAX_PENDING,
   MAX_TABS_PER_USER,
+  PROMPT_HOLD_MS,
   RESULT_RETENTION_MS,
   TAB_ASLEEP_MS,
 } from './limits.js';
@@ -45,6 +47,7 @@ function asleepResponse(frame) {
  *   maxPending?: number,
  *   maxTabs?: number,
  *   maxAgents?: number,
+ *   promptHoldMs?: number,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
@@ -54,6 +57,7 @@ export function createMemoryTabRegistry(opts = {}) {
   const maxPending = opts.maxPending ?? MAX_PENDING;
   const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
   const maxAgents = opts.maxAgents ?? MAX_AGENTS_PER_USER;
+  const promptHoldMs = opts.promptHoldMs ?? PROMPT_HOLD_MS;
 
   /**
    * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
@@ -74,6 +78,16 @@ export function createMemoryTabRegistry(opts = {}) {
   const users = new Map();
   /** @type {Map<string, Map<string, { agentId: string, userId: string, send: (frame: object) => void }>>} */
   const agents = new Map();
+  /**
+   * Tab prompts waiting for an agent socket or an HTTPS pull.
+   * @type {Map<string, Array<{ frame: object, cancel: () => void, onExpire: () => void }>>}
+   */
+  const promptInbox = new Map();
+  /**
+   * Long-polls on GET /agent/prompts, keyed by user.
+   * @type {Map<string, Array<{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }>>}
+   */
+  const promptWaiters = new Map();
   /** @type {Map<string, PendingCommand>} */
   const pending = new Map();
   /** @type {Map<string, { userId: string, tokenId: string, response: object, at: number }>} */
@@ -111,20 +125,77 @@ export function createMemoryTabRegistry(opts = {}) {
    * @param {object} frame
    * @param {'tabs' | 'agents'} side
    */
+  /**
+   * @param {string} userId
+   * @param {object} frame
+   * @param {'tabs' | 'agents'} side
+   * @returns {number} sockets that accepted the frame
+   */
   function forward(userId, frame, side) {
-    if (side === 'tabs') {
-      const found = users.get(String(userId));
-      if (!found) return;
-      for (const tab of found.tabs.values()) {
-        try { tab.send(frame); } catch { /* tab */ }
-      }
-      return;
+    const found = side === 'tabs'
+      ? users.get(String(userId))?.tabs
+      : agents.get(String(userId));
+    if (!found) return 0;
+    let delivered = 0;
+    for (const peer of found.values()) {
+      try {
+        peer.send(frame);
+        delivered += 1;
+      } catch { /* a dead peer must not block the rest */ }
     }
-    const found = agents.get(String(userId));
-    if (!found) return;
-    for (const agent of found.values()) {
-      try { agent.send(frame); } catch { /* agent */ }
+    return delivered;
+  }
+
+  /**
+   * @param {string} key
+   * @returns {object[]}
+   */
+  function takeInbox(key) {
+    const rows = promptInbox.get(key);
+    if (!rows || rows.length === 0) return [];
+    promptInbox.delete(key);
+    const frames = [];
+    for (const row of rows) {
+      row.cancel();
+      frames.push(row.frame);
     }
+    return frames;
+  }
+
+  /**
+   * @param {string} key
+   * @param {unknown} id
+   */
+  function dropHeld(key, id) {
+    const rows = promptInbox.get(key);
+    if (!rows || typeof id !== 'string' || !id) return false;
+    const idx = rows.findIndex((row) => row.frame?.id === id);
+    if (idx < 0) return false;
+    const [row] = rows.splice(idx, 1);
+    row.cancel();
+    if (rows.length === 0) promptInbox.delete(key);
+    return true;
+  }
+
+  /**
+   * Fail every held prompt for this account. Same ack as a hold expiry.
+   * @param {string} userId
+   */
+  function expireHeldPrompts(userId) {
+    const rows = promptInbox.get(String(userId));
+    if (!rows || rows.length === 0) return;
+    for (const row of [...rows]) row.onExpire();
+  }
+
+  /** @param {string} key */
+  function wakePromptWaiters(key) {
+    const pending = promptWaiters.get(key);
+    if (!pending || pending.length === 0) return;
+    const frames = takeInbox(key);
+    if (frames.length === 0) return;
+    const waiter = pending.shift();
+    if (pending.length === 0) promptWaiters.delete(key);
+    waiter?.resolve(frames);
   }
 
   /** @param {string} userId */
@@ -443,10 +514,21 @@ export function createMemoryTabRegistry(opts = {}) {
 
     /**
      * End long-poll and SSE waits for one token, and drop its unread results.
+     * When `userId` is set, held tab prompts for that account expire too:
+     * each row tells the tab delivery failed, and a later hello or
+     * `GET /agent/prompts` cannot take them.
      * @param {string} tokenId
+     * @param {string} [userId]
      */
-    abortToken(tokenId) {
+    abortToken(tokenId, userId) {
       const id = String(tokenId);
+      if (userId != null && String(userId) !== '') expireHeldPrompts(userId);
+      for (const [waiterUserId, list] of [...promptWaiters.entries()]) {
+        for (const waiter of [...list]) {
+          if (waiter.tokenId === id) waiter.abort();
+        }
+        if ((promptWaiters.get(waiterUserId)?.length || 0) === 0) promptWaiters.delete(waiterUserId);
+      }
       for (const item of [...pending.values()]) {
         if (item.tokenId !== id || item.finished) continue;
         const waiters = item.abortWaiters.splice(0);
@@ -516,8 +598,126 @@ export function createMemoryTabRegistry(opts = {}) {
      * @param {string} userId
      * @param {object} frame
      */
+    /**
+     * @param {string} userId
+     * @param {object} frame
+     * @returns {number} agent sockets that accepted the frame
+     */
     forwardToAgents(userId, frame) {
-      forward(userId, frame, 'agents');
+      return forward(userId, frame, 'agents');
+    },
+
+    /**
+     * Keep a tab prompt until an agent socket connects, an HTTPS pull
+     * takes it, or the hold expires.
+     * @param {string} userId
+     * @param {object} frame
+     * @param {{ onExpire?: () => void }} [opts]
+     */
+    holdPrompt(userId, frame, opts = {}) {
+      const key = String(userId);
+      /** @type {Array<{ frame: object, cancel: () => void, onExpire: () => void }>} */
+      let rows = promptInbox.get(key);
+      if (!rows) {
+        rows = [];
+        promptInbox.set(key, rows);
+      }
+      while (rows.length >= MAX_HELD_PROMPTS) {
+        const old = rows.shift();
+        old?.onExpire();
+      }
+      let expired = false;
+      /** @type {ReturnType<typeof clock.schedule> | null} */
+      let timer = null;
+      /** @type {{ frame: object, cancel: () => void, onExpire: () => void }} */
+      const row = {
+        frame,
+        cancel() {
+          if (expired) return;
+          expired = true;
+          if (timer) clock.cancel(timer);
+        },
+        onExpire() {
+          if (expired) return;
+          expired = true;
+          if (timer) clock.cancel(timer);
+          const live = promptInbox.get(key);
+          if (live) {
+            const idx = live.indexOf(row);
+            if (idx >= 0) live.splice(idx, 1);
+            if (live.length === 0) promptInbox.delete(key);
+          }
+          opts.onExpire?.();
+        },
+      };
+      timer = clock.schedule(() => row.onExpire(), promptHoldMs);
+      rows.push(row);
+      wakePromptWaiters(key);
+    },
+
+    /**
+     * Drop one held prompt. The expiry ack does not fire.
+     * @param {string} userId
+     * @param {unknown} id
+     * @returns {boolean}
+     */
+    dropHeldPrompt(userId, id) {
+      return dropHeld(String(userId), id);
+    },
+
+    /**
+     * Prompts held for this account, oldest first. Clears their expiry.
+     * @param {string} userId
+     * @returns {object[]}
+     */
+    drainPrompts(userId) {
+      return takeInbox(String(userId));
+    },
+
+    /**
+     * HTTPS fallback long-poll. `revoked` means this token was aborted.
+     * @param {string} userId
+     * @param {number} timeoutMs
+     * @param {string} [tokenId]
+     * @returns {Promise<{ status: 'messages' | 'empty' | 'revoked', messages: object[] }>}
+     */
+    waitPrompts(userId, timeoutMs, tokenId) {
+      const key = String(userId);
+      const ready = takeInbox(key);
+      if (ready.length) return Promise.resolve({ status: 'messages', messages: ready });
+      if (timeoutMs <= 0) return Promise.resolve({ status: 'empty', messages: [] });
+      return new Promise((resolve) => {
+        let settled = false;
+        /** @type {Array<{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }>} */
+        let list = promptWaiters.get(key);
+        if (!list) {
+          list = [];
+          promptWaiters.set(key, list);
+        }
+        const timer = clock.schedule(() => finish({ status: 'empty', messages: [] }), timeoutMs);
+        /** @type {{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }} */
+        const entry = {
+          tokenId: tokenId == null ? null : String(tokenId),
+          abort() { finish({ status: 'revoked', messages: [] }); },
+          resolve(messages) { finish({ status: 'messages', messages }); },
+        };
+        list.push(entry);
+        /**
+         * @param {{ status: 'messages' | 'empty' | 'revoked', messages: object[] }} value
+         */
+        function finish(value) {
+          if (settled) return;
+          settled = true;
+          clock.cancel(timer);
+          const live = promptWaiters.get(key);
+          if (live) {
+            const idx = live.indexOf(entry);
+            if (idx >= 0) live.splice(idx, 1);
+            if (live.length === 0) promptWaiters.delete(key);
+          }
+          resolve(value);
+        }
+      });
     },
 
     /** Joined in-flight and unread payloads, for tests that they are dropped. */

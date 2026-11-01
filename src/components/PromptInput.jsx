@@ -343,7 +343,10 @@ export default function PromptInput({
   const sendText = useCallback((raw) => {
     const text = typeof raw === 'string' ? raw : input;
     const trimmed = text.trim();
-    if (!transport) return { ok: false, reason: 'no_transport' };
+    if (!transport) {
+      setAck({ delivery: 'failed', error: 'not_paired' });
+      return { ok: false, reason: 'no_transport' };
+    }
     if (!trimmed || working) return { ok: false, reason: 'empty' };
     if (trimmed.length > AGENT_PROMPT_MAX_CHARS) {
       return { ok: false, reason: 'too_long' };

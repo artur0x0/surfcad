@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bot, Box, LayoutList, Loader2 } from 'lucide-react';
 import { subscribeAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
-import { shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
+import { agentChatToggleAction, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
 
 /**
@@ -12,14 +12,17 @@ import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
  * pencil opens it. Session sticky via the caller (`3dculos.mobileStage`).
  * Desktop never mounts this.
  *
- * While an agent is connected, a middle Bot button opens the agent chat.
- * It is absent otherwise. The inert center mark stays for that case.
+ * While an agent is connected, a middle Bot button opens the agent chat
+ * and the next tap folds it. It is absent otherwise. The inert center
+ * mark stays for that case. The spinner replaces the icon while the
+ * agent is working; the tap still toggles.
  * Future AI prompt: do NOT wire PromptInput from here.
  */
 export default function MobileStageToggle({ stage = 'cad', onChange }) {
   const isCad = stage === 'cad';
   const isParts = stage === 'parts';
-  const { paired, link, openAgentChat } = useAgentBridgeHost();
+  const { paired, link, agentChatOpen, openAgentChat, closeAgentChat } = useAgentBridgeHost();
+  const chatAction = agentChatToggleAction(agentChatOpen);
   const connected = shouldShowAgentBridgeDisconnect({ paired, link });
   const [working, setWorking] = useState(false);
 
@@ -65,9 +68,13 @@ export default function MobileStageToggle({ stage = 'cad', onChange }) {
           <button
             type="button"
             data-ui-action="data-agent-chat-open"
-            data-agent-chat-open=""
+            data-agent-chat-open={chatAction === 'close' ? 'open' : 'closed'}
+            aria-pressed={agentChatOpen === true}
             aria-label={working ? 'Agent working' : 'Agent chat'}
-            onClick={() => openAgentChat?.()}
+            onClick={() => {
+              if (chatAction === 'close') closeAgentChat?.();
+              else openAgentChat?.();
+            }}
             className="absolute inset-y-0 left-1/3 z-10 flex w-1/3 items-center justify-center text-white"
           >
             {working

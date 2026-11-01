@@ -45,5 +45,5 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-agent-relay-server', reason: 'Account relay preference: server relay only.' }),
   Object.freeze({ id: 'data-agent-token-revoke', reason: 'Account list revoke for a paired agent token.' }),
   Object.freeze({ id: 'data-agent-connected-disconnect', reason: 'Persistent Agent connected banner disconnects the tab socket.' }),
-  Object.freeze({ id: 'data-agent-chat-open', reason: 'Phone stage pill opens the agent chat while an agent is connected.' }),
+  Object.freeze({ id: 'data-agent-chat-open', reason: 'Phone stage pill opens the agent chat and folds it again while an agent is connected.' }),
 ]);

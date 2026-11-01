@@ -811,4 +811,70 @@ describe('agent relay websocket', () => {
     );
     agent.ws.close();
   });
+
+  test('a tab prompt reaches the agent and the reply comes back to the tab', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const tab = openSocket(url, { origin: 'https://surfcad.com', 'x-test-user': 'user-a' });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    const promptId = '11111111-1111-4111-8111-111111111111';
+    tab.ws.send(JSON.stringify({
+      type: 'agent.prompt', v: 1, id: promptId, text: 'draw a box',
+    }));
+    const agent = openSocket(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    agent.ws.send(JSON.stringify({ type: 'hello', v: 1 }));
+    assert.equal((await agent.nextMessage()).type, 'hello');
+    const prompt = await agent.nextMessage();
+    assert.equal(prompt.type, 'agent.prompt');
+    assert.equal(prompt.text, 'draw a box');
+    const presence = await tab.nextMessage();
+    assert.equal(presence.type, 'agent');
+    assert.equal(presence.connected, true);
+    agent.ws.send(JSON.stringify({
+      type: 'agent.reply', v: 1, id: promptId, text: 'made a box', final: true,
+    }));
+    const reply = await tab.nextMessage();
+    assert.equal(reply.type, 'agent.reply');
+    assert.equal(reply.text, 'made a box');
+    agent.ws.close();
+    tab.ws.close();
+  });
+
+  test('a tab prompt with no agent fails instead of disappearing', async () => {
+    const clock = createManualClock(0);
+    const relay = createAgentRelay({ clock, promptHoldMs: 1000 });
+    const port = await listen(relay, async (req) => {
+      const id = req.headers['x-test-user'];
+      return typeof id === 'string' ? { id } : null;
+    });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const tab = openSocket(url, { origin: 'http://localhost:5173', 'x-test-user': 'user-a' });
+    await tab.opened;
+    assert.equal((await tab.nextMessage()).type, 'registered');
+    tab.ws.send(JSON.stringify({
+      type: 'agent.prompt.cancel', v: 1, id: 'missing',
+    }));
+    const cancel = await tab.nextMessage();
+    assert.equal(cancel.type, 'agent.prompt.cancel.result');
+    assert.equal(cancel.state, 'not_found');
+    const promptId = '22222222-2222-4222-8222-222222222222';
+    tab.ws.send(JSON.stringify({
+      type: 'agent.prompt', v: 1, id: promptId, text: 'hello',
+    }));
+    await sleep(50);
+    clock.advance(1000);
+    const ack = await tab.nextMessage();
+    assert.equal(ack.type, 'agent.prompt.ack');
+    assert.equal(ack.id, promptId);
+    assert.equal(ack.delivery, 'failed');
+    assert.equal(ack.error, 'not_paired');
+    tab.ws.close();
+  });
 });

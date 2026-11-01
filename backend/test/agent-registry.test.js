@@ -260,4 +260,61 @@ describe('tab registry', () => {
     assert.equal(registry.agentConnected('user-a'), false);
     assert.equal(other.length, 0);
   });
+
+  test('a tab prompt waits for an HTTPS pull, a cancel, or the hold', async () => {
+    const clock = createManualClock(0);
+    const registry = createMemoryTabRegistry({ clock, promptHoldMs: 1000 });
+    const expired = [];
+    registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p1', text: 'hi' }, {
+      onExpire() { expired.push('p1'); },
+    });
+    const taken = await registry.waitPrompts('user-a', 5000, 'tok-a');
+    assert.equal(taken.status, 'messages');
+    assert.equal(taken.messages[0].text, 'hi');
+    clock.advance(1000);
+    assert.deepEqual(expired, []);
+
+    const pending = registry.waitPrompts('user-a', 5000, 'tok-a');
+    registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p2', text: 'wake' }, {
+      onExpire() { expired.push('p2'); },
+    });
+    const woke = await pending;
+    assert.equal(woke.status, 'messages');
+    assert.equal(woke.messages[0].text, 'wake');
+    clock.advance(1000);
+    assert.deepEqual(expired, []);
+
+    registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p3', text: 'later' }, {
+      onExpire() { expired.push('p3'); },
+    });
+    clock.advance(999);
+    assert.deepEqual(expired, []);
+    clock.advance(1);
+    assert.deepEqual(expired, ['p3']);
+
+    registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p4', text: 'cancel me' }, {
+      onExpire() { expired.push('p4'); },
+    });
+    assert.equal(registry.dropHeldPrompt('user-a', 'p4'), true);
+    clock.advance(1000);
+    assert.deepEqual(expired, ['p3']);
+
+    const hanging = registry.waitPrompts('user-a', 5000, 'tok-a');
+    registry.abortToken('tok-a');
+    assert.equal((await hanging).status, 'revoked');
+
+    registry.holdPrompt('user-a', { type: 'agent.prompt', id: 'p5', text: 'flush' }, {
+      onExpire() { expired.push('p5'); },
+    });
+    registry.abortToken('tok-a', 'user-a');
+    assert.deepEqual(registry.drainPrompts('user-a'), []);
+    assert.deepEqual(expired, ['p3', 'p5']);
+    clock.advance(1000);
+    assert.deepEqual(expired, ['p3', 'p5']);
+    const agent = [];
+    registry.registerAgent({ userId: 'user-a', agentId: 'ag', send: (frame) => agent.push(frame) });
+    assert.equal(registry.forwardToAgents('user-a', { type: 'agent.prompt', text: 'live' }), 1);
+    assert.equal(agent.at(-1).text, 'live');
+    assert.equal(registry.forwardToAgents('nobody', { type: 'agent.prompt', text: 'no' }), 0);
+  });
 });

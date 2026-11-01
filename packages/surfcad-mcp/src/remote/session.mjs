@@ -102,6 +102,11 @@ export class RemoteSession {
   #connecting = null;
   /** @type {{ resolve: () => void, reject: (err: Error) => void } | null} */
   #hello = null;
+  /** Frames that arrived before the hello ack. A prompt must not fail the handshake. */
+  #early = [];
+  #promptPull = 0;
+  /** @type {AbortController | null} */
+  #promptAbort = null;
   /** @type {Map<string, { resolve: (v: unknown) => void, reject: (e: Error) => void }>} */
   #pending = new Map();
   #log;
@@ -240,6 +245,7 @@ export class RemoteSession {
     try {
       try {
         await this.#openWebSocket();
+        this.#stopPromptPull();
         this.#transport = 'ws';
         this.#state = 'paired';
         this.#log('remote agent connected via websocket');
@@ -261,6 +267,7 @@ export class RemoteSession {
         this.#transport = 'http';
         this.#state = 'paired';
         this.#log('remote agent connected via https fallback');
+        this.#startPromptPull();
       }
     } finally {
       // Success used to leave the settled promise here, so a later connect()
@@ -320,6 +327,7 @@ export class RemoteSession {
     const ws = this.#ws;
     this.#ws = null;
     this.#hello = null;
+    this.#early = [];
     if (!ws) return;
     ws.removeAllListeners();
     try { ws.terminate(); } catch { /* noop */ }
@@ -338,12 +346,22 @@ export class RemoteSession {
     }
     if (!msg || typeof msg !== 'object') return;
     if (this.#hello) {
-      const hello = this.#hello;
-      this.#hello = null;
       if (msg.type === 'hello') {
+        const hello = this.#hello;
+        this.#hello = null;
         hello.resolve();
+        const early = this.#early.splice(0);
+        for (const frame of early) this.#dispatchInbound(frame);
         return;
       }
+      if (msg.type === PAIR_MSG.AGENT_PROMPT || msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
+        this.#early.push(msg);
+        if (this.#early.length > 20) this.#early.shift();
+        return;
+      }
+      const hello = this.#hello;
+      this.#hello = null;
+      this.#early = [];
       const text = typeof msg.error === 'string' ? msg.error : '';
       hello.reject(asRemoteError({
         code: text.includes(AGENT_HANDSHAKE_UPDATE_MESSAGE) ? 'client_update_required' : 'ws_blocked',
@@ -351,24 +369,7 @@ export class RemoteSession {
       }));
       return;
     }
-    if (msg.type === PAIR_MSG.AGENT_PROMPT) {
-      void this.#prompts.acceptPrompt(msg);
-      return;
-    }
-    if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
-      const cancelId = typeof msg.id === 'string' ? msg.id : '';
-        void this.#prompts.cancel(cancelId).then((result) => {
-        Promise.resolve(this.#sendToTab({
-          type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
-          v: 1,
-          id: result.id,
-          state: result.state,
-        })).catch(() => {
-          /* socket closed before the result could be sent */
-        });
-      }, () => {});
-      return;
-    }
+    if (this.#dispatchInbound(msg)) return;
     const id = msg.id == null ? '' : String(msg.id);
     const waiter = id ? this.#pending.get(id) : undefined;
     if (!waiter) return;
@@ -386,6 +387,7 @@ export class RemoteSession {
     const why = Buffer.isBuffer(reason) ? reason.toString('utf8') : String(reason || '');
     const hello = this.#hello;
     this.#hello = null;
+    this.#early = [];
     this.#ws = null;
     if (code === TOKEN_CLOSE_CODE) {
       this.#transport = null;
@@ -413,7 +415,99 @@ export class RemoteSession {
       this.#transport = 'http';
       this.#log('websocket closed; later commands use https');
       this.#failPending(pairingLostError('socket closed'));
+      this.#startPromptPull();
     }
+  }
+
+  /**
+   * Prompt frames from the agent socket or from GET /agent/prompts.
+   * @param {object} msg
+   * @returns {boolean} true when this frame was a prompt
+   */
+  #dispatchInbound(msg) {
+    if (msg.type === PAIR_MSG.AGENT_PROMPT) {
+      void this.#prompts.acceptPrompt(msg);
+      return true;
+    }
+    if (msg.type === PAIR_MSG.AGENT_PROMPT_CANCEL) {
+      const cancelId = typeof msg.id === 'string' ? msg.id : '';
+      void this.#prompts.cancel(cancelId).then((result) => {
+        Promise.resolve(this.#sendToTab({
+          type: PAIR_MSG.AGENT_PROMPT_CANCEL_RESULT,
+          v: 1,
+          id: result.id,
+          state: result.state,
+        })).catch(() => {
+          /* socket closed before the result could be sent */
+        });
+      }, () => {});
+      return true;
+    }
+    return false;
+  }
+
+  #stopPromptPull() {
+    this.#promptPull += 1;
+    const abort = this.#promptAbort;
+    this.#promptAbort = null;
+    try { abort?.abort(); } catch { /* noop */ }
+  }
+
+  /**
+   * HTTPS fallback has no agent socket, so tab prompts are pulled.
+   * A websocket session receives them on the socket instead.
+   */
+  #startPromptPull() {
+    this.#stopPromptPull();
+    const generation = this.#promptPull;
+    const run = async () => {
+      while (generation === this.#promptPull && this.#state === 'paired' && this.#transport === 'http') {
+        try {
+          const frames = await this.#pullPromptBatch();
+          if (generation !== this.#promptPull) return;
+          for (const frame of frames) this.#dispatchInbound(frame);
+        } catch (err) {
+          if (generation !== this.#promptPull) return;
+          const code = err && typeof err === 'object' ? err.code : '';
+          if (code === 'token_revoked' || code === 'client_update_required') return;
+          await new Promise((resolve) => {
+            const timer = setTimeout(resolve, 400);
+            if (typeof timer.unref === 'function') timer.unref();
+          });
+        }
+      }
+    };
+    void run();
+  }
+
+  /**
+   * @returns {Promise<object[]>}
+   */
+  async #pullPromptBatch() {
+    const ac = new AbortController();
+    this.#promptAbort = ac;
+    const url = new URL(this.#urls.promptsUrl);
+    url.searchParams.set('timeout', '25000');
+    let res;
+    try {
+      res = await this.#fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${this.#token}` },
+        signal: ac.signal,
+      });
+    } catch {
+      if (ac.signal.aborted) return [];
+      throw Object.assign(new Error('Could not reach the SurfCAD agent server.'), { code: 'unreachable' });
+    }
+    if (res.status === 401) throw tokenRevokedError();
+    if (!res.ok) {
+      try { await res.body?.cancel?.(); } catch { /* noop */ }
+      throw Object.assign(new Error(`Prompt pull failed (${res.status})`), { code: 'bridge_error' });
+    }
+    let json = null;
+    try { json = await res.json(); } catch { json = null; }
+    const messages = json && Array.isArray(json.messages) ? json.messages : [];
+    return messages.filter((frame) => frame && typeof frame === 'object');
   }
 
   /**
@@ -525,6 +619,7 @@ export class RemoteSession {
 
   disconnect() {
     this.#connecting = null;
+    this.#stopPromptPull();
     this.#dropSocket();
     this.#transport = null;
     this.#state = 'unpaired';

@@ -14,6 +14,7 @@ import {
   pairingDialogStage,
   pairingProbeUserCopy,
   shouldClosePairingDialogOnConnect,
+  agentChatToggleAction,
   shouldOpenAgentChatOnConnect,
   stepJoinConnection,
   shouldKeepAgentBridgeHostMounted,
@@ -26,6 +27,11 @@ import {
   shouldShowPairingCode,
   shouldShowPairingPrompt,
 } from './pairingFlow.js';
+
+test('the phone bot button opens the chat and the next tap folds it', () => {
+  assert.equal(agentChatToggleAction(false), 'open');
+  assert.equal(agentChatToggleAction(true), 'close');
+});
 
 test('Connect stays up until a server socket is actually open', () => {
   assert.equal(shouldShowLocalAgentConnect({

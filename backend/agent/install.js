@@ -65,7 +65,7 @@ export async function revokeRelayUser(relay, userId) {
   relay.joinCodes.clearUser(id);
   const ids = await relay.tokens.revokeAll(id);
   for (const tokenId of ids) {
-    relay.registry.abortToken(tokenId);
+    relay.registry.abortToken(tokenId, id);
     relay.agentSockets.closeToken(tokenId, AGENT_SOCKET_CLOSE_CODE, TOKEN_REVOKED_REASON);
   }
   return ids;

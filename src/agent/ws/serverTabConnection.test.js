@@ -62,6 +62,25 @@ test('a registered tab stays advertising until an agent connects', () => {
   conn.disconnect();
 });
 
+test('a prompt leaves an open server socket before the agent frame arrives', () => {
+  const factory = fakeSocketFactory();
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+  });
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  socket.fire('message', { data: JSON.stringify({ type: 'registered', v: 1, agentConnected: false }) });
+  assert.equal(conn.getState(), 'advertising');
+  assert.equal(conn.send({ type: 'agent.prompt', v: 1, id: 'p1', text: 'draw a box' }), true);
+  assert.equal(socket.sent.at(-1).text, 'draw a box');
+  assert.equal(conn.send({ type: 'agent.reply', v: 1, text: 'no' }), false);
+  conn.disconnect();
+});
+
 test('closing the tab socket is not an agent leaving', () => {
   const factory = fakeSocketFactory();
   const agents = [];
