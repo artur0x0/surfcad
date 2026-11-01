@@ -1598,7 +1598,6 @@ const Viewport = forwardRef(({
   const clearMoldDraftRef = useRef(() => {});
   const applyMoldDraftSkinRef = useRef(() => {});
   const [moldDraftLegend, setMoldDraftLegend] = useState(null);
-  const pullToolsOn = mode !== 'game' && !!(partingLegend || moldDraftLegend || moldReport);
   const agentMoldDfmRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const openMoldReportRef = useRef(async () => ({ on: false }));
   const dfmOnRef = useRef(false);
@@ -1608,6 +1607,7 @@ const Viewport = forwardRef(({
   const [moldReport, setMoldReport] = useState(null);
   const moldReportRef = useRef(null);
   moldReportRef.current = moldReport;
+  const pullToolsOn = mode !== 'game' && !!(partingLegend || moldDraftLegend || moldReport);
   const reportOnRef = useRef(false);
   const resinLibraryRef = useRef(null);
   const [reportResins, setReportResins] = useState([]);
