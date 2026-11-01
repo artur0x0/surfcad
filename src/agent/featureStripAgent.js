@@ -3,6 +3,9 @@
  */
 
 import { parseFeatureMarkers } from '../utils/featureMarkers.js';
+import { deleteContourStatement } from '../utils/contourUsers.js';
+import { deleteFeatureEdit, partDeclarationDeletePlan } from '../utils/featureEdit.js';
+import { liveSheetFeature } from '../utils/featureSheetWriteback.js';
 import { buildFeatureTree } from './state/featureTree.js';
 import {
   resolveRollback,
@@ -34,7 +37,8 @@ export function resolveStripTarget(script, target = {}) {
   let chip;
   if (hasId) {
     const id = String(target.id);
-    chip = tree.features.find((row) => row.id === id);
+    chip = tree.features.find((row) => row.id === id)
+      || tree.features.find((row) => row.kind === 'contour' && row.id === `contour:${id}`);
     if (!chip) {
       return { error: { code: 'unknown_feature', message: `No feature with id: ${id}` } };
     }
@@ -66,6 +70,73 @@ export function resolveStripTarget(script, target = {}) {
     };
   }
   return { chip, feature };
+}
+
+const STALE_FEATURE = 'That feature is not in this part\'s script any more — pick it again.';
+
+/**
+ * Delete one strip chip. A contour is its `@contour` statement, not a
+ * feature block: `contour:<id>`, the bare contour id, or its strip index
+ * all drop that statement. A contour something still names needs
+ * `confirm: true`, which also drops those features. A marked feature keeps
+ * the part-declaration confirm.
+ *
+ * @param {string} script
+ * @param {{ id?: string, index?: number, confirm?: boolean }} args
+ */
+export function planStripDelete(script, args = {}) {
+  const resolved = resolveStripTarget(script, args);
+  if (resolved.error) return resolved;
+  if (resolved.contourId) {
+    const saved = deleteContourStatement(script, resolved.contourId, {
+      withFeatures: args.confirm === true,
+    });
+    if (!saved.ok) {
+      if (saved.confirm) {
+        return {
+          error: {
+            code: 'confirm_required',
+            message: saved.message,
+            details: { featureId: resolved.chip.id, dependents: saved.count },
+          },
+        };
+      }
+      return {
+        error: { code: 'delete_failed', message: saved.message || 'Could not delete that contour.' },
+      };
+    }
+    return {
+      source: saved.buffer,
+      message: `Delete ${saved.name || resolved.contourId}`,
+      featureId: resolved.chip.id,
+    };
+  }
+  const live = liveSheetFeature(script, resolved.feature);
+  if (!live) return { error: { code: 'delete_failed', message: STALE_FEATURE } };
+  const label = live.chipLabel || live.label || live.kind || 'feature';
+  const base = partDeclarationDeletePlan(script, live);
+  if (base && args.confirm !== true) {
+    const who = base.count > 0
+      ? `${base.count} later feature${base.count === 1 ? ' still uses' : 's still use'} part and will fail`
+      : 'later code still uses part and will fail';
+    return {
+      error: {
+        code: 'confirm_required',
+        message: `${label} declares part; ${who}. Pass confirm: true to delete it anyway.`,
+        details: { featureId: live.id, dependents: base.count },
+      },
+    };
+  }
+  const result = deleteFeatureEdit(script, live);
+  if (!result.ok) return { error: { code: 'delete_failed', message: result.message } };
+  return {
+    source: result.buffer,
+    message: `Delete ${label}`,
+    featureId: live.id,
+    warning: base
+      ? `${label} declared part; ${base.count > 0 ? `${base.count} later feature${base.count === 1 ? ' uses' : 's use'}` : 'later code uses'} part and will fail until you fix or undo.`
+      : null,
+  };
 }
 
 /**
