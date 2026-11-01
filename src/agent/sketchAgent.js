@@ -30,6 +30,8 @@ export function sketchParamsFromArgs(tool, args = {}) {
     if (args.height != null) base.height = Number(args.height);
     if (args.centered != null) base.centered = !!args.centered;
     if (args.centers != null) base.centers = !!args.centers;
+    if (args.radius != null) base.radius = Number(args.radius);
+    if (args.cornerRadius != null) base.cornerRadius = Number(args.cornerRadius);
   } else if (tool === 'circle') {
     if (args.radius != null) base.radius = Number(args.radius);
     if (args.segments != null) base.segments = Math.round(Number(args.segments));

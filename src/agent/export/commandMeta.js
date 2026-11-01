@@ -596,7 +596,7 @@ export const COMMAND_META = {
     mutates: false,
   },
   sketch_add: {
-    description: 'Set the sketch profile. The first closed profile replaces an empty sketch. A later closed profile adds another loop on that same sketch (outer plus holes). A centres sketch, or params.contour, still replaces. Result may include appended and loops.',
+    description: 'Set the sketch profile. The first closed profile replaces an empty sketch. A later closed profile adds another loop on that same sketch (outer plus holes). A centres sketch, or params.contour, still replaces. A rectangle radius or params.cornerRadius rounds the corners (four lines and four arcs) when it is at most half the shorter side; a larger value is invalid_profile. Result may include appended and loops.',
     result: { type: 'object', additionalProperties: true },
     errors: ['no_sketch', 'plane_card_open', 'invalid_profile', 'internal'],
     mutates: false,
