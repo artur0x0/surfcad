@@ -198,3 +198,26 @@ test('cancel resolves cancelled, not_found, and already_final', async () => {
   empty.dispose();
   transport.dispose();
 });
+
+test('send works on a page without crypto.randomUUID (plain http over a LAN address)', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis.crypto, 'randomUUID')
+    || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(globalThis.crypto), 'randomUUID');
+  Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+  try {
+    const bridge = fakeBridge();
+    const transport = createAgentPromptTransport(bridge);
+    const acks = [];
+    transport.onAck((event) => acks.push(event));
+    const id = transport.send('Testing messages from surfcad');
+    assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(bridge.sent.length, 1);
+    assert.equal(bridge.sent[0].id, id);
+    assert.equal(acks.length, 0);
+    transport.dispose();
+  } finally {
+    delete globalThis.crypto.randomUUID;
+    if (original && typeof globalThis.crypto.randomUUID !== 'function') {
+      Object.defineProperty(globalThis.crypto, 'randomUUID', original);
+    }
+  }
+});
