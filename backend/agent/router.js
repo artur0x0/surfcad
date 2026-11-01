@@ -63,6 +63,7 @@ function entryStatus(error) {
 /**
  * @param {{
  *   pairing: ReturnType<import('./pairing.js').createPairingService>,
+ *   joinCodes: ReturnType<import('./joinCode.js').createJoinCodeService>,
  *   tokens: ReturnType<import('./tokens.js').createTokenService>,
  *   registry: ReturnType<import('./registry.js').createMemoryTabRegistry>,
  *   commandLimiter: { check: (key: string) => { allowed: boolean, retryAfterSec?: number } },
@@ -228,6 +229,86 @@ export function createAgentRouter(deps) {
       ...(result.interval ? { interval: result.interval } : {}),
       ...(result.token ? { token: result.token } : {}),
     });
+  });
+
+  /**
+   * A browser cookie is not authority on the redeem route. The code is the
+   * credential. Counting the attempt still applies the IP and global limits.
+   * @param {import('express').Request} req
+   */
+  function carriesBrowserCookie(req) {
+    const cookie = req.get('cookie');
+    return typeof cookie === 'string' && cookie.trim().length > 0;
+  }
+
+  router.post('/join', (req, res) => {
+    if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+    if (rejectBrowser(req, res, true)) return undefined;
+    const user = userFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    const result = deps.joinCodes.create({ userId: user.id });
+    if (!result.ok) {
+      if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
+      const status = result.error === 'rate_limited' ? 429 : 503;
+      return res.status(status).json({
+        error: result.error,
+        ...(result.retryAfterSec ? { retryAfterSec: result.retryAfterSec } : {}),
+      });
+    }
+    logRelay({ event: 'join-create', userId: user.id });
+    return res.status(201).json({
+      code: result.code,
+      id: result.id,
+      expiresAt: result.expiresAt,
+    });
+  });
+
+  router.get('/join', (req, res) => {
+    if (rejectLimited(res, deps.browserLimiter, browserKey(req))) return undefined;
+    if (rejectBrowser(req, res)) return undefined;
+    const user = userFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    return res.json(deps.joinCodes.status({ userId: user.id }));
+  });
+
+  router.post('/join/redeem', async (req, res, next) => {
+    try {
+      if (messageByteLength(req.body) > deps.maxMessageBytes) {
+        return res.status(413).json({ error: 'Message exceeds the size cap' });
+      }
+      let city = null;
+      if (!carriesBrowserCookie(req) && typeof deps.lookupCity === 'function') {
+        try {
+          city = await deps.lookupCity(req.ip);
+        } catch {
+          city = null;
+        }
+      }
+      const result = await deps.joinCodes.redeem({
+        code: req.body?.code,
+        name: req.body?.name,
+        machine: req.body?.machine,
+        city,
+        ip: req.ip,
+        cookie: carriesBrowserCookie(req),
+      });
+      if (!result.ok) {
+        if (result.retryAfterSec) res.set('Retry-After', String(result.retryAfterSec));
+        const status = result.error === 'rate_limited' ? 429 : 400;
+        logRelay({
+          event: 'join-redeem',
+          status: result.error === 'rate_limited' ? 'rate_limited' : 'invalid',
+        });
+        return res.status(status).json({
+          error: result.error,
+          ...(result.retryAfterSec ? { retryAfterSec: result.retryAfterSec } : {}),
+        });
+      }
+      logRelay({ event: 'join-redeem', userId: result.userId, status: 'ok' });
+      return res.json({ ok: true, token: result.token });
+    } catch (error) {
+      return next(error);
+    }
   });
 
   router.post('/pair/claim', (req, res) => {

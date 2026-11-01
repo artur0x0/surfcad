@@ -501,3 +501,54 @@ test('a websocket command times out the same way as the https wait', async () =>
   });
   assert.ok(Date.now() - started < 2000);
 });
+
+test('login --code redeems a join code, stores the token, and does not print it', async () => {
+  const env = await tempEnv();
+  const relay = createAgentRelay();
+  const created = relay.joinCodes.create({ userId: 'user-a' });
+  assert.equal(created.ok, true);
+  const { origin } = await listen(relay);
+  const stdout = [];
+  const stderr = [];
+  const cleartext = await runCli(
+    ['login', '--code', created.code, '--server', 'http://192.0.2.10:9'],
+    { env, io: { stdout: (text) => stdout.push(text), stderr: (text) => stderr.push(text) } },
+  );
+  assert.equal(cleartext.code, 1);
+  assert.match(stderr.join(''), /Cleartext is only allowed/);
+  assert.equal(stdout.join('').includes(created.code), false);
+  assert.equal(stderr.join('').includes(created.code), false);
+  stdout.length = 0;
+  stderr.length = 0;
+  const outcome = await runCli(
+    ['login', '--code', created.code, '--name', 'Cursor', '--server', origin],
+    {
+      env,
+      machine: 'laptop',
+      io: { stdout: (text) => stdout.push(text), stderr: (text) => stderr.push(text) },
+    },
+  );
+  assert.equal(outcome.code, 0);
+  const printed = stdout.join('');
+  assert.match(printed, /Logged in/);
+  assert.equal(stderr.join(''), '');
+  const { readSavedLogin } = await import('../src/remote/tokenStore.mjs');
+  const saved = await readSavedLogin(env);
+  assert.ok(saved?.token);
+  assert.equal(printed.includes(saved.token), false);
+  assert.equal(saved.name, 'Cursor');
+  assert.equal(saved.machine, 'laptop');
+  assert.equal(saved.server, origin);
+  const listed = await relay.tokens.list('user-a');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].machine, 'laptop');
+  const again = [];
+  const reused = await runCli(
+    ['login', '--code', created.code, '--server', origin],
+    { env, io: { stdout: () => {}, stderr: (text) => again.push(text) } },
+  );
+  assert.equal(reused.code, 1);
+  assert.match(again.join(''), /not valid/);
+  assert.equal(again.join('').includes(created.code), false);
+  assert.equal(again.join('').includes(saved.token), false);
+});

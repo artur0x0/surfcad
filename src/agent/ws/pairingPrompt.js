@@ -95,6 +95,39 @@ export function serverLoginCommand(location) {
 /**
  * @param {{ protocol?: string, host?: string } | null | undefined} [location]
  */
+/**
+ * Join-code login. `npx -y` so the agent can run it without a prompt.
+ * `--server` follows `serverLoginCommand`: omitted on https://surfcad.com,
+ * passed through for other https origins and loopback http, and rewritten
+ * to localhost for plain http to any other host.
+ *
+ * @param {{ protocol?: string, host?: string } | null | undefined} [location]
+ * @param {string} code formatted `ABCD-EFGH`
+ */
+export function serverJoinLoginCommand(location, code) {
+  const formatted = String(code || '').trim();
+  const login = serverLoginCommand(location).replace(
+    MCP_LOGIN_COMMAND,
+    'npx -y surfcad-mcp login',
+  );
+  return `${login} --code ${formatted}`;
+}
+
+/**
+ * Full prompt copied from the join-code screen. The code is in the command.
+ * The agent does not print a second code for the user to carry back.
+ *
+ * @param {{ protocol?: string, host?: string } | null | undefined} [location]
+ * @param {string} code
+ */
+export function serverJoinPrompt(location, code) {
+  const command = serverJoinLoginCommand(location, code);
+  const where = serverLoginNeedsLoopback(location)
+    ? '\n\nRun that command on the machine serving this page. localhost is that machine, not the computer where this chat is running.'
+    : '';
+  return `Pair with the SurfCAD tab I have open. Run:\n\n${command}${where}`;
+}
+
 export function serverPairingPrompt(location) {
   const command = serverLoginCommand(location);
   const approval = agentApprovalUrl(location);

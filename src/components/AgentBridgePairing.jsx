@@ -15,8 +15,14 @@ import {
 } from '../agent/ws/connectionErrors.js';
 import AgentBridgePopupStatus from './AgentBridgePopupStatus.jsx';
 import {
+  clearStoredJoin,
+  loadStoredJoin,
+  resumeJoinAction,
+  saveStoredJoin,
+} from '../agent/ws/joinCodeClient.js';
+import {
   AGENT_PAIRING_PROMPT,
-  serverPairingPrompt,
+  serverJoinPrompt,
 } from '../agent/ws/pairingPrompt.js';
 import { copyTextWithFallback } from '../agent/ws/copyText.js';
 import { probeRelayWebSocket } from '../agent/ws/relayProbe.js';
@@ -95,6 +101,11 @@ export default function AgentBridgePairing({
 }) {
   const [flowOpen, setFlowOpen] = useState(false);
   const [token, setToken] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [joinNotice, setJoinNotice] = useState('');
+  const joinCodeRef = useRef('');
+  const joinRequestRef = useRef(0);
+  joinCodeRef.current = joinCode;
   const [state, setState] = useState('idle');
   const [issue, setIssue] = useState(null);
   const [copied, setCopied] = useState(null);
@@ -297,10 +308,47 @@ export default function AgentBridgePairing({
 
   const copyPairingPrompt = useCallback(() => {
     const text = forcedServerRef.current
-      ? serverPairingPrompt(typeof window === 'undefined' ? null : window.location)
+      ? serverJoinPrompt(
+        typeof window === 'undefined' ? null : window.location,
+        joinCodeRef.current,
+      )
       : AGENT_PAIRING_PROMPT;
+    if (!text || (forcedServerRef.current && !joinCodeRef.current)) return;
     void copyText(text, 'prompt');
   }, [copyText]);
+
+  const requestJoinCode = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const ticket = joinRequestRef.current + 1;
+    joinRequestRef.current = ticket;
+    setJoinNotice('');
+    try {
+      const res = await fetch('/agent/join', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      const body = res.ok ? await res.json().catch(() => null) : null;
+      if (joinRequestRef.current !== ticket) return;
+      if (res.status === 201 && body?.code && body?.id && body?.expiresAt) {
+        saveStoredJoin(window.sessionStorage, body);
+        setJoinCode(String(body.code));
+        return;
+      }
+      clearStoredJoin(window.sessionStorage);
+      setJoinCode('');
+      setJoinNotice(res.status === 401
+        ? 'Sign in to connect an agent.'
+        : 'Could not start pairing. Try again.');
+    } catch {
+      if (joinRequestRef.current !== ticket) return;
+      setJoinNotice('Could not start pairing. Try again.');
+    }
+  }, []);
 
   const copyMcpCommand = useCallback(() => {
     void copyText(MCP_START_COMMAND, 'mcp');
@@ -377,6 +425,7 @@ export default function AgentBridgePairing({
       if (!serverModeRef.current) setServerKick((n) => n + 1);
       setFlowOpen(true);
       setIssue(null);
+      if (!joinCodeRef.current) void requestJoinCode();
       return;
     }
     if (serverBlocksLocalPairing({
@@ -395,7 +444,7 @@ export default function AgentBridgePairing({
     setToken('');
     stopConnection();
     if (popupMode) startPairing('popup');
-  }, [onBeginFlow, popupMode, relayTarget, startPairing, stopConnection, webkitHttpsBlocked]);
+  }, [onBeginFlow, popupMode, relayTarget, requestJoinCode, startPairing, stopConnection, webkitHttpsBlocked]);
 
   const reconnectBridge = useCallback(() => {
     transportRef.current?.armOpen?.();
@@ -454,6 +503,44 @@ export default function AgentBridgePairing({
       stopPolling();
     };
   }, [flowOpen, forcedServer, handleRelayDetected, issue, pageSecure, popupMode, relayReachable, relayTarget, serverUnreachable, state, stopPolling, usingServer, webkitHttpsBlocked, wsUrl]);
+
+  useEffect(() => {
+    if (!forcedServer || typeof window === 'undefined') return undefined;
+    const stored = loadStoredJoin(window.sessionStorage);
+    if (!stored) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/agent/join', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+        const body = res.ok ? await res.json().catch(() => null) : null;
+        if (cancelled || joinRequestRef.current !== 0) return;
+        const action = resumeJoinAction({
+          stored,
+          httpStatus: res.status,
+          body,
+          now: Date.now(),
+        });
+        if (action === 'restore') {
+          setJoinCode(stored.code);
+          setFlowOpen(true);
+          return;
+        }
+        clearStoredJoin(window.sessionStorage);
+      } catch {
+        if (!cancelled && joinRequestRef.current === 0) clearStoredJoin(window.sessionStorage);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [forcedServer]);
+
+  useEffect(() => {
+    if (state !== 'paired' || link !== 'connected') return;
+    if (typeof window !== 'undefined') clearStoredJoin(window.sessionStorage);
+    setJoinCode('');
+  }, [state, link]);
 
   useEffect(() => {
     if (popupMode || forcedServer) return;
@@ -853,23 +940,29 @@ export default function AgentBridgePairing({
     )
     : null;
 
-  const serverPromptText = forcedServer
-    ? serverPairingPrompt(typeof window === 'undefined' ? null : window.location)
-    : '';
   const serverDialogBody = (
     <div className="space-y-3" data-agent-bridge-server="">
-      <div className="rounded-md border border-chrome-border/80 px-2 py-2" data-agent-bridge-prompt="">
-        <p className="text-ui-xs text-muted-on-dark mb-2">Send this to your AI agent:</p>
-        <AgentPromptBox text={serverPromptText} />
-        <button
-          type="button"
-          className={CONNECT_AGENT_BUTTON_CLASS}
-          onClick={copyPairingPrompt}
-          data-ui-action="data-agent-bridge-copy-prompt"
+      {joinNotice ? (
+        <p className="text-ui-xs text-muted-on-dark text-center" data-agent-join-notice="">{joinNotice}</p>
+      ) : null}
+      {joinCode ? (
+        <p
+          className="font-mono text-ui-code text-center text-on-dark"
+          data-agent-join-code=""
+          data-agent-bridge-code=""
         >
-          {copied === 'prompt' ? 'Copied' : 'Copy prompt'}
-        </button>
-      </div>
+          {joinCode}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className={CONNECT_AGENT_BUTTON_CLASS}
+        onClick={copyPairingPrompt}
+        disabled={!joinCode}
+        data-ui-action="data-agent-bridge-copy-prompt"
+      >
+        {copied === 'prompt' ? 'Copied' : 'Copy'}
+      </button>
       <div
         className="flex items-center justify-center gap-2 text-ui-xs text-muted-on-dark py-1"
         data-agent-bridge-waiting-server=""

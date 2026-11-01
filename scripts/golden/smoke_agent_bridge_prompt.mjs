@@ -223,6 +223,24 @@ async function checkPhoneServerDialog(browser) {
       contentType: 'application/json',
       body: JSON.stringify({}),
     }));
+    await phone.route('**/agent/join', (route) => {
+      if (route.request().method() === 'POST') {
+        return route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 'ABCD-EFGH',
+            id: 'join-phone',
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'none' }),
+      });
+    });
     await phone.goto(`http://127.0.0.1:${previewPort}/`, { waitUntil: 'domcontentloaded' });
     await seedAssembly(phone);
     await phone.goto(appUrl, { waitUntil: 'domcontentloaded' });
@@ -232,20 +250,24 @@ async function checkPhoneServerDialog(browser) {
     );
     await phone.locator('[data-profile-chip]').first().click();
     await phone.locator('[data-ui-action="data-agent-bridge-connect"]').click();
-    await phone.waitForSelector('[data-agent-bridge-waiting-server]', { timeout: 10000 });
+    await phone.waitForSelector('[data-agent-join-code]', { timeout: 10000 });
     const waiting = await phone.locator('[data-agent-bridge-waiting-server]').innerText();
-    check('phone waits for the agent to sign in', /Waiting for your agent to sign in/.test(waiting), waiting);
+    check('phone waits for the agent', /Waiting for your agent/.test(waiting) && !/sign in/.test(waiting), waiting);
     check('phone does not say Waiting for relay', await phone.locator('[data-agent-bridge-waiting-relay]').count() === 0);
     const transport = await phone.locator('[data-agent-bridge-panel]').getAttribute('data-agent-bridge-transport');
     check('phone dialog is the server relay', transport === 'server', transport);
-    const preview = await phone.locator('textarea[data-agent-bridge-prompt-preview]').inputValue();
-    check('phone prompt box holds the full prompt', preview.includes('\n') && preview.includes('npx surfcad-mcp login') && preview.includes(`http://127.0.0.1:${previewPort}/agent`), preview);
+    const code = (await phone.locator('[data-agent-join-code]').innerText()).replace(/\s/g, '');
+    check('phone shows the join code', code === 'ABCD-EFGH', code);
     await phone.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await phone.locator('[data-ui-action="data-agent-bridge-copy-prompt"]').click();
     const copied = await phone.evaluate(() => navigator.clipboard.readText());
-    check('phone prompt runs npx surfcad-mcp login', copied.includes('npx surfcad-mcp login'), copied);
-    check('phone prompt names this origin /agent', copied.includes(`http://127.0.0.1:${previewPort}/agent`), copied);
-    check('phone prompt does not install a local server', !/npx -y|Install and run|local server/i.test(copied), copied);
+    check(
+      'phone copy embeds the join code',
+      copied.includes(`npx -y surfcad-mcp login --server http://127.0.0.1:${previewPort} --code ABCD-EFGH`),
+      copied,
+    );
+    check('phone copy passes this loopback origin', copied.includes(`--server http://127.0.0.1:${previewPort}`), copied);
+    check('phone copy does not ask for a device code', !/Enter the device code|Install and run|local server/i.test(copied), copied);
     await phone.waitForTimeout(750);
     const sockets = await phone.evaluate(() => window.__openedSockets || []);
     const loopback = sockets.filter((url) => url.includes(`:${relayPort}`) || url.includes(':17341'));

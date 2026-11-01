@@ -147,6 +147,7 @@ The wordmark is outlined Inter Tight 700 paths — no webfont load.
 | `text-ui-sm` | 12px | secondary / `text-xs` chrome |
 | `text-ui` | 14px | body |
 | `text-ui-lg` | 16px | titles; **number and select fields** (iOS will not zoom) |
+| `text-ui-code` | 32px | server-relay join code |
 
 Popup type (`POPUP_TEXT` in `popupUI.jsx`): title `text-sm font-semibold`,
 subtitle `text-xs`, caption `text-[11px] font-semibold uppercase

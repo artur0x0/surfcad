@@ -442,6 +442,12 @@ textarea {
   .text-ui-sm { font-size: 12px; line-height: 1.4; }
   .text-ui { font-size: 14px; line-height: 1.45; }
   .text-ui-lg { font-size: 16px; line-height: 1.4; }
+  /* Join code on the server-relay Connect Agent screen. 32px is large text. */
+  .text-ui-code {
+    font-size: 32px;
+    line-height: 1.2;
+    letter-spacing: 0.18em;
+  }
   .surface-success {
     background-color: rgb(var(--chrome-success));
   }

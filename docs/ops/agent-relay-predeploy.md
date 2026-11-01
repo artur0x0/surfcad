@@ -14,7 +14,7 @@ Leave `AGENT_CITY_LOOKUP` unset. The approval sentence then has no city and the 
 
 ## Trust proxy
 
-`TRUST_PROXY_HOPS` defaults to `1`, which matches one nginx hop in front of Node. Express uses that for `req.ip` on `/agent` HTTP routes (pairing limits and city lookup). WebSocket upgrades are not Express requests, so they use the same hop count separately.
+`TRUST_PROXY_HOPS` defaults to `1`, which matches one nginx hop in front of Node. Express uses that for `req.ip` on `/agent` HTTP routes (pairing limits, join-code redeem, and city lookup). WebSocket upgrades are not Express requests, so they use the same hop count separately.
 
 A deployment with no reverse proxy must set `TRUST_PROXY_HOPS=0`. The default `1` trusts one `X-Forwarded-For` entry. With no proxy that entry is the one the client sent, so the client picks its own address. `0` uses the socket address and ignores the header.
 

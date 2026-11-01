@@ -66,7 +66,7 @@ test('a forced server client never falls back to local pairing or a localhost pr
   assert.equal(shouldPollRelay({
     flowOpen: true, relayReachable: false, state: 'idle', forcedServer: true,
   }), false);
-  assert.equal(SERVER_PAIRING_WAITING_COPY, 'Waiting for your agent to sign in…');
+  assert.equal(SERVER_PAIRING_WAITING_COPY, 'Waiting for your agent…');
   assert.doesNotMatch(SERVER_PAIRING_WAITING_COPY, /Waiting for relay/);
   assert.doesNotMatch(SERVER_PAIRING_WAITING_COPY, /\bEdge\b/);
 });

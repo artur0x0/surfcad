@@ -141,7 +141,7 @@ export default function AgentRelayAccount({ open = false }) {
               <div className="min-w-0">
                 <p className="truncate text-xs text-on-dark">{row.label || 'Agent'}</p>
                 <p className="truncate text-ui-xs text-muted-on-dark">
-                  {[row.machine, row.city ? `in ${row.city}` : ''].filter(Boolean).join(' ') || 'Machine unknown'}
+                  {[row.machine, row.ip, row.city ? `in ${row.city}` : ''].filter(Boolean).join(' ') || 'Machine unknown'}
                 </p>
                 <p className="text-ui-xs text-muted-on-dark">{formatAgentLastUsed(row.lastUsedAt)}</p>
               </div>

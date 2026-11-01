@@ -103,6 +103,7 @@ export function agentUrls(origin) {
     wsUrl: `${wsProtocol}//${url.host}/agent`,
     pairUrl: `${base}/agent/pair`,
     pollUrl: `${base}/agent/pair/poll`,
+    joinUrl: `${base}/agent/join/redeem`,
     commandsUrl: `${base}/agent/commands`,
   };
 }

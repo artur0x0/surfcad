@@ -226,7 +226,7 @@ export function disposePairingHost(host) {
 }
 
 export const PAIRING_WAITING_COPY = 'Waiting for relay…';
-export const SERVER_PAIRING_WAITING_COPY = 'Waiting for your agent to sign in…';
+export const SERVER_PAIRING_WAITING_COPY = 'Waiting for your agent…';
 export const PAIRING_ORIGIN_REJECTED_COPY =
   'This page origin was rejected by the local relay. Open https://surfcad.com (not a copy) and try again.';
 

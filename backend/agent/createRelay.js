@@ -14,6 +14,7 @@ import {
   SOCKET_CONNECT_WINDOW_MS,
   SOCKET_PING_INTERVAL_MS,
 } from './limits.js';
+import { createJoinCodeService } from './joinCode.js';
 import { createPairingService } from './pairing.js';
 import { createMemoryTabRegistry } from './registry.js';
 import { createAgentRouter } from './router.js';
@@ -43,6 +44,7 @@ import { createTokenService } from './tokens.js';
  *   connectWindowMs?: number,
  *   pingIntervalMs?: number,
  *   lookupCity?: (ip: string | undefined) => Promise<string | null>,
+ *   join?: object,
  * }} [overrides]
  */
 export function createAgentRelay(overrides = {}) {
@@ -55,6 +57,11 @@ export function createAgentRelay(overrides = {}) {
   });
   const pairing = createPairingService({
     ...(overrides.pairing || {}),
+    tokens,
+    now,
+  });
+  const joinCodes = createJoinCodeService({
+    ...(overrides.join || {}),
     tokens,
     now,
   });
@@ -94,6 +101,7 @@ export function createAgentRelay(overrides = {}) {
   const pingIntervalMs = overrides.pingIntervalMs ?? SOCKET_PING_INTERVAL_MS;
   const router = createAgentRouter({
     pairing,
+    joinCodes,
     tokens,
     registry,
     commandLimiter,
@@ -107,6 +115,7 @@ export function createAgentRelay(overrides = {}) {
     clock,
     tokens,
     pairing,
+    joinCodes,
     registry,
     agentSockets,
     tabSockets,

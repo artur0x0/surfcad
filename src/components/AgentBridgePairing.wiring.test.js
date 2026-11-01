@@ -30,7 +30,11 @@ test('Connect Agent opens a body-portal dialog and closes the profile menu', () 
 
 test('Safari and phone width open the server dialog and do not probe localhost', () => {
   assert.match(SRC, /forcesServerRelay/);
-  assert.match(SRC, /serverPairingPrompt/);
+  assert.match(SRC, /serverJoinPrompt/);
+  assert.match(SRC, /data-agent-join-code/);
+  assert.match(SRC, /text-ui-code/);
+  assert.match(SRC, /resumeJoinAction/);
+  assert.match(SRC, /sessionStorage/);
   assert.match(SRC, /SERVER_PAIRING_WAITING_COPY/);
   assert.match(SRC, /data-agent-bridge-waiting-server=""/);
   assert.match(SRC, /data-agent-bridge-server=""/);
@@ -43,8 +47,8 @@ test('Safari and phone width open the server dialog and do not probe localhost',
   assert.match(SRC, /readOnly/);
   assert.match(SRC, /rows=\{6\}/);
   assert.match(SRC, /aria-label="Prompt for your AI agent"/);
-  assert.match(SRC, /text=\{serverPromptText\}/);
   assert.match(SRC, /text=\{AGENT_PAIRING_PROMPT\}/);
+  assert.doesNotMatch(SRC, /text=\{serverPromptText\}/);
   assert.match(SRC, /value=\{text\}/);
   assert.match(SRC, /event\.currentTarget\.select\(\)/);
   assert.doesNotMatch(SRC, /clipPairingPrompt/);

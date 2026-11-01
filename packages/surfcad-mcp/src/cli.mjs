@@ -5,7 +5,7 @@
 
 import { hostname } from 'node:os';
 import { resolveAgentName, resolveServerUrl, selectRelayMode } from './remote/config.mjs';
-import { loginDevice } from './remote/login.mjs';
+import { loginDevice, loginWithCode } from './remote/login.mjs';
 import { logoutDevice } from './remote/logout.mjs';
 import { formatLoginStatus, readSavedLogin } from './remote/tokenStore.mjs';
 
@@ -16,6 +16,9 @@ const HELP = `surfcad-mcp
   npx surfcad-mcp login [--name NAME] [--server URL]
       Device-code login at the SurfCAD agent server. Prints the code and
       the approval URL. The token is saved on this machine and is not printed.
+  npx surfcad-mcp login --code CODE [--name NAME] [--server URL]
+      Redeem a join code shown by SurfCAD on Safari, iOS, or a phone.
+      The token is saved on this machine and is not printed.
   npx surfcad-mcp logout
       Revokes this machine's token on the server, then deletes the saved
       file. If the server cannot be reached, the file is still deleted.
@@ -24,6 +27,8 @@ const HELP = `surfcad-mcp
   --remote     Use the server relay. Requires a saved login.
   --local      Use the local relay even when a login is saved.
   --server URL Dev or staging origin (or set SURFCAD_AGENT_SERVER).
+               Cleartext http is only allowed for localhost, 127.0.0.1, and ::1.
+  --code CODE  Join code from the SurfCAD Connect Agent screen (ABCD-EFGH).
   --name NAME  Agent name for the approval page. Otherwise the MCP client
                name is used when the server starts, or SURFCAD_AGENT_NAME.
 
@@ -41,6 +46,7 @@ export function parseArgs(argv) {
   let command = 'serve';
   let name = '';
   let server = '';
+  let code = '';
   let remote = false;
   let local = false;
   for (let i = 0; i < argv.length; i += 1) {
@@ -72,6 +78,14 @@ export function parseArgs(argv) {
       name = value;
       continue;
     }
+    if (arg === '--code' || arg.startsWith('--code=')) {
+      const value = arg === '--code' ? argv[++i] : arg.slice('--code='.length);
+      if (!value || value.startsWith('--')) {
+        throw Object.assign(new Error('--code needs a value.'), { code: 'bad_args' });
+      }
+      code = value;
+      continue;
+    }
     if (arg === '--server' || arg.startsWith('--server=')) {
       const value = arg === '--server' ? argv[++i] : arg.slice('--server='.length);
       if (!value || value.startsWith('--')) {
@@ -82,7 +96,7 @@ export function parseArgs(argv) {
     }
     throw Object.assign(new Error(`Unknown argument: ${arg}`), { code: 'bad_args' });
   }
-  return { command, name, server, remote, local };
+  return { command, name, server, code, remote, local };
 }
 
 /**
@@ -139,6 +153,18 @@ export async function runCli(argv, options = {}) {
     if (parsed.command === 'login') {
       const serverUrl = resolveServerUrl({ flag: parsed.server, env });
       const name = resolveAgentName({ name: parsed.name, env });
+      if (parsed.code) {
+        await loginWithCode({
+          serverUrl,
+          code: parsed.code,
+          name,
+          machine: options.machine || hostname(),
+          env,
+          fetch: options.fetch,
+        });
+        io.stdout('Logged in. The token is saved on this machine and is not printed.\n');
+        return { action: 'exit', code: 0 };
+      }
       await loginDevice({
         serverUrl,
         name,
