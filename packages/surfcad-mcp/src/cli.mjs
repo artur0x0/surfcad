@@ -145,7 +145,7 @@ export async function runCli(argv, options = {}) {
   }
   if (parsed.command === 'login' || parsed.command === 'logout' || parsed.command === 'status') {
     if (parsed.remote || parsed.local) {
-      io.stderr('login, logout, and status do not take --remote or --local.\n');
+      io.stderr(`login, logout, and status do not take --remote or --local.\n${HELP}`);
       return { action: 'exit', code: 1 };
     }
   }
@@ -194,7 +194,8 @@ export async function runCli(argv, options = {}) {
       return { action: 'exit', code: 0 };
     }
   } catch (err) {
-    io.stderr(`${err?.message || 'Login failed'}\n`);
+    const usage = err?.code === 'bad_args' || err?.code === 'bad_server' ? HELP : '';
+    io.stderr(`${err?.message || 'Login failed'}\n${usage}`);
     return { action: 'exit', code: 1 };
   }
 

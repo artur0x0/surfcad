@@ -98,6 +98,8 @@ test('host publishes paired so the floating prompt matches Disconnect', () => {
   assert.match(SRC, /setPaired\(nextPaired === true\)/);
   assert.match(SRC, /createLiveAgentPromptTransport/);
   assert.match(SRC, /shouldUseLiveAgentPrompt/);
+  assert.match(SRC, /shouldOpenAgentChatOnConnect/);
+  assert.match(SRC, /openAgentChat\(\)/);
 });
 
 test('ProfileChip offers the panel slot and does not own the socket', () => {

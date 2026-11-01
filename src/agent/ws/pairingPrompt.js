@@ -85,10 +85,14 @@ export function serverLoginCommand(location) {
   const origin = agentPageOrigin(location);
   if (origin === DEFAULT_AGENT_APPROVAL_ORIGIN) return MCP_LOGIN_COMMAND;
   const url = pageUrl(location);
-  if (url && serverLoginNeedsLoopback(location)) {
+  // An origin we cannot parse must not become `--server <raw>`. Login
+  // refuses cleartext except localhost, 127.0.0.1, and ::1.
+  if (!url) return MCP_LOGIN_COMMAND;
+  if (url.protocol === 'http:' && !isCleartextLoopbackHost(url.hostname)) {
     const port = url.port ? `:${url.port}` : '';
     return `${MCP_LOGIN_COMMAND} --server http://localhost${port}`;
   }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return MCP_LOGIN_COMMAND;
   return `${MCP_LOGIN_COMMAND} --server ${origin}`;
 }
 

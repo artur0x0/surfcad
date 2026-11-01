@@ -14,6 +14,8 @@ import {
   pairingDialogStage,
   pairingProbeUserCopy,
   shouldClosePairingDialogOnConnect,
+  shouldOpenAgentChatOnConnect,
+  stepJoinConnection,
   shouldKeepAgentBridgeHostMounted,
   shouldShowAgentBridgeDisconnect,
   shouldShowLocalAgentConnect,
@@ -159,6 +161,36 @@ test('pairing dialog stages: prompt only before relay; approval replaces the cod
   assert.equal(shouldShowPairingPrompt('prompt'), true);
   assert.equal(shouldShowPairingCode('code'), true);
   assert.equal(shouldShowPairingApproval('approval'), true);
+});
+
+test('a redeemed join stays connected across socket blips and opens chat once', () => {
+  const waiting = { connected: false, waiting: true };
+  const redeemed = stepJoinConnection(waiting, 'redeemed');
+  assert.deepEqual(redeemed, { connected: true, waiting: false, openChat: true });
+  const again = stepJoinConnection(redeemed, 'agent-up');
+  assert.deepEqual(again, { connected: true, waiting: false, openChat: false });
+  for (const event of ['socket-down', 'socket-up', 'resume-pending']) {
+    assert.deepEqual(
+      stepJoinConnection(redeemed, event),
+      { connected: true, waiting: false, openChat: false },
+      event,
+    );
+  }
+  assert.deepEqual(
+    stepJoinConnection(waiting, 'resume-pending'),
+    { connected: false, waiting: true, openChat: false },
+  );
+  assert.deepEqual(
+    stepJoinConnection(redeemed, 'agent-down'),
+    { connected: false, waiting: false, openChat: false },
+  );
+  assert.deepEqual(
+    stepJoinConnection(redeemed, 'user-disconnect'),
+    { connected: false, waiting: false, openChat: false },
+  );
+  assert.equal(shouldOpenAgentChatOnConnect(false, true), true);
+  assert.equal(shouldOpenAgentChatOnConnect(true, true), false);
+  assert.equal(shouldOpenAgentChatOnConnect(true, false), false);
 });
 
 test('dialog auto-closes once Allow has connected the agent', () => {

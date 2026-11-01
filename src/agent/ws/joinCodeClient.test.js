@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   clearStoredJoin,
   JOIN_CODE_STORAGE_KEY,
+  joinPollEvent,
   loadStoredJoin,
   resumeJoinAction,
   saveStoredJoin,
@@ -52,6 +53,11 @@ test('the join code screen copies the full login command', () => {
   assert.match(prompt, /--code ABCD-EFGH/);
   assert.match(prompt, /machine serving this page/);
   assert.doesNotMatch(prompt, /100\.106\.101\.1:5173/);
+  const lan = { protocol: 'http:', host: '10.1.2.3:3000' };
+  const lanCommand = serverJoinLoginCommand(lan, 'ABCD-EFGH');
+  assert.equal(lanCommand, 'npx -y surfcad-mcp login --server http://localhost:3000 --code ABCD-EFGH');
+  assert.doesNotMatch(serverJoinPrompt(lan, 'ABCD-EFGH'), /10\.1\.2\.3/);
+  assert.equal(serverJoinLoginCommand(null, 'ABCD-EFGH'), 'npx -y surfcad-mcp login --code ABCD-EFGH');
 });
 
 test('a reload restores a still-pending join code', () => {
@@ -87,6 +93,33 @@ test('an expired join code is cleared after reload', () => {
   }), 'clear');
   clearStoredJoin(storage);
   assert.equal(loadStoredJoin(storage), null);
+});
+
+test('a redeemed join code resumes as connected', () => {
+  const stored = PENDING;
+  assert.equal(resumeJoinAction({
+    stored,
+    httpStatus: 200,
+    body: { status: 'redeemed', id: PENDING.id },
+    now: Date.parse('2026-10-31T22:50:00.000Z'),
+  }), 'connected');
+  assert.equal(resumeJoinAction({
+    stored,
+    httpStatus: 200,
+    body: { status: 'redeemed', id: PENDING.id },
+    now: Date.parse('2026-10-31T23:30:00.000Z'),
+  }), 'connected');
+  assert.equal(resumeJoinAction({
+    stored,
+    httpStatus: 200,
+    body: { status: 'redeemed', id: 'other-join' },
+    now: Date.parse('2026-10-31T22:50:00.000Z'),
+  }), 'clear');
+  assert.equal(joinPollEvent({ status: 'redeemed', id: PENDING.id }, PENDING.id), 'redeemed');
+  assert.equal(joinPollEvent({ status: 'pending', id: PENDING.id }, PENDING.id), null);
+  assert.equal(joinPollEvent({ status: 'dead', id: PENDING.id }, PENDING.id), null);
+  assert.equal(joinPollEvent({ status: 'superseded', id: PENDING.id }, PENDING.id), null);
+  assert.equal(joinPollEvent({ status: 'redeemed', id: 'other-join' }, PENDING.id), null);
 });
 
 test('a used join code is cleared after reload', () => {

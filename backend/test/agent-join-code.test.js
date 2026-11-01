@@ -119,6 +119,10 @@ describe('join code service', () => {
     assert.deepEqual(second, unknown);
     assert.equal(second.error, 'invalid_code');
     assert.equal((await tokens.list('user-a')).length, 1);
+    const after = join.status({ userId: 'user-a' });
+    assert.equal(after.status, 'redeemed');
+    assert.equal(after.id, created.id);
+    assert.equal(after.code, undefined);
   });
 
   test('an expired code is the same error as an unknown code', async () => {
@@ -156,6 +160,7 @@ describe('join code service', () => {
       assert.deepEqual(failed, { ok: false, error: 'invalid_code' });
     }
     assert.equal(join.snapshot()[0].status, 'dead');
+    assert.equal(join.status({ userId: 'user-a' }).status, 'dead');
     const live = join.create({ userId: 'user-b' });
     for (let i = 0; i < 5; i += 1) {
       const failed = await join.redeem({

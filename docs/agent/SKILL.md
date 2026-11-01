@@ -16,13 +16,13 @@ Related: catalog and bridge shapes in [docs/agent-export.md](../agent-export.md)
 
 The loopback relay is the default. A saved login uses the server relay instead (Safari, a phone, or any machine that cannot open `ws://127.0.0.1`).
 
-Safari, iOS, and a phone-width SurfCAD page do not use the device code below. The signed-in user opens **Connect agent**, SurfCAD shows an `ABCD-EFGH` join code, and **Copy** puts this on the clipboard (plus `--server <origin>` when the page is not https://surfcad.com):
+Safari, iOS, and a phone-width SurfCAD page do not use the device code below. The signed-in user opens **Connect agent**, SurfCAD shows an `ABCD-EFGH` join code, and **Copy** puts this on the clipboard (plus `--server` when the page is not https://surfcad.com; plain http to a non-loopback host uses `http://localhost:<port>`, which login accepts — the CLI still refuses any other cleartext server):
 
 ```bash
 npx -y surfcad-mcp login --code ABCD-EFGH
 ```
 
-Run that command. It redeems the code, saves the token the same way `login` does, and does not print the token. Leave the SurfCAD tab open. If the tab reloads before the agent joins, SurfCAD shows the same code again while it is still valid.
+Run that command. It redeems the code, saves the token the same way `login` does, and does not print the token. Leave the SurfCAD tab open. The Connect Agent card switches to connected when the code is redeemed and opens the agent chat. If the tab reloads before the agent joins, SurfCAD shows the same code again while it is still valid. A reload after the redeem stays connected.
 
 Desktop Chrome and the local bridge keep device-code login:
 

@@ -26,7 +26,7 @@ import {
   shouldUseLiveAgentPrompt,
 } from '../agent/agentPromptLive.js';
 import { AGENT_PROMPT_MAX_CHARS, sendAgentPromptText } from '../agent/agentPromptStub.js';
-import { shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
+import { shouldOpenAgentChatOnConnect, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
 
 const COUNTER_FROM = 7200;
@@ -94,6 +94,7 @@ export default function PromptInput({
     [demoSearch, promptEnv],
   );
   const liveSession = shouldUseLiveAgentPrompt({ paired, link });
+  const wasLiveRef = useRef(false);
 
   const stubRef = useRef(undefined);
   if (stubRef.current === undefined) {
@@ -224,6 +225,15 @@ export default function PromptInput({
       },
     });
   }, [dispatchTyping, transport, visible]);
+
+  useEffect(() => {
+    const open = shouldOpenAgentChatOnConnect(wasLiveRef.current, liveSession);
+    wasLiveRef.current = liveSession;
+    if (!open) return;
+    clearFolded();
+    setFolded(false);
+    setFoldSettled(false);
+  }, [liveSession]);
 
   useEffect(() => {
     if (visible) return undefined;

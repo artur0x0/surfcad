@@ -54,7 +54,8 @@ export function clearStoredJoin(storage) {
 
 /**
  * After a reload, restore only a still-pending code for this tab.
- * Expired, used, missing, and a mismatched id clear the stored code.
+ * A redeemed code for this tab is already connected. Expired, dead,
+ * superseded, missing, and a mismatched id clear the stored code.
  * A 401 means the session cookie did not survive; the caller clears the
  * code and does not change sign-in.
  *
@@ -64,17 +65,34 @@ export function clearStoredJoin(storage) {
  *   body: { status?: string, id?: string, expiresAt?: string } | null,
  *   now: number,
  * }} input
- * @returns {'restore' | 'clear'}
+ * @returns {'restore' | 'connected' | 'clear'}
  */
 export function resumeJoinAction(input) {
   const stored = input.stored;
   if (!stored) return 'clear';
   if (input.httpStatus === 401 || input.httpStatus === 403) return 'clear';
+  const body = input.body;
+  // Redeem wins over the local clock. The phone may resume a moment
+  // after the displayed expiry and still have a live agent.
+  if (body?.status === 'redeemed' && body.id === stored.id) return 'connected';
   const storedExpiry = Date.parse(stored.expiresAt);
   if (!Number.isFinite(storedExpiry) || storedExpiry <= input.now) return 'clear';
-  const body = input.body;
   if (!body || body.status !== 'pending' || body.id !== stored.id) return 'clear';
   const serverExpiry = Date.parse(body.expiresAt || '');
   if (!Number.isFinite(serverExpiry) || serverExpiry <= input.now) return 'clear';
   return 'restore';
+}
+
+/**
+ * Poll result for the waiting card. Only this tab's redeemed code connects.
+ * Pending, dead, superseded, and a different id leave the card alone.
+ *
+ * @param {{ status?: string, id?: string } | null | undefined} body
+ * @param {string} id
+ * @returns {'redeemed' | null}
+ */
+export function joinPollEvent(body, id) {
+  if (!body || !id || body.id !== id) return null;
+  if (body.status === 'redeemed') return 'redeemed';
+  return null;
 }

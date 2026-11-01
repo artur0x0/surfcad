@@ -92,6 +92,43 @@ export function shouldClosePairingDialogOnConnect(input = {}) {
 }
 
 /**
+ * Join-code connection the user can see.
+ * A redeem or an agent-up latches connected and asks the chat to open.
+ * A socket blip or a late "still pending" resume cannot drop that latch
+ * or reopen the waiting card. An agent-down frame or Disconnect can.
+ *
+ * @param {{ connected?: boolean, waiting?: boolean }} state
+ * @param {'redeemed' | 'agent-up' | 'agent-down' | 'user-disconnect' | 'socket-down' | 'socket-up' | 'resume-pending'} event
+ * @returns {{ connected: boolean, waiting: boolean, openChat: boolean }}
+ */
+export function stepJoinConnection(state, event) {
+  const connected = state?.connected === true;
+  const waiting = state?.waiting === true;
+  if (event === 'redeemed' || event === 'agent-up') {
+    return { connected: true, waiting: false, openChat: !connected };
+  }
+  if (event === 'agent-down' || event === 'user-disconnect') {
+    return { connected: false, waiting: false, openChat: false };
+  }
+  if (event === 'resume-pending') {
+    if (connected) return { connected: true, waiting: false, openChat: false };
+    return { connected: false, waiting: true, openChat: false };
+  }
+  return { connected, waiting: connected ? false : waiting, openChat: false };
+}
+
+/**
+ * Open the agent chat on the rising edge of a latched connection.
+ * A socket blip that never clears `connected` does not open it again.
+ *
+ * @param {boolean} wasConnected
+ * @param {boolean} connected
+ */
+export function shouldOpenAgentChatOnConnect(wasConnected, connected) {
+  return connected === true && wasConnected !== true;
+}
+
+/**
  * Disconnect in the profile menu / Connect Agent dialog drops the local
  * WebSocket relay (`disconnectPairing`), not the GitHub write-grant.
  * Show it only while a client is paired or the link is connected.

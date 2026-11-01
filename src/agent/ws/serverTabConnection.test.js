@@ -61,3 +61,26 @@ test('a registered tab stays advertising until an agent connects', () => {
   assert.equal(links.includes('connected'), true);
   conn.disconnect();
 });
+
+test('closing the tab socket is not an agent leaving', () => {
+  const factory = fakeSocketFactory();
+  const agents = [];
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+    onAgent: (connected, info) => agents.push({ connected, source: info.source, was: info.was }),
+  });
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  socket.fire('message', { data: JSON.stringify({ type: 'registered', v: 1, agentConnected: false }) });
+  socket.fire('message', { data: JSON.stringify({ type: 'agent', v: 1, connected: true }) });
+  socket.fire('close');
+  assert.deepEqual(agents, [
+    { connected: false, source: 'registered', was: false },
+    { connected: true, source: 'agent', was: false },
+  ]);
+  conn.disconnect();
+});

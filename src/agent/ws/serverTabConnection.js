@@ -25,6 +25,7 @@ const PROMPT_TYPES = new Set([
  *   call: (name: string, args: Record<string, unknown>) => Promise<{ ok?: boolean, result?: unknown, error?: unknown }>,
  *   onState?: (state: string) => void,
  *   onLink?: (link: string | null) => void,
+ *   onAgent?: (connected: boolean, info: { source: 'registered' | 'agent', was: boolean }) => void,
  *   createSocket?: (url: string) => any,
  *   reconnectDelaysMs?: readonly number[],
  * }} opts
@@ -71,11 +72,11 @@ export function createServerTabConnection(opts) {
   transport.onMessage((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'registered') {
-      applyAgent(msg.agentConnected === true);
+      applyAgent(msg.agentConnected === true, 'registered');
       return;
     }
     if (msg.type === 'agent') {
-      applyAgent(msg.connected === true);
+      applyAgent(msg.connected === true, 'agent');
       return;
     }
     if (typeof msg.type === 'string' && PROMPT_TYPES.has(msg.type)) {
@@ -95,8 +96,16 @@ export function createServerTabConnection(opts) {
     },
   });
 
-  function applyAgent(connected) {
+  /**
+   * @param {boolean} connected
+   * @param {'registered' | 'agent'} source
+   */
+  function applyAgent(connected, source) {
+    const was = sawAgent;
     sawAgent = connected;
+    // `registered` is a snapshot and may say false before the agent
+    // frame arrives. `agent` is the live leave. Socket close is neither.
+    opts.onAgent?.(connected, { source, was });
     if (connected) {
       setState('paired');
       setLink('connected');
