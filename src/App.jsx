@@ -159,6 +159,7 @@ import {
   agentGitSessionDenied,
   agentGitSetSessionAllow,
   agentGitSetSessionDenied,
+  refuseAgentSaveOnMain,
 } from './agent/gitAgent.js';
 import { AGENT_GIT_CONSENT_TIMEOUT_MS } from './agent/commands/git.js';
 import AgentGitConsentModal from './components/AgentGitConsentModal';
@@ -3934,7 +3935,9 @@ const App = () => {
     const repo = vault?.repo
       ? `${vault.repo.owner}/${vault.repo.name}`
       : 'your repo';
-    return { repo, branch: gitWorkingBranch() };
+    const baselineBranch = gitBaselineRef.current?.branch;
+    const checkedOut = typeof baselineBranch === 'string' && baselineBranch.length > 0;
+    return { repo, branch: gitWorkingBranch(), checkedOut };
   };
 
   const pumpAgentGitConsent = () => {
@@ -12016,6 +12019,15 @@ const App = () => {
     async agentGitSave({ message }) {
       const draft = String(message || '').trim();
       if (!draft) return { status: 'error', error: 'Commit message required' };
+      const onMain = refuseAgentSaveOnMain(readAgentGitWriteTarget());
+      if (onMain) {
+        return {
+          status: 'error',
+          code: onMain.error.code,
+          error: onMain.error.message,
+          hint: onMain.error.hint,
+        };
+      }
       const out = await handleGitCommit(draft);
       if (out?.status === 'queued' || out?.status === 'pending') {
         return {

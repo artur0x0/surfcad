@@ -100,8 +100,8 @@ function fakeApi(fake, method, path, body) {
 }
 
 /** One fast-forward commit on the fake, as if another client pushed. */
-function pushRemoteFile(fake, path, content, message) {
-  const parent = fake.branches.get('main');
+function pushRemoteFile(fake, path, content, message, branch = 'feature/save-model') {
+  const parent = fake.branches.get(branch);
   const commit = fakeApi(fake, 'GET', `/git/commits/${parent}`);
   const blob = fakeApi(fake, 'POST', '/git/blobs', { content, encoding: 'utf-8' });
   const tree = fakeApi(fake, 'POST', '/git/trees', {
@@ -113,7 +113,7 @@ function pushRemoteFile(fake, path, content, message) {
     tree: tree.sha,
     parents: [parent],
   });
-  fakeApi(fake, 'PATCH', '/git/refs/heads/main', { sha: next.sha, force: false });
+  fakeApi(fake, 'PATCH', `/git/refs/heads/${branch}`, { sha: next.sha, force: false });
   return next.sha;
 }
 
@@ -379,6 +379,15 @@ try {
     'rule3 dirty.unsaved is false after git_save',
     dirtyAfterSave.parsed?.unsaved === false,
     JSON.stringify(dirtyAfterSave.parsed),
+  );
+
+  // The rule3 commit checked the session out on main. The next git_save
+  // has to be on another branch. The working copy is clean, so create switches.
+  const leftMain = await mcp(client, 'git_branch_create', { name: 'feature/save-model' });
+  check(
+    'conflict git_save is off main',
+    leftMain.isError !== true && leftMain.parsed?.switched === true,
+    JSON.stringify(leftMain.parsed),
   );
 
   // planSave conflicts only on overlapping planned paths. Bracket is the

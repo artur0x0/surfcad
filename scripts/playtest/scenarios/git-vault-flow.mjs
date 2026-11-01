@@ -109,6 +109,22 @@ export async function run(ctx) {
     };
   });
 
+  await runner.runStep('git_branch_create before save', async () => {
+    const env = await agentCall(page, 'git_branch_create', { name: 'feature/playtest-save' });
+    const listed = await agentCall(page, 'git_list_branches', {});
+    const ok = env.ok === true
+      && env.result?.status === 'created'
+      && env.result?.switched === true
+      && listed.result?.branch === 'feature/playtest-save';
+    return {
+      ok,
+      call: 'git_branch_create',
+      args: { name: 'feature/playtest-save' },
+      envelope: env,
+      detail: `switched=${env.result?.switched} branch=${listed.result?.branch}`,
+    };
+  });
+
   await runner.runStep('listed ids are surf-ids and id tools accept them', async () => {
     const listed = await agentCall(page, 'parts', {});
     const rows = listed.result?.parts || [];

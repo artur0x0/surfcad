@@ -122,12 +122,12 @@ Finish each stage across the whole assembly before starting the next, and take a
 
 **Working-copy tools never commit.** That includes `create_*`, `rename_*`, `delete_*`, `insert_*`, `invoke_helper`, `set_script`, `run`, `insert_part`, `open_*`, transforms, joints, and `paint_confirm`. Only these touch the vault:
 
-- **`git_save`** `{ message }`: the one vault content write, same planSave / writeVaultCommit path as the Save button. Clean working copy → `{ status: "clean" }`, no commit. `git_add_to_repo` is an alias; prefer `git_save`.
+- **`git_save`** `{ message }`: the one vault content write, same planSave / writeVaultCommit path as the Save button. Clean working copy → `{ status: "clean" }`, no commit. `git_add_to_repo` is an alias; prefer `git_save`. Checked out on `main`, both answer `save_on_main` and write nothing: `git_branch_create { name }`, then `git_save { message }` on that branch.
 - `git_move_to_repo` (first Save of a local assembly, consent on a real repo), `git_upgrade_vault`, `git_behind_resolve`, `git_force_overwrite`, and the branch tools `git_branch_create` / `git_branch_switch` / `git_branch_delete` (`git_list_branches` is read-only).
 
 A save is many GitHub round trips. When it is still running after about 20 s, `git_save` answers `{ status: "running", saveId }` and the save keeps going; poll `git_save_status { save_id }` until it answers the save result (`committed` with `sha`, `clean`, or the error). The bridge is free for other calls meanwhile.
 
-`git_save` errors pass through unchanged ([git-save-model.md §3.7](../git-save-model.md#37-error-contract)): `consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`.
+`git_save` errors pass through unchanged ([git-save-model.md §3.7](../git-save-model.md#37-error-contract)): `consent_pending`, `pending_save`, `upgrade_required`, `conflict`, `repo-moved`, `save_on_main`.
 
 `dirty.unsaved` is working copy vs the last AssemblyCommit (survives reload; rename / hide / remove count; changing `activeId` does not). `dirty.pendingSave` is an offline plan waiting for a second Save.
 
@@ -169,6 +169,7 @@ MCP returns JSON text; bridge refusals use `isError: true` with `code`, `message
 | `no_assembly` | No open document. `create_assembly` or `open_assembly`. |
 | `delete_refused` | The delete was refused (the scan of other assemblies failed, or the id is missing) and nothing was written. Tell the user the message. Do not retry until they ask. |
 | `confirm_required` | Destructive op without `confirm: true` (including `delete_feature` on the base feature; see `details.dependents`). Nothing was changed. Ask the user; only then retry with it. |
+| `save_on_main` | `git_save` or `git_add_to_repo` while the session is checked out on `main`. Nothing was written. `git_branch_create { name }`, then `git_save { message }` on that branch. |
 | `consent_pending` | Real-repo write while the consent dialog is up. Nothing was written. Ask the user to click **Allow**, then retry the same call (`details.retry_after_ms`). |
 | `real_repo_blocked` | Real-repo write that cannot get consent: headless / automation, or the user denied this session. Tell the user; do not loop. |
 | `pending_save` | Offline planned write. Ask the user to Save again when online. |

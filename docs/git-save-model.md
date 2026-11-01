@@ -467,6 +467,7 @@ Bridge refusals stay `isError: true` with `code` + `message` (+ `details`).
 | `working_copy_unpersisted` | IndexedDB missed a script put or saveDoc after Upgrade remapped the WC | Retry `git_upgrade_vault`; that retry does not write git and completes a partial persist |
 | `working_copy_unmapped` | Upgrade could not map every vault part onto the WC | Give the WC a row for each vault part, then retry |
 | `git_only` | Vault-only tool in local mode | `git_move_to_repo` or stay local |
+| `save_on_main` | `git_save` or `git_add_to_repo` while the session is checked out on `main` | Nothing was written. `git_branch_create { name }`, then `git_save { message }` on that branch |
 | `consent_pending` | Real-repo write; Allow dialog up | Wait `retry_after_ms`, same call |
 | `real_repo_blocked` | Headless or session Deny | Tell the user; do not loop |
 | `confirm_required` | Destructive git without `confirm: true` | Ask the user; only then pass `confirm: true` |

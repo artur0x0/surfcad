@@ -1,5 +1,6 @@
 import {
   consentPendingError,
+  refuseAgentSaveOnMain,
   requireDestructiveConfirm,
   gitOpResult,
   realRepoBlockedError,
@@ -120,6 +121,13 @@ export function ensureAgentGitWriteConsent(ctx, commandName) {
 }
 
 async function hostGit(ctx, name, args, { readOnly = false, commandName = '' } = {}) {
+  if (!readOnly && name === 'agentGitSave') {
+    const target = typeof ctx.readAgentGitWriteTarget === 'function'
+      ? ctx.readAgentGitWriteTarget()
+      : null;
+    const onMain = refuseAgentSaveOnMain(target);
+    if (onMain) return onMain;
+  }
   if (!readOnly) {
     const gate = ensureAgentGitWriteConsent(ctx, commandName || name);
     if (gate) return { error: gate };

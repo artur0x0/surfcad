@@ -90,8 +90,8 @@ async function shot(page, label) {
   writeFileSync(join(SHOT_DIR, `agent-part-rename-commit-${label}.png`), buf);
 }
 
-function userCommits(fake) {
-  return fake.log().filter((row) => row.message !== 'Create SurfCAD vault');
+function userCommits(fake, branch = 'main') {
+  return fake.log(branch).filter((row) => row.message !== 'Create SurfCAD vault');
 }
 
 console.log('agent part rename commit golden (fake GitHub backend)');
@@ -162,6 +162,12 @@ check(
 );
 const afterSave = userCommits(fake);
 check('exactly one save commit so far', afterSave.length === 1, JSON.stringify(afterSave.map((c) => c.message)));
+const leftMain = await agentCall(page, 'git_branch_create', { name: 'feature/rename' });
+check(
+  'later git_save is off main',
+  leftMain.ok === true && leftMain.result?.switched === true && userCommits(fake).length === 1,
+  JSON.stringify(leftMain),
+);
 const listed = await agentCall(page, 'parts', {});
 const row = (listed.result?.parts || []).find((part) => part.id === seedId) || listed.result?.parts?.[0];
 check('saved part keeps its id and has no path field', !!(row?.id) && !('path' in (row || {})), JSON.stringify(row));
@@ -223,7 +229,7 @@ check(
   savedAgain.ok === true && savedAgain.result?.status === 'committed',
   JSON.stringify(savedAgain),
 );
-const afterSecondSave = userCommits(fake);
+const afterSecondSave = userCommits(fake, 'feature/rename');
 check('exactly one more commit after Save', afterSecondSave.length === 2, JSON.stringify(afterSecondSave.map((c) => c.message)));
 const saveCommit = afterSecondSave[0];
 const surfPath = saveCommit?.files.find((f) => f.path.endsWith('.surf.json'))?.path;
@@ -235,13 +241,13 @@ check(
     && !!surfPath,
   JSON.stringify(saveCommit),
 );
-const savedBytes = (savedPath && fake.readFile(savedPath)) || (tipPath && fake.readFile(tipPath));
+const savedBytes = (savedPath && fake.readFile(savedPath, 'feature/rename')) || (tipPath && fake.readFile(tipPath, 'feature/rename'));
 check(
   'saved script has the pending edit',
   typeof savedBytes === 'string' && savedBytes.includes('pending rename isolation edit'),
   savedBytes?.slice(0, 180),
 );
-const surfSaved = JSON.parse(fake.readFile(surfPath) || '{}');
+const surfSaved = JSON.parse(fake.readFile(surfPath, 'feature/rename') || '{}');
 const savedRow = (surfSaved.parts || []).find((part) => part.id === row.id);
 check(
   'saved .surf.json has the new name and placement',
