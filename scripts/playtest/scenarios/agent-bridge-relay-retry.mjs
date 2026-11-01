@@ -178,7 +178,6 @@ async function assertProfileDisconnectVisible(page, { width, height }) {
     timeout: 10000,
   });
   assert.equal(await page.locator('[data-agent-connected-banner]').count(), 0);
-  assert.equal(await page.locator('[data-agent-bridge-connected-toast]').count(), 0);
   await ensureProfilePanelClosed(page);
 }
 
@@ -194,7 +193,6 @@ async function disconnectFromProfileMenu(page, { width, height }) {
   });
   await page.waitForSelector('[data-ui-action="data-agent-bridge-connect"]', { timeout: 10000 });
   assert.equal(await page.locator('[data-agent-connected-banner]').count(), 0);
-  assert.equal(await page.locator('[data-agent-bridge-connected-toast]').count(), 0);
 }
 
 async function assertConnectAgentClosesMenuAt(page, { width, height }) {

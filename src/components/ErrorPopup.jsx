@@ -29,6 +29,8 @@ export default function ErrorPopup({
   onDismiss = null,
   onUndo = null,
   canUndo = false,
+  /** Extra control inside the card (Disconnect / Reconnect). Already a button. */
+  action = null,
   /** Deleted toasts: one line, Undo and dismiss 44px wide, with space between them. */
   roomy = false,
   className = '',
@@ -68,6 +70,7 @@ export default function ErrorPopup({
       data-error-actions=""
       className={`flex items-center shrink-0 pointer-events-auto ${roomy ? 'gap-4' : layout === 'stacked' ? 'gap-5' : 'gap-1'}`}
     >
+      {action}
       {typeof onUndo === 'function' && (
         <button
           type="button"

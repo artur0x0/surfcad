@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ArrowDown, Camera, ChevronDown, ChevronUp, Loader2, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
 import { attachViewerShot } from '../agent/agentPromptCapture.js';
@@ -26,8 +26,66 @@ import {
   shouldUseLiveAgentPrompt,
 } from '../agent/agentPromptLive.js';
 import { AGENT_PROMPT_MAX_CHARS, sendAgentPromptText } from '../agent/agentPromptStub.js';
+import {
+  AGENT_PROMPT_SEND_TIMEOUT_MS,
+  promptDraftText,
+  shouldClearPromptOnSend,
+} from '../agent/agentPromptSend.js';
 import { shouldOpenAgentChatOnConnect, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
+import { featureSheetEditLift, isTouchEditDevice } from '../utils/featureFieldEdit.js';
+import { useModalViewport } from '../hooks/useModalViewport.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
+
+/** Keep the caret in the field. A tap that blurs first is dropped on iOS.
+ *  Cancelling pointerdown also drops the click on WebKit, so the button
+ *  runs its action on pointerup and the form submit ignores that duplicate. */
+function keepFieldFocus(event) {
+  event.preventDefault();
+}
+
+/**
+ * While the composer is focused on a touch device, park it on the visual
+ * viewport with the same lift as the feature card.
+ */
+function AgentPromptFocusLift({ rootRef }) {
+  useModalViewport();
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+    let ro = null;
+    const apply = () => {
+      const pane = root.closest('.viewport-shell') || root.parentElement;
+      if (!pane || typeof pane.getBoundingClientRect !== 'function') return;
+      const vv = window.visualViewport;
+      const lift = featureSheetEditLift({
+        paneBottom: pane.getBoundingClientRect().bottom,
+        docTop: document.documentElement.getBoundingClientRect().top,
+        scrollY: window.scrollY || window.pageYOffset || 0,
+        vvHeight: vv?.height ?? window.innerHeight,
+        vvOffsetTop: vv?.offsetTop ?? 0,
+      });
+      root.style.setProperty('--agent-prompt-lift', `${lift}px`);
+    };
+    apply();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', apply);
+    vv?.addEventListener('scroll', apply);
+    window.addEventListener('resize', apply);
+    const pane = root.closest('.viewport-shell') || root.parentElement;
+    if (typeof ResizeObserver === 'function' && pane) {
+      ro = new ResizeObserver(apply);
+      ro.observe(pane);
+    }
+    return () => {
+      vv?.removeEventListener('resize', apply);
+      vv?.removeEventListener('scroll', apply);
+      window.removeEventListener('resize', apply);
+      ro?.disconnect();
+      root.style.removeProperty('--agent-prompt-lift');
+    };
+  }, [rootRef]);
+  return null;
+}
 
 const COUNTER_FROM = 7200;
 /** Matches `.agent-prompt--folded` transform duration. After this the
@@ -184,17 +242,27 @@ export default function PromptInput({
   const pendingIdRef = useRef(null);
   const notice = ackNotice(ack);
 
+  const composingRef = useRef(false);
+  const syncAckRef = useRef(null);
+  const pendingDraftRef = useRef(null);
+  const sentTextRef = useRef(null);
+  const sendTimerRef = useRef(null);
+  const pressHandledRef = useRef(false);
+  const [fieldFocused, setFieldFocused] = useState(false);
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
     const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-    const cap = Math.min(144, vh * 0.4);
+    const cap = Math.min(24 * 5 + 12, vh * 0.4);
     el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
   }, []);
 
   useEffect(() => {
-    if (!shown) return undefined;
+    if (!shown) {
+      setFieldFocused(false);
+      return undefined;
+    }
     adjustHeight();
     return undefined;
   }, [shown, input, adjustHeight]);
@@ -228,7 +296,32 @@ export default function PromptInput({
         }),
       onAck(event) {
         if (!event || typeof event !== 'object') return;
+        syncAckRef.current = event;
         if (pendingIdRef.current && event.id !== pendingIdRef.current) return;
+        if (sendTimerRef.current != null) {
+          clearTimeout(sendTimerRef.current);
+          sendTimerRef.current = null;
+        }
+        const draft = pendingDraftRef.current;
+        const same = draft && draft.id === event.id;
+        if (event.delivery === 'failed') {
+          if (sentTextRef.current?.id === event.id) sentTextRef.current = null;
+          if (same) {
+            pendingDraftRef.current = null;
+            setInput((cur) => (typeof cur === 'string' && cur.trim() ? cur : draft.text));
+            if (draft.shot) {
+              setShot((cur) => cur || draft.shot);
+              setShotOn(true);
+            }
+          }
+        } else if (sentTextRef.current?.id === event.id) {
+          const text = sentTextRef.current.text;
+          sentTextRef.current = null;
+          if (same) pendingDraftRef.current = null;
+          setInput((cur) => (cur === text || !(typeof cur === 'string' && cur.trim()) ? '' : cur));
+          setShot(null);
+          setShotOn(false);
+        }
         setAck(event);
         dispatchTyping({ type: 'ack', id: event.id, delivery: event.delivery });
       },
@@ -384,8 +477,19 @@ export default function PromptInput({
     setShotOn(false);
   }, []);
 
+  const clearSendTimer = useCallback(() => {
+    if (sendTimerRef.current != null) {
+      clearTimeout(sendTimerRef.current);
+      sendTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearSendTimer(), [clearSendTimer]);
+
   const sendText = useCallback((raw) => {
-    const text = typeof raw === 'string' ? raw : input;
+    const text = typeof raw === 'string'
+      ? raw
+      : promptDraftText(textareaRef.current?.value, input, composingRef.current);
     const trimmed = text.trim();
     if (!transport) {
       setAck({ delivery: 'failed', error: 'not_paired' });
@@ -393,20 +497,34 @@ export default function PromptInput({
     }
     if (!trimmed || working) return { ok: false, reason: 'empty' };
     if (trimmed.length > AGENT_PROMPT_MAX_CHARS) {
+      setAck({ delivery: 'failed', error: 'too_long' });
       return { ok: false, reason: 'too_long' };
     }
     setAck(null);
-    const sent = sendAgentPromptText(
-      transport,
-      trimmed,
-      {
-        ...(shot ? { screenshot: shot } : {}),
-        ...(promptContext ? { context: promptContext } : {}),
-      },
-      { working },
-    );
-    if (!sent.ok) return sent;
+    syncAckRef.current = null;
+    let sent;
+    try {
+      sent = sendAgentPromptText(
+        transport,
+        trimmed,
+        {
+          ...(shot ? { screenshot: shot } : {}),
+          ...(promptContext ? { context: promptContext } : {}),
+        },
+        { working },
+      );
+    } catch {
+      setAck({ delivery: 'failed', error: 'send_failed' });
+      return { ok: false, reason: 'send_failed' };
+    }
+    if (!shouldClearPromptOnSend(sent, syncAckRef.current)) {
+      const sync = syncAckRef.current;
+      if (sync && sync.id === sent?.id && sync.delivery === 'failed') setAck(sync);
+      return sent?.ok ? { ok: false, reason: sync?.error || 'failed', id: sent.id } : sent;
+    }
     pendingIdRef.current = sent.id;
+    pendingDraftRef.current = { id: sent.id, text: trimmed, shot };
+    sentTextRef.current = { id: sent.id, text: trimmed };
     dispatchTyping({ type: 'sent', id: sent.id });
     dispatchChat({
       type: 'sent',
@@ -418,8 +536,24 @@ export default function PromptInput({
     setInput('');
     discardShot();
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    clearSendTimer();
+    const sentId = sent.id;
+    sendTimerRef.current = setTimeout(() => {
+      sendTimerRef.current = null;
+      if (pendingIdRef.current !== sentId) return;
+      setAck({ delivery: 'failed', error: 'timeout', id: sentId });
+      dispatchTyping({ type: 'ack', id: sentId, delivery: 'failed' });
+      const draft = pendingDraftRef.current;
+      if (!draft || draft.id !== sentId) return;
+      pendingDraftRef.current = null;
+      setInput((cur) => (typeof cur === 'string' && cur.trim() ? cur : draft.text));
+      if (draft.shot) {
+        setShot((cur) => cur || draft.shot);
+        setShotOn(true);
+      }
+    }, AGENT_PROMPT_SEND_TIMEOUT_MS);
     return sent;
-  }, [discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
+  }, [clearSendTimer, discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
     const id = pendingIdRef.current;
@@ -513,6 +647,8 @@ export default function PromptInput({
 
   if (!shown) return null;
 
+  const touchEdit = isTouchEditDevice();
+
   const nearLimit = input.length >= COUNTER_FROM;
   const overLimit = input.length > AGENT_PROMPT_MAX_CHARS;
   const remaining = AGENT_PROMPT_MAX_CHARS - input.length;
@@ -524,11 +660,35 @@ export default function PromptInput({
 
   const onSubmit = (event) => {
     event?.preventDefault?.();
+    if (event?.type === 'submit' && pressHandledRef.current) {
+      pressHandledRef.current = false;
+      return;
+    }
     if (pending) {
       stopAgent();
       return;
     }
-    sendText(input);
+    sendText();
+  };
+
+  const onActionPointerUp = (event) => {
+    pressHandledRef.current = true;
+    onSubmit(event);
+    window.setTimeout(() => { pressHandledRef.current = false; }, 0);
+  };
+
+  const onCameraPointerUp = () => {
+    pressHandledRef.current = true;
+    toggleShot();
+    window.setTimeout(() => { pressHandledRef.current = false; }, 0);
+  };
+
+  const onCameraClick = () => {
+    if (pressHandledRef.current) {
+      pressHandledRef.current = false;
+      return;
+    }
+    toggleShot();
   };
 
   const onRootKeyDown = (event) => {
@@ -543,6 +703,7 @@ export default function PromptInput({
 
   return (
     <>
+    {fieldFocused && touchEdit ? <AgentPromptFocusLift rootRef={rootRef} /> : null}
     <div
       ref={rootRef}
       className={`agent-prompt surface-glass text-on-dark font-ui ${
@@ -681,8 +842,17 @@ export default function PromptInput({
               setInput(next.slice(0, AGENT_PROMPT_MAX_CHARS));
               adjustHeight();
             }}
+            onCompositionStart={() => { composingRef.current = true; }}
+            onCompositionEnd={(event) => {
+              composingRef.current = false;
+              const next = event.target.value.slice(0, AGENT_PROMPT_MAX_CHARS);
+              setInput(next);
+              adjustHeight();
+            }}
+            onFocus={() => setFieldFocused(true)}
+            onBlur={() => setFieldFocused(false)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing && !composingRef.current) {
                 event.preventDefault();
                 onSubmit(event);
               }
@@ -700,50 +870,61 @@ export default function PromptInput({
             </span>
           ) : null}
         </div>
-        {nearLimit ? (
-          <span
-            className="agent-prompt-counter text-ui-xs text-muted-on-dark"
-            data-agent-prompt-counter=""
-          >
-            {overLimit ? 0 : remaining}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className={`agent-prompt-icon-btn agent-prompt-camera ${
-            shotCue ? 'text-success' : 'text-on-dark'
-          }`}
-          onClick={() => { toggleShot(); }}
-          data-ui-action="data-agent-prompt-screenshot"
-          data-agent-prompt-screenshot=""
-          aria-label={shotCue ? 'Discard screenshot' : 'Attach screenshot'}
-          aria-pressed={shotCue}
-          disabled={!canCapture && !shotCue}
-        >
-          <Camera size={18} aria-hidden />
-        </button>
-        {pending ? (
+        <div className="agent-prompt-actions" data-agent-prompt-actions="">
+          {nearLimit ? (
+            <span
+              className="agent-prompt-counter text-ui-xs text-muted-on-dark"
+              data-agent-prompt-counter=""
+            >
+              {overLimit ? 0 : remaining}
+            </span>
+          ) : null}
           <button
-            type="submit"
-            className="agent-prompt-icon-btn surface-quiet text-on-dark"
-            data-ui-action="data-agent-prompt-stop"
-            data-agent-prompt-stop=""
-            aria-label="Stop agent"
+            type="button"
+            className={`agent-prompt-icon-btn agent-prompt-camera ${
+              shotCue ? 'text-success' : 'text-on-dark'
+            }`}
+            onPointerDown={keepFieldFocus}
+            onMouseDown={keepFieldFocus}
+            onPointerUp={onCameraPointerUp}
+            onClick={onCameraClick}
+            data-ui-action="data-agent-prompt-screenshot"
+            data-agent-prompt-screenshot=""
+            aria-label={shotCue ? 'Discard screenshot' : 'Attach screenshot'}
+            aria-pressed={shotCue}
+            disabled={!canCapture && !shotCue}
           >
-            <Square size={14} fill="currentColor" aria-hidden />
+            <Camera size={18} aria-hidden />
           </button>
-        ) : (
-          <button
-            type="submit"
-            className="agent-prompt-send"
-            data-ui-action="data-agent-prompt-send"
-            data-agent-prompt-send=""
-            aria-label="Send"
-            disabled={!input.trim() || overLimit}
-          >
-            <Send size={18} aria-hidden />
-          </button>
-        )}
+          {pending ? (
+            <button
+              type="submit"
+              className="agent-prompt-icon-btn surface-quiet text-on-dark"
+              onPointerDown={keepFieldFocus}
+              onMouseDown={keepFieldFocus}
+              onPointerUp={onActionPointerUp}
+              data-ui-action="data-agent-prompt-stop"
+              data-agent-prompt-stop=""
+              aria-label="Stop agent"
+            >
+              <Square size={14} fill="currentColor" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className={`agent-prompt-send${!input.trim() || overLimit ? ' agent-prompt-send--idle' : ''}`}
+              onPointerDown={keepFieldFocus}
+              onMouseDown={keepFieldFocus}
+              onPointerUp={onActionPointerUp}
+              data-ui-action="data-agent-prompt-send"
+              data-agent-prompt-send=""
+              aria-label="Send"
+              disabled={overLimit}
+            >
+              <Send size={18} aria-hidden />
+            </button>
+          )}
+        </div>
       </form>
     </div>
     {foldable ? (

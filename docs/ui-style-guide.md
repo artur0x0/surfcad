@@ -146,14 +146,17 @@ The wordmark is outlined Inter Tight 700 paths — no webfont load.
 | `text-ui-xs` | 11px | captions, chips, pairing hints |
 | `text-ui-sm` | 12px | secondary / `text-xs` chrome |
 | `text-ui` | 14px | body |
-| `text-ui-lg` | 16px | titles; **number and select fields** (iOS will not zoom) |
+| `text-ui-lg` | 16px | titles; **number and select fields** and the agent prompt field (iOS will not zoom) |
 | `text-ui-code` | 32px | server-relay join code |
 
 Popup type (`POPUP_TEXT` in `popupUI.jsx`): title `text-sm font-semibold`,
 subtitle `text-xs`, caption `text-[11px] font-semibold uppercase
 tracking-wide`, value `text-[13px]`, note `text-xs`. Prefer those
 tokens inside feature popups. Parts inputs use
-`PARTS_TEXT_INPUT_*` (≥16px).
+`PARTS_TEXT_INPUT_*` (≥16px). The agent prompt field uses `text-ui-lg` and,
+while focused on a touch device, `featureSheetEditLift` plus `useModalViewport`
+(the feature-card keyboard lift) so the field stays on screen. Camera and Send
+are at least 44px on the row under the field.
 
 `formatDisplayNumber` (`src/utils/displayUnit.js`) is the one formatter
 for calculated numbers: at most four decimals, trailing zeros removed.

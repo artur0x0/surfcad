@@ -145,6 +145,15 @@ export function ackNotice(ack) {
     if (ack.error === 'not_paired') {
       return { kind: 'failed', text: 'Agent disconnected.' };
     }
+    if (ack.error === 'timeout') {
+      return { kind: 'failed', text: 'Message was not delivered. Try again.' };
+    }
+    if (ack.error === 'send_failed') {
+      return { kind: 'failed', text: 'Could not send. Try again.' };
+    }
+    if (ack.error === 'too_long' || ack.error === 'prompt_too_long') {
+      return { kind: 'failed', text: 'Message is too long.' };
+    }
     return { kind: 'failed', text: 'Agent not listening' };
   }
   if (ack.delivery === 'queued') {

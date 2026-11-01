@@ -128,6 +128,54 @@ export function shouldOpenAgentChatOnConnect(wasConnected, connected) {
   return connected === true && wasConnected !== true;
 }
 
+/** Green "Agent connected" / "Agent disconnected" toasts. Not a banner. */
+export const AGENT_CONNECTED_TOAST_MS = 3000;
+export const AGENT_CONNECTED_TOAST_COPY = 'Agent connected';
+export const AGENT_DISCONNECTED_TOAST_COPY = 'Agent disconnected';
+
+/**
+ * @param {{ open?: boolean, kind?: string | null, hideAt?: number } | null | undefined} state
+ * @param {'connected' | 'disconnected' | 'dismiss' | 'tick'} event
+ * @param {number} now
+ */
+export function stepAgentSessionToast(state, event, now) {
+  const cur = state && typeof state === 'object'
+    ? state
+    : { open: false, kind: null, hideAt: 0 };
+  const at = Number(now) || 0;
+  if (event === 'dismiss') return { open: false, kind: null, hideAt: 0 };
+  if (event === 'tick') {
+    if (cur.open && at >= cur.hideAt) return { open: false, kind: null, hideAt: 0 };
+    return cur;
+  }
+  if (event === 'connected' || event === 'disconnected') {
+    return { open: true, kind: event, hideAt: at + AGENT_CONNECTED_TOAST_MS };
+  }
+  return cur;
+}
+
+/**
+ * The pairing dialog just closed because an agent is connected.
+ * A reload never has the dialog open, so it does not toast.
+ *
+ * @param {{ dialogWasOpen?: boolean, dialogOpen?: boolean, connected?: boolean }} [input]
+ */
+export function shouldToastAgentConnected(input = {}) {
+  return input.dialogWasOpen === true && input.dialogOpen !== true && input.connected === true;
+}
+
+/**
+ * A live session dropped. The reload grace (`pending` / `grace`) is not a drop:
+ * a Safari reload must not flash "Agent disconnected".
+ *
+ * @param {{ wasLive?: boolean, report?: string }} [input]
+ */
+export function shouldToastAgentDisconnect(input = {}) {
+  if (input.wasLive !== true) return false;
+  if (input.report === 'grace' || input.report === 'pending') return false;
+  return true;
+}
+
 /**
  * The phone bot button opens the agent chat, and the next tap folds it.
  * @param {boolean} open

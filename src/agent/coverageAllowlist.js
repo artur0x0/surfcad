@@ -27,6 +27,8 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-agent-bridge-approve', reason: 'M1 approve local WS peer.' }),
   Object.freeze({ id: 'data-agent-bridge-reject', reason: 'M1 reject local WS peer.' }),
   Object.freeze({ id: 'data-agent-bridge-disconnect', reason: 'M1 disconnect local WS peer.' }),
+  Object.freeze({ id: 'data-agent-connected-toast-disconnect', reason: 'Agent connected toast. Drops the live session. The toast is not a banner.' }),
+  Object.freeze({ id: 'data-agent-disconnected-toast-reconnect', reason: 'Agent disconnected toast. Opens the pairing dialog. The chat hides on a live drop, not during the reload grace.' }),
   Object.freeze({ id: 'data-agent-bridge-copy-mcp', reason: 'M1 copy npx surfcad-mcp hint.' }),
   Object.freeze({ id: 'data-agent-bridge-copy-link', reason: 'M1 copy page URL for Chrome handoff.' }),
   Object.freeze({ id: 'data-agent-bridge-reconnect', reason: 'M1 reopen the Safari loopback bridge window.' }),

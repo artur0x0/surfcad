@@ -36,7 +36,8 @@ test('profile Disconnect renders the unplug icon and still disconnects', async (
   assert.match(html, /gap-2/);
 
   assert.match(pairing, /<AgentBridgeDisconnectMenuItem onDisconnect=\{disconnectFromUser\} \/>/);
-  assert.doesNotMatch(pairing, /data-agent-connected-banner|data-agent-bridge-connected-toast|data-agent-connected-disconnect/);
+  assert.match(pairing, /data-agent-bridge-connected-toast/);
+  assert.doesNotMatch(pairing, /data-agent-connected-banner|data-agent-connected-disconnect/);
   const viewport = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'Viewport.jsx'), 'utf8');
   const partFeed = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'PartFeed.jsx'), 'utf8');
   const chip = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ProfileChip.jsx'), 'utf8');

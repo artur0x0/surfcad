@@ -74,9 +74,11 @@
   --agent-prompt-success-hover: var(--chrome-success-hover);
   --agent-prompt-radius: 16px;
   --agent-prompt-pad: 6px;
-  --agent-prompt-btn: 36px;
+  --agent-prompt-btn: 44px;
   --agent-prompt-line: 24px;
-  --agent-prompt-max-input: min(144px, 40vh);
+  /* About five lines, then the field scrolls inside. 12px is the field padding. */
+  --agent-prompt-max-input: min(calc(var(--agent-prompt-line) * 5 + 12px), 40vh);
+  --agent-prompt-lift: 0px;
   /* The pane grows to about six lines of reply, then scrolls inside. */
   --agent-prompt-max-reply: min(200px, 40vh);
   --agent-prompt-max-reply-mobile: min(160px, 32vh);
@@ -727,7 +729,7 @@ textarea {
     transform: translateX(-50%) translateY(0);
     transition: transform 220ms ease;
     z-index: 20;
-    bottom: var(--agent-prompt-desktop-bottom);
+    bottom: calc(var(--agent-prompt-rest-bottom) + var(--agent-prompt-lift, 0px));
     width: var(--agent-prompt-desktop-width);
     display: flex;
     flex-direction: column;
@@ -740,7 +742,6 @@ textarea {
   }
   .agent-prompt--compact {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
-    bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
   }
   .agent-prompt--away {
@@ -951,15 +952,24 @@ textarea {
   }
   .agent-prompt-row {
     display: flex;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
     padding: var(--agent-prompt-pad);
   }
   .agent-prompt-field {
     position: relative;
-    flex: 1;
+    width: 100%;
     min-width: 0;
     display: flex;
+  }
+  .agent-prompt-actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--agent-prompt-btn);
   }
   .agent-prompt-hint {
     position: absolute;
@@ -981,7 +991,8 @@ textarea {
   }
   .agent-prompt-input {
     box-sizing: border-box;
-    min-height: 36px;
+    min-height: var(--agent-prompt-btn);
+    width: 100%;
     flex: 1;
     min-width: 0;
     resize: none;
@@ -1001,10 +1012,12 @@ textarea {
   }
   .agent-prompt-counter {
     flex: none;
-    padding-bottom: 8px;
+    margin-right: auto;
   }
   .agent-prompt-icon-btn {
     flex: none;
+    min-width: var(--agent-prompt-btn);
+    min-height: var(--agent-prompt-btn);
     width: var(--agent-prompt-btn);
     height: var(--agent-prompt-btn);
     border: 0;
@@ -1016,6 +1029,8 @@ textarea {
   }
   .agent-prompt-send {
     flex: none;
+    min-width: var(--agent-prompt-btn);
+    min-height: var(--agent-prompt-btn);
     width: var(--agent-prompt-btn);
     height: var(--agent-prompt-btn);
     border: 0;
@@ -1029,7 +1044,8 @@ textarea {
   .agent-prompt-send:hover:not(:disabled) {
     color: rgb(var(--agent-prompt-success-hover));
   }
-  .agent-prompt-send:disabled {
+  .agent-prompt-send:disabled,
+  .agent-prompt-send--idle {
     opacity: 0.4;
   }
 }
@@ -1037,7 +1053,6 @@ textarea {
 @media (max-width: 768px) {
   .agent-prompt:not(.agent-prompt--compact) {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
-    bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
   }
 }

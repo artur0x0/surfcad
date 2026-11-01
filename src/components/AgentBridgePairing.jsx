@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, Plug } from 'lucide-react';
+import ErrorPopup from './ErrorPopup.jsx';
 import { createPairingToken } from '../agent/ws/pairingToken.js';
 import { createAgentBridgeTabConnection } from '../agent/ws/tabConnection.js';
 import { createAgentBridgeTransport } from '../agent/ws/agentBridgeTransport.js';
@@ -54,6 +55,12 @@ import {
   shouldShowPairingCode,
   shouldShowPairingPrompt,
   stepJoinConnection,
+  AGENT_CONNECTED_TOAST_COPY,
+  AGENT_CONNECTED_TOAST_MS,
+  AGENT_DISCONNECTED_TOAST_COPY,
+  shouldToastAgentConnected,
+  shouldToastAgentDisconnect,
+  stepAgentSessionToast,
 } from '../agent/ws/pairingFlow.js';
 import { CONNECT_AGENT_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from './agentBridgeConnectButton.js';
 import { PROFILE_MENU_ITEM_CLASS } from './profileMenuChrome.js';
@@ -126,6 +133,7 @@ export default function AgentBridgePairing({
     typeof window === 'undefined' ? false : readPhoneWidth(window)
   ));
   const [serverKick, setServerKick] = useState(0);
+  const [sessionToast, setSessionToast] = useState({ open: false, kind: null, hideAt: 0 });
   const connRef = useRef(null);
   const serverModeRef = useRef(false);
   const serverUnreachableRef = useRef(false);
@@ -133,6 +141,9 @@ export default function AgentBridgePairing({
   const userStoppedRef = useRef(false);
   const joinLatchRef = useRef(false);
   const sawAgentUpRef = useRef(false);
+  const pairedVisibleRef = useRef(false);
+  const linkVisibleRef = useRef(null);
+  const flowWasOpenRef = useRef(false);
   const onAgentReportRef = useRef(onAgentReport);
   onAgentReportRef.current = onAgentReport;
   const narrowRef = useRef(narrow);
@@ -236,12 +247,19 @@ export default function AgentBridgePairing({
   }, [applyJoinEvent, stopConnection, stopPolling]);
 
   const disconnectFromUser = useCallback(() => {
+    const wasLive = shouldShowAgentBridgeDisconnect({
+      paired: pairedVisibleRef.current,
+      link: linkVisibleRef.current,
+    });
     forgetAgentChatSession();
     userStoppedRef.current = true;
     serverModeRef.current = false;
     serverAttemptRef.current = false;
     setUsingServer(false);
     disconnectPairing();
+    if (shouldToastAgentDisconnect({ wasLive })) {
+      setSessionToast(stepAgentSessionToast(null, 'disconnected', Date.now()));
+    }
   }, [disconnectPairing]);
 
   useEffect(() => {
@@ -300,6 +318,8 @@ export default function AgentBridgePairing({
 
   const visiblePaired = joinLatched || state === 'paired';
   const visibleLink = joinLatched ? 'connected' : link;
+  pairedVisibleRef.current = visiblePaired;
+  linkVisibleRef.current = visibleLink;
 
   useEffect(() => {
     onConnectionChange?.(visibleLink);
@@ -324,6 +344,27 @@ export default function AgentBridgePairing({
       setFlowOpen(false);
     }
   }, [state, link, flowOpen, joinLatched]);
+
+  useEffect(() => {
+    const connected = visiblePaired === true && visibleLink === 'connected';
+    if (shouldToastAgentConnected({
+      dialogWasOpen: flowWasOpenRef.current,
+      dialogOpen: flowOpen,
+      connected,
+    })) {
+      setSessionToast(stepAgentSessionToast(null, 'connected', Date.now()));
+    }
+    flowWasOpenRef.current = flowOpen;
+  }, [flowOpen, visibleLink, visiblePaired]);
+
+  useEffect(() => {
+    if (!sessionToast.open) return undefined;
+    const delay = Math.max(0, sessionToast.hideAt - Date.now());
+    const timer = setTimeout(() => {
+      setSessionToast((prev) => stepAgentSessionToast(prev, 'tick', Date.now()));
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [sessionToast]);
 
   useEffect(() => {
     if (issue === 'bridge_closed' || issue === 'popup_blocked') {
@@ -707,9 +748,13 @@ export default function AgentBridgePairing({
             applyJoinEvent('agent-up');
             return;
           }
-          if (info?.source === 'agent' || sawAgentUpRef.current) {
+          const wasLive = sawAgentUpRef.current === true;
+          if (info?.source === 'agent' || wasLive) {
             sawAgentUpRef.current = false;
             applyJoinEvent('agent-down');
+            if (shouldToastAgentDisconnect({ wasLive })) {
+              setSessionToast(stepAgentSessionToast(null, 'disconnected', Date.now()));
+            }
           }
         },
       });
@@ -806,6 +851,50 @@ export default function AgentBridgePairing({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [flowOpen, handleDialogDismiss]);
+
+  const dismissSessionToast = () => {
+    setSessionToast((prev) => stepAgentSessionToast(prev, 'dismiss', Date.now()));
+  };
+  const sessionToastEl = sessionToast.open && typeof document !== 'undefined'
+    ? createPortal(
+      <div
+        className="fixed top-16 left-1/2 z-[140] w-[min(100vw-1.5rem,24rem)] -translate-x-1/2"
+        data-agent-toast-ms={AGENT_CONNECTED_TOAST_MS}
+        data-agent-bridge-connected-toast={sessionToast.kind === 'connected' ? '' : undefined}
+        data-agent-bridge-disconnected-toast={sessionToast.kind === 'disconnected' ? '' : undefined}
+      >
+        <ErrorPopup
+          tone="success"
+          onDismiss={dismissSessionToast}
+          action={sessionToast.kind === 'connected' ? (
+            <button
+              type="button"
+              className="min-h-[44px] min-w-[44px] rounded-md px-3 text-ui-sm font-semibold text-on-dark surface-quiet"
+              onClick={disconnectFromUser}
+              data-ui-action="data-agent-connected-toast-disconnect"
+            >
+              Disconnect
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="min-h-[44px] min-w-[44px] rounded-md px-3 text-ui-sm font-semibold text-on-dark surface-quiet"
+              onClick={() => {
+                dismissSessionToast();
+                beginConnectFlow();
+              }}
+              data-ui-action="data-agent-disconnected-toast-reconnect"
+            >
+              Reconnect
+            </button>
+          )}
+        >
+          {sessionToast.kind === 'connected' ? AGENT_CONNECTED_TOAST_COPY : AGENT_DISCONNECTED_TOAST_COPY}
+        </ErrorPopup>
+      </div>,
+      document.body,
+    )
+    : null;
 
   if (!enabled) return null;
 
@@ -1040,6 +1129,7 @@ export default function AgentBridgePairing({
   if (portalMode) {
     return (
       <>
+        {sessionToastEl}
         {dialog}
         {uiTarget ? createPortal(menuBody, uiTarget) : null}
       </>
@@ -1049,6 +1139,7 @@ export default function AgentBridgePairing({
   if (embedded) {
     return (
       <>
+        {sessionToastEl}
         {dialog}
         {menuBody}
       </>
@@ -1057,6 +1148,7 @@ export default function AgentBridgePairing({
 
   return (
     <>
+      {sessionToastEl}
       {dialog}
       <div
         className="fixed bottom-3 right-3 z-[120] flex flex-col items-end gap-1 max-w-[min(100vw-1rem,20rem)]"

@@ -23,6 +23,12 @@ import {
   shouldShowPairingApproval,
   shouldShowPairingCode,
   shouldShowPairingPrompt,
+  AGENT_CONNECTED_TOAST_MS,
+  AGENT_CONNECTED_TOAST_COPY,
+  AGENT_DISCONNECTED_TOAST_COPY,
+  stepAgentSessionToast,
+  shouldToastAgentConnected,
+  shouldToastAgentDisconnect,
 } from './pairingFlow.js';
 
 test('the phone bot button opens the chat and the next tap folds it', () => {
@@ -222,4 +228,36 @@ test('a 403 origin rejection and a probe timeout have distinct user messages', (
   assert.doesNotMatch(origin, /\bEdge\b/);
   assert.doesNotMatch(timeout, /\bEdge\b/);
   assert.equal(pairingProbeUserCopy('browser_blocked'), null);
+});
+
+test('pairing toasts are transient and a reload grace is not a disconnect', () => {
+  assert.equal(AGENT_CONNECTED_TOAST_MS, 3000);
+  assert.equal(AGENT_CONNECTED_TOAST_COPY, 'Agent connected');
+  assert.equal(AGENT_DISCONNECTED_TOAST_COPY, 'Agent disconnected');
+  const connected = stepAgentSessionToast(null, 'connected', 1000);
+  assert.deepEqual(connected, { open: true, kind: 'connected', hideAt: 4000 });
+  assert.equal(stepAgentSessionToast(connected, 'tick', 3999).open, true);
+  assert.deepEqual(stepAgentSessionToast(connected, 'tick', 4000), {
+    open: false, kind: null, hideAt: 0,
+  });
+  const dropped = stepAgentSessionToast(connected, 'disconnected', 2000);
+  assert.equal(dropped.kind, 'disconnected');
+  assert.equal(dropped.hideAt, 5000);
+  assert.deepEqual(stepAgentSessionToast(dropped, 'dismiss', 2000), {
+    open: false, kind: null, hideAt: 0,
+  });
+  assert.equal(shouldToastAgentConnected({
+    dialogWasOpen: true, dialogOpen: false, connected: true,
+  }), true);
+  assert.equal(shouldToastAgentConnected({
+    dialogWasOpen: false, dialogOpen: false, connected: true,
+  }), false);
+  assert.equal(shouldToastAgentConnected({
+    dialogWasOpen: true, dialogOpen: true, connected: true,
+  }), false);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'up' }), true);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: true }), true);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'grace' }), false);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: true, report: 'pending' }), false);
+  assert.equal(shouldToastAgentDisconnect({ wasLive: false, report: 'down' }), false);
 });
