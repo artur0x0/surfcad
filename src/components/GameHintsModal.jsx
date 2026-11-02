@@ -14,7 +14,7 @@ const ALLOWLIST = [
   { name: 'convexEdges(part)', role: 'Select convex edges (for fillet/chamfer)' },
   { name: 'roundedBox(size, radius, segments?)', role: 'Box with rounded edges' },
   { name: 'tube / hexPrism', role: 'Primitive solids' },
-  { name: 'clearanceHole / tapDrillHole', role: 'Fastener holes by size' },
+  { name: 'clearanceHole / tapDrillHole / screwBoss', role: 'Fastener holes and screw bosses by size' },
   { name: 'cboreHole / cskHole', role: 'Counterbore / countersink' },
   { name: 'hole / holeSpan / holePattern', role: 'Generic through-holes' },
   { name: 'facesByNormal / workplaneFromFace / …', role: 'Selection helpers' },

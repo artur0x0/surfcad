@@ -50,6 +50,7 @@ const USE_SELECTION_BY_HELPER = {
   holePattern: 'When true, place the grid on the selected planar or cylindrical face. Otherwise use the default +Z top face',
   clearanceHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
   tapDrillHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
+  boss: 'When true, stand the boss on the selected planar face (a cylindrical face uses its tangent plane). Otherwise use the default +Z top face',
   cboreHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
   cskHole: 'When true, place the hole on the selected planar or cylindrical face. Otherwise use the default +Z top face',
   cut: 'When true, cut on the plane of the selected face. A cylindrical or irregular face, or no face, cuts on XY through the origin',
