@@ -14,6 +14,9 @@ import { POSITION_LIMIT_MM } from '../utils/positionLimit.js';
 
 const HELPER_IDS = new Set(HELPER_PALETTE_ITEMS.map((item) => item.id));
 
+/** Shape inserts that reference a saved contour (`contour` arg; else the newest unused one). */
+export const SHAPE_CONTOUR_HELPERS = Object.freeze(new Set(['makeExtrude', 'makeRevolve']));
+
 /** snake_case command name for a palette id, e.g. makeExtrude → insert_make_extrude */
 export function helperCommandName(helperId) {
   const snake = String(helperId).replace(/([A-Z])/g, '_$1').toLowerCase();
@@ -119,6 +122,13 @@ export function schemaPropertiesForHelper(item, { includeId = false } = {}) {
       type: 'number',
       minimum: 0.1,
       description: 'Z size in mm. Same axis as sz; height wins when both are set.',
+    };
+  }
+  if (SHAPE_CONTOUR_HELPERS.has(item?.id)) {
+    const verb = item.id === 'makeRevolve' ? 'revolve' : 'extrude';
+    properties.contour = {
+      type: 'string',
+      description: `The saved contour to ${verb}: its @contour id or binding name (sketch_commit returns it; feature_tree lists contour:<id> rows). Omitted: the newest saved contour no feature uses yet, so a sketch committed just before is the profile. With no saved contour the insert seeds a placeholder profile. Several contours on one ${verb}: slot_open, slot_assign_contour, slot_commit.`,
     };
   }
   if (item?.id === 'hole' || item?.id === 'tapDrillHole') {
@@ -242,6 +252,14 @@ function applyBlindHoleDepth(item, args, merged) {
   else merged.through = through;
 }
 
+/** `contour` names the saved contour an Extrude / Revolve insert references. */
+function applyShapeContour(item, args, merged) {
+  if (!SHAPE_CONTOUR_HELPERS.has(item?.id)) return;
+  const contour = readArg(args, 'contour');
+  if (contour === undefined || contour === null) return;
+  merged.contour = contour;
+}
+
 /**
  * Merge explicit args with palette defaults. Strips invoke_helper-only keys.
  */
@@ -264,6 +282,7 @@ export function coerceHelperParams(item, args) {
   }
   applyRoundedBoxSizeAliases(item, args, merged);
   applyBlindHoleDepth(item, args, merged);
+  applyShapeContour(item, args, merged);
   return merged;
 }
 
@@ -285,6 +304,12 @@ function showWhenHolds(param, params) {
 
 export function validateHelperParams(item, params) {
   const label = helperLabel(item);
+  if (SHAPE_CONTOUR_HELPERS.has(item?.id) && params && Object.prototype.hasOwnProperty.call(params, 'contour')) {
+    const contour = params.contour;
+    if (typeof contour !== 'string' || !contour.trim()) {
+      return { code: 'bad_args', message: `${label} contour must be a saved contour id or binding name (sketch_commit returns it; feature_tree lists contour:<id> rows).` };
+    }
+  }
   for (const param of item.params || []) {
     if (!showWhenHolds(param, params)) continue;
     if (param.type === 'points') {
@@ -436,6 +461,9 @@ export function describeHelperRefusal(item, ctx = {}) {
   }
   if (id === 'makeLoft') {
     return `${label} needs two or more sketch profiles before it can build.`;
+  }
+  if (SHAPE_CONTOUR_HELPERS.has(id) && typeof params.contour === 'string' && params.contour.trim()) {
+    return `${label}: no saved contour "${params.contour.trim()}" in this part. feature_tree lists saved contours as contour:<id>, and sketch_commit returns the id it saved. Omit contour to use the newest saved contour no feature uses yet.`;
   }
   if (id === 'makeExtrude' || id === 'makeRevolve' || id === 'crossSection') {
     return `${label} needs a sketch profile before it can build.`;

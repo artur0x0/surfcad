@@ -8,6 +8,20 @@ import {
   openContourSketchSession,
   patchOpenContourSketch,
 } from './contourSession.js';
+import { runContourCommitMutate } from './contourCommitMutate.js';
+
+/**
+ * The open feature slot card (Extrude, Revolve, Sweep, Loft: slot_open, or
+ * open_feature on one of those features), as prepareSlotCommit reports it:
+ * `{ payload }` when it can commit, `{ error }` when a slot is still empty,
+ * null when no card is open.
+ */
+function openSlotCard(ctx) {
+  if (typeof ctx.prepareSlotCommit !== 'function') return null;
+  const prepared = ctx.prepareSlotCommit();
+  if (!prepared || prepared.error?.code === 'no_slot') return null;
+  return prepared;
+}
 
 // Tests and sketch_edit import the patch mapper from here as before.
 export { contourSketchPatch, CONTOUR_EDIT_HINT };
@@ -133,6 +147,19 @@ export const confirmFeatureCommand = Object.freeze({
       // commit as the rail checkmark); no sketch stays open behind the agent.
       return commitOpenContourSketch(ctx, sketch);
     }
+    const slot = openSlotCard(ctx);
+    if (slot) {
+      // open_feature on an extrude, revolve, sweep or loft puts up its slot
+      // card. Confirm commits that card the way slot_commit does: the host's
+      // feature-sheet confirm knew nothing about the card, so a reassigned
+      // contour was answered ok and never written.
+      if (slot.error) return { error: slot.error };
+      const out = await runContourCommitMutate(ctx, { prepare: () => slot, fromSlot: true });
+      ctx.dismissFeatureConfirmSession?.();
+      if (out.error) return out;
+      const featureId = slot.payload?.featureId ?? null;
+      return { result: { ...out.result, id: featureId, slot: slot.payload?.entry ?? null } };
+    }
     const prepare = ctx.prepareFeatureConfirm;
     if (typeof prepare !== 'function') {
       return { error: { code: 'internal', message: 'prepareFeatureConfirm handler is missing' } };
@@ -175,9 +202,17 @@ export const cancelFeatureCommand = Object.freeze({
     // contour mode behind.
     // Only the sketch: cancelFeature itself ends the feature session.
     if (sketch) ctx.sketchCancel?.();
+    // A slot card open_feature put up closes the same way (slot_cancel).
+    const slot = openSlotCard(ctx);
+    if (slot) ctx.slotCancel?.();
     const out = hostCall(ctx, 'cancelFeature', {});
-    if (out?.error) return out;
-    return sketch ? { result: { ...(out.result || {}), sketchClosed: true } } : out;
+    if (out?.error) {
+      if (slot && out.error.code === 'no_feature_edit') return { result: { cancelled: true, slotClosed: true } };
+      return out;
+    }
+    return (sketch || slot)
+      ? { result: { ...(out.result || {}), ...(sketch ? { sketchClosed: true } : {}), ...(slot ? { slotClosed: true } : {}) } }
+      : out;
   },
 });
 

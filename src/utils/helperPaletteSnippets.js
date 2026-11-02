@@ -1013,6 +1013,34 @@ function loftFramesParallel(frames) {
   return true;
 }
 
+/**
+ * The saved contour an Extrude / Revolve insert should reference. `wanted`
+ * is an `@contour id=` or binding name the agent passed (`contour`); unknown
+ * is `{ missing }`. With nothing asked for, the newest saved contour that no
+ * feature uses yet (no `<name>.contours` anywhere in the script): a sketch
+ * just committed is the profile the agent means. Null when there is none, so
+ * the build seeds its placeholder profile as before.
+ */
+const SAVED_CONTOUR_LINE_RE = /^\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*makeCrossSection\(.*@contour id=([^\s*]+)/;
+export function shapeContourSource(buffer, wanted = '') {
+  const text = String(buffer || '');
+  const rows = [];
+  for (const line of text.split('\n')) {
+    const m = SAVED_CONTOUR_LINE_RE.exec(line);
+    if (m) rows.push({ name: m[1], id: m[2] });
+  }
+  const want = typeof wanted === 'string' ? wanted.trim() : '';
+  if (want) {
+    const hit = rows.find((row) => row.id === want || row.name === want);
+    return hit ? { name: hit.name, id: hit.id, explicit: true } : { missing: want };
+  }
+  const used = (name) => new RegExp(`\\b${name}\\.contours\\b`).test(text);
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    if (!used(rows[i].name)) return { name: rows[i].name, id: rows[i].id, explicit: false };
+  }
+  return null;
+}
+
 /** Next contour binding: c1, c2, … */
 function takeContourName(names) {
   let n = 1;
@@ -2830,15 +2858,19 @@ export const HELPER_PALETTE_ITEMS = [
       SOLID_COMBINE_PARAM,
       SOLID_MERGE_PARAM,
     ],
-    // UI always enters contour mode (Slice 24/25). This build is only the
-    // sequential-compose / golden fallback — not a one-shot hardcoded plate.
+    // UI always enters contour mode (Slice 24/25). This build is the agent /
+    // golden path: it extrudes the saved contour the agent names (`contour`),
+    // else the newest saved contour no feature uses yet (the sketch it just
+    // committed), and seeds a 40x30 rectangle only when the part has neither.
     build: (empty, p, names, buffer) => {
       const h = num(p.height, 10);
-      const contour = takeContourName(names);
+      const picked = shapeContourSource(buffer, p.contour);
+      if (picked?.missing) return null;
+      const contour = picked ? picked.name : takeContourName(names);
       const plane = emitPlaneFrameLiteral({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] });
       const featureId = mintBlockId(findFeatureBlocks(buffer || '', CONTOUR_EXTRUDE_BEGIN, CONTOUR_EXTRUDE_END), 'extrude');
       const lines = [
-        `const ${contour} = makeCrossSection(${plane}, profileRectangle(40, 30, true)); // @contour id=${contour}`,
+        ...(picked ? [] : [`const ${contour} = makeCrossSection(${plane}, profileRectangle(40, 30, true)); // @contour id=${contour}`]),
         ...emitExtrudeReferenceLines({
           begin: CONTOUR_EXTRUDE_BEGIN,
           end: CONTOUR_EXTRUDE_END,
@@ -2863,13 +2895,17 @@ export const HELPER_PALETTE_ITEMS = [
       SOLID_COMBINE_PARAM,
       SOLID_MERGE_PARAM,
     ],
+    // Same contour rule as Extrude: the named or newest unused saved contour,
+    // else the placeholder polygon.
     build: (empty, p, names, buffer) => {
       const seg = Math.max(3, Math.round(num(p.segments, 64)));
-      const contour = takeContourName(names);
+      const picked = shapeContourSource(buffer, p.contour);
+      if (picked?.missing) return null;
+      const contour = picked ? picked.name : takeContourName(names);
       const plane = emitPlaneFrameLiteral({ center: [0, 0, 0], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] });
       const featureId = mintBlockId(findFeatureBlocks(buffer || '', CONTOUR_REVOLVE_BEGIN, CONTOUR_REVOLVE_END), 'revolve');
       const lines = [
-        `const ${contour} = makeCrossSection(${plane}, profilePolygon([[8, 0], [25, 0], [25, 6], [12, 6], [12, 40], [8, 40]])); // @contour id=${contour}`,
+        ...(picked ? [] : [`const ${contour} = makeCrossSection(${plane}, profilePolygon([[8, 0], [25, 0], [25, 6], [12, 6], [12, 40], [8, 40]])); // @contour id=${contour}`]),
         ...emitRevolveReferenceLines({
           begin: CONTOUR_REVOLVE_BEGIN,
           end: CONTOUR_REVOLVE_END,

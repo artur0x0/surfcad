@@ -5,6 +5,7 @@ import {
   helperCommandName,
   helperReadsSelection,
   isKnownHelperId,
+  SHAPE_CONTOUR_HELPERS,
   USE_SELECTION_NOTE,
   schemaPropertiesForHelper,
   selectionContextFromArgs,
@@ -47,6 +48,32 @@ export function checkMoveTargetArgs(args, name = 'insert_move') {
   }
   if (target.face != null && (typeof target.face !== 'object' || Array.isArray(target.face))) {
     return { code: 'bad_args', message: `${name} face must be a list_faces key { at, n, area }` };
+  }
+  return null;
+}
+
+/**
+ * The contour binding the new Extrude / Revolve block references: the block
+ * whose id is not in the previous script. Null when none was added.
+ */
+export function shapeContourInserted(before, after, helperId) {
+  if (!SHAPE_CONTOUR_HELPERS.has(helperId)) return null;
+  const kind = helperId === 'makeRevolve' ? 'revolve' : 'extrude';
+  const blocks = (text) => {
+    const out = new Map();
+    const re = new RegExp(`// --- contour-mode ${kind} begin id=([^\\s-]+) ---\\n([\\s\\S]*?)\\n// --- contour-mode ${kind} end`, 'g');
+    let m = re.exec(String(text || ''));
+    while (m) {
+      out.set(m[1], m[2]);
+      m = re.exec(String(text || ''));
+    }
+    return out;
+  };
+  const old = blocks(before);
+  for (const [id, body] of blocks(after)) {
+    if (old.has(id)) continue;
+    const name = /([A-Za-z_$][\w$]*)\.contours\b/.exec(body);
+    return name ? name[1] : null;
   }
   return null;
 }
@@ -120,9 +147,10 @@ async function runHelperInsert(ctx, helperId, args) {
       },
     };
   }
+  const contour = shapeContourInserted(ctx.getScript?.() ?? '', source, helperId);
   const result = await ctx.mutate(source, `Agent helper: ${helperId}`);
   trackPaletteFeature(helperId);
-  return { result: { helperId, usedSelection, ...result } };
+  return { result: { helperId, usedSelection, ...(contour ? { contour } : {}), ...result } };
 }
 
 export const invokeHelperCommand = Object.freeze({
