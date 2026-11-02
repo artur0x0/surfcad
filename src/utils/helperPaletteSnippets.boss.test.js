@@ -40,15 +40,15 @@ test('insert_boss composes a boss block on the default top workplane and is refu
   assert.match(out, /\/\/ --- boss begin id=boss1 ---/);
   assert.match(out, /const topFace = facesByNormal\(part, \[0, 0, 1\]\)\[0\];/);
   assert.match(out, /const fr = workplaneFromFace\(part, topFace\);/);
-  assert.match(out, /part = boss\(part, fr, 0, 0, \{ size: 'M3', height: 8 \}\);/);
+  assert.match(out, /part = screwBoss\(part, fr, 0, 0, \{ size: 'M3', height: 8 \}\);/);
   assert.equal(parseFeatureMarkers(out).filter((f) => f.kind === 'boss').length, 1);
   assert.equal(composeHelperInsert('', 'boss', null, {}), null, 'needs a body');
   assert.ok(HELPERS_NEED_BODY.has('boss'));
   assert.match(describeHelperRefusal(item, { params: {}, buffer: '' }), /Boss needs a body first/);
   const face = { type: 'planar', center: [0, 0, 5], normal: [0, 0, 1], area: 1200, name: 'cube1.top' };
   const onFace = composeHelperInsert(CUBE, 'boss', null, { size: 'M4', height: 6, hole: 'clearance', u: 10, v: -5 }, face);
-  assert.match(onFace, /part = boss\(part, fr, 10, -5, \{ size: 'M4', height: 6, hole: 'clearance' \}\);/);
-  assert.equal(INSERT_EMITS.insert_boss.includes("boss(part, fr, 0, 0, { size: 'M3', height: 8 })"), true, INSERT_EMITS.insert_boss);
+  assert.match(onFace, /part = screwBoss\(part, fr, 10, -5, \{ size: 'M4', height: 6, hole: 'clearance' \}\);/);
+  assert.equal(INSERT_EMITS.insert_boss.includes("screwBoss(part, fr, 0, 0, { size: 'M3', height: 8 })"), true, INSERT_EMITS.insert_boss);
 });
 
 test('the Boss button sits in Build after Hole and the card knows it as a face feature', () => {
@@ -88,7 +88,7 @@ test('the edit card reads a boss call back and rewrites it from changed fields',
   const edited = confirmFeatureEdit(script, feature, { fields: { height: 12, hole: 'clearance', fit: 'loose', dia: 10, u: 6 } });
   assert.equal(edited.ok, true, edited.message);
   assert.equal(edited.changed, true);
-  assert.match(edited.buffer, /part = boss\(part, fr, 6, -3, \{ size: 'M3', height: 12, dia: 10, hole: 'clearance', fit: 'loose' \}\);/);
+  assert.match(edited.buffer, /part = screwBoss\(part, fr, 6, -3, \{ size: 'M3', height: 12, dia: 10, hole: 'clearance', fit: 'loose' \}\);/);
   assert.equal(parseFeatureMarkers(edited.buffer).length, parseFeatureMarkers(script).length);
 
   const same = confirmFeatureEdit(script, feature, { fields: { height: 8 } });

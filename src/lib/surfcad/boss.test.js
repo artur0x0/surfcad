@@ -1,5 +1,5 @@
 /**
- * boss(part, frame, u, v, opts): a screw boss whose base sits exactly on the
+ * screwBoss(part, frame, u, v, opts): a screw boss whose base sits exactly on the
  * face plane, so the union is one body (the 2026-11-01 playtest built one by
  * hand with a hair of a gap and got two bodies). Tap-drill pilot by default,
  * clearance or none on request, named faces, loud refusals.
@@ -19,7 +19,7 @@ async function run(body) {
 test('a default boss is one body with an M3 tap-drill pilot the height of the boss', { timeout: 120_000 }, async () => {
   const n = await run(`
     const before = part.volume();
-    part = boss(part, fr, 5, -3, { size: 'M3', height: 8 });
+    part = screwBoss(part, fr, 5, -3, { size: 'M3', height: 8 });
     const bb = part.boundingBox();
     globalThis.__note = { bodies: part.decompose().length, dv: part.volume() - before, zMax: bb.max[2], names: faceNames(part) };`);
   assert.equal(n.bodies, 1);
@@ -36,9 +36,9 @@ test('a default boss is one body with an M3 tap-drill pilot the height of the bo
 test('hole none is a solid boss, clearance uses the fit table, and holeDepth cuts on into the part', { timeout: 120_000 }, async () => {
   const n = await run(`
     const base = part.volume();
-    const solid = boss(part, fr, 0, 0, { size: 'M4', hole: 'none', height: 6 });
-    const clear = boss(part, fr, 0, 0, { size: 'M4', hole: 'clearance', fit: 'loose', height: 6, dia: 12 });
-    const deep = boss(part, fr, 0, 0, { size: 'M4', height: 6, holeDepth: 10 });
+    const solid = screwBoss(part, fr, 0, 0, { size: 'M4', hole: 'none', height: 6 });
+    const clear = screwBoss(part, fr, 0, 0, { size: 'M4', hole: 'clearance', fit: 'loose', height: 6, dia: 12 });
+    const deep = screwBoss(part, fr, 0, 0, { size: 'M4', height: 6, holeDepth: 10 });
     globalThis.__note = {
       solidDv: solid.volume() - base, clearDv: clear.volume() - base, deepDv: deep.volume() - base,
       solidBodies: solid.decompose().length, clearBodies: clear.decompose().length, deepBodies: deep.decompose().length,
@@ -58,7 +58,7 @@ test('a boss on the inner floor of a shelled box merges into the wall it stands 
 part = hollow(part, 2, { center: [0, 0, 15], normal: [0, 0, 1] });
 const floor = facesByNormal(part, [0, 0, 1]).find((f) => Math.abs(f.center[2] + 13) < 1e-3);
 const fr = workplaneFromFace(part, floor);
-part = boss(part, fr, 15, 8, { size: 'M3', height: 10 });
+part = screwBoss(part, fr, 15, 8, { size: 'M3', height: 10 });
 globalThis.__note = { bodies: part.decompose().length };
 return part;`);
   assert.equal(ran.status, 'NoError', ran.status);
@@ -67,9 +67,9 @@ return part;`);
 
 test('refusals: a bad frame, a hole as wide as the boss, an unknown hole kind', { timeout: 120_000 }, async () => {
   for (const [body, re] of [
-    [`part = boss(part, { center: [0, 0, 5] }, 0, 0, {});`, /boss: frame must come from workplaneFromFace/],
-    [`part = boss(part, fr, 0, 0, { size: 'M3', dia: 2 });`, /hole Ø 2\.5 must be smaller than the boss Ø 2/],
-    [`part = boss(part, fr, 0, 0, { hole: 'pilot' });`, /hole must be 'tap', 'clearance', or 'none'/],
+    [`part = screwBoss(part, { center: [0, 0, 5] }, 0, 0, {});`, /screwBoss: frame must come from workplaneFromFace/],
+    [`part = screwBoss(part, fr, 0, 0, { size: 'M3', dia: 2 });`, /hole Ø 2\.5 must be smaller than the boss Ø 2/],
+    [`part = screwBoss(part, fr, 0, 0, { hole: 'pilot' });`, /hole must be 'tap', 'clearance', or 'none'/],
   ]) {
     await assert.rejects(runScript(`let part = Manifold.cube([40, 30, 10], true);\n${TOP}\n${body}\nreturn part;`), re);
   }
@@ -81,10 +81,10 @@ test('a boss on a frame from a picked face (float noise at z = 10.00000000000000
   // puts the base at 10.000000000000002; the 0.1 mm sink absorbs that.
   const ran = await runScript(`let part = Manifold.cube([40, 30, 20], true);
 ${TOP}
-part = boss(part, fr, 15, 10, { size: 'M3', height: 8 });
+part = screwBoss(part, fr, 15, 10, { size: 'M3', height: 8 });
 const face = facesByNormal(part, [0, 0, 1]).find((f) => Math.abs(f.center[2] - 10) < 1e-6);
 const fr2 = workplaneFromFace(part, face);
-part = boss(part, fr2, -15, 10, { size: 'M4', height: 6, hole: 'clearance' });
+part = screwBoss(part, fr2, -15, 10, { size: 'M4', height: 6, hole: 'clearance' });
 const bb = part.boundingBox();
 globalThis.__note = { bodies: part.decompose().length, zMax: bb.max[2], zMin: bb.min[2] };
 return part;`);

@@ -59,7 +59,7 @@ export const RESERVED_HELPER_NAMES = Object.freeze([
   'holePattern',
   'clearanceHole',
   'tapDrillHole',
-  'boss',
+  'screwBoss',
   'holesOnContour',
   'fastenerClearanceDia',
   'fastenerTapDrillDia',

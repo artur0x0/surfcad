@@ -1266,8 +1266,8 @@
       ]
     },
     {
-      "name": "boss",
-      "signature": "boss(part, frame, u, v, opts = {})",
+      "name": "screwBoss",
+      "signature": "screwBoss(part, frame, u, v, opts = {})",
       "params": [
         {
           "name": "part",
@@ -1294,7 +1294,7 @@
       "description": "A screw boss standing on a face: a cylinder of `height` on the frame plane at `(u, v)`, unioned into `part`, with a **tap-drill** pilot for fastener `size` (the default, for a self-tapping or tapped screw), a **clearance** hole, or no hole. ",
       "doc": "A screw boss standing on a face: a cylinder of `height` on the frame plane at\n`(u, v)`, unioned into `part`, with a **tap-drill** pilot for fastener `size`\n(the default, for a self-tapping or tapped screw), a **clearance** hole, or no\nhole. The base sinks 0.1 mm into the part below the frame plane, so the union\nis one body even when the frame carries float noise (a hand-built cylinder a\nhair off the face leaves two). `opts`: `size` (`'M3'`),\n`dia` (outer Ø, default 2.5 × the screw's major Ø: M3 → 7.5), `height` (8),\n`hole` (`'tap'` | `'clearance'` | `'none'`), `holeDepth` (from the boss top,\ndefault the boss height; deeper cuts on into the part), `fit` (clearance:\n`'close'` | `'normal'` | `'loose'`), `segments` (48). Faces are named\n`boss.side`, `boss.top`, `boss.bottom`, and for the hole `boss.bore` and\n`boss.floor`. Throws on a bad frame, a hole as wide as the boss, or an unknown\n`hole`.",
       "examples": [
-        "const fr = workplaneFromFace(part, facesByNormal(part, [0, 0, 1])[0]);\npart = boss(part, fr, 12, 8, { size: 'M3', height: 8 });                       // Ø7.5, Ø2.5 pilot\npart = boss(part, fr, -12, 8, { size: 'M4', height: 6, hole: 'clearance' });   // through Ø4.5\npart = boss(part, fr, 0, -8, { size: 'M3', height: 10, hole: 'none', dia: 9 });"
+        "const fr = workplaneFromFace(part, facesByNormal(part, [0, 0, 1])[0]);\npart = screwBoss(part, fr, 12, 8, { size: 'M3', height: 8 });                       // Ø7.5, Ø2.5 pilot\npart = screwBoss(part, fr, -12, 8, { size: 'M4', height: 6, hole: 'clearance' });   // through Ø4.5\npart = screwBoss(part, fr, 0, -8, { size: 'M3', height: 10, hole: 'none', dia: 9 });"
       ]
     },
     {

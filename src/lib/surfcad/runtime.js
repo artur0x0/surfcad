@@ -4772,7 +4772,7 @@ function tapDrillHole(part, frame, u, v, size, span) {
 }
 
 /**
- * boss(part, frame, u, v, opts?) — a screw boss standing on a face: a cylinder
+ * screwBoss(part, frame, u, v, opts?) — a screw boss standing on a face: a cylinder
  * of `height` on the frame plane at (u, v), unioned into `part`, with a
  * tap-drill hole for fastener `size` (the default), a clearance hole, or no
  * hole. frame from workplaneFromFace. opts: { size = 'M3', dia (default 2.5 ×
@@ -4785,9 +4785,9 @@ function tapDrillHole(part, frame, u, v, size, span) {
  * boss.side, boss.top, boss.bottom, and for the hole boss.bore and boss.floor.
  */
 const BOSS_SINK_MM = 0.1;
-function boss(part, frame, u, v, opts = {}) {
+function screwBoss(part, frame, u, v, opts = {}) {
   if (!frame || !frame.normal || !frame.center || !frame.x || !frame.y) {
-    throw new Error('boss: frame must come from workplaneFromFace (needs center/normal/x/y)');
+    throw new Error('screwBoss: frame must come from workplaneFromFace (needs center/normal/x/y)');
   }
   const o = opts && typeof opts === 'object' && !Array.isArray(opts) ? opts : {};
   const blank = (v) => v == null || v === '';
@@ -4795,11 +4795,11 @@ function boss(part, frame, u, v, opts = {}) {
   const major = fastenerMajorDia(size);
   const height = blank(o.height) ? 8 : Number(o.height);
   const dia = blank(o.dia) || Number(o.dia) === 0 ? Math.round(major * 2.5 * 100) / 100 : Number(o.dia);
-  _c4RequirePositive('boss', 'height', height);
-  _c4RequirePositive('boss', 'dia', dia);
+  _c4RequirePositive('screwBoss', 'height', height);
+  _c4RequirePositive('screwBoss', 'dia', dia);
   const hole = blank(o.hole) ? 'tap' : String(o.hole);
   if (hole !== 'tap' && hole !== 'clearance' && hole !== 'none') {
-    throw new Error("boss: hole must be 'tap', 'clearance', or 'none'");
+    throw new Error("screwBoss: hole must be 'tap', 'clearance', or 'none'");
   }
   const segments = Math.max(8, Math.round(Number(o.segments) || 48));
   const M = manifoldModule.Manifold;
@@ -4812,15 +4812,15 @@ function boss(part, frame, u, v, opts = {}) {
   );
   const c = _c4Add(_c4Add(frame.center, _c4Mul(Number(u) || 0, frame.x)), _c4Mul(Number(v) || 0, frame.y));
   const t = frameToMatrix({ center: c, x: frame.x, y: frame.y, normal: frame.normal });
-  let out = _c4RequireValidSolid(part.add(body.transform(t)), 'boss');
+  let out = _c4RequireValidSolid(part.add(body.transform(t)), 'screwBoss');
   if (hole === 'none') return out;
   const holeDia = hole === 'tap'
     ? fastenerTapDrillDia(size)
     : fastenerClearanceDia(size, blank(o.fit) ? 'normal' : o.fit);
   const holeDepth = blank(o.holeDepth) || Number(o.holeDepth) === 0 ? height : Number(o.holeDepth);
-  _c4RequirePositive('boss', 'holeDepth', holeDepth);
+  _c4RequirePositive('screwBoss', 'holeDepth', holeDepth);
   if (!(holeDia < dia - 1e-6)) {
-    throw new Error(`boss: hole Ø ${holeDia} must be smaller than the boss Ø ${dia} (raise dia or pick a smaller size)`);
+    throw new Error(`screwBoss: hole Ø ${holeDia} must be smaller than the boss Ø ${dia} (raise dia or pick a smaller size)`);
   }
   const hr = holeDia / 2;
   // The cutter's own faces become the hole: its side is the bore, its low
@@ -4831,7 +4831,7 @@ function boss(part, frame, u, v, opts = {}) {
     (tri) => (tri.n[2] < -0.999 ? 'floor' : (tri.n[2] > 0.999 ? 'top' : 'bore')),
     (role, tris) => (role === 'bore' ? { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: hr } : _planeRecord(tris)),
   );
-  out = _c4RequireValidSolid(M.difference(out, cutter.transform(t)), 'boss');
+  out = _c4RequireValidSolid(M.difference(out, cutter.transform(t)), 'screwBoss');
   return out;
 }
 
@@ -12378,7 +12378,7 @@ const HELPER_FUNCTIONS = {
   // Slice-01 fastener vocabulary
   clearanceHole,
   tapDrillHole,
-  boss,
+  screwBoss,
   holesOnContour,
   fastenerClearanceDia,
   fastenerTapDrillDia,

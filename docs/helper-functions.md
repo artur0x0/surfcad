@@ -15,7 +15,7 @@ comparable and train-able.
 | `hole` / `holeSpan` / `holePattern` | Generic through-holes |
 | `clearanceHole(part, frame, u, v, size, span?, fit?)` | Clearance hole by fastener size |
 | `tapDrillHole(part, frame, u, v, size, span?)` | Tap-drill hole by fastener size |
-| `boss(part, frame, u, v, opts?)` | Screw boss on a face: cylinder with a tap-drill, clearance, or no hole, one body |
+| `screwBoss(part, frame, u, v, opts?)` | Screw boss on a face: cylinder with a tap-drill, clearance, or no hole, one body |
 | `cboreHole` / `cskHole` | Counterbore / countersink |
 | `convexEdges` / `facesByNormal` / `workplaneFromFace` / `planarFaceAt` / `edgesByOrientation` / `placeInFrame` / `transformByFrame` | Selection / frame |
 | `shell`, `hollow`, `cut`, `move`, `rotateAbout`, `moveFace`, `deleteFace`, `addDraft`, `draftFaces`, `tube`, `rectTube`, `hexPrism`, `roundedBox`, `mirror`, `array3D`, `polarArray`, `center`, `align` | Solids / layout |
@@ -974,7 +974,7 @@ part = tapDrillHole(part, fr, 0, 0, 'M3');   // Ø2.5 for M3 coarse
 part = tapDrillHole(part, fr, 12, 0, '#8-32');
 ```
 
-### boss(part, frame, u, v, opts?)
+### screwBoss(part, frame, u, v, opts?)
 
 A screw boss standing on a face: a cylinder of `height` on the frame plane at
 `(u, v)`, unioned into `part`, with a **tap-drill** pilot for fastener `size`
@@ -992,9 +992,9 @@ default the boss height; deeper cuts on into the part), `fit` (clearance:
 
 ```javascript
 const fr = workplaneFromFace(part, facesByNormal(part, [0, 0, 1])[0]);
-part = boss(part, fr, 12, 8, { size: 'M3', height: 8 });                       // Ø7.5, Ø2.5 pilot
-part = boss(part, fr, -12, 8, { size: 'M4', height: 6, hole: 'clearance' });   // through Ø4.5
-part = boss(part, fr, 0, -8, { size: 'M3', height: 10, hole: 'none', dia: 9 });
+part = screwBoss(part, fr, 12, 8, { size: 'M3', height: 8 });                       // Ø7.5, Ø2.5 pilot
+part = screwBoss(part, fr, -12, 8, { size: 'M4', height: 6, hole: 'clearance' });   // through Ø4.5
+part = screwBoss(part, fr, 0, -8, { size: 'M3', height: 10, hole: 'none', dia: 9 });
 ```
 
 ### fastenerClearanceDia(size, fit = 'normal') / fastenerTapDrillDia(size)

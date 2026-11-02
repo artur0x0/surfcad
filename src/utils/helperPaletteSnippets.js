@@ -2278,7 +2278,7 @@ export const HELPER_PALETTE_ITEMS = [
     id: 'boss',
     label: 'Boss',
     group: 'Features',
-    title: "boss(part, frame, u, v, { size, dia?, height, hole, holeDepth?, fit? }) — screw boss on a face",
+    title: "screwBoss(part, frame, u, v, { size, dia?, height, hole, holeDepth?, fit? }) — screw boss on a face",
     params: [
       { name: 'body', type: 'body', default: 'part', label: 'Body' },
       { name: 'size', type: 'select', default: 'M3', label: 'Screw', options: FASTENER_SIZE_OPTIONS },
@@ -2309,7 +2309,7 @@ export const HELPER_PALETTE_ITEMS = [
       const { u, v } = faceCtx ? uvForFace(p, faceCtx) : { u: num(p.u, 0), v: num(p.v, 0) };
       const wp = resolveFeatureWorkplane(body, p, names, faceCtx);
       const feat = [...wp.lines];
-      feat.push(`${body} = boss(${body}, ${wp.frVar}, ${u}, ${v}, ${bossOptsLiteral(p)});`);
+      feat.push(`${body} = screwBoss(${body}, ${wp.frVar}, ${u}, ${v}, ${bossOptsLiteral(p)});`);
       feat.push(...syncPartLines(body, names, hasPartDecl([...lines, ...feat], empty)));
       lines.push(...wrapFeatureBlock(BOSS_BEGIN, BOSS_END, feat));
       return withReturn(lines, empty);

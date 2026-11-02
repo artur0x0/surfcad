@@ -1124,9 +1124,9 @@ function rewriteProfileArgs(block, bags) {
   return next;
 }
 
-const BOSS_CALL_RE = new RegExp(`(boss\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})(\\s*,\\s*)(${NUM})(\\s*,\\s*)(\\{[^}]*\\})(\\s*\\))`);
+const BOSS_CALL_RE = new RegExp(`(screwBoss\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})(\\s*,\\s*)(${NUM})(\\s*,\\s*)(\\{[^}]*\\})(\\s*\\))`);
 
-/** u, v and the opts a Boss block wrote (`boss(part, fr, u, v, { size: 'M3', height: 8, … })`). */
+/** u, v and the opts a Boss block wrote (`screwBoss(part, fr, u, v, { size: 'M3', height: 8, … })`). */
 function parseBossCall(block) {
   const m = BOSS_CALL_RE.exec(block);
   if (!m) return null;
