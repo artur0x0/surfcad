@@ -217,3 +217,24 @@ test('agentPromptContext omits unknown ids', () => {
   assert.equal(agentPromptContext({ partId: '', assemblyId: null }), undefined);
   assert.deepEqual(agentPromptContext({ partId: 'p1' }), { part_id: 'p1' });
 });
+
+test('a bridge call the tab runs reaches the prompt with its name and whether it changes the model', () => {
+  const bridge = fakeBridge();
+  const transport = createLiveAgentPromptTransport(fakePromptApi(bridge));
+  const activity = [];
+  const off = bindAgentPromptTransport(transport, { onActivity: (event) => activity.push(event) });
+  // The tab connection synthesises these around dispatchCommand.
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true, command: 'insert_box' });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: false, command: 'insert_box' });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true, command: 'list_faces' });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true, command: 'status' });
+  bridge.emit({ type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: true, command: 'no_such_command' });
+  assert.deepEqual(activity, [
+    { id: null, hold: true, command: 'insert_box', mutates: true },
+    { id: null, hold: false, command: 'insert_box', mutates: true },
+    { id: null, hold: true, command: 'list_faces', mutates: false },
+    { id: null, hold: true, command: 'status', mutates: false },
+    { id: null, hold: true, command: 'no_such_command', mutates: false },
+  ]);
+  off();
+});

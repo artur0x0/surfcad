@@ -30,6 +30,11 @@ export const RETURN_ARG_SCHEMA = Object.freeze({
 /** Appended to the description of every command that takes `return`. */
 export const RETURN_NOTE = ' Takes return: "status" | "summary" | "full" (MCP default "status": status.script is omitted; "summary" adds status.features; "full" echoes the script).';
 
+/** Does this bridge command change the model? The catalog row says so (`mutates`). */
+export function commandMutates(name) {
+  return typeof name === 'string' && metaForCommand(name)?.mutates === true;
+}
+
 /** Does this command take the `return` argument? Its result carries `status`. */
 export function takesReturnArg(name) {
   if (name === 'status') return true;

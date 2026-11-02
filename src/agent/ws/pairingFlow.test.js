@@ -271,6 +271,9 @@ test('pairing toasts are transient and a reload grace is not a disconnect', () =
   assert.equal(AGENT_PROGRESS_RECENT_MS, 60_000);
   assert.equal(mobileChatHideReason({ isMobile: true, promptStarted: true }), 'prompt');
   assert.equal(mobileChatHideReason({ isMobile: true, progressEdge: true }), 'progress');
+  assert.equal(mobileChatHideReason({ isMobile: true, workingEdge: true }), 'working');
+  assert.equal(mobileChatHideReason({ isMobile: true, workingEdge: false }), null);
+  assert.equal(mobileChatHideReason({ isMobile: false, workingEdge: true }), null);
   assert.equal(mobileChatHideReason({ isMobile: false, promptStarted: true }), null);
   assert.equal(mobileChatHideReason({ isMobile: true }), null);
 });

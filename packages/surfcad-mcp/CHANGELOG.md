@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `set_status` works with no prompt in flight: the SurfCAD tab now keeps a session-level agent state (working, replying, idle) that an explicit `set_status`, every model-changing tool call, and `post_progress` drive, and that returns to idle 60 s after the last one. An agent-started build, or a build run as a fresh `surfcad-mcp` process per tool call, collapses the chat and spins the avatar like a prompt in flight. No new tool and no wire change: the tab reads `agent.status` with or without an `id`, and classifies the bridge calls it runs itself. The description of `set_status` says so.
+
 ## 0.3.4 - 2026-10-31
 
 - CLI login: unknown commands and bad flags print an error plus usage on stderr and exit non-zero. A 429 shows the server's `retryAfterSec` as `try again in N s`. Device-code login stops at the code's `expiresAt` with a stale/expired message. The copied join prompt rewrites plain http on a LAN host to `http://localhost:<port>`.

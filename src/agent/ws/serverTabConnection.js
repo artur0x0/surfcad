@@ -91,7 +91,7 @@ export function createServerTabConnection(opts) {
   attachCommandDispatch(transport, {
     call: opts.call,
     onActivity(activity) {
-      const frame = { type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: activity.hold };
+      const frame = { type: PAIR_MSG.AGENT_ACTIVITY, v: 1, hold: activity.hold, command: activity.command };
       for (const cb of [...promptListeners]) {
         try { cb(frame); } catch { /* listener */ }
       }
