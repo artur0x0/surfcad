@@ -92,13 +92,20 @@ export function createMemoryTabRegistry(opts = {}) {
   /** @type {Map<string, Map<string, { agentId: string, userId: string, send: (frame: object) => void }>>} */
   const agents = new Map();
   /**
-   * Tab prompts waiting for an agent socket or an HTTPS pull.
-   * @type {Map<string, Array<{ frame: object, cancel: () => void, onExpire: () => void }>>}
+   * Tab prompts held for the agent. While the agent is present (inside the
+   * presence window) a row stays until a process reports it taken
+   * (`agent.prompt.taken`) or presence ends; it is offered once to each
+   * consumer (an agent socket, or an HTTPS pull session) so a fresh process
+   * per tool call still receives it. With no agent present a row waits
+   * `promptHoldMs` for one to appear and then fails back to the tab.
+   * @typedef {{ frame: object, offered: Set<string>, timer: unknown, cancel: () => void, onExpire: () => void }} HeldPrompt
+   * @type {Map<string, HeldPrompt[]>}
    */
   const promptInbox = new Map();
   /**
-   * Long-polls on GET /agent/prompts, keyed by user.
-   * @type {Map<string, Array<{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }>>}
+   * Long-polls on GET /agent/prompts, keyed by user. `consumer` is the
+   * pull session that rows are offered to once; null drains (older clients).
+   * @type {Map<string, Array<{ tokenId: string | null, consumer: string | null, abort: () => void, resolve: (messages: object[]) => void }>>}
    */
   const promptWaiters = new Map();
   /** @type {Map<string, PendingCommand>} */
@@ -192,7 +199,19 @@ export function createMemoryTabRegistry(opts = {}) {
       return;
     }
     row.announced = false;
+    expireHeldPrompts(key);
     notifyTabs(key, false, 'inactive');
+  }
+
+  /**
+   * Inside the presence window right now. The closure form of
+   * `agentConnected` for the prompt inbox.
+   * @param {string} key
+   */
+  function agentPresent(key) {
+    const row = presence.get(key);
+    if (!row || row.heldDown || !row.announced || row.at == null) return false;
+    return clock.now() - row.at < presenceTtlMs;
   }
 
   /**
@@ -222,6 +241,7 @@ export function createMemoryTabRegistry(opts = {}) {
   }
 
   /**
+   * Remove every held prompt (an older client that takes on pull).
    * @param {string} key
    * @returns {object[]}
    */
@@ -235,6 +255,61 @@ export function createMemoryTabRegistry(opts = {}) {
       frames.push(row.frame);
     }
     return frames;
+  }
+
+  /**
+   * Held prompts this consumer has not seen yet, oldest first. The rows
+   * stay until taken. A row that was waiting for an agent to appear stops
+   * its fail timer: an agent is here now.
+   * @param {string} key
+   * @param {string} consumer
+   * @returns {object[]}
+   */
+  function offerInbox(key, consumer) {
+    const rows = promptInbox.get(key);
+    if (!rows || rows.length === 0) return [];
+    const frames = [];
+    for (const row of rows) {
+      if (row.offered.has(consumer)) continue;
+      row.offered.add(consumer);
+      if (row.timer) {
+        clock.cancel(row.timer);
+        row.timer = null;
+      }
+      frames.push(row.frame);
+    }
+    return frames;
+  }
+
+  /**
+   * @param {string} key
+   * @param {string | null} consumer
+   */
+  function offerOrTake(key, consumer) {
+    return consumer ? offerInbox(key, consumer) : takeInbox(key);
+  }
+
+  /**
+   * The agent has these prompts. Drop the rows without an ack.
+   * @param {string} key
+   * @param {unknown} ids
+   * @returns {number}
+   */
+  function takeHeld(key, ids) {
+    const rows = promptInbox.get(key);
+    if (!rows || !Array.isArray(ids)) return 0;
+    const wanted = new Set(ids.filter((id) => typeof id === 'string' && id));
+    if (wanted.size === 0) return 0;
+    let taken = 0;
+    for (const row of [...rows]) {
+      if (!wanted.has(row.frame?.id)) continue;
+      row.cancel();
+      const idx = rows.indexOf(row);
+      if (idx >= 0) rows.splice(idx, 1);
+      taken += 1;
+    }
+    if (rows.length === 0) promptInbox.delete(key);
+    return taken;
   }
 
   /**
@@ -266,11 +341,13 @@ export function createMemoryTabRegistry(opts = {}) {
   function wakePromptWaiters(key) {
     const pending = promptWaiters.get(key);
     if (!pending || pending.length === 0) return;
-    const frames = takeInbox(key);
-    if (frames.length === 0) return;
-    const waiter = pending.shift();
-    if (pending.length === 0) promptWaiters.delete(key);
-    waiter?.resolve(frames);
+    // Each pull session is offered the new rows once; a legacy waiter
+    // (no consumer) takes whatever is left.
+    for (const waiter of [...pending]) {
+      const frames = offerOrTake(key, waiter.consumer);
+      if (frames.length === 0) continue;
+      waiter.resolve(frames);
+    }
   }
 
   /** @param {string} userId */
@@ -707,6 +784,7 @@ export function createMemoryTabRegistry(opts = {}) {
       const was = row.announced;
       row.announced = false;
       row.at = null;
+      expireHeldPrompts(key);
       if (was) notifyTabs(key, false, 'closed');
       return true;
     },
@@ -819,15 +897,50 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
-     * Keep a tab prompt until an agent socket connects, an HTTPS pull
-     * takes it, or the hold expires.
+     * A tab prompt. Live agent sockets get it now. While the agent is
+     * present it is also held (offered to those sockets already) until a
+     * process reports it taken, so a one-shot process that exits before
+     * `read_messages` does not lose it; the next hello or pull offers it
+     * again. With no agent present it waits `promptHoldMs` for one.
      * @param {string} userId
      * @param {object} frame
      * @param {{ onExpire?: () => void }} [opts]
+     * @returns {{ delivered: number, held: boolean, present: boolean }}
+     */
+    deliverPrompt(userId, frame, opts = {}) {
+      const key = String(userId);
+      const live = agents.get(key);
+      const offered = [];
+      let delivered = 0;
+      if (live) {
+        for (const peer of live.values()) {
+          try {
+            peer.send(frame);
+            delivered += 1;
+            offered.push(peer.agentId);
+          } catch { /* a dead peer must not block the rest */ }
+        }
+      }
+      const present = agentPresent(key);
+      if (!present && delivered > 0) return { delivered, held: false, present };
+      this.holdPrompt(userId, frame, { ...opts, offeredTo: offered, present });
+      return { delivered, held: true, present };
+    },
+
+    /**
+     * Keep a tab prompt for the agent. While the agent is present
+     * (`present`, default: the presence window right now) the row stays
+     * until `takeHeldPrompts` or presence ends. Otherwise it waits
+     * `promptHoldMs` for an agent to appear and then fails back to the tab.
+     * `offeredTo` names consumers that already have the frame.
+     * @param {string} userId
+     * @param {object} frame
+     * @param {{ onExpire?: () => void, offeredTo?: string[], present?: boolean }} [opts]
+     * @returns {{ present: boolean }}
      */
     holdPrompt(userId, frame, opts = {}) {
       const key = String(userId);
-      /** @type {Array<{ frame: object, cancel: () => void, onExpire: () => void }>} */
+      /** @type {HeldPrompt[]} */
       let rows = promptInbox.get(key);
       if (!rows) {
         rows = [];
@@ -837,21 +950,24 @@ export function createMemoryTabRegistry(opts = {}) {
         const old = rows.shift();
         old?.onExpire();
       }
+      const present = typeof opts.present === 'boolean' ? opts.present : agentPresent(key);
       let expired = false;
-      /** @type {ReturnType<typeof clock.schedule> | null} */
-      let timer = null;
-      /** @type {{ frame: object, cancel: () => void, onExpire: () => void }} */
+      /** @type {HeldPrompt} */
       const row = {
         frame,
+        offered: new Set(Array.isArray(opts.offeredTo) ? opts.offeredTo.filter((id) => typeof id === 'string') : []),
+        timer: null,
         cancel() {
           if (expired) return;
           expired = true;
-          if (timer) clock.cancel(timer);
+          if (row.timer) clock.cancel(row.timer);
+          row.timer = null;
         },
         onExpire() {
           if (expired) return;
           expired = true;
-          if (timer) clock.cancel(timer);
+          if (row.timer) clock.cancel(row.timer);
+          row.timer = null;
           const live = promptInbox.get(key);
           if (live) {
             const idx = live.indexOf(row);
@@ -861,9 +977,37 @@ export function createMemoryTabRegistry(opts = {}) {
           opts.onExpire?.();
         },
       };
-      timer = clock.schedule(() => row.onExpire(), promptHoldMs);
+      if (!present) row.timer = clock.schedule(() => row.onExpire(), promptHoldMs);
       rows.push(row);
       wakePromptWaiters(key);
+      return { present };
+    },
+
+    /**
+     * The agent reports these prompts as its own (`agent.prompt.taken`).
+     * The rows are dropped with no ack; the agent already acked them.
+     * @param {string} userId
+     * @param {unknown} ids
+     * @returns {number}
+     */
+    takeHeldPrompts(userId, ids) {
+      return takeHeld(String(userId), ids);
+    },
+
+    /**
+     * Held prompts this consumer (an agent socket id) has not seen yet,
+     * oldest first. The rows stay held until taken.
+     * @param {string} userId
+     * @param {string} consumer
+     * @returns {object[]}
+     */
+    offerPrompts(userId, consumer) {
+      return offerInbox(String(userId), String(consumer));
+    },
+
+    /** Held prompts for this account, in order, for tests. */
+    heldPromptIds(userId) {
+      return (promptInbox.get(String(userId)) || []).map((row) => row.frame?.id);
     },
 
     /**
@@ -877,7 +1021,8 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
-     * Prompts held for this account, oldest first. Clears their expiry.
+     * Take every held prompt for this account, oldest first (an older
+     * client; nothing is held for it afterwards).
      * @param {string} userId
      * @returns {object[]}
      */
@@ -886,29 +1031,34 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
-     * HTTPS fallback long-poll. `revoked` means this token was aborted.
+     * HTTPS fallback long-poll. With `consumer` (the pull session's id)
+     * held rows are offered once to that session and stay until taken;
+     * without it they are drained. `revoked` means this token was aborted.
      * @param {string} userId
      * @param {number} timeoutMs
      * @param {string} [tokenId]
+     * @param {string | null} [consumer]
      * @returns {Promise<{ status: 'messages' | 'empty' | 'revoked', messages: object[] }>}
      */
-    waitPrompts(userId, timeoutMs, tokenId) {
+    waitPrompts(userId, timeoutMs, tokenId, consumer = null) {
       const key = String(userId);
-      const ready = takeInbox(key);
+      const who = consumer ? String(consumer) : null;
+      const ready = offerOrTake(key, who);
       if (ready.length) return Promise.resolve({ status: 'messages', messages: ready });
       if (timeoutMs <= 0) return Promise.resolve({ status: 'empty', messages: [] });
       return new Promise((resolve) => {
         let settled = false;
-        /** @type {Array<{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }>} */
+        /** @type {Array<{ tokenId: string | null, consumer: string | null, abort: () => void, resolve: (messages: object[]) => void }>} */
         let list = promptWaiters.get(key);
         if (!list) {
           list = [];
           promptWaiters.set(key, list);
         }
         const timer = clock.schedule(() => finish({ status: 'empty', messages: [] }), timeoutMs);
-        /** @type {{ tokenId: string | null, abort: () => void, resolve: (messages: object[]) => void }} */
+        /** @type {{ tokenId: string | null, consumer: string | null, abort: () => void, resolve: (messages: object[]) => void }} */
         const entry = {
           tokenId: tokenId == null ? null : String(tokenId),
+          consumer: who,
           abort() { finish({ status: 'revoked', messages: [] }); },
           resolve(messages) { finish({ status: 'messages', messages }); },
         };

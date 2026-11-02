@@ -95,6 +95,7 @@ function harness(extra = {}) {
     queueCap: extra.queueCap,
     rateLimitMs: extra.rateLimitMs,
     idleMs: extra.idleMs,
+    onTaken: extra.onTaken,
   });
   return { session, sent, posts, time };
 }
@@ -901,11 +902,7 @@ test('an unknown reply id is rejected before send, and recent ids survive the ac
     () => session.reply({ in_reply_to: 'x', text: 'probe' }),
     (err) => err.code === 'unknown_prompt',
   );
-  assert.throws(
-    () => session.reply({ in_reply_to: pid(1), text: 'gone' }),
-    (err) => err.code === 'unknown_prompt',
-  );
-  assert.equal(sent.length, before, 'an unknown id sends nothing');
+  assert.equal(sent.length, before, 'a non-prompt id sends nothing');
 
   const empty = await callPromptTool(session, 'read_messages', {});
   assert.deepEqual(JSON.parse(empty.content[0].text), {
@@ -936,6 +933,49 @@ test('an unknown reply id is rejected before send, and recent ids survive the ac
     { id: pid(2), state: 'replied' },
     { id: pid(3), state: 'delivered' },
   ]);
+
+  // A prompt id this process never saw: read by an earlier one-shot
+  // process (a fresh surfcad-mcp per tool call), or dropped from this
+  // queue. The reply goes out; the page keeps the ids it sent and drops
+  // any other.
+  assert.deepEqual(session.reply({ in_reply_to: pid(1), text: 'from the next process', final: true }), {
+    id: pid(1),
+    final: true,
+  });
+  const late = sent.filter((msg) => msg.type === PAIR_MSG.AGENT_REPLY && msg.id === pid(1));
+  assert.equal(late.length, 1);
+  assert.equal(late[0].final, true);
+  assert.equal(session.recentPrompts().at(-1).id, pid(1));
+  assert.equal(session.recentPrompts().at(-1).state, 'replied');
+});
+
+test('read_messages and a webhook POST report the ids taken; a prompt offered again is kept once', async () => {
+  const taken = [];
+  const { session, sent } = harness({ rateLimitMs: 0, onTaken: (ids) => taken.push(ids) });
+  await session.acceptPrompt(prompt(1));
+  // The server offers a held prompt to every new socket until one reports
+  // it taken, so the same id can arrive twice in one process.
+  await session.acceptPrompt(prompt(1));
+  assert.equal(session.queuedCount(), 1);
+  assert.equal(sent.filter((msg) => msg.type === PAIR_MSG.AGENT_PROMPT_ACK && msg.id === pid(1) && msg.delivery === 'queued').length, 2);
+  assert.deepEqual(taken, []);
+  await session.acceptPrompt(prompt(2));
+  const read = await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(JSON.parse(read.content.at(-1).text).acked, [pid(1), pid(2)]);
+  assert.deepEqual(taken, [[pid(1), pid(2)]]);
+  // Offered again after it was read: taken again, not queued again.
+  await session.acceptPrompt(prompt(1));
+  assert.equal(session.queuedCount(), 0);
+  assert.deepEqual(taken, [[pid(1), pid(2)], [pid(1)]]);
+  // Nothing to take on an empty read.
+  await callPromptTool(session, 'read_messages', {});
+  assert.deepEqual(taken, [[pid(1), pid(2)], [pid(1)]]);
+
+  const hooked = harness({ rateLimitMs: 0, onTaken: (ids) => taken.push(['hook', ...ids]) , testWebhookOverride: () => true, resolveHost: async () => ['127.0.0.1'] });
+  await hooked.session.registerWebhook('https://127.0.0.1:8443/hook');
+  await hooked.session.acceptPrompt(prompt(3));
+  assert.equal(hooked.posts.length, 1);
+  assert.deepEqual(taken.at(-1), ['hook', pid(3)]);
 });
 
 test('a session note posts without a prompt id, stays plain text, and is rate limited', async () => {
