@@ -14,6 +14,7 @@
  *   holdReply(on?) / releaseReply() — test-only: park the echo until released
  *   Each subscription returns an unsubscribe function.
  */
+import { newPromptId } from './promptId.js';
 
 export const AGENT_PROMPT_MAX_CHARS = 8000;
 
@@ -38,12 +39,6 @@ export function sendAgentPromptText(transport, text, extras = {}, options = {}) 
   return { ok: true, id };
 }
 
-function newId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `prompt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 function addListener(set, cb) {
   if (typeof cb !== 'function') return () => {};
@@ -88,7 +83,7 @@ export function createAgentPromptStub(options = {}) {
   }
 
   function send(text, extras = {}) {
-    const id = newId();
+    const id = newPromptId();
     lastId = id;
     aborted = false;
     const body = typeof text === 'string' ? text : '';

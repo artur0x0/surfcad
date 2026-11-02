@@ -10,6 +10,7 @@
  * them, does not parse them as HTML, and does not grant write access.
  */
 import { PAIR_MSG } from './ws/relayMessages.js';
+import { newPromptId } from './promptId.js';
 
 /** Plain-text prompt cap, in UTF-16 code units. Matches the MCP side. */
 export const AGENT_PROMPT_TEXT_MAX = 8000;
@@ -234,7 +235,8 @@ export function createAgentPromptTransport(bridge) {
    * ack (`{ delivery: 'failed', error: 'rate_limited' }`), not a rejected return.
    */
   function send(text, opts = {}) {
-    const id = crypto.randomUUID();
+    // Not crypto.randomUUID: a plain-http LAN page has no such function.
+    const id = newPromptId();
     const fail = (error) => {
       emitTo(ackListeners, { id, delivery: 'failed', error });
       return id;
