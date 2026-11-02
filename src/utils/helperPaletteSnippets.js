@@ -139,6 +139,8 @@ export const CLEARANCE_HOLE_BEGIN = '// --- clearanceHole begin ---';
 export const CLEARANCE_HOLE_END = '// --- clearanceHole end ---';
 export const TAP_DRILL_HOLE_BEGIN = '// --- tapDrillHole begin ---';
 export const TAP_DRILL_HOLE_END = '// --- tapDrillHole end ---';
+export const BOSS_BEGIN = '// --- boss begin ---';
+export const BOSS_END = '// --- boss end ---';
 export const CBORE_HOLE_BEGIN = '// --- cboreHole begin ---';
 export const CBORE_HOLE_END = '// --- cboreHole end ---';
 export const CSK_HOLE_BEGIN = '// --- cskHole begin ---';
@@ -200,6 +202,7 @@ export const FEATURE_BLOCK_MARKERS = Object.freeze([
   { begin: HOLE_PATTERN_BEGIN, end: HOLE_PATTERN_END, kind: 'holePattern' },
   { begin: CLEARANCE_HOLE_BEGIN, end: CLEARANCE_HOLE_END, kind: 'clearanceHole' },
   { begin: TAP_DRILL_HOLE_BEGIN, end: TAP_DRILL_HOLE_END, kind: 'tapDrillHole' },
+  { begin: BOSS_BEGIN, end: BOSS_END, kind: 'boss' },
   { begin: CBORE_HOLE_BEGIN, end: CBORE_HOLE_END, kind: 'cboreHole' },
   { begin: CSK_HOLE_BEGIN, end: CSK_HOLE_END, kind: 'cskHole' },
   { begin: SHELL_BEGIN, end: SHELL_END, kind: 'shell' },
@@ -239,6 +242,8 @@ export const FEATURE_BLOCK_END_MARKERS = Object.freeze([
   HOLE_PATTERN_END,
   CLEARANCE_HOLE_END,
   TAP_DRILL_HOLE_END,
+  BOSS_BEGIN,
+  BOSS_END,
   CBORE_HOLE_END,
   CSK_HOLE_END,
   SHELL_END,
@@ -270,6 +275,25 @@ export const FASTENER_SIZE_OPTIONS = [
 ];
 
 export const FIT_OPTIONS = ['close', 'normal', 'loose'];
+export const BOSS_HOLE_OPTIONS = ['tap', 'clearance', 'none'];
+
+/**
+ * The opts literal a Boss block writes: size and height always, the rest
+ * only when they leave the helper default (0 means "auto" for dia and
+ * holeDepth), so the script stays short and the edit card reads it back.
+ */
+export function bossOptsLiteral(p = {}) {
+  const parts = [`size: '${str(p.size, 'M3')}'`, `height: ${num(p.height, 8)}`];
+  const dia = num(p.dia, 0);
+  if (dia > 0) parts.push(`dia: ${dia}`);
+  const hole = str(p.hole, 'tap');
+  if (hole !== 'tap') parts.push(`hole: '${hole}'`);
+  const depth = num(p.holeDepth, 0);
+  if (hole !== 'none' && depth > 0) parts.push(`holeDepth: ${depth}`);
+  const fit = str(p.fit, 'normal');
+  if (hole === 'clearance' && fit !== 'normal') parts.push(`fit: '${fit}'`);
+  return `{ ${parts.join(', ')} }`;
+}
 export const AXIS_OPTIONS = ['x', 'y', 'z'];
 export const MIRROR_PLANE_OPTIONS = ['xy', 'yz', 'xz'];
 
@@ -1373,7 +1397,7 @@ export function starterCubeScript() {
  * Blocks, the contour solids, and a polar array of bores create their own body.
  */
 export const HELPERS_NEED_BODY = Object.freeze(new Set([
-  'addDraft', 'align', 'array3D', 'boolean', 'cboreHole', 'center', 'chamferEdges',
+  'addDraft', 'align', 'array3D', 'boolean', 'boss', 'cboreHole', 'center', 'chamferEdges',
   'clearanceHole', 'crossSection', 'cskHole', 'cut', 'deleteFace', 'filletEdges', 'hole',
   'holePattern', 'mirror', 'move', 'moveFace', 'patternPoints', 'rotate', 'shell', 'sweepPath', 'tapDrillHole',
 ]));
@@ -2279,6 +2303,47 @@ export const HELPER_PALETTE_ITEMS = [
     },
   },
   {
+    id: 'boss',
+    label: 'Boss',
+    group: 'Features',
+    title: "screwBoss(part, frame, u, v, { size, dia?, height, hole, holeDepth?, fit? }) — screw boss on a face",
+    params: [
+      { name: 'body', type: 'body', default: 'part', label: 'Body' },
+      { name: 'size', type: 'select', default: 'M3', label: 'Screw', options: FASTENER_SIZE_OPTIONS },
+      { name: 'height', type: 'number', default: 8, label: 'Height', min: 0.1, step: 1 },
+      {
+        name: 'dia', type: 'number', default: 0, label: 'Boss Ø (0 = 2.5× screw)', min: 0, step: 0.5,
+        description: 'Outer diameter in mm. 0 or omitted: 2.5 × the screw major diameter (M3 → 7.5).',
+      },
+      {
+        name: 'hole', type: 'select', default: 'tap', label: 'Hole', options: BOSS_HOLE_OPTIONS,
+        description: 'tap: tap-drill pilot for a self-tapping or tapped screw (default). clearance: through hole for the screw. none: solid boss.',
+      },
+      {
+        name: 'holeDepth', type: 'number', default: 0, label: 'Hole depth (0 = boss height)', min: 0, step: 1,
+        description: 'Depth from the boss top in mm. 0 or omitted: the boss height, so the floor sits on the face. Deeper cuts on into the part.',
+        showWhen: { field: 'hole', values: ['tap', 'clearance'] },
+      },
+      {
+        name: 'fit', type: 'select', default: 'normal', label: 'Fit', options: FIT_OPTIONS,
+        showWhen: { field: 'hole', values: ['clearance'] },
+      },
+      { name: 'u', type: 'number', default: 0, label: 'U', step: 1 },
+      { name: 'v', type: 'number', default: 0, label: 'V', step: 1 },
+    ],
+    build: (empty, p, names, buffer, faceCtx = null) => {
+      const lines = [];
+      const body = resolveBody(p, names, empty ? lines.join('\n') : buffer);
+      const { u, v } = faceCtx ? uvForFace(p, faceCtx) : { u: num(p.u, 0), v: num(p.v, 0) };
+      const wp = resolveFeatureWorkplane(body, p, names, faceCtx);
+      const feat = [...wp.lines];
+      feat.push(`${body} = screwBoss(${body}, ${wp.frVar}, ${u}, ${v}, ${bossOptsLiteral(p)});`);
+      feat.push(...syncPartLines(body, names, hasPartDecl([...lines, ...feat], empty)));
+      lines.push(...wrapFeatureBlock(BOSS_BEGIN, BOSS_END, feat));
+      return withReturn(lines, empty);
+    },
+  },
+  {
     id: 'cboreHole',
     label: 'Cbore',
     group: 'Features',
@@ -3058,7 +3123,7 @@ export const HELPER_PALETTE_GROUPS = ['Primitives', 'Advanced', 'Features', 'Tra
  */
 export const CAD_RAIL_ORDER = ['Primitives', 'Build', 'Shape', 'Features', 'Transforms'];
 
-const RAIL_BUILD_IDS = ['hole', 'cut', 'boolean', 'shell', 'addDraft', 'array3D'];
+const RAIL_BUILD_IDS = ['hole', 'boss', 'cut', 'boolean', 'shell', 'addDraft', 'array3D'];
 const RAIL_POLISH_IDS = ['filletEdges', 'chamferEdges', 'moveFace', 'deleteFace'];
 const RAIL_MOVE_FIRST = ['move', 'rotate', 'center', 'align', 'mirror'];
 
@@ -3074,8 +3139,8 @@ export function itemsByGroup() {
 /**
  * Visible rail sections, both layouts. Order is Block, Build, Shape, Polish,
  * Move. Shape is the old Model section (Profile / Workplane / Extrude /
- * Revolve / Sweep / Loft), same buttons. Build is hole, cut, boolean, shell,
- * draft, pattern (Array Type is Grid, Polar, or Points). Polish is fillet,
+ * Revolve / Sweep / Loft), same buttons. Build is hole, boss, cut, boolean,
+ * shell, draft, pattern (Array Type is Grid, Polar, or Points). Polish is fillet,
  * chamfer, move face, delete face. Move is every
  * remaining button, with Move first, Rotate directly below it, then Center.
  *

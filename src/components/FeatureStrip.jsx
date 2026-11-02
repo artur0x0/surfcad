@@ -86,6 +86,7 @@ const FEATURE_ICONS = Object.freeze({
   holePattern: Grid3x3,
   clearanceHole: Bolt,
   tapDrillHole: Drill,
+  boss: CircleDot,
   cboreHole: Cylinder,
   cskHole: Cone,
   shell: PackageOpen,

@@ -49,6 +49,7 @@ const FEATURE_KIND_LABELS = Object.freeze({
   holePattern: 'Hole grid',
   clearanceHole: 'Clearance',
   tapDrillHole: 'Tap drill',
+  boss: 'Boss',
   cboreHole: 'Cbore',
   cskHole: 'Csk',
   shell: 'Shell',

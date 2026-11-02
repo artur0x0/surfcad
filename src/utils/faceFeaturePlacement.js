@@ -42,6 +42,7 @@ export const FACE_FEATURE_IDS = new Set([
   'holePattern',
   'clearanceHole',
   'tapDrillHole',
+  'boss',
   'cboreHole',
   'cskHole',
   'filletEdges',
@@ -293,6 +294,19 @@ export function holeFeatureParamDefs(opts = {}) {
  * @param {FaceType} faceType
  * @returns {object[]|null}
  */
+/** Boss card fields shared by the planar and cylindrical sheets (the palette item holds the defaults). */
+const BOSS_FACE_PARAMS = Object.freeze([
+  { name: 'size', type: 'select', default: 'M3', label: 'Screw', options: ['M2', 'M2.5', 'M3', 'M4', 'M5', 'M6', 'M8', 'M10'] },
+  { name: 'height', type: 'number', default: 8, label: 'Height', min: 0.1, step: 1, slider: true },
+  { name: 'dia', type: 'number', default: 0, label: 'Boss Ø (0 = 2.5× screw)', min: 0, step: 0.5, slider: true },
+  { name: 'hole', type: 'select', default: 'tap', label: 'Hole', options: ['tap', 'clearance', 'none'] },
+  {
+    name: 'holeDepth', type: 'number', default: 0, label: 'Hole depth (0 = boss height)', min: 0, step: 1, slider: true,
+    showWhen: { field: 'hole', values: ['tap', 'clearance'] },
+  },
+  { name: 'fit', type: 'select', default: 'normal', label: 'Fit', options: ['close', 'normal', 'loose'], showWhen: { field: 'hole', values: ['clearance'] } },
+]);
+
 export function faceAwareParams(id, faceType) {
   if (!isFaceFeature(id)) return null;
 
@@ -415,6 +429,14 @@ export function faceAwareParams(id, faceType) {
         depth,
       ];
     }
+    if (id === 'boss') {
+      return [
+        body,
+        ...BOSS_FACE_PARAMS,
+        { name: 'angleDeg', type: 'number', default: 0, label: 'Angle °', step: 1, slider: true },
+        { name: 'axial', type: 'number', default: 0, label: 'Axial height', step: 0.5, slider: true },
+      ];
+    }
     if (id === 'cboreHole') {
       return [
         body,
@@ -496,6 +518,9 @@ export function faceAwareParams(id, faceType) {
       through,
       depth,
     ];
+  }
+  if (id === 'boss') {
+    return [body, ...BOSS_FACE_PARAMS, placement, ...uv];
   }
   if (id === 'cboreHole') {
     return [
