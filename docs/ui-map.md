@@ -1139,7 +1139,7 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
 - **Rail sections are Block / Build / Shape / Polish / Move**, in that order
   (`CAD_RAIL_ORDER` in `helperPaletteSnippets.js` for the order,
   `GROUP_SHORT_LABEL` in `HelperInsertPalette.jsx` for the captions). Shape is
-  the old Model section, same buttons. Build is hole, cut, boolean, shell, draft, pattern
+  the old Model section, same buttons. Build is hole, boss, cut, boolean, shell, draft, pattern
   (the Array button; Type is Grid, Polar, or Points). Points (`patternPoints`, `railHidden`:
   one instance at every point, turned along each point's axis; `patternOnPoints`) is Array
   Type=Points, not its own rail button. Script (`codeSnippet`, `railHidden`: a script snippet

@@ -61,6 +61,7 @@ const BY_KIND = new Map([
   ['hole', setOf(HOLE_CARD)],
   ['clearanceHole', setOf(HOLE_CARD)],
   ['tapDrillHole', setOf(HOLE_CARD)],
+  ['boss', setOf(['size', 'height', 'dia', 'hole', 'holeDepth', 'fit', 'u', 'v', 'body'])],
   ['holePattern', setOf(['n'], HOLE_CARD)],
   ['cboreHole', setOf(['diaThru'], HOLE_CARD)],
   ['cskHole', setOf(['diaThru'], HOLE_CARD)],

@@ -8,7 +8,7 @@
  */
 
 import { parseFeatureMarkers } from './featureMarkers.js';
-import { rotateAxisLiteral, rotateCenterLiteral, shouldClearViewportScript } from './helperPaletteSnippets.js';
+import { rotateAxisLiteral, rotateCenterLiteral, shouldClearViewportScript, bossOptsLiteral } from './helperPaletteSnippets.js';
 import { featureGapLine, parseFeatureGaps } from './featureGaps.js';
 import { parseRotateAxisLiteral, sameRotateAxis, sameVec3 } from './rotateMode.js';
 import { parseMirrorCall } from './mirrorMode.js';
@@ -46,6 +46,7 @@ export const FEATURE_EDIT_DIALOGS = Object.freeze({
   holePattern: { dialog: 'helper', helperId: 'holePattern' },
   clearanceHole: { dialog: 'helper', helperId: 'clearanceHole' },
   tapDrillHole: { dialog: 'helper', helperId: 'tapDrillHole' },
+  boss: { dialog: 'helper', helperId: 'boss' },
   cboreHole: { dialog: 'helper', helperId: 'cboreHole' },
   cskHole: { dialog: 'helper', helperId: 'cskHole' },
   shell: { dialog: 'shell', entry: 'shell' },
@@ -86,6 +87,7 @@ export const FEATURE_EDIT_SAMPLE_KEY = Object.freeze({
   holePattern: 'n',
   clearanceHole: 'u',
   tapDrillHole: 'u',
+  boss: 'height',
   cboreHole: 'diaThru',
   cskHole: 'diaThru',
   shell: 'wall',
@@ -667,6 +669,11 @@ export function parseFeatureEdit(kind, blockText) {
     if (!t) return fail('No tap drill');
     return { ...base, fields: { u: num(t[1]), v: num(t[2]), size: t[3] }, edges, faces };
   }
+  if (kind === 'boss') {
+    const fields = parseBossCall(block);
+    if (!fields) return fail('No boss');
+    return { ...base, fields, edges, faces };
+  }
   if (kind === 'holePattern') {
     const n = grab(block, /n:\s*(\d+)/);
     const m = grab(block, /m:\s*(\d+)/);
@@ -1117,6 +1124,41 @@ function rewriteProfileArgs(block, bags) {
   return next;
 }
 
+const BOSS_CALL_RE = new RegExp(`(boss\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})(\\s*,\\s*)(${NUM})(\\s*,\\s*)(\\{[^}]*\\})(\\s*\\))`);
+
+/** u, v and the opts a Boss block wrote (`boss(part, fr, u, v, { size: 'M3', height: 8, … })`). */
+function parseBossCall(block) {
+  const m = BOSS_CALL_RE.exec(block);
+  if (!m) return null;
+  const opts = m[6];
+  const text = (key) => {
+    const hit = new RegExp(`\\b${key}\\s*:\\s*'([^']*)'`).exec(opts);
+    return hit ? hit[1] : null;
+  };
+  const number = (key) => {
+    const hit = new RegExp(`\\b${key}\\s*:\\s*(${NUM})`).exec(opts);
+    return hit ? num(hit[1]) : null;
+  };
+  const hole = text('hole') || 'tap';
+  return {
+    u: num(m[2]),
+    v: num(m[4]),
+    size: text('size') || 'M3',
+    height: number('height') ?? 8,
+    dia: number('dia') ?? 0,
+    hole,
+    holeDepth: number('holeDepth') ?? 0,
+    fit: text('fit') || 'normal',
+  };
+}
+
+/** Rewrite the Boss call from the merged fields; the opts literal is rebuilt the way the palette writes it. */
+function rewriteBossCall(block, fields) {
+  const m = BOSS_CALL_RE.exec(block);
+  if (!m) return block;
+  return block.replace(BOSS_CALL_RE, `$1${lit(num(fields.u, 0))}$3${lit(num(fields.v, 0))}$5${bossOptsLiteral(fields)}$7`);
+}
+
 function rewriteBlock(block, session, draft) {
   const kind = session.kind;
   const fields = draft.fields || {};
@@ -1178,6 +1220,8 @@ function rewriteBlock(block, session, draft) {
       ? 'tapDrillHole'
       : (/clearanceHole\s*\(/.test(next) ? 'clearanceHole' : 'tapDrillHole');
     setNum(new RegExp(`(${fn}\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})`), 'u');
+  } else if (kind === 'boss') {
+    next = rewriteBossCall(next, { ...prev, ...fields });
   } else if (kind === 'holePattern') {
     setNum(/(n:\s*)(\d+)/, 'n');
   } else if (kind === 'cboreHole' || kind === 'cskHole') {

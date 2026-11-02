@@ -53,7 +53,7 @@ test('use_selection is declared only where compose reads the face or edge contex
   // 'selected', which their agent enums cannot set.
   const readsContext = new Set([
     'filletEdges', 'chamferEdges', 'crossSection', 'sweepPath',
-    'hole', 'holePattern', 'clearanceHole', 'tapDrillHole', 'cboreHole', 'cskHole',
+    'hole', 'holePattern', 'clearanceHole', 'tapDrillHole', 'boss', 'cboreHole', 'cskHole',
     'cut', 'workplane', 'moveFace', 'deleteFace',
   ]);
   const ignoresContext = new Set([

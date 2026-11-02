@@ -4771,6 +4771,70 @@ function tapDrillHole(part, frame, u, v, size, span) {
   return hole(part, frame, u, v, dia, sp);
 }
 
+/**
+ * boss(part, frame, u, v, opts?) — a screw boss standing on a face: a cylinder
+ * of `height` on the frame plane at (u, v), unioned into `part`, with a
+ * tap-drill hole for fastener `size` (the default), a clearance hole, or no
+ * hole. frame from workplaneFromFace. opts: { size = 'M3', dia (default 2.5 ×
+ * the screw's major Ø), height = 8, hole = 'tap' | 'clearance' | 'none',
+ * holeDepth = height (measured from the boss top; deeper cuts on into the
+ * part), fit = 'normal' (clearance holes), segments = 48 }. The base sinks
+ * 0.1 mm into the part below the frame plane: a frame built from a picked
+ * face carries float noise (10.000000000000002), and a cylinder that only
+ * touches at that height unions into a second body. Faces are named
+ * boss.side, boss.top, boss.bottom, and for the hole boss.bore and boss.floor.
+ */
+const BOSS_SINK_MM = 0.1;
+function boss(part, frame, u, v, opts = {}) {
+  if (!frame || !frame.normal || !frame.center || !frame.x || !frame.y) {
+    throw new Error('boss: frame must come from workplaneFromFace (needs center/normal/x/y)');
+  }
+  const o = opts && typeof opts === 'object' && !Array.isArray(opts) ? opts : {};
+  const blank = (v) => v == null || v === '';
+  const size = blank(o.size) ? 'M3' : o.size;
+  const major = fastenerMajorDia(size);
+  const height = blank(o.height) ? 8 : Number(o.height);
+  const dia = blank(o.dia) || Number(o.dia) === 0 ? Math.round(major * 2.5 * 100) / 100 : Number(o.dia);
+  _c4RequirePositive('boss', 'height', height);
+  _c4RequirePositive('boss', 'dia', dia);
+  const hole = blank(o.hole) ? 'tap' : String(o.hole);
+  if (hole !== 'tap' && hole !== 'clearance' && hole !== 'none') {
+    throw new Error("boss: hole must be 'tap', 'clearance', or 'none'");
+  }
+  const segments = Math.max(8, Math.round(Number(o.segments) || 48));
+  const M = manifoldModule.Manifold;
+  const r = dia / 2;
+  const body = _stampFaces(
+    M.cylinder(height + BOSS_SINK_MM, r, r, segments, false).translate([0, 0, -BOSS_SINK_MM]),
+    'boss',
+    _sideOrCap,
+    (role, tris) => (role === 'side' ? { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: r } : _planeRecord(tris)),
+  );
+  const c = _c4Add(_c4Add(frame.center, _c4Mul(Number(u) || 0, frame.x)), _c4Mul(Number(v) || 0, frame.y));
+  const t = frameToMatrix({ center: c, x: frame.x, y: frame.y, normal: frame.normal });
+  let out = _c4RequireValidSolid(part.add(body.transform(t)), 'boss');
+  if (hole === 'none') return out;
+  const holeDia = hole === 'tap'
+    ? fastenerTapDrillDia(size)
+    : fastenerClearanceDia(size, blank(o.fit) ? 'normal' : o.fit);
+  const holeDepth = blank(o.holeDepth) || Number(o.holeDepth) === 0 ? height : Number(o.holeDepth);
+  _c4RequirePositive('boss', 'holeDepth', holeDepth);
+  if (!(holeDia < dia - 1e-6)) {
+    throw new Error(`boss: hole Ø ${holeDia} must be smaller than the boss Ø ${dia} (raise dia or pick a smaller size)`);
+  }
+  const hr = holeDia / 2;
+  // The cutter's own faces become the hole: its side is the bore, its low
+  // cap the floor. Stamped before the cut so the names ride its runs.
+  const cutter = _stampFaces(
+    M.cylinder(holeDepth + 1, hr, hr, segments, false).translate([0, 0, height - holeDepth]),
+    'boss',
+    (tri) => (tri.n[2] < -0.999 ? 'floor' : (tri.n[2] > 0.999 ? 'top' : 'bore')),
+    (role, tris) => (role === 'bore' ? { kind: 'cylinder', axisOrigin: [0, 0, 0], axisDir: [0, 0, 1], radius: hr } : _planeRecord(tris)),
+  );
+  out = _c4RequireValidSolid(M.difference(out, cutter.transform(t)), 'boss');
+  return out;
+}
+
 function _holeOpt(spec) {
   if (spec == null) return {};
   if (typeof spec !== 'object' || Array.isArray(spec)) {
@@ -12314,6 +12378,7 @@ const HELPER_FUNCTIONS = {
   // Slice-01 fastener vocabulary
   clearanceHole,
   tapDrillHole,
+  boss,
   holesOnContour,
   fastenerClearanceDia,
   fastenerTapDrillDia,
