@@ -12558,6 +12558,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "contour": {
+            "type": "string",
+            "description": "The saved contour to extrude: its @contour id or binding name (sketch_commit returns it; feature_tree lists contour:<id> rows). Omitted: the newest saved contour no feature uses yet, so a sketch committed just before is the profile. With no saved contour the insert seeds a placeholder profile. Several contours on one extrude: slot_open, slot_assign_contour, slot_commit."
+          },
           "height": {
             "type": "number",
             "minimum": 0.1
@@ -12829,6 +12833,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "contour": {
+            "type": "string",
+            "description": "The saved contour to revolve: its @contour id or binding name (sketch_commit returns it; feature_tree lists contour:<id> rows). Omitted: the newest saved contour no feature uses yet, so a sketch committed just before is the profile. With no saved contour the insert seeds a placeholder profile. Several contours on one revolve: slot_open, slot_assign_contour, slot_commit."
+          },
           "segments": {
             "type": "number",
             "minimum": 3

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createSurfcadBridge } from '../../utils/agentBridge.js';
 import { helperCommandName, schemaPropertiesForHelper } from '../helperPaletteAgent.js';
 import { HELPER_PALETTE_ITEMS } from '../../utils/helperPaletteSnippets.js';
-import { invokeHelperCommand } from './invokeHelper.js';
+import { invokeHelperCommand, shapeContourInserted } from './invokeHelper.js';
 
 function host(overrides = {}) {
   return {
@@ -254,4 +254,56 @@ test('every use_selection description states the pick rule: named picks survive,
     assert.match(props.use_selection.description, /clears with the rebuild/, item.id);
   }
   assert.match(invokeHelperCommand.schema.properties.use_selection.description, /no_selection/);
+});
+
+const EXTRUDE_C1 = `let part = Manifold.cube([40, 30, 20], true);
+const c1 = makeCrossSection({ center: [0, 0, 10], normal: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] }, profileRectangle(60, 40, true)); // @contour id=c1
+// --- contour-mode extrude begin id=extrude1 ---
+part = part.add(placeInFrame(c1.plane, makeExtrude(c1.contours, 5), [0, 0, 0]));
+// --- contour-mode extrude end id=extrude1 ---
+return part;
+`;
+
+test('insert_make_extrude takes contour, refuses a blank one, and reports the contour the new block references', async () => {
+  const item = HELPER_PALETTE_ITEMS.find((row) => row.id === 'makeExtrude');
+  const props = schemaPropertiesForHelper(item);
+  assert.equal(props.contour?.type, 'string');
+  assert.equal(schemaPropertiesForHelper(HELPER_PALETTE_ITEMS.find((row) => row.id === 'makeRevolve')).contour?.type, 'string');
+  assert.equal(schemaPropertiesForHelper(HELPER_PALETTE_ITEMS.find((row) => row.id === 'cube')).contour, undefined);
+
+  let seen = null;
+  const h = host({
+    prepareHelperInsert({ helperId, params }) {
+      seen = { helperId, params };
+      return { source: EXTRUDE_C1 };
+    },
+  });
+  const api = createSurfcadBridge({ resolve: () => h });
+  const env = await api.call('insert_make_extrude', { height: 5, contour: 'c1' });
+  assert.equal(env.ok, true, JSON.stringify(env));
+  assert.equal(seen.params.contour, 'c1');
+  assert.equal(seen.params.height, 5);
+  assert.equal(env.result.contour, 'c1');
+
+  const blank = await api.call('insert_make_extrude', { height: 5, contour: '' });
+  assert.equal(blank.ok, false);
+  assert.equal(blank.error.code, 'bad_args');
+  assert.match(blank.error.message, /contour must be a saved contour id or binding name/);
+
+  const refusedHost = host({ prepareHelperInsert() { return { source: null }; } });
+  const refused = await createSurfcadBridge({ resolve: () => refusedHost }).call('insert_make_extrude', { contour: 'c9' });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'insert_failed');
+  assert.match(refused.error.message, /no saved contour "c9"/);
+});
+
+test('shapeContourInserted names the contour of the block the insert added', () => {
+  assert.equal(shapeContourInserted('', EXTRUDE_C1, 'makeExtrude'), 'c1');
+  assert.equal(shapeContourInserted(EXTRUDE_C1, EXTRUDE_C1, 'makeExtrude'), null, 'no new block');
+  assert.equal(shapeContourInserted('', EXTRUDE_C1, 'cube'), null);
+  const two = EXTRUDE_C1.replace('return part;', `// --- contour-mode extrude begin id=extrude2 ---
+part = part.add(placeInFrame(sk.plane, makeExtrude(sk.contours, 2), [0, 0, 0]));
+// --- contour-mode extrude end id=extrude2 ---
+return part;`);
+  assert.equal(shapeContourInserted(EXTRUDE_C1, two, 'makeExtrude'), 'sk');
 });

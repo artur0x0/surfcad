@@ -420,3 +420,85 @@ test('contourSketchPatch infers the tool from the keys and patches only what was
   assert.equal(contourSketchPatch({ tool: 'spline' }, 'rectangle').error.code, 'bad_args');
   assert.equal(contourSketchPatch({}, 'rectangle').error.code, 'bad_args');
 });
+
+/**
+ * open_feature on an extrude puts up its slot card. confirm_feature used to
+ * fall through to the feature-sheet confirm, answer ok, and write nothing,
+ * so a contour reassigned with slot_assign_contour never reached the script
+ * (2026-11-01 Android playtest).
+ */
+function slotHost({ ready = true } = {}) {
+  const calls = [];
+  let script = 'let part = placeInFrame(c2.plane, makeExtrude(c2.contours, 5), [0, 0, 0]);\nreturn part;\n';
+  let card = { kind: 'makeExtrude', featureId: 'extrude1', profile: 'c1' };
+  return {
+    calls,
+    getScript: () => script,
+    setEditor(src) { script = src; },
+    readHistory: () => ({ commits: [], head: -1 }),
+    writeHistory: () => {},
+    execute: async () => ({ ok: true, errors: [], volume: 3, bbox: null, partName: '' }),
+    readStatus: () => ({ volume: 3, bbox: null, partName: '', featureCount: 1 }),
+    readFeatureSession: () => ({ open: true, id: 'extrude1', kind: 'extrude', index: 1, contourId: null, sketchOpen: false, tool: null }),
+    prepareSlotCommit() {
+      calls.push('prepareSlotCommit');
+      if (!card) return { error: { code: 'no_slot', message: 'Feature slot card is not open' } };
+      if (!ready) return { error: { code: 'slot_not_ready', message: 'Fill every required contour slot first' } };
+      return { payload: { entry: 'makeExtrude', featureId: card.featureId, contourId: card.profile }, fromSlot: true };
+    },
+    prepareContourMutate(payload, meta) {
+      calls.push(['prepareContourMutate', payload.contourId, meta.fromSlot]);
+      return {
+        changed: true,
+        source: script.replace(/c2/g, payload.contourId),
+        message: 'Extrude',
+        finish: { payload, fromSlot: true },
+      };
+    },
+    applyContourMutateExtras() { calls.push('applyContourMutateExtras'); },
+    finishContourCommit({ fromSlot }) { calls.push(['finishContourCommit', fromSlot]); if (fromSlot) card = null; },
+    slotCancel() { calls.push('slotCancel'); card = null; return { result: { ok: true } }; },
+    prepareFeatureConfirm() { calls.push('prepareFeatureConfirm'); return { changed: false, source: script, featureId: 'extrude1' }; },
+    dismissFeatureConfirmSession() { calls.push('dismiss'); },
+    cancelFeature() { calls.push('cancelFeature'); return { result: { cancelled: true } }; },
+  };
+}
+
+test('confirm_feature on an open slot card commits the card like slot_commit', async () => {
+  const h = slotHost();
+  const api = createSurfcadBridge({ resolve: () => h });
+  const env = await api.call('confirm_feature', {});
+  assert.equal(env.ok, true, JSON.stringify(env));
+  assert.equal(env.result.written, true);
+  assert.equal(env.result.id, 'extrude1');
+  assert.equal(env.result.slot, 'makeExtrude');
+  assert.match(h.getScript(), /makeExtrude\(c1\.contours, 5\)/);
+  assert.deepEqual(h.calls.filter((c) => c !== 'prepareSlotCommit'), [
+    ['prepareContourMutate', 'c1', true],
+    'applyContourMutateExtras',
+    ['finishContourCommit', true],
+    'dismiss',
+  ]);
+  // The card is closed: a second confirm takes the ordinary path.
+  const again = await api.call('confirm_feature', {});
+  assert.equal(again.ok, true);
+  assert.ok(h.calls.includes('prepareFeatureConfirm'));
+});
+
+test('confirm_feature on a slot card with an empty slot is slot_not_ready, not a silent ok', async () => {
+  const h = slotHost({ ready: false });
+  const env = await createSurfcadBridge({ resolve: () => h }).call('confirm_feature', {});
+  assert.equal(env.ok, false);
+  assert.equal(env.error.code, 'slot_not_ready');
+  assert.equal(h.calls.includes('prepareFeatureConfirm'), false);
+});
+
+test('cancel_feature closes an open slot card too', async () => {
+  const h = slotHost();
+  const env = await createSurfcadBridge({ resolve: () => h }).call('cancel_feature', {});
+  assert.equal(env.ok, true, JSON.stringify(env));
+  assert.equal(env.result.cancelled, true);
+  assert.equal(env.result.slotClosed, true);
+  assert.ok(h.calls.includes('slotCancel'));
+  assert.ok(h.calls.includes('cancelFeature'));
+});
