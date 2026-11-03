@@ -1007,8 +1007,51 @@ function _c4ProjectOntoPlanes(p, ids, planes) {
  * lofted wall is tens of thousands of facets — the default Solo Cup script took
  * 83s and produced a 968k-triangle skin. This keeps the original topology.
  */
+/**
+ * Vertices of one mesh that sit within `eps` of each other, as a
+ * representative index per vertex. A boolean on a drafted body leaves the
+ * ends of a fillet's generators as pairs a micron apart (one on each cutter's
+ * crossing of the face); offset separately, the two land millimetres apart and
+ * the needle between them becomes a full-height flipped sliver in the cavity.
+ */
+function _c4WeldRepresentatives(V, eps) {
+  const rep = new Int32Array(V.length);
+  const cell = eps * 2;
+  const grid = new Map();
+  const keyOf = (x, y, z) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+  let welded = 0;
+  for (let i = 0; i < V.length; i++) {
+    const [x, y, z] = V[i];
+    let found = -1;
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+    for (let dx = -1; dx <= 1 && found < 0; dx++) {
+      for (let dy = -1; dy <= 1 && found < 0; dy++) {
+        for (let dz = -1; dz <= 1 && found < 0; dz++) {
+          const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+          if (!list) continue;
+          for (const j of list) {
+            const w = V[j];
+            if (Math.abs(w[0] - x) <= eps && Math.abs(w[1] - y) <= eps && Math.abs(w[2] - z) <= eps) { found = j; break; }
+          }
+        }
+      }
+    }
+    if (found >= 0) { rep[i] = rep[found]; welded++; continue; }
+    rep[i] = i;
+    const k = keyOf(x, y, z);
+    let list = grid.get(k);
+    if (!list) { list = []; grid.set(k, list); }
+    list.push(i);
+  }
+  return { rep, welded };
+}
+
+/** Positions closer than this are one vertex for the offset solve. */
+const _C4_OFFSET_WELD_MM = 2e-3;
+
 function _c4OffsetCavity(md, thickness, openSet, label) {
   const nV = md.V.length;
+  const { rep: weldRep } = _c4WeldRepresentatives(md.V, _C4_OFFSET_WELD_MM);
   // Cluster facet normals within ~10°, AREA-WEIGHTED. Tessellated fillets /
   // cylinders put many near-parallel planes on one vertex; treating each as
   // distinct makes `_c4SolvePlaneMoves` shoot vertices hundreds of mm.
@@ -1029,9 +1072,9 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
     if (area2 < 1e-12) continue; // zero-area facet carries no plane
     const n = _c4Norm(cx);
     const bucket = isOpenTri[t] ? openC : closedC;
-    _c4PushCluster(bucket[i0], n, area2, COS_CLUSTER);
-    _c4PushCluster(bucket[i1], n, area2, COS_CLUSTER);
-    _c4PushCluster(bucket[i2], n, area2, COS_CLUSTER);
+    _c4PushCluster(bucket[weldRep[i0]], n, area2, COS_CLUSTER);
+    _c4PushCluster(bucket[weldRep[i1]], n, area2, COS_CLUSTER);
+    _c4PushCluster(bucket[weldRep[i2]], n, area2, COS_CLUSTER);
   }
   const closed = closedC.map(_c4FinalizeClusters);
   const open = openC.map(_c4FinalizeClusters);
@@ -1100,9 +1143,19 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
   // planar faces it lies on; the arc keeps its LS position (accurate to
   // 1e-4 mm at any density).
   const exactPlanes = _c4ExactOffsetPlanes(md, thickness, openSet);
+  // A welded group shares the planes of all its members.
+  for (let vi = 0; vi < nV; vi++) {
+    const r = weldRep[vi];
+    if (r === vi || !exactPlanes.ofVertex[vi]) continue;
+    const mine = exactPlanes.ofVertex[vi];
+    let list = exactPlanes.ofVertex[r];
+    if (!list) { list = []; exactPlanes.ofVertex[r] = list; }
+    for (const pi of mine) if (!list.includes(pi)) list.push(pi);
+  }
   let moved = 0;
   const out = md.V.map((v) => v.slice());
   for (let vi = 0; vi < nV; vi++) {
+    if (weldRep[vi] !== vi) continue;
     if (!closed[vi].length && !open[vi].length) continue;
     // Skip AABB-face injection on open-rim verts — injecting the open face's
     // normal as closed would cancel the intentional outward overshoot.
@@ -1168,6 +1221,11 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
       nv = _c4ProjectOntoPlanes(nv, planes, exactPlanes.planes);
     }
     out[vi] = nv;
+  }
+  // Members of a welded group land exactly where their representative did,
+  // so the micron needle between them closes instead of opening.
+  for (let vi = 0; vi < nV; vi++) {
+    if (weldRep[vi] !== vi) out[vi] = out[weldRep[vi]].slice();
   }
   if (!moved) throw new Error(`${label}: nothing to offset — the body has no faces`);
   _c4RequireNoFold(md, out, label, thickness);
@@ -5593,7 +5651,16 @@ function _c6QuarterArcU(v, nFine) {
  * computes its shared vertices through this one expression.
  */
 function _c6CornerSpherePoint(c, u1, u2, u3) {
-  const { O, r, d } = c;
+  const { O, r } = c;
+  // Weights act on the opposite-face normals when the record has them. On a
+  // drafted corner the edge directions are not perpendicular to the faces:
+  // an arc spanned by two of them is not in the plane through O perpendicular
+  // to the third edge, its ends are not the sphere's tangent points, and the
+  // prism's end face and the pocket's far face become one non-planar fan that
+  // the cutter union does not merge (a zero-thickness sheet at the junction).
+  // The face normals of the two faces meeting along edge k are both
+  // perpendicular to that edge, so the ring is the true tangency circle.
+  const d = c.n || c.d;
   let x = u1 * d[0][0] + u2 * d[1][0] + u3 * d[2][0];
   let y = u1 * d[0][1] + u2 * d[1][1] + u3 * d[2][1];
   let z = u1 * d[0][2] + u2 * d[1][2] + u3 * d[2][2];
@@ -5655,9 +5722,10 @@ function _c6CornerEdgePoint(c, k) {
   const { P, r, d, O } = c;
   const along = _c6Dot(_c6Sub(O, P), d[k]);
   const [i, j] = [0, 1, 2].filter((x) => x !== k);
+  const out = c.n || d;
   return _c6PushOut(
     [P[0] + along * d[k][0], P[1] + along * d[k][1], P[2] + along * d[k][2]],
-    [d[i], d[j]],
+    [out[i], out[j]],
     _c6FacePush(r),
   );
 }
@@ -6050,8 +6118,13 @@ function _c6TrihedralCorners(live) {
     if (orthogonal && Math.abs(dist - r * Math.sqrt(3)) > tol) {
       throw new Error(`filletEdges: corner-cap incenter sanity failed (|O−P|=${dist}, want ${r * Math.sqrt(3)})`);
     }
+    // Inward normal of the face OPPOSITE edge k (the face the other two edges
+    // span). On an orthogonal corner it equals d[k]; on a drafted corner it is
+    // what the sphere is tangent to, so the junction rings and the grid are
+    // built on it (see _c6CornerSpherePoint).
+    const n = [m[1], m[2], m[0]];
     corners.push({
-      vk, P, r, geoms: eg, d, m, O, exact: true, orthogonal,
+      vk, P, r, geoms: eg, d, m, n, O, exact: true, orthogonal,
     });
   }
   // An exact corner trims its edges to the junction plane, so each edge must
