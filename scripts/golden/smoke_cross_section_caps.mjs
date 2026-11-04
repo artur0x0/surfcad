@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Cross-section is view-only. An assembly and a solo part keep their geometry,
- * stay in the target list, and show the preview plane. Saves screenshots.
+ * Cross-section: a view-only clip while the options are open, a capped cut
+ * on accept. An assembly and a solo part keep their geometry and show the
+ * preview plane while editing; accepting (closing the options) trims every
+ * visible solid with Manifold and the cut is capped; reopening or turning
+ * the tool off restores the uncut geometry. Saves screenshots.
  */
 /* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
@@ -129,6 +132,32 @@ async function agentCall(page, name, args) {
   });
 }
 
+/** Poll the section state until the accepted trims have landed (caps on every target). */
+async function waitForCaps(page, parts, timeoutMs = 20000) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    last = await agentCall(page, 'cross_section_state');
+    const r = last.result || {};
+    if ((r.trimmedPartIds?.length ?? 0) >= parts && (r.capCount ?? 0) > 0 && (r.clippedMaterials ?? 0) === 0) return last;
+    await page.waitForTimeout(250);
+  }
+  return last;
+}
+
+function capped(state, label, parts, fullVolume) {
+  const r = state.result || {};
+  check(`${label} accept caps the solids`, r.geometryMutated === true && (r.capCount ?? 0) > 0,
+    JSON.stringify({ geometryMutated: r.geometryMutated, capCount: r.capCount }));
+  check(`${label} every target is trimmed`, (r.trimmedPartIds?.length ?? 0) === parts,
+    JSON.stringify(r.trimmedPartIds));
+  check(`${label} the cut keeps part of the volume`, (r.remainingVolume ?? 0) > fullVolume * 0.2 && (r.remainingVolume ?? 0) < fullVolume * 0.8,
+    JSON.stringify({ remainingVolume: r.remainingVolume, fullVolume }));
+  check(`${label} the clip comes off once the solids are cut`, (r.clippedMaterials ?? 0) === 0,
+    JSON.stringify({ clippedMaterials: r.clippedMaterials }));
+  check(`${label} preview plane hidden`, r.planeInScene === false, JSON.stringify({ planeInScene: r.planeInScene }));
+}
+
 console.log('cross-section caps golden');
 
 if (!(await waitForServer())) {
@@ -226,19 +255,34 @@ state = await agentCall(page, 'cross_section_state');
 viewOnly(state, 'C');
 await agentCall(page, 'cross_section_expand', { open: false });
 state = await agentCall(page, 'cross_section_state');
-check('accept hides the plane and keeps the clip', state.result?.planeInScene === false
+check('accept hides the plane at once and keeps the clip until the caps land', state.result?.planeInScene === false
   && state.result?.optionsOpen === false
-  && state.result?.geometryMutated === false
-  && (state.result?.clippedMaterials ?? 0) > 0,
+  && ((state.result?.clippedMaterials ?? 0) > 0 || state.result?.geometryMutated === true),
   JSON.stringify({
     planeInScene: state.result?.planeInScene,
     optionsOpen: state.result?.optionsOpen,
     clippedMaterials: state.result?.clippedMaterials,
+    geometryMutated: state.result?.geometryMutated,
   }));
+const CUBE_VOLUME = 24 * 24 * 24;
+state = await waitForCaps(page, 2);
+capped(state, 'assembly', 2, 2 * CUBE_VOLUME);
+await agentCall(page, 'cross_section_expand', { open: true });
+state = await agentCall(page, 'cross_section_state');
+viewOnly(state, 'reopen');
+check('reopen clips again', (state.result?.clippedMaterials ?? 0) > 0, JSON.stringify({ clippedMaterials: state.result?.clippedMaterials }));
+await agentCall(page, 'cross_section_expand', { open: false });
+state = await waitForCaps(page, 2);
+capped(state, 'assembly re-accept', 2, 2 * CUBE_VOLUME);
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-assembly.png'), await page.screenshot({ type: 'png' }));
 
 await agentCall(page, 'cross_section_toggle', { enabled: false });
+state = await agentCall(page, 'cross_section_state');
+check('toggle off restores the uncut geometry', state.result?.geometryMutated === false
+  && (state.result?.trimmedPartIds?.length ?? 0) === 0 && (state.result?.capCount ?? 0) === 0
+  && (state.result?.clippedMaterials ?? 0) === 0,
+  JSON.stringify(state.result));
 const soloDoc = {
   version: 1,
   source: 'local',
@@ -279,8 +323,23 @@ check('part editor scope off', state.result?.assemblyScope === false, JSON.strin
 check('part editor clips one target', state.result?.targetPartIds?.length === 1,
   JSON.stringify(state.result?.targetPartIds));
 viewOnly(state, 'solo');
+await agentCall(page, 'cross_section_expand', { open: false });
+state = await waitForCaps(page, 1);
+capped(state, 'solo', 1, CUBE_VOLUME);
 
 writeFileSync(join(SHOT_DIR, 'cross-section-after-single.png'), await page.screenshot({ type: 'png' }));
+
+// A rebuilt mesh while capped: the new solid is never overwritten with the
+// stale trim, and the accepted section caps it again.
+const rerun = await agentCall(page, 'run', {});
+check('solo rerun while capped', rerun.ok === true && rerun.result?.ok === true, JSON.stringify(rerun));
+state = await waitForCaps(page, 1);
+capped(state, 'solo after rebuild', 1, CUBE_VOLUME);
+
+await agentCall(page, 'cross_section_toggle', { enabled: false });
+state = await agentCall(page, 'cross_section_state');
+check('solo toggle off restores the uncut geometry', state.result?.geometryMutated === false
+  && (state.result?.capCount ?? 0) === 0, JSON.stringify(state.result));
 
 await browser.close();
 stop();

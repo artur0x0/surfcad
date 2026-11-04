@@ -351,6 +351,15 @@ jobs:
             echo "section clip golden did not pass (see log above)"
             exit 1
           fi
+          bounded "cross-section caps" npm run golden:cross-section-caps | tee "${RUNNER_TEMP}/cross-section-caps.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/cross-section-caps.log"; then
+            echo "cross-section caps golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'cross-section caps: ok' "${RUNNER_TEMP}/cross-section-caps.log"; then
+            echo "cross-section caps golden did not pass (see log above)"
+            exit 1
+          fi
           bounded "agent bridge h14" node scripts/golden/smoke_agent_bridge_h14.mjs | tee "${RUNNER_TEMP}/agent-bridge-h14.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-bridge-h14.log"; then
             echo "agent bridge h14 golden skipped because Chrome was not found; CI must launch it"
