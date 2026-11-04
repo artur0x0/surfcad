@@ -359,6 +359,12 @@ export const COMMAND_META = {
     errors: ['sign_in', 'unknown_partner', 'no_lead', 'review_unavailable', 'bad_args', 'rate_limited', 'no_mesh', 'internal'],
     mutates: false,
   },
+  mold_measure: {
+    description: 'Show or hide the Measurements section of the molding results pane for the active part, in the part local frame: part volume, projected area along the shared mold pull (the part +Z until a pull is set), and extents (the X, Y, Z size of the mesh bounding box). unit in or cm picks the display unit; inches are the default and the choice is remembered in the browser. The result carries volumeCm3, projectedAreaMm2, extentsMm, pull, and display strings in the chosen unit. The numbers are the ones the mold report uses. on false hides the section. Omit on to toggle. Opening it closes the other molding tools and it draws no skin. Read-only; not a quote.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_wall_map: {
     description: 'Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints the part with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. The coarse pass paints one colour per triangle; the refined pass paints per analysis cell (about 1.5 mm), so a triangle that spans a real change of wall shows each part as it is. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.',
     result: { type: 'object', additionalProperties: true },
