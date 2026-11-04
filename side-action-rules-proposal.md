@@ -71,8 +71,16 @@ it releases along +Y as one slide.
 4. **Group by direction and connectivity, never by normal sign.** Regions that
    share the direction and touch, or sit within one cell of each other in the
    projection along that direction, are one action.
-5. **Noise floor.** Drop regions under 1 mm² and under 0.05% of the part's
-   area before grouping.
+5. **Artifacts are never candidates.** Not a size floor: a triangle whose
+   normal cannot be trusted is excluded before the undercut test. Two kinds.
+   A needle under 5 µm across has no measurable normal (float32 positions on
+   a part this size are good to a few µm). A fold meets a larger
+   edge-neighbour within 5° of 180°, a zero-thickness fin wound into the
+   surface it lies on; no real part has one and no steel can touch it. The
+   0.4 mm² "lifter" on this part is one of each: a 22 µm strip wound into the
+   inside wall at a fillet tangency plus a 2 µm needle beside it. Both are
+   still painted and still count as cover for what lies under them.
+   Implemented as `markArtifacts` in `pullDirection.js`.
 6. **A lifter must leave the part.** Only accept a tilted direction whose
    samples exit the bounding box without entering material; otherwise report
    the undercut as unresolved rather than invent a lifter.

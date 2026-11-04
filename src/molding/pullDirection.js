@@ -27,6 +27,8 @@
  * vertical wall that only grazes the cell is not an undercut. Zero draft
  * on those walls belongs to the draft tool. The 10° band is only the
  * drafted-area score, not the undercut test.
+ * A needle too narrow to carry a normal, or a fold wound against a larger
+ * neighbour, is a mesh artifact and never an undercut (`markArtifacts`).
  * Connected undercut triangles that share a vertex, face the same way, and
  * agree within 35° are one region. The count is regions.
  *
@@ -122,6 +124,18 @@ const VERTICAL_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 const DEDUP_COS = Math.cos((MOLD_DIRECTION_DEDUP_DEG * Math.PI) / 180);
 const REGION_COS = Math.cos((MOLD_REGION_NORMAL_DEG * Math.PI) / 180);
 const AREA_EPS = 1e-12;
+/**
+ * A triangle narrower than this across has no measurable normal: float32
+ * positions on a part tens of millimetres across are only good to a few
+ * micrometres, and a boolean leaves such needles where two surfaces cross.
+ */
+export const MOLD_NEEDLE_ALTITUDE_MM = 0.005;
+/**
+ * A triangle that meets a larger edge-neighbour within this of 180° is a
+ * fold: a zero-thickness fin wound against the surface it lies on. No real
+ * surface has one, and no mould half can touch it.
+ */
+export const MOLD_FOLD_DEG = 5;
 
 export function moldFitScore(undercutCount) {
   const n = Number(undercutCount) || 0;
@@ -257,7 +271,50 @@ function prepareTriangles(positions, indices, stamped) {
       centroid: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
     });
   }
+  markArtifacts(tris);
   return { tris, stampedCount, triangleCount, min, max };
+}
+
+/**
+ * Flag the triangles whose normal says nothing about the surface: needles
+ * under MOLD_NEEDLE_ALTITUDE_MM across, and folds that meet a larger
+ * edge-neighbour at nearly 180° (`MOLD_FOLD_DEG`). On the Flanged_Box a
+ * 22 µm strip wound into the inside wall, left by the hollow at a fillet
+ * tangency, read as an occluded face and became a 0.4 mm² lifter. An
+ * artifact is still painted and still covers what lies under it; it is just
+ * never itself an undercut candidate.
+ */
+function markArtifacts(tris) {
+  const foldCos = -Math.cos((MOLD_FOLD_DEG * Math.PI) / 180);
+  const byEdge = new Map();
+  const edgeKey = (p, q) => (p < q ? `${p}:${q}` : `${q}:${p}`);
+  for (const tri of tris) {
+    const longest = Math.max(len(sub(tri.b, tri.a)), len(sub(tri.c, tri.b)), len(sub(tri.a, tri.c)));
+    tri.altitude = longest > 0 ? (2 * tri.area) / longest : 0;
+    tri.artifact = tri.altitude < MOLD_NEEDLE_ALTITUDE_MM;
+    for (const [p, q] of [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]]) {
+      const k = edgeKey(p, q);
+      let list = byEdge.get(k);
+      if (!list) {
+        list = [];
+        byEdge.set(k, list);
+      }
+      list.push(tri);
+    }
+  }
+  for (const list of byEdge.values()) {
+    if (list.length < 2) continue;
+    for (const tri of list) {
+      if (tri.artifact) continue;
+      for (const other of list) {
+        if (other === tri || !(other.area > 2 * tri.area)) continue;
+        if (dot(tri.nGeom, other.nGeom) <= foldCos) {
+          tri.artifact = true;
+          break;
+        }
+      }
+    }
+  }
 }
 
 function addDirection(dirs, raw, principal) {
@@ -493,6 +550,7 @@ function undercutsAlong(d, tris, skin) {
   const hits = [];
   for (const row of prepared) {
     if (Math.abs(row.ndGeom) <= VERTICAL_SIN) continue;
+    if (row.tri.artifact) continue;
     const facingOut = row.nd > 0;
     const h = row.h;
     let occluded = false;

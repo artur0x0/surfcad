@@ -221,6 +221,38 @@ test('a box has no side actions and a shelf plus a tilted wall splits', () => {
   assert.equal(part.undercutCount, 2);
 });
 
+test('a fold and a needle on a wall are mesh artifacts, not undercuts', () => {
+  // Box 20 mm. The +x face is the triangles (1,2,6) and (1,6,5); its
+  // diagonal is the edge 1–6 from (20,0,0) to (20,20,20).
+  const positions = [];
+  const indices = [];
+  const box = boxMesh([0, 0, 0], [20, 20, 20]);
+  appendMesh(positions, indices, box.positions, box.indices);
+  // A fold: a 20 µm strip on that diagonal, wound into the wall (normal −x,
+  // tilted 0.6° so it is not in the vertical band). The top face covers its
+  // centroid, so without the artifact rule it is an occluded undercut.
+  positions.push(20 - 0.0003, 10 + 0.02 / Math.SQRT2, 10 - 0.02 / Math.SQRT2);
+  indices.push(1, 6, 8);
+  // A needle: a 1 µm wide sliver on the same wall under the top face.
+  positions.push(20, 5, 2, 20, 15, 2, 19.9999, 10, 2.001);
+  indices.push(9, 10, 11);
+  const part = analyzePullDirection({ positions, indices, pull: [0, 0, 1] });
+  assert.equal(part.error, undefined);
+  assert.equal(part.undercutCount, 0, 'fold and needle are not undercuts');
+  assert.equal(part.sideActions.count, 0);
+  assert.equal(part.fit, 'good');
+
+  // Control: a real 0.14 mm ledge on the wall, not wound against it and wide
+  // enough to carry a normal, is still an undercut under the top face.
+  const ledgePos = positions.slice(0, 24);
+  const ledgeIdx = box.indices.slice();
+  ledgePos.push(20, 5, 2, 20, 15, 2, 19.9, 10, 2.1);
+  ledgeIdx.push(8, 9, 10);
+  const ledge = analyzePullDirection({ positions: ledgePos, indices: ledgeIdx, pull: [0, 0, 1] });
+  assert.equal(ledge.undercutCount, 1, 'a real ledge still counts');
+  assert.equal(ledge.sideActions.count, 1);
+});
+
 const SHELL_FILLET = `
 // --- cube begin id=cube1 ---
 let box1 = Manifold.cube([68.7, 74.10000000000001, 37.5], true);
