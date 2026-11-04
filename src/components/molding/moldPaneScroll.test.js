@@ -17,6 +17,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
 
 const PANES = [
+  ['src/components/molding/MeasureLegend.jsx', 'data-mold-measure-legend'],
   ['src/components/molding/WallLegend.jsx', 'data-wall-legend'],
   ['src/components/molding/PartingLegend.jsx', 'data-parting-legend'],
   ['src/components/molding/MoldDraftLegend.jsx', 'data-mold-draft-legend'],
@@ -127,6 +128,19 @@ test('each molding pane renders the scroll container and its last control', asyn
   assert.match(wall, /data-wall-legend/);
   assert.doesNotMatch(wall, /wall-legend-anchor/);
   assert.match(wall, /data-mold-pane-end/);
+
+  const { default: MeasureLegend } = await importJsx(new URL('./MeasureLegend.jsx', import.meta.url));
+  const measure = renderToStaticMarkup(React.createElement(MeasureLegend, {
+    legend: { unit: 'in', units: ['in', 'cm'], volume: '1 in³', area: '2 in²', extents: '3 × 2 × 1 in', pull: '+Z' },
+  }));
+  assert.match(measure, /mold-results-section/);
+  assert.match(measure, /data-mold-measure-legend/);
+  assert.match(measure, /data-mold-pane-end/);
+  assert.match(measure, /data-ui-action="data-mold-measure-unit-in"/);
+  assert.match(measure, /data-ui-action="data-mold-measure-unit-cm"/);
+  assert.match(measure, /aria-pressed="true"/);
+  assert.match(measure, /1 in³/);
+  assert.match(measure, /along \+Z/);
 
   const parting = renderToStaticMarkup(React.createElement(PartingLegend, {
     legend: {

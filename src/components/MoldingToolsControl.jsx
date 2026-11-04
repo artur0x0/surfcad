@@ -18,11 +18,15 @@ import {
   Receipt,
   SquareSplitHorizontal,
 } from 'lucide-react';
-import { Angle } from './icons/lucideExtra';
+import { Angle, RulerDimensionLine } from './icons/lucideExtra';
 import { pressMoldTool } from './pressMoldTool';
 import { toolToggleClass } from './toolToggle';
 
 const MoldingToolsControl = ({
+  /** Measurements: volume, projected area, extents. First tool in the row. */
+  showMeasure = false,
+  measureActive = false,
+  onMeasureToggle = null,
   showWall = false,
   wallActive = false,
   wallPending = false,
@@ -43,9 +47,10 @@ const MoldingToolsControl = ({
   defaultOpen = false,
 }) => {
   const [open, setOpen] = useState(!!defaultOpen);
-  const anyShown = showWall || showParting || showMoldDraft || showReport;
+  const anyShown = showMeasure || showWall || showParting || showMoldDraft || showReport;
   if (!anyShown) return null;
-  const anyOn = (showWall && (wallActive || wallPending))
+  const anyOn = (showMeasure && measureActive)
+    || (showWall && (wallActive || wallPending))
     || (showParting && (partingActive || partingPending))
     || (showMoldDraft && (moldDraftActive || moldDraftPending))
     || (showReport && (reportActive || reportPending));
@@ -62,6 +67,21 @@ const MoldingToolsControl = ({
           aria-label="Molding tools"
           data-mold-tools-popup=""
         >
+          {showMeasure && (
+            <button
+              type="button"
+              onClick={() => pressMoldTool(setOpen, onMeasureToggle)}
+              className={toolToggleClass(measureActive)}
+              title={measureActive ? 'Hide measurements' : 'Show measurements'}
+              aria-label={measureActive ? 'Hide measurements' : 'Show measurements'}
+              aria-pressed={!!measureActive}
+              data-mold-measure=""
+              data-mold-measure-state={measureActive ? 'on' : 'off'}
+              data-ui-action="data-mold-measure"
+            >
+              <RulerDimensionLine size={20} />
+            </button>
+          )}
           {showWall && (
             <button
               type="button"

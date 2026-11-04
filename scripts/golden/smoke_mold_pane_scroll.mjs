@@ -33,6 +33,7 @@ const CHROME_CANDIDATES = [
 ].filter(Boolean);
 
 const TOOLS = [
+  { name: 'measurements', button: '[data-mold-measure]', pane: '[data-mold-measure-legend]', scroll: false },
   { name: 'wall thickness', button: '[data-wall-heatmap]', pane: '[data-wall-legend]', scroll: false },
   { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: false },
   { name: 'mold draft', button: '[data-mold-draft]', pane: '[data-mold-draft-legend]', scroll: false },
@@ -134,6 +135,7 @@ import MoldingToolsControl from './src/components/MoldingToolsControl.jsx';
 import MoldResultsPane from './src/components/molding/MoldResultsPane.jsx';
 import PullReference from './src/components/molding/PullReference.jsx';
 import WallLegend from './src/components/molding/WallLegend.jsx';
+import MeasureLegend from './src/components/molding/MeasureLegend.jsx';
 import PartingLegend from './src/components/molding/PartingLegend.jsx';
 import MoldDraftLegend from './src/components/molding/MoldDraftLegend.jsx';
 import MoldReportPanel from './src/components/molding/MoldReportPanel.jsx';
@@ -161,6 +163,7 @@ function Harness() {
   const [pullMode, setPullMode] = useState('auto');
   const [pullPlane, setPullPlane] = useState('top');
   const [draftMin, setDraftMin] = useState(1);
+  const [unit, setUnit] = useState('in');
   const press = (key) => {
     setOn((prev) => ({ ...prev, [key]: !prev[key] }));
     setWhich(key);
@@ -216,6 +219,14 @@ function Harness() {
         data-mold-canvas=""
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
       />
+      {which === 'measure' && (
+        <Pane>
+          <MeasureLegend
+            legend={{ unit, units: ['in', 'cm'], volume: '1.234 in³', area: '2.5 in²', extents: '3 × 2 × 1 in', pull: '+Z' }}
+            onUnit={setUnit}
+          />
+        </Pane>
+      )}
       {which === 'wall' && (
         <Pane>
           <WallLegend legend={{ css: 'linear-gradient(#5b21b6, #fde68a)', thinMm: 0.8, nominalMm: 2.4, thickMm: 4.5 }} />
@@ -292,14 +303,17 @@ function Harness() {
       >
         <MoldingToolsControl
           defaultOpen
+          showMeasure
           showWall
           showParting
           showMoldDraft
           showReport
+          measureActive={!!on.measure}
           wallActive={!!on.wall}
           partingActive={!!on.parting}
           moldDraftActive={!!on.draft}
           reportActive={!!on.report}
+          onMeasureToggle={() => press('measure')}
           onWallToggle={() => press('wall')}
           onPartingToggle={() => press('parting')}
           onMoldDraftToggle={() => press('draft')}

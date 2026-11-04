@@ -42,6 +42,10 @@ const CrossSectionPanel = forwardRef(({
   showAnalyze = false,
   analyzeActive = false,
   onAnalyzeToggle = null,
+  /** Measurements. First tool in the Molding tools flyout. Hidden in game. */
+  showMeasure = false,
+  measureActive = false,
+  onMeasureToggle = null,
   /** Wall-thickness heatmap. Inspection group, immediately after Analyze. Hidden in game. */
   showWall = false,
   wallActive = false,
@@ -547,6 +551,9 @@ const handleButtonClick = () => {
           </button>
         )}
         <MoldingToolsControl
+          showMeasure={showMeasure}
+          measureActive={measureActive}
+          onMeasureToggle={onMeasureToggle}
           showWall={showWall}
           wallActive={wallActive}
           wallPending={wallPending}

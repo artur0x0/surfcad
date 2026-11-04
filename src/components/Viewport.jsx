@@ -614,6 +614,7 @@ import { describeFaceTable, edgeNamesForPicks, resolveEdgeNames, resolveFaceName
 import { dropMoldJobs, dropWallJobs, requestMoldAnalysis, requestWallField } from '../molding/wallFieldClient.js';
 import { MOLD_PULL_PLANES, unitPull } from '../molding/pullReference.js';
 import { thicknessLegendModel } from '../molding/thicknessColor.js';
+import { loadMeasureUnit, measureLegendModel, measurePart, measurePayload, saveMeasureUnit } from '../molding/measure.js';
 import { detachThicknessSkin, syncThicknessSkin } from '../molding/thicknessSkin.js';
 import { detachPartingSkin, syncPartingSkin } from '../molding/partingSkin.js';
 import { splitLegendModel } from '../molding/sideActions.js';
@@ -634,6 +635,7 @@ import { fetchMoldingResinLibrary } from '../utils/moldingResinLibraryClient.js'
 import { boundsFromPositions, postMoldingQuote, quoteBodyFromAnalysis } from '../utils/moldingQuoteClient.js';
 import { PAY_FOR_REVIEW_MESSAGE, checkoutUrlAllowed, clearReviewLabel, leadBody, partnerUnlocked, pollReviewStatus, postMoldingLead, postReviewCheckout, readReviewLabel, rememberReviewLabel } from '../utils/moldingLeadClient.js';
 import WallLegend from './molding/WallLegend';
+import MeasureLegend from './molding/MeasureLegend';
 import PartingLegend from './molding/PartingLegend';
 import MoldDraftLegend from './molding/MoldDraftLegend';
 import MoldReportPanel from './molding/MoldReportPanel';
@@ -1454,6 +1456,9 @@ const Viewport = forwardRef(({
   const agentMoldFitRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const agentMoldWallMapRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const wallMapOnRef = useRef(false);
+  const agentMoldMeasureRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
+  const moldMeasureOnRef = useRef(false);
+  const measureUnitRef = useRef(loadMeasureUnit());
   const wallFieldRef = useRef(null);
   const wallJobGenRef = useRef(0);
   const moldJobGenRef = useRef(0);
@@ -1471,8 +1476,11 @@ const Viewport = forwardRef(({
     setMoldProgress(next);
   };
   const clearWallMapRef = useRef(() => {});
+  const clearMeasureRef = useRef(() => {});
   const applyWallSkinRef = useRef(() => {});
   const [wallLegend, setWallLegend] = useState(null);
+  const [moldMeasure, setMoldMeasure] = useState(null);
+  const [measureUnit, setMeasureUnit] = useState(() => measureUnitRef.current);
   const agentMoldPartingRef = useRef(() => ({ error: { code: 'no_mesh', message: 'No mesh for that part' } }));
   const partingOnRef = useRef(false);
   const partingFieldRef = useRef(null);
@@ -1516,6 +1524,7 @@ const Viewport = forwardRef(({
     moldAnalysisRef.current = null;
     moldCacheRef.current.invalidatePull();
     dropMoldJobs();
+    if (moldMeasureOnRef.current) agentMoldMeasureRef.current({ on: true });
     const geometry = resultRef.current?.geometry;
     const waiting = choice === 'face' && !pull;
     if (!geometry?.attributes?.position) {
@@ -1632,6 +1641,7 @@ const Viewport = forwardRef(({
   moldQuoteRef.current = moldQuote;
   useEffect(() => {
     if (mode === 'game') {
+      clearMeasureRef.current();
       clearWallMapRef.current();
       clearPartingRef.current();
       clearSideActionsRef.current();
@@ -2098,6 +2108,10 @@ const Viewport = forwardRef(({
   const filletToastTimerRef = useRef(null);
   /** Bumps when the solid mesh is replaced so pick overlays recompute. */
   const [meshEpoch, setMeshEpoch] = useState(0);
+  // A rebuilt mesh re-measures while the Measurements section is open.
+  useEffect(() => {
+    if (moldMeasureOnRef.current) agentMoldMeasureRef.current({ on: true });
+  }, [meshEpoch]);
   /** Bumps after each assembly placement so part overlays re-read scripts and poses. */
   const [overlayEpoch, setOverlayEpoch] = useState(0);
   /** Set on Fillet Accept with preDeg; next successful run reports NEW scrap only. */
@@ -2925,6 +2939,7 @@ const Viewport = forwardRef(({
       moldFit: (args) => agentMoldFitRef.current(args),
       moldPull: (args) => applySharedPullRef.current(args),
       moldWallMap: (args) => agentMoldWallMapRef.current(args),
+      moldMeasure: (args) => agentMoldMeasureRef.current(args),
       moldParting: (args) => agentMoldPartingRef.current(args),
       moldSideActions: (args) => agentMoldSideActionsRef.current(args),
       moldDraft: (args) => agentMoldDraftRef.current(args),
@@ -5613,6 +5628,7 @@ const Viewport = forwardRef(({
     if (mode === 'game') return;
     closeFeatureSlotsRef.current();
     feaCloseRef.current();
+    clearMeasureRef.current();
     clearWallMapRef.current();
     clearPartingRef.current();
     clearSideActionsRef.current();
@@ -14104,6 +14120,12 @@ const Viewport = forwardRef(({
     };
   };
 
+  const clearMeasure = () => {
+    moldMeasureOnRef.current = false;
+    setMoldMeasure(null);
+  };
+  clearMeasureRef.current = clearMeasure;
+
   const clearWallMap = () => {
     wallJobGenRef.current += 1;
     dropWallJobs();
@@ -14151,6 +14173,7 @@ const Viewport = forwardRef(({
   clearMoldDraftRef.current = clearMoldDraft;
 
   const paintWallField = (wall, geometry, pending) => {
+    clearMeasure();
     clearParting();
     clearSideActions();
     clearMoldDraft();
@@ -14166,6 +14189,7 @@ const Viewport = forwardRef(({
   };
 
   const showParting = (parting, geometry, sideActions = null) => {
+    clearMeasure();
     clearWallMap();
     clearMoldDraft();
     clearDfm();
@@ -14323,6 +14347,34 @@ const Viewport = forwardRef(({
     return wallLegendPayload(analyzed.wall);
   };
 
+  agentMoldMeasureRef.current = ({ on, unit } = {}) => {
+    if (unit != null) {
+      measureUnitRef.current = saveMeasureUnit(unit);
+      setMeasureUnit(measureUnitRef.current);
+    }
+    const next = typeof on === 'boolean' ? on : !moldMeasureOnRef.current;
+    if (!next) {
+      clearMeasure();
+      return { on: false, unit: measureUnitRef.current };
+    }
+    const geometry = resultRef.current?.geometry;
+    const positions = geometry?.attributes?.position?.array;
+    if (!positions || positions.length < 9) {
+      return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    }
+    const measured = measurePart({ positions, indices: geometry.index?.array || null }, sharedMoldPull());
+    if (!measured) return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
+    clearWallMap();
+    clearParting();
+    clearSideActions();
+    clearMoldDraft();
+    clearDfm();
+    clearQuote();
+    moldMeasureOnRef.current = true;
+    setMoldMeasure(measured);
+    return measurePayload(measured, measureUnitRef.current);
+  };
+
   const sideActionPayload = (sideActions, selected) => {
     const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
     return {
@@ -14467,6 +14519,7 @@ const Viewport = forwardRef(({
   };
 
   function paintDraft(base, geometry) {
+    clearMeasure();
     const classified = classifyMoldDraft(base, draftThresholdRef.current);
     moldDraftOnRef.current = true;
     moldDraftFieldRef.current = { geometry, moldDraft: classified, base };
@@ -14769,6 +14822,7 @@ const Viewport = forwardRef(({
       clearQuote();
       return { on: false };
     }
+    clearMeasure();
     const geometry = resultRef.current?.geometry;
     if (!geometry?.attributes?.position) {
       return { error: { code: 'no_mesh', message: 'No mesh for that part' } };
@@ -17438,9 +17492,15 @@ const Viewport = forwardRef(({
         />
       )}
 
-      {mode !== 'game' && (moldProgress || wallLegend || partingLegend || moldDraftLegend || moldReport) && (
+      {mode !== 'game' && (moldProgress || moldMeasure || wallLegend || partingLegend || moldDraftLegend || moldReport) && (
         <MoldResultsPane compact={isMobile}>
           <MoldProgress progress={moldProgress} />
+          {moldMeasure && (
+            <MeasureLegend
+              legend={measureLegendModel(moldMeasure, measureUnit)}
+              onUnit={(unit) => agentMoldMeasureRef.current({ on: true, unit })}
+            />
+          )}
           {pullToolsOn && (
             <PullReference
               mode={pullReference.mode}
@@ -17515,6 +17575,7 @@ const Viewport = forwardRef(({
           showAnalyze={mode !== 'game'}
           analyzeActive={feaActive}
           onAnalyzeToggle={() => {
+            clearMeasureRef.current();
             clearWallMapRef.current();
             clearPartingRef.current();
             clearSideActionsRef.current();
@@ -17523,6 +17584,9 @@ const Viewport = forwardRef(({
             clearQuoteRef.current();
             feaToggleRef.current?.();
           }}
+          showMeasure={mode !== 'game'}
+          measureActive={!!moldMeasure}
+          onMeasureToggle={() => agentMoldMeasureRef.current({})}
           showWall={mode !== 'game'}
           wallActive={!!wallLegend}
           wallPending={moldProgress?.tool === 'wall' || !!wallFieldRef.current?.pending}

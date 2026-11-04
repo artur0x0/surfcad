@@ -2,7 +2,7 @@
   "version": 1,
   "bridgeVersion": 1,
   "generatedBy": "npm run export:agent",
-  "count": 212,
+  "count": 213,
   "$defs": {
     "status": {
       "type": "object",
@@ -2672,6 +2672,51 @@
       "uiEntry": "data-wall-heatmap",
       "example": {
         "on": true
+      }
+    },
+    {
+      "name": "mold_measure",
+      "description": "Show or hide the Measurements section of the molding results pane for the active part, in the part local frame: part volume, projected area along the shared mold pull (the part +Z until a pull is set), and extents (the X, Y, Z size of the mesh bounding box). unit in or cm picks the display unit; inches are the default and the choice is remembered in the browser. The result carries volumeCm3, projectedAreaMm2, extentsMm, pull, and display strings in the chosen unit. The numbers are the ones the mold report uses. on false hides the section. Omit on to toggle. Opening it closes the other molding tools and it draws no skin. Read-only; not a quote.",
+      "args": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "true shows the measurements. false hides them. Omit to toggle."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "in",
+              "cm"
+            ],
+            "description": "Display unit for the pane and the display strings. Inches by default; the choice is remembered in this browser."
+          }
+        }
+      },
+      "result": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "errors": [
+        "bad_args",
+        "no_mesh",
+        "internal"
+      ],
+      "mutates": false,
+      "destructive": false,
+      "confirm": false,
+      "group": null,
+      "immediate": true,
+      "uiEntry": [
+        "data-mold-measure",
+        "data-mold-measure-unit-in",
+        "data-mold-measure-unit-cm"
+      ],
+      "example": {
+        "on": true,
+        "unit": "in"
       }
     },
     {

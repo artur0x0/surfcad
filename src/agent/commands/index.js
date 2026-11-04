@@ -30,6 +30,7 @@ import { listFacesCommand } from './listFaces.js';
 import { moldFitCommand } from './moldFit.js';
 import { moldPullCommand } from './moldPull.js';
 import { moldWallMapCommand } from './moldWallMap.js';
+import { moldMeasureCommand } from './moldMeasure.js';
 import { moldPartingCommand } from './moldParting.js';
 import { moldSideActionsCommand } from './moldSideActions.js';
 import { moldDraftCommand } from './moldDraft.js';
@@ -236,6 +237,7 @@ const V1_COMMAND_LIST = [
   moldFitCommand,
   moldPullCommand,
   moldWallMapCommand,
+  moldMeasureCommand,
   moldPartingCommand,
   moldSideActionsCommand,
   moldDraftCommand,
