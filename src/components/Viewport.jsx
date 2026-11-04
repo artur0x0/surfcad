@@ -17090,7 +17090,10 @@ const Viewport = forwardRef(({
           onClearLocalCadData={onClearLocalCadData}
           vaultName={profileVaultName}
           agentBridgeLive={agentBridgeLive}
-          stackedTitle={!!(showCadTitle && !hideCadTitle && titleParts.assembly)}
+          // Phone: the chip centres on the title stack only when the title
+          // is two lines (a part, then "in" + the assembly). The assembly-only
+          // title is one pill, so the chip stays level with the wordmark.
+          stackedTitle={!!(showCadTitle && !hideCadTitle && titleParts.part && titleParts.assembly)}
         />
       )}
 
