@@ -578,26 +578,33 @@ const handleButtonClick = () => {
         >
           <Ruler size={20} />
         </button>
-        <button
-          onClick={handleButtonClick}
-          className={toolToggleClass(enabled)}
-          title={enabled ? 'Disable Cross Section' : 'Enable Cross Section'}
-          aria-pressed={!!enabled}
-          data-ui-action="data-cross-section-toggle"
-        >
-          <FlipHorizontal size={20} />
-        </button>
-        {/* Opens the cross-section options, so it wears a section cut — two
-            arrowheads on a dashed centreline — not a generic chevron. */}
-        {enabled && (
+        {/* One rail slot. Off: enable (FlipHorizontal). On: the slot turns
+            green and opens the options, so it wears a section cut — two
+            arrowheads on a dashed centreline. Turning the section off is the
+            grey X in the options. A second rail button for the options spilt
+            past the rail on a phone and read as a ghost. */}
+        {enabled ? (
           <button
             onClick={handleChevronClick}
-            className="p-2 rounded hover:bg-gray-100 text-gray-600"
+            className={toolToggleClass(true)}
             title="Cross-section options"
             aria-label="Show cross-section options"
+            aria-pressed
+            data-cross-section-options=""
             data-ui-action="data-cross-section-expand"
           >
             <TrianglesCenterlineDashedVertical size={20} />
+          </button>
+        ) : (
+          <button
+            onClick={handleButtonClick}
+            className={toolToggleClass(false)}
+            title="Enable Cross Section"
+            aria-label="Enable Cross Section"
+            aria-pressed={false}
+            data-ui-action="data-cross-section-toggle"
+          >
+            <FlipHorizontal size={20} />
           </button>
         )}
         </div>

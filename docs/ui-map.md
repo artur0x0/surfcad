@@ -1093,10 +1093,28 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   at the top of its range.
 - **Everything over the 3D view is translucent.** Surfaces, text-on-dark, and
   the no-slab rule: [docs/ui-style-guide.md](./ui-style-guide.md#surfaces-over-the-3d-view).
-- **Cross-section buttons name their action**: the collapsed rail opens the
-  options with the section-cut glyph (`TrianglesCenterlineDashedVertical`), and
-  the expanded panel closes with a green `Check`. No chevrons — they said
-  "up/down", not what would happen.
+- **Cross-section buttons name their action**: the collapsed rail has one
+  slot. Off, it is the `FlipHorizontal` enable toggle (`data-cross-section-toggle`).
+  On, that slot turns green (`toolToggleClass(true)`) and opens the options
+  with the section-cut glyph (`TrianglesCenterlineDashedVertical`,
+  `data-cross-section-options`, `data-cross-section-expand`); turning the
+  section off is the grey `X` in the options. The expanded panel closes with a
+  green `Check`. No chevrons — they said "up/down", not what would happen. A
+  second rail button for the options used to spill past the rail on a phone
+  and read as a ghost.
+- **Cross-section caps on accept.** While the options are open the section is
+  a world-space clip (`src/utils/sectionClip.js`): instant, view-only, no
+  geometry change. The green `Check` (or closing the options) accepts: the
+  viewer cuts every visible solid with Manifold `trimByPlane` in each mesh's
+  own frame (`requestSectionCaps` in `Viewport`, helpers in
+  `src/utils/crossSectionView.js`) and draws the capped result, so the cut
+  face is a real face and the inside of a wall reads as solid. The clip stays
+  until the trims land, then comes off. A part the plane removes entirely is
+  hidden. Editing the plane, reopening the options, turning the tool off, or a
+  rebuilt mesh restores the uncut geometry first (`healSectionGeometry`); a
+  mesh rebuilt while a trim was in flight keeps its new geometry and the stale
+  result is dropped. `cross_section_state` reports `capCount`,
+  `trimmedPartIds`, and `geometryMutated` for the capped state.
 - **Feature cards sit at the bottom of the pane**; the bottom corners
   belong to the rails. Contour, Fillet, Chamfer, the standalone edge card, Shell,
   Draft, Move Face, Delete Face, Cut, Boolean, Move, Paint, and Analyze share the feature card. On desktop the left edge is 10px to the right of the mounted left rail, or 10px from the pane when that rail is hidden. On a phone the card stays in the gap between the rails. Analyze's footer is Run or Back to Setup. Boolean stays `z-20`, under the section rail. The right-hand cluster is
@@ -1110,8 +1128,8 @@ Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
   banners `z-50`. Error cards (`ErrorPopup`) are the glass `rounded-lg` chip
   from [docs/ui-style-guide.md](./ui-style-guide.md#error-toasts), not a rounded pill. They are portaled to `document.body`
   at `z-50` so the full message sits above the feature strip and the left rail. Cross-section popup **Dismiss** is a grey lucide `X` (not the
-  red FlipHorizontal); the collapsed rail still uses FlipHorizontal to
-  enable/disable. Contour-mode rail dismiss is the same grey `X`. Check stays
+  red FlipHorizontal); the collapsed rail uses FlipHorizontal to enable and,
+  once on, the section-cut glyph to open the options. Contour-mode rail dismiss is the same grey `X`. Check stays
   green Done.
 - **Feature-entry toasts:** Contour / Extrude / Revolve / Loft / Sweep / Fillet /
   Chamfer / Shell open **without** an informational toast. Soft-fail / enterRefuse /
