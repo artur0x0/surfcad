@@ -14323,11 +14323,16 @@ const Viewport = forwardRef(({
       count: sideActions?.count || 0,
       slides: sideActions?.slideCount || 0,
       lifters: sideActions?.lifterCount || 0,
+      unresolved: sideActions?.unresolvedCount || 0,
       groups: groups.map((group) => ({
         id: group.id,
         kind: group.kind,
         pull: group.pull,
         area: group.area,
+        trappedArea: group.trappedArea ?? group.area,
+        span: group.span || null,
+        features: group.features || [],
+        frees: group.frees || [],
         regions: group.regionIds?.length || 0,
         clear: group.clear !== false,
       })),
@@ -17443,10 +17448,7 @@ const Viewport = forwardRef(({
           )}
           {wallLegend && <WallLegend legend={wallLegend} />}
           {partingLegend && (
-            <PartingLegend
-              legend={partingLegend}
-              onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
-            />
+            <PartingLegend legend={partingLegend} />
           )}
           {moldDraftLegend && (
             <MoldDraftLegend

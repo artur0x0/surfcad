@@ -139,8 +139,8 @@ test('footprint follows the pull axis and counts come off the analysis', () => {
   assert.equal(counts.partingLengthMm, 50);
   assert.equal(counts.slideCount, 2);
   assert.equal(counts.lifterCount, 1);
-  assert.equal(counts.pinCount, 4);
-  assert.equal(counts.sleeveCount, 1);
+  assert.equal(counts.pinCount, 0);
+  assert.equal(counts.sleeveCount, 0);
   assert.equal(counts.maxWallMm, 3.5);
   assert.equal(toolingCounts({ kind: 'wall' }), null);
 });

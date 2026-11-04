@@ -20,8 +20,6 @@ test('mold_draft forwards on and threshold and returns the signed counts', () =>
         },
         violations: 0,
         minDeg: 1,
-        pins: 0,
-        sleeves: 0,
       };
     },
   };
@@ -30,7 +28,6 @@ test('mold_draft forwards on and threshold and returns the signed counts', () =>
   assert.equal(out.result.positive.count, 8);
   assert.equal(out.result.negative.count, 1);
   assert.equal(out.result.below.negative.count, 1);
-  assert.equal(out.result.pins, 0);
   assert.equal(out.error, undefined);
 });
 

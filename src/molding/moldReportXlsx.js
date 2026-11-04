@@ -4,6 +4,7 @@
  */
 
 import * as XLSXns from 'xlsx';
+import { sideActionBreakdown } from './moldReport.js';
 
 const XLSX = XLSXns.default || XLSXns;
 
@@ -40,7 +41,7 @@ function rowsOf(report) {
     ['Field', 'Value', 'Note'],
     ['Volume (cm3)', cell(geometry.volumeCm3), ''],
     ['Projected area along pull (mm2)', cell(geometry.projectedAreaMm2), ''],
-    ['Side actions', cell(geometry.sideActionCount), ''],
+    ['Side actions', cell(geometry.sideActionCount), sideActionBreakdown(geometry)],
     ['Positive ≥ threshold', cell(geometry.draft?.positive), geometry.draft ? `Threshold ${geometry.draft.minDeg}°` : ''],
     ['Negative ≥ threshold', cell(geometry.draft?.negative), ''],
     ['Below threshold', cell(geometry.draft?.below), geometry.draft ? `${geometry.draft.belowPositive} positive, ${geometry.draft.belowNegative} negative` : ''],

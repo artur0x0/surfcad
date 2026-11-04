@@ -1,0 +1,168 @@
+// @surf-id 2026-11-02-13-16-55-0518-9529
+// @name Flanged_Box
+// --- cube begin id=cube1 ---
+let box1 = Manifold.cube([80, 86, 37.5], true);
+let part = box1;
+// --- cube end id=cube1 ---
+// --- draft begin id=draft1 ---
+part = draftFaces(part, 'sides', -1, { pull: 'z', reference: 'max' });
+// --- draft end id=draft1 ---
+// --- fillet-mode begin id=fillet1 ---
+const selEdges = edgesNamed(part, "cube1.front~cube1.left", "cube1.back~cube1.left", "cube1.front~cube1.right", "cube1.back~cube1.right", "cube1.bottom~cube1.front", "cube1.bottom~cube1.left", "cube1.bottom~cube1.right", "cube1.back~cube1.bottom");
+part = filletEdges(part, selEdges, 4, { sphericalCorners: true });
+// --- fillet-mode end id=fillet1 ---
+// --- shell begin id=shell1 ---
+part = hollow(part, 1.85, 'z');
+// --- shell end id=shell1 ---
+// --- boolean begin id=boolean1 ---
+part = booleanBodies(part, { op: 'union' });
+// --- boolean end id=boolean1 ---
+// --- roundedBox begin id=roundedBox1 ---
+let rbox1 = roundedBox([95.8, 101.8, 3.2], 6, 16).translate([0, 0, 20.35]);
+part = part.add(rbox1);
+// --- roundedBox end id=roundedBox1 ---
+// --- roundedBox begin id=roundedBox2 ---
+let rbox2 = roundedBox([76.3, 82.3, 4], 0.1, 16).translate([0, 0, 20.35]);
+part = part.subtract(rbox2);
+// --- roundedBox end id=roundedBox2 ---
+// --- cube begin id=cube2 ---
+let box2 = Manifold.cube([40, 0.8, 16], true).translate([0, 43.072, 0]);
+part = part.add(box2);
+// --- cube end id=cube2 ---
+// --- clearanceHole begin id=clearanceHole1 ---
+const selFace = (() => {
+  const _c = [0, 0, 21.95];
+  const _pieces = facesNamed(part, "roundedBox1.top"); // the picked face, by its stamped name
+  let _best = _pieces[0], _bd = Infinity;
+  for (const _f of _pieces) {
+    const _d = (_f.center[0]-_c[0])**2 + (_f.center[1]-_c[1])**2 + (_f.center[2]-_c[2])**2;
+    if (_d < _bd) { _bd = _d; _best = _f; }
+  }
+  return _best;
+})();
+const fr = workplaneFromFace(part, selFace);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc = [0, 0, 21.95];
+  const _off = (_pc[0]-fr.center[0])*fr.normal[0] + (_pc[1]-fr.center[1])*fr.normal[1] + (_pc[2]-fr.center[2])*fr.normal[2];
+  fr.center = [_pc[0]-_off*fr.normal[0], _pc[1]-_off*fr.normal[1], _pc[2]-_off*fr.normal[2]];
+})();
+const span = holeSpan(part, fr);
+part = clearanceHole(part, fr, 43.5, 46.5, 'M3', span, 'normal');
+// --- clearanceHole end id=clearanceHole1 ---
+// --- clearanceHole begin id=clearanceHole2 ---
+const selFace2 = (() => {
+  const _c2 = [-0.1386, -0.1481, 21.95];
+  const _pieces2 = facesNamed(part, "roundedBox1.top"); // the picked face, by its stamped name
+  let _best2 = _pieces2[0], _bd = Infinity;
+  for (const _f2 of _pieces2) {
+    const _d2 = (_f2.center[0]-_c2[0])**2 + (_f2.center[1]-_c2[1])**2 + (_f2.center[2]-_c2[2])**2;
+    if (_d2 < _bd) { _bd = _d2; _best2 = _f2; }
+  }
+  return _best2;
+})();
+const fr2 = workplaneFromFace(part, selFace2);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc2 = [-0.1386, -0.1481, 21.95];
+  const _off2 = (_pc2[0]-fr2.center[0])*fr2.normal[0] + (_pc2[1]-fr2.center[1])*fr2.normal[1] + (_pc2[2]-fr2.center[2])*fr2.normal[2];
+  fr2.center = [_pc2[0]-_off2*fr2.normal[0], _pc2[1]-_off2*fr2.normal[1], _pc2[2]-_off2*fr2.normal[2]];
+})();
+const span2 = holeSpan(part, fr2);
+part = clearanceHole(part, fr2, 43.5, -46.5, 'M3', span2, 'normal');
+// --- clearanceHole end id=clearanceHole2 ---
+// --- clearanceHole begin id=clearanceHole3 ---
+const selFace3 = (() => {
+  const _c3 = [-0.2776, 0.0005, 21.95];
+  const _pieces3 = facesNamed(part, "roundedBox1.top"); // the picked face, by its stamped name
+  let _best3 = _pieces3[0], _bd = Infinity;
+  for (const _f3 of _pieces3) {
+    const _d3 = (_f3.center[0]-_c3[0])**2 + (_f3.center[1]-_c3[1])**2 + (_f3.center[2]-_c3[2])**2;
+    if (_d3 < _bd) { _bd = _d3; _best3 = _f3; }
+  }
+  return _best3;
+})();
+const fr3 = workplaneFromFace(part, selFace3);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc3 = [-0.2776, 0.0005, 21.95];
+  const _off3 = (_pc3[0]-fr3.center[0])*fr3.normal[0] + (_pc3[1]-fr3.center[1])*fr3.normal[1] + (_pc3[2]-fr3.center[2])*fr3.normal[2];
+  fr3.center = [_pc3[0]-_off3*fr3.normal[0], _pc3[1]-_off3*fr3.normal[1], _pc3[2]-_off3*fr3.normal[2]];
+})();
+const span3 = holeSpan(part, fr3);
+part = clearanceHole(part, fr3, -43.5, 46.5, 'M3', span3, 'normal');
+// --- clearanceHole end id=clearanceHole3 ---
+// --- clearanceHole begin id=clearanceHole4 ---
+const selFace4 = (() => {
+  const _c4 = [-0.1381, -0.1486, 21.95];
+  const _pieces4 = facesNamed(part, "roundedBox1.top"); // the picked face, by its stamped name
+  let _best4 = _pieces4[0], _bd = Infinity;
+  for (const _f4 of _pieces4) {
+    const _d4 = (_f4.center[0]-_c4[0])**2 + (_f4.center[1]-_c4[1])**2 + (_f4.center[2]-_c4[2])**2;
+    if (_d4 < _bd) { _bd = _d4; _best4 = _f4; }
+  }
+  return _best4;
+})();
+const fr4 = workplaneFromFace(part, selFace4);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc4 = [-0.1381, -0.1486, 21.95];
+  const _off4 = (_pc4[0]-fr4.center[0])*fr4.normal[0] + (_pc4[1]-fr4.center[1])*fr4.normal[1] + (_pc4[2]-fr4.center[2])*fr4.normal[2];
+  fr4.center = [_pc4[0]-_off4*fr4.normal[0], _pc4[1]-_off4*fr4.normal[1], _pc4[2]-_off4*fr4.normal[2]];
+})();
+const span4 = holeSpan(part, fr4);
+part = clearanceHole(part, fr4, -43.5, -46.5, 'M3', span4, 'normal');
+// --- clearanceHole end id=clearanceHole4 ---
+// --- roundedBox begin id=roundedBox3 ---
+let rbox3 = roundedBox([24, 6, 14], 3, 16).translate([0, 40.972, 0]);
+part = part.subtract(rbox3);
+// --- roundedBox end id=roundedBox3 ---
+// --- cylinder begin id=cylinder1 ---
+let cyl1 = Manifold.cylinder(7, 3.5, 3.5, 48).rotate([90, 0, 0]).translate([16.5, 50.472, 0]);
+part = part.add(cyl1);
+// --- cylinder end id=cylinder1 ---
+// --- cylinder begin id=cylinder2 ---
+let cyl2 = Manifold.cylinder(7, 3.5, 3.5, 48).rotate([90, 0, 0]).translate([-16.5, 50.472, 0]);
+part = part.add(cyl2);
+// --- cylinder end id=cylinder2 ---
+// --- tapDrillHole begin id=tapDrillHole1 ---
+const selFace5 = (() => {
+  const _c5 = [16.5, 50.472, 0];
+  const _pieces5 = facesNamed(part, "cylinder1.bottom"); // the picked face, by its stamped name
+  let _best5 = _pieces5[0], _bd = Infinity;
+  for (const _f5 of _pieces5) {
+    const _d5 = (_f5.center[0]-_c5[0])**2 + (_f5.center[1]-_c5[1])**2 + (_f5.center[2]-_c5[2])**2;
+    if (_d5 < _bd) { _bd = _d5; _best5 = _f5; }
+  }
+  return _best5;
+})();
+const fr5 = workplaneFromFace(part, selFace5);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc5 = [16.5, 50.472, 0];
+  const _off5 = (_pc5[0]-fr5.center[0])*fr5.normal[0] + (_pc5[1]-fr5.center[1])*fr5.normal[1] + (_pc5[2]-fr5.center[2])*fr5.normal[2];
+  fr5.center = [_pc5[0]-_off5*fr5.normal[0], _pc5[1]-_off5*fr5.normal[1], _pc5[2]-_off5*fr5.normal[2]];
+})();
+part = tapDrillHole(part, fr5, 0, 0, 'M3', 6);
+// --- tapDrillHole end id=tapDrillHole1 ---
+// --- tapDrillHole begin id=tapDrillHole2 ---
+const selFace6 = (() => {
+  const _c6 = [-16.5, 50.472, 0];
+  const _pieces6 = facesNamed(part, "cylinder2.bottom"); // the picked face, by its stamped name
+  let _best6 = _pieces6[0], _bd = Infinity;
+  for (const _f6 of _pieces6) {
+    const _d6 = (_f6.center[0]-_c6[0])**2 + (_f6.center[1]-_c6[1])**2 + (_f6.center[2]-_c6[2])**2;
+    if (_d6 < _bd) { _bd = _d6; _best6 = _f6; }
+  }
+  return _best6;
+})();
+const fr6 = workplaneFromFace(part, selFace6);
+// Snap origin to selected face center (projected onto plane) so Center → u=0,v=0 hits pick.
+(() => {
+  const _pc6 = [-16.5, 50.472, 0];
+  const _off6 = (_pc6[0]-fr6.center[0])*fr6.normal[0] + (_pc6[1]-fr6.center[1])*fr6.normal[1] + (_pc6[2]-fr6.center[2])*fr6.normal[2];
+  fr6.center = [_pc6[0]-_off6*fr6.normal[0], _pc6[1]-_off6*fr6.normal[1], _pc6[2]-_off6*fr6.normal[2]];
+})();
+part = tapDrillHole(part, fr6, 0, 0, 'M3', 6);
+// --- tapDrillHole end id=tapDrillHole2 ---
+return part;

@@ -1,22 +1,23 @@
 /**
  * Core / cavity section of the molding results pane. Labels stay
  * `text-on-dark`. Counts stay off the section: the parting line is one
- * polyline, not a face tally. The Side action row and its slide or lifter
- * list render only when that count is greater than 0.
+ * polyline, not a face tally. The Side action swatch renders only when the
+ * part has a block, and the Undercut swatch only when one of them has no
+ * straight withdraw direction. The tool is a visual; the per-block list and
+ * the slide / lifter / undercut breakdown live in the mold report.
  */
 
 import React from 'react';
 
-export default function PartingLegend({ legend, onSelectGroup = null }) {
+export default function PartingLegend({ legend }) {
   if (!legend) return null;
-  const groups = Array.isArray(legend.groups) ? legend.groups : null;
   return (
     <div
       data-parting-legend=""
       className="mold-results-section font-ui text-on-dark"
     >
       <div className="text-ui-sm">Core and cavity</div>
-      <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end={groups && groups.length > 0 ? undefined : ''}>
+      <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end="">
         {legend.rows.map((row) => (
           <li key={row.role} className="flex items-center gap-1 text-ui-sm text-on-dark">
             <span
@@ -28,37 +29,6 @@ export default function PartingLegend({ legend, onSelectGroup = null }) {
           </li>
         ))}
       </ul>
-      {groups && groups.length > 0 && (
-        <ul className="mt-1 flex flex-col gap-1" data-mold-pane-end="">
-          {groups.map((row) => (
-            <li key={row.id}>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-2 text-ui-sm text-on-dark"
-                aria-pressed={!!row.selected}
-                data-mold-side-action-group=""
-                data-side-action-id={row.id}
-                data-side-action-selected={row.selected ? 'true' : 'false'}
-                data-ui-action="data-mold-side-action-group"
-                onClick={() => onSelectGroup?.(row.id)}
-              >
-                <span className="flex items-center gap-1">
-                  <span
-                    data-side-action-swatch={row.kind}
-                    className="inline-block h-2 w-4 rounded-sm"
-                    style={{ background: row.css }}
-                  />
-                  {row.label}
-                </span>
-                <span className="flex items-baseline gap-2 tabular-nums text-muted-on-dark">
-                  {row.areaLabel ? <span data-side-action-area="">{row.areaLabel}</span> : null}
-                  <span>{row.pull}</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

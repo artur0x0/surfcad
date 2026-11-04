@@ -122,8 +122,10 @@ export function toolingCounts(analysis) {
     partingLengthMm: round4(partingLengthMm),
     slideCount: finite(analysis.sideActions?.slideCount) ?? 0,
     lifterCount: finite(analysis.sideActions?.lifterCount) ?? 0,
-    pinCount: finite(analysis.moldDraft?.ejectors?.pinCount) ?? 0,
-    sleeveCount: finite(analysis.moldDraft?.ejectors?.sleeveCount) ?? 0,
+    // Ejector pins and sleeves are not counted from the analysis any more
+    // (too fine for a budgetary quote). The card adders stay at zero count.
+    pinCount: 0,
+    sleeveCount: 0,
     maxWallMm: finite(analysis.wall?.max),
   };
 }

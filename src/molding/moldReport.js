@@ -287,6 +287,24 @@ function priceFromVendors(vendors, quantity) {
  * @param {object | null} [input.catalog] priced partners, machines, resins, rates
  * @param {object | null} [input.ranked] server `rankMoldingQuotes` payload, used when `catalog` is absent
  */
+/**
+ * "1 slide, 1 unresolved undercut" for the report's Side actions row, or
+ * '' when the breakdown is empty or missing. The core/cavity pane shows
+ * only the colours; this is where the kinds are counted.
+ */
+export function sideActionBreakdown(geometry) {
+  const sides = geometry?.sideActions;
+  if (!sides) return '';
+  const parts = [];
+  const add = (n, one, many) => {
+    if (Number.isFinite(n) && n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
+  };
+  add(sides.slides, 'slide', 'slides');
+  add(sides.lifters, 'lifter', 'lifters');
+  add(sides.unresolved, 'unresolved undercut', 'unresolved undercuts');
+  return parts.join(', ');
+}
+
 export function buildMoldReport(input = {}) {
   const parsed = parseReportQuantity(input.quantity == null ? DEFAULT_REPORT_QUANTITY : input.quantity);
   if (parsed.error) return parsed;
@@ -304,8 +322,10 @@ export function buildMoldReport(input = {}) {
   const volumeCm3 = pos ? solidVolumeCm3(pos, idx) : null;
   const projected = pos ? projectedAreaMm2(pos, idx, pull) : null;
   const sides = input.analysis?.sideActions;
+  // Every block is priced: slides, lifters, and unresolved undercuts (an
+  // undercut with no straight withdraw direction costs at least a slide).
   const sideActionCount = finite(sides?.count)
-    ?? ((finite(sides?.slideCount) ?? 0) + (finite(sides?.lifterCount) ?? 0));
+    ?? ((finite(sides?.slideCount) ?? 0) + (finite(sides?.lifterCount) ?? 0) + (finite(sides?.unresolvedCount) ?? 0));
   const draft = draftOf(input.analysis?.moldDraft);
   const tons = projected == null ? null : requiredTonnage(projected);
   const notes = {
@@ -463,6 +483,11 @@ export function buildMoldReport(input = {}) {
       volumeCm3,
       projectedAreaMm2: projected,
       sideActionCount,
+      sideActions: {
+        slides: finite(sides?.slideCount) ?? 0,
+        lifters: finite(sides?.lifterCount) ?? 0,
+        unresolved: finite(sides?.unresolvedCount) ?? 0,
+      },
       draft,
     },
     estimates,

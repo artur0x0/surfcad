@@ -27,6 +27,8 @@
  * vertical wall that only grazes the cell is not an undercut. Zero draft
  * on those walls belongs to the draft tool. The 10° band is only the
  * drafted-area score, not the undercut test.
+ * A needle too narrow to carry a normal, or a fold wound against a larger
+ * neighbour, is a mesh artifact and never an undercut (`markArtifacts`).
  * Connected undercut triangles that share a vertex, face the same way, and
  * agree within 35° are one region. The count is regions.
  *
@@ -40,7 +42,7 @@
  * It also carries the core / cavity split and parting line
  * (`src/molding/parting.js`) for that same pull, and the side-action
  * groups (`src/molding/sideActions.js`) clustered from these undercuts.
- * It also carries signed mold draft and ejector hints
+ * It also carries signed mold draft
  * (`src/molding/moldDraft.js`) for that same pull.
  */
 
@@ -122,6 +124,26 @@ const VERTICAL_SIN = Math.sin((PARTING_ZERO_DRAFT_DEG * Math.PI) / 180);
 const DEDUP_COS = Math.cos((MOLD_DIRECTION_DEDUP_DEG * Math.PI) / 180);
 const REGION_COS = Math.cos((MOLD_REGION_NORMAL_DEG * Math.PI) / 180);
 const AREA_EPS = 1e-12;
+/**
+ * A triangle narrower than this across has no measurable normal: float32
+ * positions on a part tens of millimetres across are only good to a few
+ * micrometres, and a boolean leaves such needles where two surfaces cross.
+ */
+export const MOLD_NEEDLE_ALTITUDE_MM = 0.005;
+/**
+ * A triangle that meets a larger edge-neighbour within this of 180° is a
+ * fold: a zero-thickness fin wound against the surface it lies on. No real
+ * surface has one, and no mould half can touch it.
+ */
+export const MOLD_FOLD_DEG = 5;
+/**
+ * Analysis resolution. For the chosen pull the undercut test runs on
+ * triangles split so no edge is longer than the occlusion cell (one 32nd of
+ * the part's extent), at most this many splits per edge. A wall that is two
+ * triangles is then classified where its shadow actually falls, not by the
+ * centroid of a triangle that spans the whole wall.
+ */
+export const MOLD_REFINE_MAX_SPLITS = 24;
 
 export function moldFitScore(undercutCount) {
   const n = Number(undercutCount) || 0;
@@ -257,7 +279,114 @@ function prepareTriangles(positions, indices, stamped) {
       centroid: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
     });
   }
+  markArtifacts(tris);
   return { tris, stampedCount, triangleCount, min, max };
+}
+
+/** Occlusion cell for a prepared mesh: the raster's cell, direction free. */
+export function refineCellOf(prepared) {
+  const span = Math.max(
+    prepared.max[0] - prepared.min[0],
+    prepared.max[1] - prepared.min[1],
+    prepared.max[2] - prepared.min[2],
+    1e-9,
+  );
+  let cell = Math.max(MOLD_MIN_CELL_MM, span / MOLD_GRID_CELLS);
+  if (span / cell > MOLD_GRID_CAP) cell = span / MOLD_GRID_CAP;
+  return cell;
+}
+
+/**
+ * Split every prepared triangle whose longest edge exceeds `cell` into a
+ * barycentric grid of sub-triangles. Each sub-triangle keeps its source
+ * triangle's normals, stamp and artifact flag, and records `source` (the
+ * source index) and `longest` (its own longest edge). Unsplit triangles are
+ * copied with `source` set. Ids are fresh and dense.
+ */
+export function refineTriangles(tris, cell) {
+  const out = [];
+  let uid = 0;
+  const push = (a, b, c, src, area, longest) => {
+    out.push({
+      t: uid++,
+      source: src.t,
+      a,
+      b,
+      c,
+      area,
+      n: src.n,
+      nGeom: src.nGeom,
+      artifact: !!src.artifact,
+      longest,
+      centroid: [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3],
+    });
+  };
+  for (const tri of tris) {
+    const L = Math.max(len(sub(tri.b, tri.a)), len(sub(tri.c, tri.b)), len(sub(tri.a, tri.c)));
+    const n = Math.min(MOLD_REFINE_MAX_SPLITS, Math.max(1, Math.ceil(L / Math.max(cell, 1e-9))));
+    if (n === 1) {
+      push(tri.a, tri.b, tri.c, tri, tri.area, L);
+      continue;
+    }
+    const ab = sub(tri.b, tri.a);
+    const ac = sub(tri.c, tri.a);
+    const P = (i, j) => [
+      tri.a[0] + (ab[0] * i + ac[0] * j) / n,
+      tri.a[1] + (ab[1] * i + ac[1] * j) / n,
+      tri.a[2] + (ab[2] * i + ac[2] * j) / n,
+    ];
+    const area = tri.area / (n * n);
+    const longest = L / n;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; i + j < n; j++) {
+        push(P(i, j), P(i + 1, j), P(i, j + 1), tri, area, longest);
+        if (i + j + 1 < n) push(P(i + 1, j), P(i + 1, j + 1), P(i, j + 1), tri, area, longest);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Flag the triangles whose normal says nothing about the surface: needles
+ * under MOLD_NEEDLE_ALTITUDE_MM across, and folds that meet a larger
+ * edge-neighbour at nearly 180° (`MOLD_FOLD_DEG`). On the Flanged_Box a
+ * 22 µm strip wound into the inside wall, left by the hollow at a fillet
+ * tangency, read as an occluded face and became a 0.4 mm² lifter. An
+ * artifact is still painted and still covers what lies under it; it is just
+ * never itself an undercut candidate.
+ */
+function markArtifacts(tris) {
+  const foldCos = -Math.cos((MOLD_FOLD_DEG * Math.PI) / 180);
+  const byEdge = new Map();
+  const edgeKey = (p, q) => (p < q ? `${p}:${q}` : `${q}:${p}`);
+  for (const tri of tris) {
+    const longest = Math.max(len(sub(tri.b, tri.a)), len(sub(tri.c, tri.b)), len(sub(tri.a, tri.c)));
+    tri.altitude = longest > 0 ? (2 * tri.area) / longest : 0;
+    tri.artifact = tri.altitude < MOLD_NEEDLE_ALTITUDE_MM;
+    for (const [p, q] of [[tri.ia, tri.ib], [tri.ib, tri.ic], [tri.ic, tri.ia]]) {
+      const k = edgeKey(p, q);
+      let list = byEdge.get(k);
+      if (!list) {
+        list = [];
+        byEdge.set(k, list);
+      }
+      list.push(tri);
+    }
+  }
+  for (const list of byEdge.values()) {
+    if (list.length < 2) continue;
+    for (const tri of list) {
+      if (tri.artifact) continue;
+      for (const other of list) {
+        if (other === tri || !(other.area > 2 * tri.area)) continue;
+        if (dot(tri.nGeom, other.nGeom) <= foldCos) {
+          tri.artifact = true;
+          break;
+        }
+      }
+    }
+  }
 }
 
 function addDirection(dirs, raw, principal) {
@@ -418,7 +547,7 @@ function barycentricCover(p, a, b, c) {
  * Projected height field. A triangle is inserted into every cell its
  * projected box touches, so a large outer face covers a recess.
  */
-function undercutsAlong(d, tris, skin) {
+function undercutsAlong(d, tris, skin, candidates = null) {
   const { u, v } = basisOf(d);
   const proj = (p) => [dot(p, u), dot(p, v)];
   const height = (p) => dot(p, d);
@@ -426,7 +555,7 @@ function undercutsAlong(d, tris, skin) {
   let maxU = -Infinity;
   let minV = Infinity;
   let maxV = -Infinity;
-  const prepared = tris.map((tri) => {
+  const rowOf = (tri) => {
     const pa = proj(tri.a);
     const pb = proj(tri.b);
     const pc = proj(tri.c);
@@ -463,7 +592,11 @@ function undercutsAlong(d, tris, skin) {
       nd: dot(tri.n, d),
       ndGeom: dot(tri.nGeom || tri.n, d),
     };
-  });
+  };
+  const prepared = tris.map(rowOf);
+  // Candidates (the refined sub-triangles of the chosen pull) are tested
+  // against the coarse covers; they do not cover anything themselves.
+  const tested = candidates ? candidates.map(rowOf) : prepared;
   const spanU = Math.max(maxU - minU, 0);
   const spanV = Math.max(maxV - minV, 0);
   const span = Math.max(spanU, spanV, 1e-9);
@@ -491,8 +624,9 @@ function undercutsAlong(d, tris, skin) {
     }
   }
   const hits = [];
-  for (const row of prepared) {
+  for (const row of tested) {
     if (Math.abs(row.ndGeom) <= VERTICAL_SIN) continue;
+    if (row.tri.artifact) continue;
     const facingOut = row.nd > 0;
     const h = row.h;
     let occluded = false;
@@ -512,7 +646,106 @@ function undercutsAlong(d, tris, skin) {
     if (!occluded) continue;
     hits.push({ ...row.tri, side: facingOut ? 1 : -1 });
   }
-  return clusterRegions(hits);
+  return candidates ? clusterRefinedRegions(hits) : clusterRegions(hits);
+}
+
+/**
+ * Regions of refined hits. Sub-triangles have no shared vertex indices, so
+ * two hits are neighbours when their centroids are closer than three
+ * quarters of their longest edges combined, they face the same way within
+ * MOLD_REGION_NORMAL_DEG, and they sit on the same side. Each region keeps
+ * its `cells` (the sub-triangles) and `triangles` (the distinct source
+ * triangles, for the skins and the body report).
+ */
+function clusterRefinedRegions(hits) {
+  const n = hits.length;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (i) => {
+    let r = i;
+    while (parent[r] !== r) r = parent[r];
+    let x = i;
+    while (parent[x] !== r) {
+      const next = parent[x];
+      parent[x] = r;
+      x = next;
+    }
+    return r;
+  };
+  let cell = 1e-9;
+  for (const hit of hits) if (hit.longest > cell) cell = hit.longest;
+  cell *= 1.5;
+  const grid = new Map();
+  const keyOf = (p) => `${Math.floor(p[0] / cell)},${Math.floor(p[1] / cell)},${Math.floor(p[2] / cell)}`;
+  hits.forEach((hit, i) => {
+    const k = keyOf(hit.centroid);
+    let list = grid.get(k);
+    if (!list) {
+      list = [];
+      grid.set(k, list);
+    }
+    list.push(i);
+  });
+  for (let i = 0; i < n; i++) {
+    const p = hits[i].centroid;
+    const cx = Math.floor(p[0] / cell);
+    const cy = Math.floor(p[1] / cell);
+    const cz = Math.floor(p[2] / cell);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const list = grid.get(`${cx + dx},${cy + dy},${cz + dz}`);
+          if (!list) continue;
+          for (const j of list) {
+            if (j <= i) continue;
+            if (hits[i].side !== hits[j].side) continue;
+            if (dot(hits[i].n, hits[j].n) < REGION_COS) continue;
+            const q = hits[j].centroid;
+            const reach = 0.75 * (hits[i].longest + hits[j].longest);
+            if (Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) > reach) continue;
+            const a = find(i);
+            const b = find(j);
+            if (a !== b) parent[b] = a;
+          }
+        }
+      }
+    }
+  }
+  const groups = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    let g = groups.get(r);
+    if (!g) {
+      g = { area: 0, n: [0, 0, 0], side: hits[i].side, seed: hits[i].source, centroid: [0, 0, 0], cells: [], sources: new Set() };
+      groups.set(r, g);
+    }
+    const hit = hits[i];
+    g.area += hit.area;
+    g.cells.push(hit);
+    g.sources.add(hit.source);
+    for (let k = 0; k < 3; k++) {
+      g.centroid[k] += hit.centroid[k] * hit.area;
+      g.n[k] += hit.n[k] * hit.area;
+    }
+  }
+  const regions = [...groups.values()];
+  regions.sort((a, b) => b.area - a.area || b.n[2] - a.n[2] || b.n[1] - a.n[1] || b.n[0] - a.n[0]);
+  return regions.map((g, id) => {
+    const nn = unit(g.n) || [0, 0, 0];
+    const weight = g.area || 1;
+    return {
+      id,
+      area: round(g.area, 6),
+      triangleCount: g.sources.size,
+      cellCount: g.cells.length,
+      normal: round3(nn),
+      side: g.side,
+      seed: g.seed,
+      centroid: round3(g.centroid.map((c) => c / weight)),
+      triangles: [...g.sources].sort((a, b) => a - b),
+      cells: g.cells,
+    };
+  });
 }
 
 function clusterRegions(hits) {
@@ -668,7 +901,7 @@ function scoreAxis(pull, tris, skinMm) {
   };
 }
 
-function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candidates, normals, positions, indices, skinMm, wall, parting, tris }) {
+function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candidates, normals, positions, indices, skinMm, wall, parting, tris, refined = null, faceInfo = null }) {
   const undercutCount = regions.length;
   return {
     version: MOLD_ANALYSIS_VERSION,
@@ -693,7 +926,7 @@ function resultOf({ pull, pullSource, regions, undercutArea, draftedArea, candid
     bodies: bodyReport(positions, indices, regions),
     wall,
     parting,
-    sideActions: groupSideActions(regions, pull, tris),
+    sideActions: groupSideActions(regions, pull, tris, { refined, faceInfo }),
     moldDraft: analyzeMoldDraft(tris, pull, wall),
   };
 }
@@ -770,13 +1003,33 @@ export function chooseMoldPull(query, candidates, primary) {
   return best;
 }
 
+/**
+ * Trapped regions along `pull` at analysis resolution, as the chosen pull
+ * sees them. For goldens and diagnostics; `finishMoldQuery` does the same.
+ */
+export function undercutRegionsAlong(query, pull) {
+  const d = unit(pull);
+  if (!d) return [];
+  const refined = refineTriangles(query.prepared.tris, refineCellOf(query.prepared));
+  return undercutsAlong(d, query.prepared.tris, query.skinMm, refined);
+}
+
 /** Parting, side actions, and mold draft for the chosen pull. */
 export function finishMoldQuery(query, chosen, wall) {
+  // The search scored coarse triangles. The chosen pull is classified again
+  // at analysis resolution, so the regions, the fit and the side actions
+  // follow the shadows rather than the modelling tessellation.
+  const refined = refineTriangles(query.prepared.tris, refineCellOf(query.prepared));
+  const regions = undercutsAlong(chosen.pull, query.prepared.tris, query.skinMm, refined);
+  let undercutArea = 0;
+  for (const region of regions) undercutArea += region.area;
   return resultOf({
     pull: chosen.pull,
     pullSource: chosen.pullSource,
-    regions: chosen.regions,
-    undercutArea: chosen.undercutArea,
+    regions,
+    undercutArea,
+    refined,
+    faceInfo: query.faceInfo,
     draftedArea: chosen.draftedArea,
     candidates: chosen.candidates,
     normals: query.normals,
