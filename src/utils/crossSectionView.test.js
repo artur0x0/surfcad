@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { Mesh, BufferGeometry, BufferAttribute } from 'three';
 import {
   applyTrimmedMeshToTarget,
+  clearCrossSectionOnMesh,
+  forgetCrossSectionOnMesh,
+  hideCrossSectionMesh,
   collectCrossSectionTargets,
   countCapTriangles,
   crossSectionPlaneKey,
@@ -171,4 +174,68 @@ test('Manifold trimByPlane seals the cut with cap triangles', async () => {
   assert.ok(remainingVolumeOf({ ...meshData, volume: trimmed.volume() }) > 0);
   cube.delete();
   trimmed.delete();
+});
+
+test('clearCrossSectionOnMesh restores the source only while the trimmed geometry is still drawn', () => {
+  const meshData = boxMeshData();
+  const { mesh, cache } = makeHost(meshData);
+  const source = mesh.geometry;
+  const trimmed = {
+    numProp: 3,
+    vertProperties: meshData.vertProperties.slice(0, 18),
+    triVerts: meshData.triVerts.slice(0, 6),
+  };
+  const { geometry: trimmedGeom } = buildSolidGeometry(trimmed);
+  cache.entries.set(trimmed, { geometry: trimmedGeom, faceIDs: null });
+  const target = { mesh, meshData, partId: 'p1' };
+  applyTrimmedMeshToTarget(target, trimmed, cache, { normal: [0, 0, 1], originOffset: 5 });
+  assert.equal(mesh.geometry, trimmedGeom);
+  assert.equal(mesh.userData.crossSectionTrimmedGeometry, trimmedGeom);
+
+  // Still trimmed: restore puts the source back and drops every marker.
+  clearCrossSectionOnMesh(mesh, cache);
+  assert.equal(mesh.geometry, source);
+  assert.equal(mesh.userData.crossSectionRestore, undefined);
+  assert.equal(mesh.userData.crossSectionTrimmedGeometry, undefined);
+
+  // Rebuilt since the trim: the new geometry stays and only the markers go.
+  applyTrimmedMeshToTarget(target, trimmed, cache, { normal: [0, 0, 1], originOffset: 5 });
+  const rebuilt = new BufferGeometry();
+  rebuilt.setAttribute('position', new BufferAttribute(new Float32Array(9), 3));
+  mesh.geometry = rebuilt;
+  clearCrossSectionOnMesh(mesh, cache);
+  assert.equal(mesh.geometry, rebuilt);
+  assert.equal(mesh.userData.crossSectionRestore, undefined);
+  assert.equal(mesh.userData.crossSectionTrimmedMeshData, undefined);
+});
+
+test('a part the plane removes entirely is hidden, and shown again on restore or forget', () => {
+  const meshData = boxMeshData();
+  const { mesh, cache } = makeHost(meshData);
+  mesh.visible = true;
+  hideCrossSectionMesh(mesh);
+  assert.equal(mesh.visible, false);
+  assert.deepEqual(mesh.userData.crossSectionHidden, { visible: true });
+  hideCrossSectionMesh(mesh);
+  assert.deepEqual(mesh.userData.crossSectionHidden, { visible: true }, 'a second hide keeps the first visibility');
+  clearCrossSectionOnMesh(mesh, cache);
+  assert.equal(mesh.visible, true);
+  assert.equal(mesh.userData.crossSectionHidden, undefined);
+
+  // A part that was hidden by the user stays hidden after the section lets go.
+  mesh.visible = false;
+  hideCrossSectionMesh(mesh);
+  forgetCrossSectionOnMesh(mesh);
+  assert.equal(mesh.visible, false);
+  assert.equal(mesh.userData.crossSectionHidden, undefined);
+
+  // A trim that lands on a hidden mesh shows it again.
+  mesh.visible = true;
+  hideCrossSectionMesh(mesh);
+  const trimmed = { numProp: 3, vertProperties: meshData.vertProperties.slice(0, 18), triVerts: meshData.triVerts.slice(0, 6) };
+  const { geometry: trimmedGeom } = buildSolidGeometry(trimmed);
+  cache.entries.set(trimmed, { geometry: trimmedGeom, faceIDs: null });
+  applyTrimmedMeshToTarget({ mesh, meshData, partId: 'p1' }, trimmed, cache, { normal: [0, 0, 1], originOffset: 5 });
+  assert.equal(mesh.visible, true);
+  assert.equal(mesh.userData.crossSectionHidden, undefined);
 });

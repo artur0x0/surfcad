@@ -138,11 +138,16 @@ import MoveFaceModeChip from './MoveFaceModeChip';
 import DeleteFaceModeChip from './DeleteFaceModeChip';
 import { buildCrossSectionPreview, defaultTopPlaneFrame } from '../utils/crossSectionSubstrate';
 import {
+  applyTrimmedMeshToTarget,
   clearCrossSectionOnMesh,
   collectCrossSectionTargets,
   crossSectionPlaneKey,
+  forgetCrossSectionOnMesh,
+  hideCrossSectionMesh,
   isAssemblyCrossSectionScope,
+  isSectionTrimmed,
   summarizeCrossSection,
+  worldPlaneToLocalTrim,
 } from '../utils/crossSectionView.js';
 import {
   beginSectionClip,
@@ -1908,6 +1913,8 @@ const Viewport = forwardRef(({
   const crossSectionEnabledRef = useRef(false);
   const crossSectionAppliedGenRef = useRef(0);
   const crossSectionAppliedRef = useRef(null);
+  // Generation of the capped trim requested on accept; bumped to drop a stale result.
+  const sectionCapGenRef = useRef(0);
   const crossSectionPlaneRef = useRef({
     normal: [0, 0, 1],
     originOffset: 0,
@@ -6986,8 +6993,61 @@ const Viewport = forwardRef(({
     }
   };
 
+  // Accept: cut every visible solid with the worker so the section is
+  // capped. The clip stays on while the trims compute, then comes off: the
+  // solids are already cut and a clip on the cap would only fight it. A
+  // result is dropped when the section was edited, reopened, turned off,
+  // or the part rebuilt in the meantime; the refresh that follows those
+  // asks again if it still needs to.
+  const requestSectionCaps = async (spec) => {
+    const gen = ++sectionCapGenRef.current;
+    if (!manifoldContext?.isReady) return;
+    const targets = crossSectionTargets();
+    if (!targets.length) return;
+    const rows = await Promise.all(targets.map(async (target) => {
+      const geometryAtRequest = target.mesh.geometry;
+      const local = worldPlaneToLocalTrim(target.mesh, spec.normal, spec.originOffset);
+      try {
+        const { mesh: trimmed } = await manifoldContext.trimMeshByPlane(target.meshData, local.normal, local.originOffset);
+        return { target, local, trimmed, geometryAtRequest };
+      } catch (error) {
+        console.warn('[CrossSection] cap trim failed:', error?.message || error);
+        return null;
+      }
+    }));
+    if (gen !== sectionCapGenRef.current || !crossSectionEnabledRef.current) return;
+    if (crossSectionPlaneRef.current?.showPlane !== false) return;
+    let applied = 0;
+    for (const row of rows) {
+      if (!row) continue;
+      const { target, local, trimmed, geometryAtRequest } = row;
+      if (target.mesh.geometry !== geometryAtRequest) continue;
+      const triangles = trimmed?.triVerts ? Math.floor(trimmed.triVerts.length / 3) : 0;
+      if (!trimmed?.vertProperties || triangles < 1) {
+        hideCrossSectionMesh(target.mesh);
+        applied += 1;
+        continue;
+      }
+      if (target.meshData?.sheetMetal) trimmed.sheetMetal = true;
+      applyTrimmedMeshToTarget(target, trimmed, solidCacheRef.current, {
+        normal: local.normal,
+        originOffset: local.originOffset,
+      });
+      ensureBodyMaterial(target.mesh, trimmed, materialsRef.current);
+      applyFaceSkinRef.current?.(target.mesh);
+      applied += 1;
+    }
+    if (!applied) return;
+    endSectionClip();
+    syncFailedPartOutlinesRef.current?.();
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (renderer && scene && camera) renderer.render(scene, camera);
+  };
+
   // World-space clip on every part material. The preview plane is only
-  // there while the options are open. Accept hides it; the clip stays.
+  // there while the options are open. Accept hides it and caps the solids.
   const refreshSectionClip = (plane) => {
     if (!crossSectionEnabledRef.current) return;
     const spec = plane || crossSectionPlaneRef.current;
@@ -7019,10 +7079,13 @@ const Viewport = forwardRef(({
     };
     const camera = cameraRef.current;
     if (renderer && scene && camera) renderer.render(scene, camera);
+    if (spec.showPlane === false) requestSectionCaps(spec);
+    else sectionCapGenRef.current += 1;
   };
   refreshSectionClipRef.current = refreshSectionClip;
 
   const endSectionView = () => {
+    sectionCapGenRef.current += 1;
     endSectionClip();
     healSectionGeometry();
     clearCuttingPlane();
@@ -14208,7 +14271,8 @@ const Viewport = forwardRef(({
 
   applyWallSkinRef.current = (host) => {
     if (!host) return;
-    if (!wallMapOnRef.current || host !== resultRef.current) {
+    // A capped section draws a trimmed solid; the field belongs to the uncut one.
+    if (!wallMapOnRef.current || host !== resultRef.current || isSectionTrimmed(host)) {
       detachThicknessSkin(host);
       return;
     }
@@ -14257,7 +14321,7 @@ const Viewport = forwardRef(({
 
   applyPartingSkinRef.current = (host) => {
     if (!host) return;
-    if (!partingOnRef.current || host !== resultRef.current) {
+    if (!partingOnRef.current || host !== resultRef.current || isSectionTrimmed(host)) {
       detachPartingSkin(host);
       return;
     }
@@ -14535,7 +14599,7 @@ const Viewport = forwardRef(({
 
   applyMoldDraftSkinRef.current = (host) => {
     if (!host) return;
-    if (!moldDraftOnRef.current || host !== resultRef.current) {
+    if (!moldDraftOnRef.current || host !== resultRef.current || isSectionTrimmed(host)) {
       detachMoldDraftSkin(host);
       return;
     }
@@ -15176,6 +15240,8 @@ const Viewport = forwardRef(({
     }
 
     const prevGeometry = resultRef.current.geometry;
+    // A new solid supersedes any capped section drawn on the old one.
+    forgetCrossSectionOnMesh(resultRef.current);
     resultRef.current.geometry = geometry;
     if (prevGeometry && prevGeometry !== geometry) {
       moldCacheRef.current.invalidateMesh(prevGeometry);

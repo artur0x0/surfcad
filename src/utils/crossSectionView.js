@@ -1,10 +1,19 @@
 /**
- * Leftover helpers from the capped-solid section (Manifold `trimByPlane`).
+ * Capped-solid section helpers (Manifold `trimByPlane`).
  *
- * The viewer does not trim anymore. A section is a world-space clip in
- * `sectionClip.js` and does not replace geometry. These helpers stay so a
- * mesh that still carries a trim can be put back, and so the cap tests
- * still describe the worker output.
+ * While the section options are open the viewer clips in place
+ * (`sectionClip.js`), which is instant and never touches geometry. On
+ * accept (the green check, or closing the options) the viewer cuts every
+ * visible solid with the worker's trim, in each mesh's own frame, and swaps
+ * the drawn geometry for the capped result so the cut face is a real face
+ * and the inside of a wall can be seen. Each swapped mesh remembers its
+ * uncut source (`userData.crossSectionRestore`) and the exact geometry it
+ * was given (`userData.crossSectionTrimmedGeometry`); `clearCrossSectionOnMesh`
+ * puts the source back only while that geometry is still the one drawn, so
+ * a part rebuilt in the meantime is never overwritten with a stale solid. A
+ * part the plane removes entirely is hidden (`userData.crossSectionHidden`)
+ * and shown again on restore. Editing, reopening, turning the tool off, and
+ * a rebuilt mesh all restore before anything else happens.
  */
 import { Matrix4, Plane, Vector3 } from 'three';
 import { cachedSolidGeometry, releaseGeometryIn, solidEntryForGeometry } from './partSolidCache.js';
@@ -94,13 +103,45 @@ export function worldPlaneToLocalTrim(mesh, normal, originOffset) {
   };
 }
 
+/** Drop the section markers on a mesh without touching its geometry; show it again if the section hid it. */
+export function forgetCrossSectionOnMesh(mesh) {
+  if (!mesh?.userData) return;
+  const hidden = mesh.userData.crossSectionHidden;
+  if (hidden) mesh.visible = hidden.visible !== false;
+  delete mesh.userData.crossSectionHidden;
+  delete mesh.userData.crossSectionRestore;
+  delete mesh.userData.crossSectionTrimmedMeshData;
+  delete mesh.userData.crossSectionTrimmedGeometry;
+  delete mesh.userData.crossSectionApplied;
+}
+
+/** True while the mesh draws the capped section geometry this module installed. */
+export function isSectionTrimmed(mesh) {
+  const trimmed = mesh?.userData?.crossSectionTrimmedGeometry;
+  return !!trimmed && mesh.geometry === trimmed;
+}
+
+/** A part the plane removes entirely: hide it and remember what visible was. */
+export function hideCrossSectionMesh(mesh) {
+  if (!mesh) return;
+  if (!mesh.userData.crossSectionHidden) {
+    mesh.userData.crossSectionHidden = { visible: mesh.visible !== false };
+  }
+  mesh.visible = false;
+}
+
+/**
+ * Put the uncut geometry back. Only when the mesh still draws the trimmed
+ * geometry this helper installed: a mesh that was rebuilt since keeps its
+ * new geometry and just loses the markers.
+ */
 export function clearCrossSectionOnMesh(mesh, solidCache) {
   if (!mesh) return;
   const restore = mesh.userData?.crossSectionRestore;
-  if (!restore?.meshData) {
-    delete mesh.userData.crossSectionRestore;
-    delete mesh.userData.crossSectionTrimmedMeshData;
-    delete mesh.userData.crossSectionApplied;
+  const trimmedGeometry = mesh.userData?.crossSectionTrimmedGeometry;
+  const stillTrimmed = !trimmedGeometry || mesh.geometry === trimmedGeometry;
+  if (!restore?.meshData || !stillTrimmed) {
+    forgetCrossSectionOnMesh(mesh);
     return;
   }
   const { geometry } = cachedSolidGeometry(solidCache, restore.meshData);
@@ -109,9 +150,7 @@ export function clearCrossSectionOnMesh(mesh, solidCache) {
     releaseGeometryIn(solidCache, prev);
     mesh.geometry = geometry;
   }
-  delete mesh.userData.crossSectionRestore;
-  delete mesh.userData.crossSectionTrimmedMeshData;
-  delete mesh.userData.crossSectionApplied;
+  forgetCrossSectionOnMesh(mesh);
 }
 
 /** Restore every part that was sectioned. */
@@ -136,6 +175,11 @@ export function applyTrimmedMeshToTarget(target, trimmedMeshData, solidCache, ap
   if (prev !== geometry) {
     releaseGeometryIn(solidCache, prev);
     mesh.geometry = geometry;
+  }
+  mesh.userData.crossSectionTrimmedGeometry = geometry;
+  if (mesh.userData.crossSectionHidden) {
+    mesh.visible = mesh.userData.crossSectionHidden.visible !== false;
+    delete mesh.userData.crossSectionHidden;
   }
 }
 
