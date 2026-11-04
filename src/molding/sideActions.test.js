@@ -37,7 +37,7 @@ function appendMesh(dstPos, dstIdx, positions, indices) {
 }
 
 /**
- * Outer box, a +Z shelf, and a tilted wall. Both are trapped, so both are lifters.
+ * Outer box, a +Z shelf, and a tilted wall. Both are trapped.
  */
 function shelfAndSlide() {
   const positions = [];
@@ -82,7 +82,7 @@ test('a sideways normal hints a slide and a pull-parallel normal is not an escap
   assert.equal(suggestSidePull([0, 0, 0], [0, 0, 1]), null);
 });
 
-test('same-direction regions on one side are one action, even far apart', () => {
+test('same-direction regions are one action, even far apart and on both sides', () => {
   const grouped = groupSideActions([
     region(0, [1, 0, 0.2], 1, { centroid: [0, 0, 0] }),
     region(1, [0.98, 0.1, 0.15], 1, { centroid: [80, 0, 0] }),
@@ -90,26 +90,27 @@ test('same-direction regions on one side are one action, even far apart', () => 
     region(3, [1, 0, 0.2], -1),
     region(4, [0, 0.2, 1], 1, { area: 4 }),
   ], [0, 0, 1]);
+  // One direction is one block: the three +X regions, including the one on
+  // the other side of the pull, share a slide; −X is its own; +Y its own.
   assert.equal(grouped.heuristic, true);
-  assert.equal(grouped.slideCount, 4);
+  assert.equal(grouped.slideCount, 3);
   assert.equal(grouped.lifterCount, 0);
-  assert.equal(grouped.count, 4);
+  assert.equal(grouped.count, 3);
   const slides = grouped.groups.filter((group) => group.kind === 'slide');
-  const merged = slides.find((group) => group.regionIds.length === 2);
+  const merged = slides.find((group) => group.regionIds.length === 3);
   assert.ok(merged);
-  assert.deepEqual(merged.regionIds.slice().sort(), [0, 1]);
+  assert.deepEqual(merged.regionIds.slice().sort(), [0, 1, 3]);
   assert.equal(merged.pull[0] > 0.9, true);
-  assert.equal(slides.some((group) => group.side === -1), true);
   assert.equal(slides.some((group) => group.pull[0] < -0.9), true);
   const alongY = grouped.groups.find((group) => group.area === 4);
   assert.equal(alongY.kind, 'slide');
   assert.ok(alongY.pull[1] > 0.9);
   const legend = sideActionLegendModel(grouped);
   assert.equal(legend.heuristic, true);
-  assert.equal(legend.rows.length, 4);
+  assert.equal(legend.rows.length, 3);
   assert.equal(legend.more, 0);
   assert.equal(legend.rows[0].label, 'Slide');
-  assert.equal(legend.rows[0].areaLabel, '4 mm²');
+  assert.equal(legend.rows[0].areaLabel, '6 mm²');
 });
 
 test('a wall within half a degree of vertical is not a side action', () => {
@@ -118,14 +119,19 @@ test('a wall within half a degree of vertical is not a side action', () => {
     region(1, [1, 0, Math.sin((0.25 * Math.PI) / 180)], 1, { area: 30 }),
     region(2, [0, 0, -1], -1, { area: 12 }),
   ], [0, 0, 1]);
+  // The two walls are not actions. The downward face has no in-plane
+  // normal and, with no mesh to test a direction against, nothing frees
+  // it: an unresolved undercut, reported with the first in-plane axis.
   assert.equal(grouped.count, 1);
-  assert.equal(grouped.slideCount, 1);
+  assert.equal(grouped.slideCount, 0);
   assert.equal(grouped.lifterCount, 0);
+  assert.equal(grouped.unresolvedCount, 1);
+  assert.equal(grouped.groups[0].kind, 'unresolved');
   assert.equal(grouped.groups[0].area, 12);
   assert.ok(grouped.groups[0].pull[0] > 0.9);
   assert.ok(Math.abs(grouped.groups[0].pull[2]) < 1e-6);
   const legend = sideActionLegendModel(grouped);
-  assert.equal(legend.rows[0].label, 'Slide');
+  assert.equal(legend.rows[0].label, 'Undercut');
   assert.equal(legend.rows[0].pull, '+X');
   assert.equal(legend.rows[0].areaLabel, '12 mm²');
 });
@@ -159,17 +165,22 @@ test('an occluded wall is a side action only once it leaves the vertical band', 
   const grazing = analyzePullDirection(occludedWall(0.25));
   assert.equal(grazing.undercutCount, 0);
   assert.equal(grazing.sideActions.count, 0);
+  // At 2° the wall is a true undercut. Clearance is entering material: a
+  // ray that leaves through a face whose normal points its way has left,
+  // so the box around this fixture is not a block and the wall slides out
+  // in the plane. (The fixture is a floating quad inside a solid box; the
+  // normals say the box is material, so there is nothing to enter.)
   const drafted = analyzePullDirection(occludedWall(2));
   assert.equal(drafted.error, undefined);
   assert.equal(drafted.undercutCount, 1);
   assert.equal(drafted.sideActions.count, 1);
-  assert.equal(drafted.sideActions.slideCount, 0);
-  assert.equal(drafted.sideActions.lifterCount, 1);
+  assert.equal(drafted.sideActions.slideCount, 1);
+  assert.equal(drafted.sideActions.lifterCount, 0);
   const group = drafted.sideActions.groups[0];
-  assert.equal(group.clear, false);
+  assert.equal(group.clear, true);
   assert.ok(group.pull[0] > 0.8);
-  assert.ok(group.pull[2] < -0.2);
-  assert.ok(group.area > 40);
+  assert.ok(Math.abs(group.pull[2]) < 1e-6);
+  assert.ok(group.trappedArea > 40, `trapped ${group.trappedArea}`);
 });
 
 test('the core and cavity legend lists each side action', () => {
@@ -179,7 +190,7 @@ test('the core and cavity legend lists each side action', () => {
   ], [0, 0, 1]);
   const legend = splitLegendModel(parting, grouped, 0);
   assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Side action', 'Parting line']);
-  assert.equal(legend.groups[0].label, 'Slide');
+  assert.equal(legend.groups[0].label, 'Undercut');
   assert.equal(legend.groups[0].areaLabel, '12 mm²');
   assert.equal(legend.groups[0].pull, '+X');
   assert.equal(legend.groups[0].selected, true);
@@ -206,15 +217,18 @@ test('a box has no side actions and a shelf plus a tilted wall splits', () => {
   assert.equal(box.sideActions.slideCount, 0);
   assert.equal(box.sideActions.lifterCount, 0);
   assert.equal(box.sideActions.heuristic, true);
+  // Two trapped quads inside a solid box. Each clears an in-plane direction
+  // (the box walls are left through, not entered), and they do not share a
+  // direction, so two slides.
   const part = analyzePullDirection({ ...shelfAndSlide(), pull: [0, 0, 1] });
   assert.equal(part.error, undefined);
-  assert.equal(part.sideActions.slideCount, 0);
-  assert.equal(part.sideActions.lifterCount, 2);
+  assert.equal(part.sideActions.slideCount, 2);
+  assert.equal(part.sideActions.lifterCount, 0);
   assert.equal(part.sideActions.count, 2);
   for (const group of part.sideActions.groups) {
-    assert.equal(group.kind, 'lifter');
-    assert.equal(group.clear, false);
-    assert.ok(group.pull[2] < -0.2);
+    assert.equal(group.kind, 'slide');
+    assert.equal(group.clear, true);
+    assert.ok(Math.abs(group.pull[2]) < 1e-6);
     assert.ok(group.triangles.length >= 1);
   }
   assert.equal(part.fit, 'fixable');

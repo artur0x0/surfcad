@@ -117,8 +117,9 @@ export function dfmReport(analysis) {
       heuristic: true,
       slideCount: finite(sides.slideCount) ?? 0,
       lifterCount: finite(sides.lifterCount) ?? 0,
+      unresolvedCount: finite(sides.unresolvedCount) ?? 0,
       groups: groups.map((group) => ({
-        kind: group?.kind === 'lifter' ? 'lifter' : 'slide',
+        kind: group?.kind === 'lifter' || group?.kind === 'unresolved' ? group.kind : 'slide',
         pull: pullOf(group?.pull),
       })),
     },

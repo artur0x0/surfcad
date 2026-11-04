@@ -304,8 +304,10 @@ export function buildMoldReport(input = {}) {
   const volumeCm3 = pos ? solidVolumeCm3(pos, idx) : null;
   const projected = pos ? projectedAreaMm2(pos, idx, pull) : null;
   const sides = input.analysis?.sideActions;
+  // Every block is priced: slides, lifters, and unresolved undercuts (an
+  // undercut with no straight withdraw direction costs at least a slide).
   const sideActionCount = finite(sides?.count)
-    ?? ((finite(sides?.slideCount) ?? 0) + (finite(sides?.lifterCount) ?? 0));
+    ?? ((finite(sides?.slideCount) ?? 0) + (finite(sides?.lifterCount) ?? 0) + (finite(sides?.unresolvedCount) ?? 0));
   const draft = draftOf(input.analysis?.moldDraft);
   const tons = projected == null ? null : requiredTonnage(projected);
   const notes = {

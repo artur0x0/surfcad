@@ -1,5 +1,23 @@
 # Side actions: redesign
 
+Status 2026-11-04: built on this branch and pinned by
+`npm run golden:mold-side-action-block` (`scripts/golden/smoke_mold_side_action_block.mjs`,
+fixture `scripts/golden/fixtures/flanged_box_side_action.txt`). Measured on
+the vault part, pull +Z:
+
+| Fixture | Result |
+| --- | --- |
+| Flanged_Box as modelled | 1 slide along +Y, window x ±20, z −1.2 to 19.3, span −3.2 to 19.3, face ≈1,367 mm² (plate, both bosses, the wall shadow, the flange underside above the bosses); 1 unresolved undercut (the slot); no lifter |
+| Flanged_Box with a straight slot | exactly 1 slide along +Y, window x ±20, z −7 to 19.3, the slot inside it |
+| two Ø5 holes 40 mm apart on one wall | 1 slide through both |
+
+The slot is unresolved as modelled because `roundedBox([24, 6, 14], 3)` is
+a stadium in plan: its ends are quarter-cylinders about the Z axis, so the
+slot narrows by about a millimetre toward the outer face of the wall. That
+is a real lip; no straight pull frees it. Cutting the slot with a straight
+`cube([24, 6, 14])` gives the one slide the sketch shows. The model should
+change; the tool is right to refuse to invent a direction.
+
 Goal: on Flanged_Box, one slide along +Y whose face is the block Artur drew
 (the plate, its bosses, the slot, the wall the plate shadows up to the
 flange, and the flange underside above the bosses), without rules written
@@ -94,7 +112,17 @@ triangle is not in the set being moved. Faces parallel to the motion and
 faces of the same feature never block. Rays start a skin off the surface and
 must leave the part's bounding box.
 
-On this part the slot clears along +Y under this test; today it does not.
+On this part the slot walls clear along +Y under this test; the slot's
+rounded ends do not (see Status above), which is correct.
+
+### R4b. A feature is one problem
+
+Trapped regions whose source triangles share a vertex form one feature. If
+any region of a feature is unresolved (R7), no steel can form that feature as
+modelled, and a lifter on one of its facets would be a fiction. The whole
+feature is reported as one unresolved undercut. Without this the stadium
+slot came out as one slide for its straight walls plus two lifters for its
+rounded ends.
 
 ### R5. One block per direction and connected surface
 
@@ -115,12 +143,18 @@ component along +Y, so one block, window x ±20, z −7 to 19.
 
 ### R6. The block face
 
-Within a block's window, the side action's face is every part surface that
+Within a block's window, the candidate surface is every analysis cell that
 is reachable along the block's direction (R4 test from the surface) and
-whose centroid projects into the window. A stamped face that is at least 80%
-inside is taken whole, provided it is smaller than the window, so the plate's
-flat face and the boss cylinders come in complete and the flange band and
-the rest of the flange underside do not. Paint that face set; report its
+whose centroid projects into the window. The face is the flood from the
+block's trapped source triangles over adjacent candidate sources: the block
+can only form surface it touches, and a face that is reachable only through
+an opening (the far inside wall of the shell, seen through the slot) is not
+adjacent to the trapped faces inside the window and stays out. A stamped
+face that the flood reaches and that is at least 80% inside the window is
+taken whole, provided it is smaller than the window, so the plate's flat
+face and the boss cylinders come in complete and the flange band and the
+rest of the flange underside do not. An unresolved undercut has no block;
+its face is its trapped cells. Paint that face set; report its
 area and its span along the pull; list the stamped features it carries
 (`cube2`, `cylinder1`, `cylinder2`, `roundedBox3`) and the faces it frees
 (`cube1.back` shadow, `roundedBox1.bottom` strip).
@@ -139,37 +173,52 @@ part triangles; the core/cavity colours stay per part triangle.
 Only when R3 finds no in-plane direction for a set. Try directions tilted
 15° to 25° toward the core; accept one only if its samples leave the
 bounding box without entering material. If none does, report the set as an
-unresolved undercut, not a lifter. Never invent a direction into the part.
+unresolved undercut, not a lifter, and apply R4b so the feature it belongs
+to is unresolved as a whole. Never invent a direction into the part. The
+unresolved group still carries the least-blocked direction so the pane can
+show where it would have gone.
 
 ### R8. Lifters and slides do not merge; same-direction blocks are separate actions
 
 Each block is one action with one direction. The count that goes to the
-tooling estimate is the number of blocks.
+tooling estimate is the number of blocks, unresolved undercuts included: an
+undercut with no straight withdraw direction costs at least a slide.
+
+Without a mesh (unit tests feed synthetic regions) R4 cannot run, so a
+region clears a direction when the direction lies within 10° of its own
+in-plane normal, and every region shares one connected surface.
 
 ## Test matrix
 
 | Fixture | Expected |
 | --- | --- |
-| Flanged_Box (vault) | one slide, +Y, window x ±20, z −7 to 18.75, span to the flange underside, no lifter |
-| box with one horizontal through-hole | one slide along the hole axis, face = the bore |
-| box with two Ø5 side holes 60 mm apart on one wall | one slide, face spanning both and the wall between |
-| box with a +Y feature on the back wall and a +Y-facing trapped face behind an internal rib | two slides |
+| Flanged_Box (vault, stadium slot) | one slide, +Y, window x ±20, span to the flange underside, no lifter; the slot is one unresolved undercut (pinned) |
+| Flanged_Box with a straight slot | exactly one slide, +Y, window x ±20, z −7 to 19 (pinned) |
+| box with one horizontal through-hole | one slide along the hole axis, face = the bore (unit test `occludedWall`) |
+| box with two Ø5 side holes 40 mm apart on one wall | one slide, face spanning both and the wall between (pinned) |
+| box with a +Y feature on the back wall and a +Y-facing trapped face behind an internal rib | two slides (not yet pinned) |
 | snap hook (existing fixture) | one lifter, direction leaving the part |
 | shelf plus tilted wall (existing fixture) | one action if both clear the same direction on one connected surface, else two; pin what the geometry says |
 | Shell_Fillet_Test (existing fixture) | no side actions |
 | drafted box with a fold and a needle (existing test) | no undercuts |
 
-## Where the code changes
+## Where the code is
 
-- `pullDirection.js`: R1 subdivision in `prepareTriangles` (keep a
-  `source` index per sub-triangle); R2 is `undercutsAlong` as now.
-- `sideActions.js`: R3 replaces `escapeForRegion`'s first-clear loop with the
-  cover loop; R4 changes `sampleExits`; R5 and R6 replace the union-find in
-  `groupSideActions`; R7 replaces the tilted fallback; R8 is the output.
-- `sideActionSkin.js` / `partingSkin.js`: paint the block face from the
-  sub-triangle list.
-- `moldReport.js`, `dfmReport.js`: the count is blocks; the report lists the
-  features per block.
-- Agent output `mold_parting.sideActions.groups[]`: add `window`, `span`,
-  `features`, `frees`; keep `kind`, `pull`, `area`.
-- Goldens for the matrix above; the vault part as the headline golden.
+- `pullDirection.js`: R1 is `refineTriangles` (barycentric grid, at most 24
+  splits per edge, each cell keeps its `source` triangle); R2 is
+  `undercutsAlong` over the refined cells, `clusterRefinedRegions` groups
+  them; `finishMoldQuery` recomputes the regions refined.
+- `sideActions.js`: `blockingField` is R4; the cover loop in
+  `groupSideActions` is R3; R4b is the feature union-find; R5 is
+  `reachableComponents`; R6 is the window plus flood; R7 is the tilt list
+  `LIFTER_TILTS_DEG`; R8 is the output with `window`, `span`, `features`,
+  `frees`, `trappedArea`, `face`.
+- `partingSkin.js`: `sideOverlays` draws each block face from `group.face`
+  as its own overlay mesh; core and cavity stay per part triangle.
+- `moldReport.js`, `dfmReport.js`: `count` is blocks; `unresolvedCount` is
+  reported.
+- Agent output `mold_parting.sideActions.groups[]` carries `kind`
+  (`slide`, `lifter`, `unresolved`), `pull`, `area`, `trappedArea`, `span`,
+  `features`, `frees`.
+- Cost on Flanged_Box in headless Chrome: core/cavity on went from about
+  9 s to about 11 s; the refinement and the block faces are the difference.

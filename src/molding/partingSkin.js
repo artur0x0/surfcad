@@ -18,7 +18,7 @@ import {
 } from 'three';
 import { makeFaceSkinMaterial } from '../utils/faceColorSkin.js';
 import { PARTING_LINE_RGB, PARTING_ROLE_RGB } from './parting.js';
-import { SIDE_ACTION_FACE_RGB, SIDE_ACTION_HIGHLIGHT_RGB } from './sideActions.js';
+import { SIDE_ACTION_FACE_RGB, SIDE_ACTION_HIGHLIGHT_RGB, SIDE_ACTION_KIND_RGB } from './sideActions.js';
 
 /** Above paint (2), under the wall skin (2.4) and the stress skin (2.5). */
 export const PARTING_SKIN_RENDER_ORDER = 2.35;
@@ -49,16 +49,51 @@ function restorePaintSkin(host) {
   if (paint) paint.visible = saved.visible;
 }
 
-function sidePaint(sideActions, selectedId) {
+/**
+ * Each side action's block face, as its own overlay mesh. The face is the
+ * analysis-resolution cell soup `groupSideActions` built (`group.face`),
+ * so a wall that is two triangles shows the slide only where the slide is.
+ * A group with no face soup (an older result) falls back to colouring its
+ * trapped source triangles through `sideFallbackPaint`.
+ */
+function sideOverlays(sideActions, selectedId, side) {
+  const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
+  const meshes = [];
+  for (const group of groups) {
+    const positions = group.face?.positions;
+    if (!positions || positions.length < 9) continue;
+    const selected = selectedId != null && group.id === selectedId;
+    const rgb = selected ? SIDE_ACTION_HIGHLIGHT_RGB : (group.kind === 'slide' ? SIDE_ACTION_FACE_RGB : (SIDE_ACTION_KIND_RGB[group.kind] || SIDE_ACTION_FACE_RGB));
+    const colors = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+      colors[i] = rgb[0];
+      colors[i + 1] = rgb[1];
+      colors[i + 2] = rgb[2];
+    }
+    const geom = new BufferGeometry();
+    geom.setAttribute('position', new BufferAttribute(Float32Array.from(positions), 3));
+    geom.setAttribute('color', new BufferAttribute(colors, 3));
+    geom.computeVertexNormals();
+    const material = makeFaceSkinMaterial(side);
+    material.polygonOffsetFactor = -4;
+    material.polygonOffsetUnits = -8;
+    const mesh = new Mesh(geom, material);
+    mesh.name = `mold-side-action-${group.id}`;
+    mesh.renderOrder = PARTING_SKIN_RENDER_ORDER + 0.02;
+    mesh.frustumCulled = false;
+    mesh.raycast = () => {};
+    meshes.push(mesh);
+  }
+  return meshes;
+}
+
+function sideFallbackPaint(sideActions, selectedId) {
   const map = new Map();
   const groups = Array.isArray(sideActions?.groups) ? sideActions.groups : [];
   for (const group of groups) {
-    if (selectedId != null && group.id === selectedId) continue;
-    for (const t of group.triangles || []) map.set(t, SIDE_ACTION_FACE_RGB);
-  }
-  for (const group of groups) {
-    if (!(selectedId != null && group.id === selectedId)) continue;
-    for (const t of group.triangles || []) map.set(t, SIDE_ACTION_HIGHLIGHT_RGB);
+    if (group.face?.positions?.length >= 9) continue;
+    const selected = selectedId != null && group.id === selectedId;
+    for (const t of group.triangles || []) map.set(t, selected ? SIDE_ACTION_HIGHLIGHT_RGB : SIDE_ACTION_FACE_RGB);
   }
   return map;
 }
@@ -68,7 +103,7 @@ function sideStamp(sideActions, selectedId) {
   const parts = [selectedId == null ? '' : String(selectedId)];
   for (const group of groups) {
     const ids = group.triangles || [];
-    parts.push(group.id, ids.length, ids[0] ?? '', ids[ids.length - 1] ?? '');
+    parts.push(group.id, group.kind, ids.length, ids[0] ?? '', ids[ids.length - 1] ?? '', group.face?.triangleCount ?? 0, group.area ?? 0);
   }
   return parts.join(',');
 }
@@ -86,7 +121,7 @@ function buildGeometry(geometry, parting, sideActions, selectedId) {
     if (!(sample?.index >= 0 && sample.index < triangles)) continue;
     if (sample.role === 'core' || sample.role === 'cavity') roleOf[sample.index] = sample.role;
   }
-  const paintedSide = sidePaint(sideActions, selectedId);
+  const paintedSide = sideFallbackPaint(sideActions, selectedId);
   const positions = new Float32Array(triangles * 9);
   const colors = new Float32Array(triangles * 9);
   let w = 0;
@@ -200,6 +235,7 @@ export function syncPartingSkin(host, parting, sideActions = null, selectedId = 
   skin.userData.partingSkin = true;
   const loop = buildLine(parting);
   if (loop) skin.add(loop);
+  for (const overlay of sideOverlays(sideActions, selectedId, hostSide(host))) skin.add(overlay);
   host.add(skin);
   host.userData.partingSkin = skin;
   host.userData.partingStamp = stamp;

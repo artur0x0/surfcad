@@ -368,12 +368,16 @@ test('a snap hook keeps a principal pull and reports the lip undercut', () => {
   const result = analyzePullDirection(mesh);
   assert.deepEqual(result.pull, [0, 0, 1]);
   assert.equal(result.undercutCount, 1);
-  assert.equal(result.undercutArea, 12);
+  // The head's underside is two 12 mm² triangles; the lip below shadows 8 mm²
+  // of it. Classified at analysis resolution the trapped area is that shadow
+  // plus the cells straddling its edge, not the whole triangle.
+  assert.ok(Math.abs(result.undercutArea - 8.4) < 0.6, `undercutArea ${result.undercutArea}`);
   assert.equal(result.sideActions.count, 1);
   assert.equal(result.sideActions.slideCount, 1);
   assert.equal(result.sideActions.lifterCount, 0);
   const group = result.sideActions.groups[0];
-  assert.equal(group.area, 12);
+  assert.ok(Math.abs(group.trappedArea - result.undercutArea) < 1e-6, `trapped ${group.trappedArea}`);
+  assert.ok(group.area >= group.trappedArea, `face ${group.area} < trapped ${group.trappedArea}`);
   assert.equal(group.clear, true);
   const aligned = Math.abs(
     result.pull[0] * group.pull[0] + result.pull[1] * group.pull[1] + result.pull[2] * group.pull[2],
@@ -527,7 +531,7 @@ test('vertical fillets and flat walls stay core or cavity, and the snap lip stay
   }
   const hook = analyzePullDirection(snapHook());
   assert.equal(hook.undercutCount, 1);
-  assert.equal(hook.undercutArea, 12);
+  assert.ok(Math.abs(hook.undercutArea - 8.4) < 0.6, `undercutArea ${hook.undercutArea}`);
 });
 
 test('a zero pull is bad_args and an empty mesh is no_mesh', () => {

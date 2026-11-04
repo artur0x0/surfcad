@@ -118,6 +118,17 @@ jobs:
             exit 1
           fi
 
+      # Headless node, no Chrome: side actions as blocks on the vault
+      # Flanged_Box (one slide plus the stadium-slot undercut), its
+      # straight-slot variant (exactly one slide), and two holes on one wall
+      # (one slide, whatever the gap).
+      - name: mold side action block golden
+        run: |
+          npm run golden:mold-side-action-block | tee "${RUNNER_TEMP}/mold-side-action-block.log"
+          if ! grep -q 'side actions as blocks ok' "${RUNNER_TEMP}/mold-side-action-block.log"; then
+            echo "mold side action block golden did not pass (see log above)"
+            exit 1
+          fi
       # Headless node, no Chrome: source-pin goldens that read the sources and
       # the pure helpers (cross-part subtract plan, assembly title and
       # overlays, failed-part outline wiring, shell face-pick compose). Each

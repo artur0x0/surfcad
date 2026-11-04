@@ -110,6 +110,7 @@ export function syncSideActionSkin(host, sideActions) {
     sideActions.count,
     sideActions.slideCount,
     sideActions.lifterCount,
+    sideActions.unresolvedCount || 0,
     ...sideActions.groups.map((group) => `${group.kind}:${group.pull.join(',')}:${group.triangles?.length || 0}`),
   ].join('|');
   if (host.userData?.sideActionStamp === stamp && host.userData.sideActionSkin) {
