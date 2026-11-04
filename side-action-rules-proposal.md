@@ -96,23 +96,22 @@ must leave the part's bounding box.
 
 On this part the slot clears along +Y under this test; today it does not.
 
-### R5. One block per connected window
+### R5. One block per direction and connected surface
 
-Project the trapped regions assigned to a direction onto the plane
-perpendicular to it and take each region's rectangle. Two rectangles belong
-to one block when the gap between them is no larger than the smaller
-rectangle's size (its larger side). Repeat transitively. A block reaches
-across a gap no wider than the feature beside it; it does not reach across a
-wall.
+A slide is a moving part; every one adds complexity and cost to the mould,
+so a toolmaker combines every feature that can share one pull direction and
+is connected into one slide, whatever the distance between the features.
+The rule follows that. Take all faces reachable along the direction (R4
+test from the surface), and their connected components over mesh adjacency.
+Trapped regions assigned to the direction that lie in the same component
+belong to one block. Features on one wall are always connected through the
+wall; a feature on the back wall and one behind a rib that a +Y ray cannot
+leave are not. Gap size plays no part: two Ø5 holes 60 mm apart on one wall
+are one slide, and the block face between them is the wall it forms.
 
-Evidence on this part, all along +Y, rectangles in (x, z): wall and plate top
-and flange strip x ±20, z 4 to 19; each boss x 13 to 20, z −1.3 to 3.5; slot
-bottom x ±12, z −7 to −4. The boss to slot-bottom gap is 2.9 mm against a
-boss size of 7; the boss to top-window gap is 0.5 mm. All four merge into one
-window, x ±20, z −7 to 19. A fixed 2% of the part's diagonal (2.5 mm) was
-also tried and missed the 2.9 mm gap; the relative rule is the right one.
-Two Ø5 holes 60 mm apart stay two blocks; two Ø5 holes 8 mm apart become
-one, which is how a toolmaker would build them.
+Evidence on this part: the wall shadow, the plate top, the flange underside
+strip, both bosses and the slot all sit on the back wall's reachable
+component along +Y, so one block, window x ±20, z −7 to 19.
 
 ### R6. The block face
 
@@ -153,10 +152,10 @@ tooling estimate is the number of blocks.
 | --- | --- |
 | Flanged_Box (vault) | one slide, +Y, window x ±20, z −7 to 18.75, span to the flange underside, no lifter |
 | box with one horizontal through-hole | one slide along the hole axis, face = the bore |
-| box with two Ø5 side holes 60 mm apart | two slides, same direction |
-| box with two Ø5 side holes 8 mm apart | one slide |
+| box with two Ø5 side holes 60 mm apart on one wall | one slide, face spanning both and the wall between |
+| box with a +Y feature on the back wall and a +Y-facing trapped face behind an internal rib | two slides |
 | snap hook (existing fixture) | one lifter, direction leaving the part |
-| shelf plus tilted wall (existing fixture) | two actions as today, or one if R5 merges them; pin whichever the geometry says |
+| shelf plus tilted wall (existing fixture) | one action if both clear the same direction on one connected surface, else two; pin what the geometry says |
 | Shell_Fillet_Test (existing fixture) | no side actions |
 | drafted box with a fold and a needle (existing test) | no undercuts |
 
