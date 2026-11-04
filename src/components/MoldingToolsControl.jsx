@@ -14,7 +14,7 @@ import React, { useState } from 'react';
 import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
-  ArrowUpFromLine,
+  TriangleRight,
   Factory,
   Receipt,
   SquareSplitHorizontal,
@@ -107,7 +107,7 @@ const MoldingToolsControl = ({
               data-mold-draft-state={toolState(moldDraftActive, moldDraftPending)}
               data-ui-action="data-mold-draft"
             >
-              <ArrowUpFromLine size={20} />
+              <TriangleRight size={20} />
             </button>
           )}
           {showReport && (

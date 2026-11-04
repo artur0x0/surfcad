@@ -52,6 +52,11 @@ function scaleOf(wall) {
   };
 }
 
+/**
+ * Refined pass: the triangles that were split paint one colour per cell
+ * (`wall.cells`), so a triangle that spans a real change of wall shows each
+ * part as it is. Triangles with no cells paint their field value.
+ */
 function buildGeometry(geometry, wall) {
   const index = geometry?.index?.array;
   const src = geometry?.attributes?.position?.array;
@@ -65,11 +70,28 @@ function buildGeometry(geometry, wall) {
     const t = sample?.index;
     if (t >= 0 && t < triangles) thicknessOf[t] = sample.thickness;
   }
+  const cells = wall?.cells && wall.cells.count > 0 && wall.cells.positions && wall.cells.thickness && wall.cells.index
+    ? wall.cells
+    : null;
+  const split = new Uint8Array(triangles);
+  let cellCount = 0;
+  if (cells) {
+    for (let i = 0; i < cells.count; i++) {
+      const t = cells.index[i];
+      if (t >= 0 && t < triangles) {
+        split[t] = 1;
+        cellCount += 1;
+      }
+    }
+  }
+  let whole = 0;
+  for (let t = 0; t < triangles; t++) if (!split[t]) whole += 1;
   const scale = scaleOf(wall);
-  const positions = new Float32Array(triangles * 9);
-  const colors = new Float32Array(triangles * 9);
+  const positions = new Float32Array((whole + cellCount) * 9);
+  const colors = new Float32Array((whole + cellCount) * 9);
   let w = 0;
   for (let t = 0; t < triangles; t++) {
+    if (split[t]) continue;
     const rgb = thicknessRgb(thicknessOf[t], scale);
     for (let k = 0; k < 3; k++) {
       const vi = index[t * 3 + k] * 3;
@@ -82,6 +104,18 @@ function buildGeometry(geometry, wall) {
       positions[w] = src[vi + 2] || 0;
       colors[w] = rgb[2];
       w += 1;
+    }
+  }
+  if (cells) {
+    for (let i = 0; i < cells.count; i++) {
+      const t = cells.index[i];
+      if (!(t >= 0 && t < triangles)) continue;
+      const rgb = thicknessRgb(cells.thickness[i], scale);
+      for (let k = 0; k < 9; k++) {
+        positions[w + k] = cells.positions[i * 9 + k];
+        colors[w + k] = rgb[k % 3];
+      }
+      w += 9;
     }
   }
   const geom = new BufferGeometry();
@@ -118,6 +152,7 @@ export function syncThicknessSkin(host, wall) {
     host.geometry?.uuid || '',
     wall.nominal,
     wall.sampleCount,
+    wall.cells?.count || 0,
     wall.max,
     wall.thresholds?.thinRatio,
     wall.thresholds?.thickRatio,

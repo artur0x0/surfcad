@@ -13351,6 +13351,12 @@ const Viewport = forwardRef(({
     }
     const packed = { ...analyzed };
     delete packed.dfm;
+    if (packed.wall?.cells) {
+      // Paint cells are typed arrays for the skin, not part of the agent result.
+      const wall = { ...packed.wall };
+      delete wall.cells;
+      packed.wall = wall;
+    }
     return {
       partId: partId != null && partId !== '' ? String(partId) : (activePartIdRef.current || null),
       frame: 'local',

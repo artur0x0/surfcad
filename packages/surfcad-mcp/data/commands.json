@@ -2645,7 +2645,7 @@
     },
     {
       "name": "mold_wall_map",
-      "description": "Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints each triangle with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.",
+      "description": "Show or hide the wall-thickness heatmap on the active part, in the part local frame. on true paints the part with the viridis ramp from thin (0.6× nominal) through nominal to thick (1.5× nominal) and shows that legend. The coarse pass paints one colour per triangle; the refined pass paints per analysis cell (about 1.5 mm), so a triangle that spans a real change of wall shows each part as it is. on false removes the skin so face paint and the part colour show again. Omit on to toggle. Read-only. A geometric view of the mold-analysis wall field, not a stress plot and not a quote.",
       "args": {
         "type": "object",
         "additionalProperties": false,
