@@ -917,6 +917,10 @@ const _C4_EXACT_PLANE_MIN_AREA = 0.5;
  * which for near-parallel planes runs off along the surface.
  */
 const _C4_EXACT_PLANE_MIN_WIDTH = 1.0;
+/** Triangles under this area are slivers: they join a flat but do not vote on its plane. */
+const _C4_EXACT_PLANE_SLIVER_MM2 = 1e-3;
+/** A face is a plane when at most this fraction of its area is off the plane. */
+const _C4_EXACT_PLANE_OFF_FRAC = 0.01;
 
 /**
  * Offset planes of the large planar closed faces, and which vertices sit on
@@ -931,10 +935,28 @@ function _c4ExactOffsetPlanes(md, t, openSet) {
     if (openSet && openSet.has && openSet.has(fi)) continue;
     const f = md.faces[fi];
     if (!f || !Array.isArray(f.tris) || !f.normal) continue;
-    const n = _c4Norm(f.normal);
+    // The plane is the area-weighted normal of the face's real triangles.
+    // A boolean on a drafted body leaves micron slivers on a flat (a 1e-8 mm²
+    // needle at a tangency line) whose cross product points anywhere; one of
+    // them in the planarity test threw the whole wall out of the exact
+    // planes, and the wall then offset through the least-squares path with
+    // its rim 32 µm off the plane. Slivers below _C4_EXACT_PLANE_SLIVER_MM2
+    // are members of the face (their vertices are registered) but carry no
+    // vote on its plane.
+    let nx = 0, ny = 0, nz = 0;
+    for (const ti of f.tris) {
+      const a = md.V[md.T[ti * 3]], b = md.V[md.T[ti * 3 + 1]], c = md.V[md.T[ti * 3 + 2]];
+      const cx = _c4Cross(_c4Sub(b, a), _c4Sub(c, a));
+      if (0.5 * _c4Len(cx) < _C4_EXACT_PLANE_SLIVER_MM2) continue;
+      nx += cx[0]; ny += cx[1]; nz += cx[2];
+    }
+    const n = _c4Len([nx, ny, nz]) > 1e-12 ? _c4Norm([nx, ny, nz]) : _c4Norm(f.normal);
     if (!(_c4Len(n) > 0.5)) continue;
+    // Planarity is an area vote, not a veto: a needle a micron wide has a
+    // normal the float32 mesh cannot pin down, and one such needle must not
+    // take the wall it lies on out of the exact planes.
     let area = 0;
-    let planar = true;
+    let offArea = 0;
     let sumC = 0;
     let maxEdge = 0;
     for (const ti of f.tris) {
@@ -942,11 +964,12 @@ function _c4ExactOffsetPlanes(md, t, openSet) {
       const cx = _c4Cross(_c4Sub(b, a), _c4Sub(c, a));
       const a2 = _c4Len(cx);
       if (a2 < 1e-12) continue;
-      if (_c4Dot(_c4Mul(1 / a2, cx), n) < cosExact) { planar = false; break; }
+      if (_c4Dot(_c4Mul(1 / a2, cx), n) < cosExact) offArea += 0.5 * a2;
       area += 0.5 * a2;
       sumC += 0.5 * a2 * _c4Dot(n, a);
       maxEdge = Math.max(maxEdge, _c4Len(_c4Sub(b, a)), _c4Len(_c4Sub(c, b)), _c4Len(_c4Sub(a, c)));
     }
+    const planar = offArea <= _C4_EXACT_PLANE_OFF_FRAC * area;
     if (!planar || !(area >= _C4_EXACT_PLANE_MIN_AREA)) continue;
     // Width of the face across its longest edge: a strip facet fails this.
     if (!(maxEdge > 0) || (2 * area) / maxEdge < _C4_EXACT_PLANE_MIN_WIDTH) continue;
@@ -1209,6 +1232,12 @@ function _c4OffsetCavity(md, thickness, openSet, label) {
       let d = _c4Mul(-thickness, exactPlanes.planes[planes[0]].n);
       for (const n of open[vi]) d = _c4Add(d, _c4Mul(thickness, n));
       nv = _c4Add(v0, d);
+      // The open push is along the open face's normal, not along the flat:
+      // on a drafted wall it leaves the offset plane by t·sin(draft)
+      // (0.032 mm on a 1° wall at t = 1.85), and the cavity wall between
+      // the rim and the last exact ring tilted 0.17°. Put the pushed
+      // vertex back on the plane; the overshoot past the open face stays.
+      if (open[vi].length) nv = _c4ProjectOntoPlanes(nv, planes, exactPlanes.planes);
     } else if (planes && planes.length) {
       // Every other vertex on a flat, open rim included: snap the LS result
       // onto the flat's exact offset plane(s). The open faces are not in the
@@ -1600,7 +1629,7 @@ function draftFaces(manifold, faces, angleDeg, opts = {}) {
  *
  * @returns {Set<number>} face indices to drop from the plane solve
  */
-function _c4DraftBlendFaces(md, sel) {
+function _c4DraftBlendFaces(md, sel, pull = null) {
   if (!sel || sel.size < 2) return new Set();
   const area = new Float64Array(md.faces.length);
   for (let fi = 0; fi < md.faces.length; fi++) {
@@ -1647,6 +1676,33 @@ function _c4DraftBlendFaces(md, sel) {
       stack.push(ni);
     }
   }
+  // A blend whose facets run along the pull (a vertical corner fillet between
+  // two walls) is not between the neutral plane and a wall: it has no
+  // tangency to hinge on, and left out of the draft it stays where it was
+  // while both walls tilt, which leaves a ledge the height of the wall
+  // (0.33 mm at mid-height on a 1° box). Each such facet is a tall strip
+  // whose normal is perpendicular to the pull; sheared as its own plane it
+  // tilts with the walls, and the corner stays round. A rim or bottom fillet
+  // facet runs across the pull and stays out, as does a spherical corner.
+  if (pull) {
+    const ALONG = Math.cos((15 * Math.PI) / 180);
+    const FLAT = Math.sin((15 * Math.PI) / 180);
+    for (const fi of [...blend]) {
+      const face = md.faces[fi];
+      if (!face || Math.abs(_c4Dot(face.normal, pull)) > FLAT) continue;
+      let best = 0;
+      let bestAlong = 0;
+      for (const t of face.tris) {
+        const vs = [md.V[md.T[t * 3]], md.V[md.T[t * 3 + 1]], md.V[md.T[t * 3 + 2]]];
+        for (let k = 0; k < 3; k++) {
+          const e = _c4Sub(vs[(k + 1) % 3], vs[k]);
+          const L = _c4Len(e);
+          if (L > best) { best = L; bestAlong = Math.abs(_c4Dot(e, pull)) / L; }
+        }
+      }
+      if (best > 0 && bestAlong >= ALONG) blend.delete(fi);
+    }
+  }
   return blend;
 }
 
@@ -1662,7 +1718,7 @@ function _draftFacesOne(manifold, faces, angleDeg, opts = {}) {
   if (!sel.size) throw new Error('draftFaces: face selection is empty — nothing to draft');
   // Walls only. Blend facets stay out of `draftSel` so the tangency hinge
   // can see them and so they are not sheared as extra planes.
-  const blendFaces = _c4DraftBlendFaces(md, sel);
+  const blendFaces = _c4DraftBlendFaces(md, sel, pull);
   const draftSel = new Set(sel);
   for (const fi of blendFaces) draftSel.delete(fi);
   if (!draftSel.size) {
