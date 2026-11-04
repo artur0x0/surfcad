@@ -34,7 +34,7 @@ const CHROME_CANDIDATES = [
 
 const TOOLS = [
   { name: 'wall thickness', button: '[data-wall-heatmap]', pane: '[data-wall-legend]', scroll: false },
-  { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: true },
+  { name: 'core and cavity', button: '[data-mold-parting]', pane: '[data-parting-legend]', scroll: false },
   { name: 'mold draft', button: '[data-mold-draft]', pane: '[data-mold-draft-legend]', scroll: false },
   { name: 'report', button: '[data-mold-dfm]', pane: '[data-mold-report]', scroll: true, shots: true },
 ];
@@ -81,12 +81,15 @@ if (!exe) {
   process.exit(1);
 }
 
+// The core/cavity pane is swatches only: no per-block list, so it never
+// scrolls. The groups stay in the model for the agent and are not rendered.
 const partingLegend = {
   rows: [
     { role: 'cavity', css: '#60a5fa', label: 'Cavity' },
     { role: 'core', css: '#f87171', label: 'Core' },
-    { role: 'parting', css: '#fbbf24', label: 'Parting' },
     { role: 'side', css: '#38bdf8', label: 'Side action' },
+    { role: 'undercut', css: '#cc4d4d', label: 'Undercut' },
+    { role: 'parting', css: '#fbbf24', label: 'Parting' },
   ],
   groups: Array.from({ length: 36 }, (_, i) => ({
     id: `row-${i}`,
