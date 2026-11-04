@@ -28,20 +28,39 @@
  * is unknown: it is not painted thick from the ray. Fillets and junctions
  * are not dropped; a larger sphere paints thick.
  *
- * One triangle is one skin color. If any probe on it has a stable ray, the
- * color is the smallest of those rays: a corner sample that misses the near
- * skin and agrees with a far wall does not replace the real wall. If every
- * probe is unstable (a rim, a plate edge, a hole wall, a fillet the ray
- * cannot trust), the color is the largest sphere, so the edge halo does not
- * average the rim down to half the wall. Nominal is the mode of those
- * triangle values on an
- * interior band, or the band median. The band
+ * One triangle is one reading. If any probe on it has a stable ray, the
+ * reading is the smallest of those rays: a corner sample that misses the
+ * near skin and agrees with a far wall does not replace the real wall. If
+ * every probe is unstable (a rim, a plate edge, a hole wall, a fillet the
+ * ray cannot trust), the reading is the largest sphere, so the edge halo
+ * does not average the rim down to half the wall. Nominal is the mode of
+ * those triangle values on an interior band, or the band median. The band
  * drops the thinnest and thickest 10% of triangle area. Thin is below
  * thinRatio × nominal (default 0.6). Thick is above thickRatio × nominal
  * (default 1.5). Regions are triangles of one flag that share a vertex.
  *
+ * The refined pass also paints at cell resolution (`cells`). A triangle
+ * longer than `MOLD_WALL_CELL_MM` (or the probe spacing, when coarser) is a
+ * barycentric grid of cells, and the probes are binned into them. A cell's
+ * colour is the smallest stable ray among the cells of its triangle within
+ * one nominal wall of it (its own sphere, then the triangle reading, when
+ * none is in reach). That erosion is what the per-triangle minimum did for
+ * the corner band of a face, so the paint shows no edge halo, while a
+ * modelling triangle that spans a real change of wall (a plate fused to a
+ * wall on one half and lifted off it on the other) paints each half as it
+ * is instead of carrying its thinnest probe across the whole face. The
+ * coarse centroid pass paints one colour per triangle.
+ *
  * Spacing is min(0.5 × nominal, 0.8 mm), raised so the probe count stays
- * under 80k. A centroid pass estimates nominal before that spacing. The ray
+ * under 80k. Each triangle is probed on a barycentric lattice at that
+ * spacing. A sliver (altitude under 35% of its longest edge: fillet
+ * facets, boss strips, the band between a slot and a plate edge) has its
+ * lattice capped at the step count a fat triangle of the same area would
+ * get, so its probe count follows its area and not the square of its
+ * length. Without that cap the slivers spent the whole budget and pushed
+ * the spacing on a 16k-triangle part to 15 mm, one probe per triangle,
+ * which read a 40 mm strip as a 0.1 mm wall from a probe on its edge. A
+ * centroid pass estimates nominal before that spacing. The ray
  * and the sphere share one BVH. The BVH is a broadphase, not a second
  * thickness definition.
  *
@@ -78,6 +97,12 @@ export const MOLD_WALL_TANGENT_COS = 0.5;
 /** Probe spacing is at most this, and at most half the coarse nominal. */
 export const MOLD_WALL_SPACING_MM = 0.8;
 export const MOLD_WALL_SPACING_FACTOR = 0.5;
+/** Refined paint is per cell of about this size along a triangle's longest edge. */
+export const MOLD_WALL_CELL_MM = 1.5;
+/** A paint cell is never smaller than this, so a sliver is a strip of cells, not a lattice. */
+export const MOLD_WALL_CELL_MIN_AREA_MM2 = 0.25;
+/** A triangle whose altitude is under this fraction of its longest edge is probed in rows, not a lattice. */
+export const MOLD_WALL_SLIVER_RATIO = 0.35;
 /** Raised spacing keeps the refined probe count at or under this. */
 export const MOLD_WALL_MAX_SAMPLES = 80000;
 export const MOLD_WALL_SPHERE_ITERS = 5;
@@ -682,14 +707,35 @@ function combineProbe(ray, diameter) {
   return { thickness: diameter, source: 'sphere' };
 }
 
+/**
+ * Lattice steps for one triangle at `spacing`. A fat triangle takes
+ * longest / spacing steps. A sliver (altitude under `MOLD_WALL_SLIVER_RATIO`
+ * of its longest edge: fillet facets, boss strips, the band between a slot
+ * and a plate edge) is capped at 2·sqrt(area) / spacing, which is the step
+ * count a fat triangle of the same area would get. Its probe count then
+ * follows its area instead of the square of its length, and the lattice
+ * still crosses its width in several rows, mid-line included, so the
+ * shrinking ball reads the full width somewhere on it.
+ */
+function latticeSteps(tri, spacing) {
+  if (!(tri.longest > spacing)) return 1;
+  let steps = Math.ceil(tri.longest / spacing);
+  const altitude = tri.longest > 0 ? (2 * tri.area) / tri.longest : 0;
+  if (altitude < MOLD_WALL_SLIVER_RATIO * tri.longest) {
+    const byArea = Math.max(1, Math.ceil((2 * Math.sqrt(Math.max(0, tri.area))) / spacing));
+    if (byArea < steps) steps = byArea;
+    // An even count puts a lattice row on the mid-line of the sliver, where
+    // the shrinking ball reads its full width (a rib end, a plate edge).
+    if (steps % 2 === 1) steps += 1;
+  }
+  return Math.min(MOLD_WALL_MAX_STEPS, Math.max(1, steps));
+}
+
 function estimateProbes(tris, spacing) {
   let count = 0;
   for (const tri of tris) {
-    if (!(tri.longest > spacing)) count += 1;
-    else {
-      const steps = Math.min(MOLD_WALL_MAX_STEPS, Math.ceil(tri.longest / spacing));
-      count += ((steps + 1) * (steps + 2)) / 2;
-    }
+    const steps = latticeSteps(tri, spacing);
+    count += steps === 1 ? 1 : ((steps + 1) * (steps + 2)) / 2;
   }
   return count;
 }
@@ -707,9 +753,13 @@ function spacingFor(tris, nominal) {
   return spacing;
 }
 
+/**
+ * Probe points of one triangle with their barycentric weights toward b
+ * (`s`) and c (`t`). One step is the centroid.
+ */
 function samplePoints(tri, spacing) {
-  if (!(tri.longest > spacing)) return [tri.centroid];
-  const steps = Math.min(MOLD_WALL_MAX_STEPS, Math.max(1, Math.ceil(tri.longest / spacing)));
+  const steps = latticeSteps(tri, spacing);
+  if (steps === 1) return [{ p: tri.centroid, s: 1 / 3, t: 1 / 3 }];
   const pts = [];
   const shrink = 0.9;
   const bias = (1 - shrink) / 3;
@@ -718,14 +768,155 @@ function samplePoints(tri, spacing) {
       const uu = (i / steps) * shrink + bias;
       const vv = (j / steps) * shrink + bias;
       const ww = 1 - uu - vv;
-      pts.push([
-        uu * tri.a[0] + vv * tri.b[0] + ww * tri.c[0],
-        uu * tri.a[1] + vv * tri.b[1] + ww * tri.c[1],
-        uu * tri.a[2] + vv * tri.b[2] + ww * tri.c[2],
-      ]);
+      pts.push({
+        p: [
+          uu * tri.a[0] + vv * tri.b[0] + ww * tri.c[0],
+          uu * tri.a[1] + vv * tri.b[1] + ww * tri.c[1],
+          uu * tri.a[2] + vv * tri.b[2] + ww * tri.c[2],
+        ],
+        s: vv,
+        t: ww,
+      });
     }
   }
   return pts;
+}
+
+/**
+ * The paint cells of one triangle: a barycentric grid with `n` steps along
+ * each edge. `at(s, t)` maps a probe at barycentric weights s (toward b)
+ * and t (toward c) to its cell. The probe lattice itself is unchanged, so
+ * the per-triangle readings do not move; the cells only bin them.
+ */
+function cellsOf(tri, n) {
+  const ab = sub(tri.b, tri.a);
+  const ac = sub(tri.c, tri.a);
+  const P = (i, j) => [
+    tri.a[0] + (ab[0] * i + ac[0] * j) / n,
+    tri.a[1] + (ab[1] * i + ac[1] * j) / n,
+    tri.a[2] + (ab[2] * i + ac[2] * j) / n,
+  ];
+  const mid = (p, q, r) => [(p[0] + q[0] + r[0]) / 3, (p[1] + q[1] + r[1]) / 3, (p[2] + q[2] + r[2]) / 3];
+  const cells = [];
+  const slot = new Int32Array(n * n * 2).fill(-1);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; i + j < n; j++) {
+      const a = P(i, j);
+      const b = P(i + 1, j);
+      const c = P(i, j + 1);
+      slot[(i * n + j) * 2] = cells.length;
+      cells.push({ a, b, c, centroid: mid(a, b, c), stable: null, stableNd: null, sphere: null });
+      if (i + j + 1 < n) {
+        const d = P(i + 1, j + 1);
+        slot[(i * n + j) * 2 + 1] = cells.length;
+        cells.push({ a: b, b: d, c, centroid: mid(b, d, c), stable: null, stableNd: null, sphere: null });
+      }
+    }
+  }
+  const at = (s, t) => {
+    let i = Math.min(n - 1, Math.max(0, Math.floor(s * n)));
+    let j = Math.min(n - 1, Math.max(0, Math.floor(t * n)));
+    while (i + j >= n) {
+      if (i >= j) i -= 1;
+      else j -= 1;
+    }
+    const upper = (s * n - i) + (t * n - j) > 1 && i + j + 1 < n;
+    const k = slot[(i * n + j) * 2 + (upper ? 1 : 0)];
+    return k >= 0 ? k : slot[(i * n + j) * 2];
+  };
+  return { cells, at };
+}
+
+function cellSteps(tri, spacing) {
+  if (!Number.isFinite(spacing)) return 1;
+  const cell = Math.max(MOLD_WALL_CELL_MM, spacing);
+  const byEdge = Math.ceil(tri.longest / cell);
+  // A sliver does not need n² cells: keep each cell at least MOLD_WALL_CELL_MIN_AREA_MM2.
+  const byArea = Math.floor(Math.sqrt(Math.max(0, tri.area) / MOLD_WALL_CELL_MIN_AREA_MM2));
+  return Math.min(MOLD_WALL_MAX_STEPS, Math.max(1, Math.min(byEdge, byArea)));
+}
+
+/** Readings on the same smooth surface: normals within 30°. */
+const MOLD_WALL_ERODE_COS = Math.cos((30 * Math.PI) / 180);
+/** A stable ray lends its reading to neighbouring cells only when its hit is this square. */
+const MOLD_WALL_ERODE_ND = 0.9;
+
+/**
+ * Paint value per cell. Each cell takes the smallest stable ray among the
+ * readings within `near` of it on the same smooth surface (its own
+ * triangle's cells and the neighbouring triangles' cells or readings, not a
+ * face across a corner). Finding none, it takes the nearest stable ray out
+ * to `far` (three quarters of the thickest wall: the band along a face's
+ * edge where the shrinking ball is bounded by the side skin is half that
+ * wall wide, and at a corner the nearest free reading is that far in both
+ * axes). Nearest, not thinnest: the far look asks which wall this band
+ * belongs to, and a thinner wall three millimetres away is a different wall. Finding none there either, it
+ * takes the largest sphere within `near` (the per-triangle rule for a rim
+ * or a plate edge, and what a cell with no probe of its own inherits), else
+ * its triangle's reading. Only a ray that hit squarely (n·d ≥ 0.9) travels:
+ * an oblique hit, a probe on the knife edge where a round meets a face,
+ * is true for its own cell and stays there.
+ */
+function erodeReadings(readings, targets, near, far) {
+  const h = Math.max(far, near, 1e-6);
+  const near2 = near * near;
+  const far2 = h * h;
+  const cellOf = (v) => Math.floor(v / h);
+  const keyOf = (x, y, z) => `${x},${y},${z}`;
+  const grid = new Map();
+  for (const reading of readings) {
+    if (reading.stable == null && reading.sphere == null) continue;
+    const key = keyOf(cellOf(reading.c[0]), cellOf(reading.c[1]), cellOf(reading.c[2]));
+    let list = grid.get(key);
+    if (!list) {
+      list = [];
+      grid.set(key, list);
+    }
+    list.push(reading);
+  }
+  const out = new Float64Array(targets.length);
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    const cx = cellOf(target.c[0]);
+    const cy = cellOf(target.c[1]);
+    const cz = cellOf(target.c[2]);
+    let bestNear = Infinity;
+    let bestFar = Infinity;
+    let bestFarD2 = Infinity;
+    let sphere = -Infinity;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const list = grid.get(keyOf(cx + dx, cy + dy, cz + dz));
+          if (!list) continue;
+          for (const reading of list) {
+            const own = reading === target;
+            if (!own && dot(reading.n, target.n) < MOLD_WALL_ERODE_COS) continue;
+            const ex = reading.c[0] - target.c[0];
+            const ey = reading.c[1] - target.c[1];
+            const ez = reading.c[2] - target.c[2];
+            const d2 = ex * ex + ey * ey + ez * ez;
+            if (d2 > far2) continue;
+            const travels = own || !(reading.stableNd < MOLD_WALL_ERODE_ND);
+            if (reading.stable != null && travels) {
+              if (d2 <= near2 && reading.stable < bestNear) bestNear = reading.stable;
+              // Far: the nearest wall, not the thinnest one in range.
+              if (d2 < bestFarD2 || (d2 === bestFarD2 && reading.stable < bestFar)) {
+                bestFarD2 = d2;
+                bestFar = reading.stable;
+              }
+            }
+            if (reading.sphere != null && d2 <= near2 && reading.sphere > sphere) sphere = reading.sphere;
+          }
+        }
+      }
+    }
+    if (Number.isFinite(bestNear)) out[i] = bestNear;
+    else if (Number.isFinite(bestFar)) out[i] = bestFar;
+    else if (Number.isFinite(sphere)) out[i] = sphere;
+    else out[i] = target.fallback;
+  }
+  return out;
 }
 
 function clusterRegions(members) {
@@ -922,22 +1113,31 @@ export function measureWallThickness(tris, nTri, options) {
     const srcN = [n[0] * side, n[1] * side, n[2] * side];
     const ray = probeRay(point, dir, diag, bvh, raySkip.get(tri.t));
     const diameter = probeSphere(point, dir, ray, diag, bvh, sphereSkip.get(tri.t), srcN);
-    return combineProbe(ray, diameter);
+    return { ...combineProbe(ray, diameter), nd: ray ? ray.nd : null };
   };
   const collect = (spacing) => {
     const best = new Map();
     for (const tri of tris) {
       let stable = null;
       let sphere = null;
-      for (const point of samplePoints(tri, spacing)) {
-        const reading = probe(tri, point);
+      const n = cellSteps(tri, spacing);
+      const grid = n > 1 ? cellsOf(tri, n) : null;
+      for (const sample of samplePoints(tri, spacing)) {
+        const reading = probe(tri, sample.p);
         if (!(reading.thickness > 0)) continue;
+        const cell = grid ? grid.cells[grid.at(sample.s, sample.t)] : null;
         if (reading.source === 'ray') {
           if (!stable || reading.thickness < stable.thickness) stable = reading;
+          if (cell && (cell.stable == null || reading.thickness < cell.stable)) {
+            cell.stable = reading.thickness;
+            cell.stableNd = reading.nd;
+          }
         } else if (reading.source === 'sphere') {
           if (!sphere || reading.thickness > sphere.thickness) sphere = reading;
+          if (cell && (cell.sphere == null || reading.thickness > cell.sphere)) cell.sphere = reading.thickness;
         }
       }
+      const cells = grid ? grid.cells : [];
       const chosen = stable || sphere;
       if (!chosen) continue;
       best.set(tri.t, {
@@ -948,6 +1148,8 @@ export function measureWallThickness(tris, nTri, options) {
         area: tri.area,
         thickness: chosen.thickness,
         source: chosen.source,
+        nd: chosen.nd ?? null,
+        cells: cells.length > 1 ? cells : null,
       });
     }
     adoptSliverReadings(tris, neighbors, best);
@@ -971,6 +1173,10 @@ export function measureWallThickness(tris, nTri, options) {
     samples.push(sample);
   }
   const stats = nominalWallFromSamples(samples);
+  const byTri = new Map(tris.map((tri) => [tri.t, tri]));
+  const cells = pass === 'refine'
+    ? paintCells(byIndex, byTri, count, stats.nominal ?? spacing * 2, Math.max(stats.nominal ?? 0, 0.75 * (stats.max ?? 0), spacing * 2))
+    : null;
   const field = [];
   const thinMembers = [];
   const thickMembers = [];
@@ -1015,8 +1221,57 @@ export function measureWallThickness(tris, nTri, options) {
     thickArea: round(thickArea),
     thresholds: wallThresholds(thinRatio, thickRatio),
     appliedBinWidth: stats.binWidth,
+    /** Probe spacing of the refined pass in mm; null on the coarse pass. */
+    probeSpacingMm: Number.isFinite(spacing) ? round(spacing) : null,
     thin,
     thick,
     field,
+    cells,
   };
+}
+
+/**
+ * Refined paint: one row per cell of every split triangle. `index` is the
+ * source triangle. Flat typed arrays so the worker posts them without
+ * copying each row. Unsplit triangles paint their field value and still
+ * lend their reading to the cells next to them.
+ */
+function paintCells(byIndex, byTri, count, near, far) {
+  const readings = [];
+  const targets = [];
+  const owners = [];
+  for (let t = 0; t < count; t++) {
+    const sample = byIndex.get(t);
+    const tri = byTri.get(t);
+    if (!sample || !tri) continue;
+    const n = tri.nGeom || tri.n;
+    if (sample.cells) {
+      for (const cell of sample.cells) {
+        const reading = { c: cell.centroid, n, stable: cell.stable, stableNd: cell.stableNd, sphere: cell.sphere, fallback: sample.thickness };
+        readings.push(reading);
+        targets.push(reading);
+        owners.push({ t, cell });
+      }
+    } else {
+      readings.push({
+        c: tri.centroid,
+        n,
+        stable: sample.source === 'ray' ? sample.thickness : null,
+        stableNd: sample.source === 'ray' ? sample.nd : null,
+        sphere: sample.source === 'sphere' ? sample.thickness : null,
+      });
+    }
+  }
+  if (!targets.length) return null;
+  const values = erodeReadings(readings, targets, near, far);
+  const positions = new Float32Array(targets.length * 9);
+  const thickness = new Float32Array(targets.length);
+  const index = new Int32Array(targets.length);
+  for (let i = 0; i < targets.length; i++) {
+    const { t, cell } = owners[i];
+    positions.set([cell.a[0], cell.a[1], cell.a[2], cell.b[0], cell.b[1], cell.b[2], cell.c[0], cell.c[1], cell.c[2]], i * 9);
+    thickness[i] = round(values[i]);
+    index[i] = t;
+  }
+  return { count: targets.length, positions, thickness, index };
 }

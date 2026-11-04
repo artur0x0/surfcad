@@ -129,6 +129,16 @@ jobs:
             echo "mold side action block golden did not pass (see log above)"
             exit 1
           fi
+      # Headless node, no Chrome: wall thickness on the vault Flanged_Box
+      # reads the plate's fused and free halves at cell resolution, and the
+      # refined probe spacing stays near a millimetre on a sliver-heavy mesh.
+      - name: mold wall cells golden
+        run: |
+          npm run golden:mold-wall-cells | tee "${RUNNER_TEMP}/mold-wall-cells.log"
+          if ! grep -q 'wall thickness cells ok' "${RUNNER_TEMP}/mold-wall-cells.log"; then
+            echo "mold wall cells golden did not pass (see log above)"
+            exit 1
+          fi
       # Headless node, no Chrome: source-pin goldens that read the sources and
       # the pure helpers (cross-part subtract plan, assembly title and
       # overlays, failed-part outline wiring, shell face-pick compose). Each
