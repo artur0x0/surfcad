@@ -845,10 +845,12 @@ const MOLD_WALL_ERODE_ND = 0.9;
  * Paint value per cell. Each cell takes the smallest stable ray among the
  * readings within `near` of it on the same smooth surface (its own
  * triangle's cells and the neighbouring triangles' cells or readings, not a
- * face across a corner). Finding none, it looks out to `far` (three quarters
- * of the thickest wall: the band along a face's edge where the shrinking
- * ball is bounded by the side skin is half that wall wide, and at a corner
- * the nearest free reading is that far in both axes). Finding none there either, it
+ * face across a corner). Finding none, it takes the nearest stable ray out
+ * to `far` (three quarters of the thickest wall: the band along a face's
+ * edge where the shrinking ball is bounded by the side skin is half that
+ * wall wide, and at a corner the nearest free reading is that far in both
+ * axes). Nearest, not thinnest: the far look asks which wall this band
+ * belongs to, and a thinner wall three millimetres away is a different wall. Finding none there either, it
  * takes the largest sphere within `near` (the per-triangle rule for a rim
  * or a plate edge, and what a cell with no probe of its own inherits), else
  * its triangle's reading. Only a ray that hit squarely (n·d ≥ 0.9) travels:
@@ -880,6 +882,7 @@ function erodeReadings(readings, targets, near, far) {
     const cz = cellOf(target.c[2]);
     let bestNear = Infinity;
     let bestFar = Infinity;
+    let bestFarD2 = Infinity;
     let sphere = -Infinity;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -897,7 +900,11 @@ function erodeReadings(readings, targets, near, far) {
             const travels = own || !(reading.stableNd < MOLD_WALL_ERODE_ND);
             if (reading.stable != null && travels) {
               if (d2 <= near2 && reading.stable < bestNear) bestNear = reading.stable;
-              if (reading.stable < bestFar) bestFar = reading.stable;
+              // Far: the nearest wall, not the thinnest one in range.
+              if (d2 < bestFarD2 || (d2 === bestFarD2 && reading.stable < bestFar)) {
+                bestFarD2 = d2;
+                bestFar = reading.stable;
+              }
             }
             if (reading.sphere != null && d2 <= near2 && reading.sphere > sphere) sphere = reading.sphere;
           }

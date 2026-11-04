@@ -14,11 +14,11 @@ import React, { useState } from 'react';
 import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
-  TriangleRight,
   Factory,
   Receipt,
   SquareSplitHorizontal,
 } from 'lucide-react';
+import { Angle } from './icons/lucideExtra';
 import { pressMoldTool } from './pressMoldTool';
 import { toolToggleClass } from './toolToggle';
 
@@ -107,7 +107,7 @@ const MoldingToolsControl = ({
               data-mold-draft-state={toolState(moldDraftActive, moldDraftPending)}
               data-ui-action="data-mold-draft"
             >
-              <TriangleRight size={20} />
+              <Angle size={20} />
             </button>
           )}
           {showReport && (
