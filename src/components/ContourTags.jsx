@@ -20,6 +20,7 @@ import { constraintAnchor, dimensionAnchor, planeUvToWorld } from '../utils/cont
 import { referenceTagAnchor } from '../utils/contourRefPick';
 import { dimensionLayout, dimensionMarkup, placementFromPointer, replaceDimensionFigures, DIM_TAP_PX } from '../utils/contourDimensionDraw';
 import { plusTagsToHide } from '../utils/contourTagPlace';
+import { hiddenAutoItem } from '../utils/contourStrip';
 import { worldPoint } from '../utils/partPose';
 
 const CONSTRAINT_ICONS = {
@@ -72,7 +73,8 @@ const ContourTags = ({
   const svgRef = useRef(null);
   const markupRef = useRef('');
   const dimensions = model?.dimensions || [];
-  const constraints = model?.constraints || [];
+  // A shape's own constraints on a multi-loop sketch are not tags.
+  const constraints = (model?.constraints || []).filter((con) => !hiddenAutoItem(con));
 
   useEffect(() => {
     let frame = 0;
@@ -88,7 +90,7 @@ const ContourTags = ({
       markupRef.current = '';
     }
     const dims = model?.dimensions || [];
-    const cons = model?.constraints || [];
+    const cons = (model?.constraints || []).filter((con) => !hiddenAutoItem(con));
     const liveDim = (dim) => {
       const live = dragPlace.current;
       if (!live || live.id !== dim.id || !Number.isFinite(live.placement)) return dim;

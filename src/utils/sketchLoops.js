@@ -78,7 +78,41 @@ function remapSpec(spec, map) {
   return next;
 }
 
-/** Fresh ids for `extra` wherever they would collide with `base`. */
+/** Lists whose items carry a `loop` number once the sketch has more than one. */
+const LOOP_LISTS = ['lines', 'arcs', 'dimensions', 'constraints'];
+
+/** Highest `loop` stamped on `spec`, or 0 when no item carries one. */
+export function maxLoop(spec) {
+  let max = 0;
+  for (const key of LOOP_LISTS) {
+    for (const item of spec?.[key] || []) {
+      const n = Number(item?.loop);
+      if (Number.isInteger(n) && n > max) max = n;
+    }
+  }
+  return max;
+}
+
+/** `spec` with every line, arc, dimension and constraint that has no `loop` stamped `loop`. */
+function stampLoop(spec, loop) {
+  const next = { ...spec };
+  for (const key of LOOP_LISTS) {
+    next[key] = (spec?.[key] || []).map((item) => (
+      item && !Number.isInteger(Number(item.loop)) ? { ...item, loop } : item
+    ));
+  }
+  return next;
+}
+
+/**
+ * Fresh ids for `extra` wherever they would collide with `base`.
+ *
+ * Each closed profile is one loop: the base keeps its loop numbers (a
+ * first shape that has none becomes loop 1) and the incoming items take
+ * the next one. The incoming `seq` is dropped so `assignSeq` numbers the
+ * new loop after everything in the base, and the strip lists one loop's
+ * chips together instead of interleaving the two shapes' rows.
+ */
 export function mergeContourSpecs(base, extra) {
   const used = usedIds(base);
   const map = new Map();
@@ -90,10 +124,19 @@ export function mergeContourSpecs(base, extra) {
       map.set(item.id, id);
     }
   }
-  const incoming = remapSpec(extra, map);
+  const baseLoops = maxLoop(base);
+  const tagged = baseLoops > 0 ? base : stampLoop(base, 1);
+  const incoming = stampLoop(remapSpec(extra, map), (baseLoops || 1) + 1);
+  for (const key of LOOP_LISTS) {
+    incoming[key] = incoming[key].map((item) => {
+      if (!item || item.seq == null) return item;
+      const { seq: _seq, ...rest } = item;
+      return rest;
+    });
+  }
   const merged = {};
   for (const [key] of LISTS) {
-    merged[key] = [...(base?.[key] || []), ...(incoming[key] || [])];
+    merged[key] = [...(tagged?.[key] || []), ...(incoming[key] || [])];
   }
   if (base?.polyline && extra?.polyline) merged.polyline = true;
   return assignSeq(merged);

@@ -9,7 +9,7 @@
  */
 
 import { beginConstraintEdit, beginDimensionEdit, revertLiveDimension } from './contourGesture.js';
-import { contourChips } from './contourStrip.js';
+import { contourChips, itemLoop, loopOfChipId } from './contourStrip.js';
 
 function buildingGesture(state) {
   return state?.gesture === 'dimension' || state?.gesture === 'constraints';
@@ -24,6 +24,9 @@ export function sketchActiveId(state) {
   if (buildingGesture(state) && picks.length !== 1) return null;
   if (!state.gesture && state.entityCard === 'polyline') {
     return contourChips(state).some((chip) => chip.id === 'polyline') ? 'polyline' : null;
+  }
+  if (!state.gesture && loopOfChipId(state.entityCard) != null) {
+    return contourChips(state).some((chip) => chip.id === state.entityCard) ? state.entityCard : null;
   }
   if (picks.length === 1) {
     const pick = picks[0];
@@ -94,6 +97,18 @@ export function selectSketchChip(state, chip) {
     const lines = (state.params?.contour?.lines || []).filter((line) => line && !line.guide);
     const picks = lines.map((line) => ({ kind: 'line', id: line.id, label: line.id }));
     return { ...cleared, picks, entityCard: 'polyline' };
+  }
+  const loop = loopOfChipId(chip.id);
+  if (loop != null) {
+    // A loop chip selects every line and arc of that loop, as the polyline chip does.
+    const contour = state.params?.contour;
+    const picks = [
+      ...(contour?.lines || []).filter((line) => line && !line.guide && itemLoop(line) === loop)
+        .map((line) => ({ kind: 'line', id: line.id, label: line.id })),
+      ...(contour?.arcs || []).filter((arc) => arc && itemLoop(arc) === loop)
+        .map((arc) => ({ kind: 'arc', id: arc.id, label: arc.id })),
+    ];
+    return { ...cleared, picks, entityCard: chip.id };
   }
   const kind = geometryKind(chip.kind);
   if (!kind || chip.id === 'shape') {

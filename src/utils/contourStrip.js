@@ -93,6 +93,30 @@ function chip(entry, indexByLabel) {
   };
 }
 
+/** Loop number stamped on a sketch item, or null. */
+export function itemLoop(item) {
+  const n = Number(item?.loop);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/**
+ * A shape builder's own constraint (`auto`) on a loop of a multi-loop
+ * sketch: it holds the shape's form and is not shown as a chip or a tag.
+ * A single promoted shape keeps showing every row as before.
+ */
+export function hiddenAutoItem(item) {
+  return !!item?.auto && itemLoop(item) != null;
+}
+
+/** Loop chip id for loop `n`. */
+export const loopChipId = (n) => `loop:${n}`;
+
+/** Loop number of a loop chip id, or null. */
+export function loopOfChipId(id) {
+  const m = /^loop:(\d+)$/.exec(String(id || ''));
+  return m ? Number(m[1]) : null;
+}
+
 function entityRows(spec) {
   const groups = [
     ['line', spec?.lines],
@@ -109,6 +133,7 @@ function entityRows(spec) {
       order += 1;
       if (kind === 'line' && item?.guide) continue;
       if (!item?.id) continue;
+      if (kind === 'constraint' && hiddenAutoItem(item)) continue;
       const seq = finiteSeq(item.seq);
       const row = { kind, item, order };
       if (seq == null) loose.push(row);
@@ -222,18 +247,53 @@ function polylineChip(seq) {
 }
 
 /**
+ * What one loop of a multi-loop sketch is: a full arc is a circle; lines
+ * with arcs, or four lines held square by the builder's horizontals and
+ * verticals, are a rectangle; lines held equal round a fixed centre are a
+ * polygon; anything else is a polyline.
+ */
+export function loopShape(spec, n) {
+  const lines = (spec?.lines || []).filter((line) => line && !line.guide && itemLoop(line) === n);
+  const arcs = (spec?.arcs || []).filter((arc) => arc && itemLoop(arc) === n);
+  if (arcs.some((arc) => arc.full) && !lines.length) return 'circle';
+  const autoKinds = new Set((spec?.constraints || [])
+    .filter((con) => con?.auto && itemLoop(con) === n)
+    .map((con) => con.kind));
+  if (lines.length && arcs.length) return 'rectangle';
+  if (lines.length === 4 && autoKinds.has('horizontal') && autoKinds.has('vertical')) return 'rectangle';
+  if (lines.length >= 3 && autoKinds.has('equal')) return 'polygon';
+  return 'polyline';
+}
+
+function loopChip(spec, n, seq) {
+  const shape = loopShape(spec, n);
+  const label = SHAPE_LABEL[shape] || 'Loop';
+  return { id: loopChipId(n), kind: shape, label, title: label, seq, loop: n };
+}
+
+/**
  * One chip per line, arc, dimension, constraint, and reference.
  * A polyline is the exception: its segments stay one chip. Constraints
  * and dimensions that name a segment or a point still get their own chips.
+ * A loop of a multi-loop sketch is one shape chip too (its lines and arcs
+ * collapse; its builder constraints are hidden; its dimensions stay).
  */
 function chipsForSpec(spec) {
   const rows = entityRows(spec);
   const indexByLabel = new Map();
-  if (!spec?.polyline) return rows.map((row) => chip(rowChip(row), indexByLabel));
   const out = [];
+  const loopsPlaced = new Set();
   let placed = false;
   for (const row of rows) {
-    if (row.kind === 'line') {
+    const loop = row.kind === 'line' || row.kind === 'arc' ? itemLoop(row.item) : null;
+    if (loop != null) {
+      if (!loopsPlaced.has(loop)) {
+        loopsPlaced.add(loop);
+        out.push(chip(loopChip(spec, loop, row.seq), indexByLabel));
+      }
+      continue;
+    }
+    if (spec?.polyline && row.kind === 'line') {
       if (!placed) {
         out.push(polylineChip(row.seq));
         placed = true;
@@ -242,7 +302,7 @@ function chipsForSpec(spec) {
     }
     out.push(chip(rowChip(row), indexByLabel));
   }
-  if (!placed && (spec.points || []).length) out.unshift(polylineChip(0));
+  if (spec?.polyline && !placed && !loopsPlaced.size && (spec.points || []).length) out.unshift(polylineChip(0));
   return out;
 }
 
@@ -370,6 +430,86 @@ function deletePolylineChip(state, contour) {
 }
 
 /**
+ * A loop chip deletes that whole loop: its lines and arcs, the points only
+ * they use, and the dimensions and constraints that name any of them. The
+ * loop's own rows go silently; the label counts the rest.
+ */
+function deleteLoopChip(state, contour, loop) {
+  const lineIds = (contour.lines || []).filter((line) => line && itemLoop(line) === loop).map((line) => line.id);
+  const arcIds = (contour.arcs || []).filter((arc) => arc && itemLoop(arc) === loop).map((arc) => arc.id);
+  const own = new Set([...lineIds, ...arcIds]);
+  if (!own.size) return { state, dependents: contourDependents(contour, loopChipId(loop)), label: null, removed: [] };
+  const usedPoints = (ids) => {
+    const out = new Set();
+    for (const line of contour.lines || []) {
+      if (!line || !ids.has(line.id)) continue;
+      if (line.a) out.add(line.a);
+      if (line.b) out.add(line.b);
+    }
+    for (const arc of contour.arcs || []) {
+      if (!arc || !ids.has(arc.id)) continue;
+      for (const id of [arc.center, arc.start, arc.end]) if (id) out.add(id);
+    }
+    return out;
+  };
+  const mine = usedPoints(own);
+  const others = new Set([...(contour.lines || []), ...(contour.arcs || [])]
+    .filter((item) => item && !own.has(item.id))
+    .map((item) => item.id));
+  const shared = usedPoints(others);
+  const pointIds = new Set([...mine].filter((id) => !shared.has(id)));
+  const geometryIds = [...own, ...pointIds];
+  const dimensions = uniqueById(geometryIds.flatMap((id) => contourDependents(contour, id).dimensions));
+  const constraints = uniqueById(geometryIds.flatMap((id) => contourDependents(contour, id).constraints));
+  // The loop's own rows (its builder dimensions and constraints) go with it
+  // without a prompt; rows added later, or from another loop, are counted.
+  const shown = (item) => itemLoop(item) !== loop;
+  const visibleDims = dimensions.filter(shown);
+  const visibleCons = constraints.filter(shown);
+  const dependents = {
+    dimensions: visibleDims,
+    constraints: visibleCons,
+    count: visibleDims.length + visibleCons.length,
+  };
+  const removed = new Set([
+    ...geometryIds,
+    ...dimensions.map((item) => item.id),
+    ...constraints.map((item) => item.id),
+  ]);
+  const next = {
+    ...contour,
+    points: (contour.points || []).filter((point) => point && !pointIds.has(point.id)),
+    lines: (contour.lines || []).filter((line) => line && !removed.has(line.id)),
+    arcs: (contour.arcs || []).filter((arc) => arc && !removed.has(arc.id)),
+    dimensions: withoutId(contour.dimensions, removed),
+    constraints: withoutId(contour.constraints, removed),
+    refs: withoutId(contour.refs, removed),
+  };
+  const alive = next.points.length || next.lines.some((line) => !line.guide)
+    || next.arcs.length || next.dimensions.length || next.constraints.length || next.refs.length;
+  const cleared = {
+    ...state,
+    params: alive
+      ? { ...(state.params || {}), contour: next, points: next.points.map((point) => point.at.slice()) }
+      : { points: [] },
+    picks: [],
+    tagId: null,
+    gestureNote: null,
+    dimensionEdit: null,
+    constraintEdit: null,
+    dimensionLive: null,
+    entityCard: null,
+    ...(alive ? {} : { profileSet: false }),
+  };
+  return {
+    state: cleared,
+    dependents,
+    label: dependentDeleteLabel(dependents),
+    removed: [loopChipId(loop), ...removed],
+  };
+}
+
+/**
  * Drop one sketch entity and the dimensions and constraints that name it.
  * Points stay. One params replace, no solve, so a deleted side is not redrawn.
  * A missing id leaves the state alone.
@@ -378,6 +518,8 @@ export function deleteContourEntity(state, id) {
   if (!state || !id) return { state, dependents: contourDependents(null, id), label: null, removed: [] };
   const contour = state.params?.contour;
   if (contour?.polyline && id === 'polyline') return deletePolylineChip(state, contour);
+  const loop = loopOfChipId(id);
+  if (contour && loop != null) return deleteLoopChip(state, contour, loop);
   if (!contour) {
     if (id !== 'shape') {
       return { state, dependents: contourDependents(null, id), label: null, removed: [] };

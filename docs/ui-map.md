@@ -269,7 +269,11 @@ Desktop specifics:
   polyline dot keeps the one Polyline chip. A dimension or constraint that
   named the point stays, and its chip takes the failed red border
   (`data-sketch-broken`). A line, arc, circle, polyline, unpromoted shape, or reference
-  chip opens a short card whose only action is Delete. The polyline chip deletes the whole chain
+  chip opens a short card whose only action is Delete. On a sketch with several closed
+  shapes each loop is one shape chip (`data-sketch-id="loop:<n>"`, Rectangle, Circle, Polygon
+  or Polyline) followed by its dimensions; the shape builders' own constraints are hidden
+  from the strip and the canvas, and a loop chip's Delete removes that whole loop
+  (`golden:sketch-loop-chips`). The polyline chip deletes the whole chain
   (`data-contour-card="entity"`, `data-contour-entity-delete`). Nothing that
   names it deletes at once, and the toast Undo is the sketch history
   (`data-sketch-delete-toast`). Dimensions or constraints that name it open

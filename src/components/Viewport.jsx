@@ -280,7 +280,7 @@ import {
 import { resolveContourScript } from '../utils/contourRefResolve';
 import { beginConstraintEdit, beginDimensionEdit, promoteContourState } from '../utils/contourGesture';
 import { applySketchConstrain, applySketchDimension } from '../agent/sketchGestureAgent.js';
-import { contourChips, deleteContourEntity } from '../utils/contourStrip';
+import { contourChips, deleteContourEntity, itemLoop, loopChipId } from '../utils/contourStrip';
 import { entityDeleteChip, selectSketchChip, sketchActiveId, sketchHighlightPicks } from '../utils/contourSketchStrip';
 import { localPoint, worldPoint } from '../utils/partPose';
 import {
@@ -10342,9 +10342,20 @@ const Viewport = forwardRef(({
     }
     clickCountRef.current = 0;
     pendingClickDataRef.current = null;
-    const chip = state.params.contour.polyline && hit.kind === 'line'
-      ? { id: 'polyline', kind: 'polyline', label: 'Polyline' }
-      : { id: hit.id, kind: hit.kind, label: hit.label };
+    // A line or arc of a multi-loop sketch selects its loop chip, as a
+    // polyline segment selects the polyline chip.
+    const hitItem = hit.kind === 'line'
+      ? (state.params.contour.lines || []).find((line) => line?.id === hit.id)
+      : (state.params.contour.arcs || []).find((arc) => arc?.id === hit.id);
+    const hitLoop = itemLoop(hitItem);
+    const loopChip = hitLoop != null
+      ? contourChips(state).find((entry) => entry.id === loopChipId(hitLoop)) || null
+      : null;
+    const chip = loopChip
+      ? { id: loopChip.id, kind: loopChip.kind, label: loopChip.label }
+      : (state.params.contour.polyline && hit.kind === 'line'
+        ? { id: 'polyline', kind: 'polyline', label: 'Polyline' }
+        : { id: hit.id, kind: hit.kind, label: hit.label });
     setContourMode((prev) => (prev ? selectSketchChip(prev, chip) : prev));
     return true;
   }, [pickContourAtClient]);
