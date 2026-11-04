@@ -63,7 +63,9 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
   assert.doesNotMatch(panel, /text-on-light/);
   assert.doesNotMatch(drawer, /surface-success/);
   assert.doesNotMatch(drawer, /text-on-light/);
-  assert.match(panel, /className=\{toolToggleClass\(enabled\)\}/);
+  // The rail slot is one of two buttons: the off toggle, and the on options button in the green wash.
+  assert.match(panel, /className=\{toolToggleClass\(false\)\}/);
+  assert.match(panel, /className=\{toolToggleClass\(true\)\}/);
   assert.match(panel, /<MoldingToolsControl/);
   for (const [marker, prop] of MOLD_TOGGLES) {
     const pending = prop.replace(/Active$/, 'Pending');
@@ -108,8 +110,11 @@ test('a molding toggle gets tool-toggle-on when on, and matches Cross section', 
       reportActive: true,
     });
     const offHtml = rail({ verticalRail, enabled: false });
-    const sectionOn = buttonClass(onHtml, 'data-ui-action="data-cross-section-toggle"');
+    // On, the rail slot is the options button in the green wash; the
+    // FlipHorizontal toggle shows only while the section is off.
+    const sectionOn = buttonClass(onHtml, 'data-ui-action="data-cross-section-expand"');
     assert.equal(sectionOn, toolToggleClass(true));
+    assert.equal(onHtml.includes('data-ui-action="data-cross-section-toggle"'), false);
     assert.equal(
       buttonClass(offHtml, 'data-ui-action="data-cross-section-toggle"'),
       toolToggleClass(false),
