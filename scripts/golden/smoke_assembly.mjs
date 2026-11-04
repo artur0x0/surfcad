@@ -108,9 +108,10 @@ const BAD = 'let part = Manifold.cube([10, 10, 10], true);\nreturn part.missingM
     && /partPreviewKind\(mesh\)/.test(feed)
     && /data-part-selected-bar/.test(feed)
     && /data-part-selected-bar=""\s*className="[^"]*bg-blue-500/.test(feed)
-    && /selected && !row\.error \? 'bg-blue-950\/50'/.test(feed)
-    && !/selected && !row\.error \? 'bg-red/.test(feed)
-    && /row\.error \? 'bg-red-950\/55 ring-1 ring-inset ring-red-500\/80'/.test(feed)
+    && /const failedRow = !!\(row\.error \|\| row\.featureFailed\)/.test(feed)
+    && /selected && !failedRow \? 'bg-blue-950\/50'/.test(feed)
+    && !/selected && !failedRow \? 'bg-red/.test(feed)
+    && /failedRow \? 'bg-red-950\/55 ring-1 ring-inset ring-red-500\/80'/.test(feed)
     && /data-part-visibility=/.test(feed)
     && /data-part-delete=/.test(feed)
     && !/fillRect\(sx, sy/.test(feed));

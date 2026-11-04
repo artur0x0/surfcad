@@ -531,6 +531,15 @@ jobs:
             echo "agent prompt states golden did not pass (see log above)"
             exit 1
           fi
+          bounded "feature failed pool" npm run golden:feature-failed-pool | tee "${RUNNER_TEMP}/feature-failed-pool.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/feature-failed-pool.log"; then
+            echo "feature failed pool golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'feature failed pool golden: ok' "${RUNNER_TEMP}/feature-failed-pool.log"; then
+            echo "feature failed pool golden did not pass (see log above)"
+            exit 1
+          fi
           bounded "agent session toast" npm run golden:agent-session-toast | tee "${RUNNER_TEMP}/agent-session-toast.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-session-toast.log"; then
             echo "agent session toast golden skipped because Chrome was not found; CI must launch it"

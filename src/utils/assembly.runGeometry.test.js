@@ -36,3 +36,15 @@ test('recordPartRun keeps the kernel crash record on a failed run', () => {
   const plain = recordPartRun({}, 'frame', { ok: false, error: 'boom' });
   assert.equal('crash' in plain.frame, false);
 });
+
+test('recordPartRun keeps a recovered run\'s feature failure and a clean run has none', () => {
+  const mesh = { vertProperties: new Float32Array(9) };
+  const featureFailure = { id: 'fillet1', kind: 'fillet', block: '// b', message: 'bad edge', skipped: [] };
+  const runs = recordPartRun({}, 'bracket', { ok: true, mesh, volume: 10, featureFailure });
+  assert.equal(runs.bracket.ok, true);
+  assert.deepEqual(runs.bracket.featureFailure, featureFailure);
+  const clean = recordPartRun({}, 'frame', { ok: true, mesh, volume: 10 });
+  assert.equal('featureFailure' in clean.frame, false);
+  const junk = recordPartRun({}, 'lid', { ok: true, mesh, volume: 10, featureFailure: 'nope' });
+  assert.equal('featureFailure' in junk.lid, false);
+});

@@ -325,3 +325,57 @@ export function failedFeatureForId(script, featureId, featureBlock = null) {
 export function failedFeatureFromOutcome(script, { featureId = null, featureBlock = null, scriptLine = null } = {}) {
   return failedFeatureForId(script, featureId, featureBlock) || failedFeatureFor(script, scriptLine);
 }
+
+/**
+ * The run outcome a worker `featureSkip` describes: a recovered run whose
+ * named block threw. Null when the skip names no block.
+ */
+export function outcomeFromFeatureSkip(skip) {
+  if (!skip || typeof skip !== 'object') return null;
+  if (typeof skip.featureId !== 'string' || !skip.featureId) return null;
+  return {
+    ok: false,
+    featureId: skip.featureId,
+    featureBlock: typeof skip.featureBlock === 'string' ? skip.featureBlock : null,
+    scriptLine: Number.isFinite(skip.scriptLine) ? skip.scriptLine : null,
+    skipped: Array.isArray(skip.skipped) ? skip.skipped : [],
+    message: typeof skip.message === 'string' && skip.message ? skip.message : 'Script execution failed',
+    ...(typeof skip.code === 'string' && skip.code ? { code: skip.code } : {}),
+    ...(skip.timeout && typeof skip.timeout === 'object' ? { timeout: skip.timeout } : {}),
+    ...(typeof skip.hint === 'string' && skip.hint ? { hint: skip.hint } : {}),
+  };
+}
+
+/**
+ * What App keeps for a failed run and the strip reads (`failedFeatureIds`):
+ * the failed feature (id, kind, typeIndex, block) when the outcome names
+ * one, the message and detail, the crash, code, timeout and hint when the
+ * worker sent them, and the blocks skipped with it. A good run, or a failed
+ * one with neither a feature nor a message, is null.
+ */
+export function stampRunFailure(script, {
+  ok = false, scriptLine = null, featureId = null, featureBlock = null, skipped = null,
+  message = '', detail = '', crash = null, code = '', timeout = null, hint = '',
+} = {}) {
+  if (ok) return null;
+  // Tracked block first (works on Safari), the stack's line second.
+  const next = failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
+  const uiMessage = typeof message === 'string' && message.trim() ? message.trim() : '';
+  const uiDetail = typeof detail === 'string' && detail.trim() && detail.trim() !== uiMessage
+    ? detail.trim()
+    : '';
+  if (!next && !uiMessage) return null;
+  const stamped = {
+    ...(next || {}),
+    ...(typeof featureId === 'string' && featureId && !next?.id ? { id: featureId } : {}),
+    ...(uiMessage ? { message: uiMessage } : {}),
+    ...(uiDetail ? { detail: uiDetail } : {}),
+    ...(crash && typeof crash === 'object' ? { crash } : {}),
+    // A block the watchdog killed; the part was rebuilt without it.
+    ...(typeof code === 'string' && code ? { code } : {}),
+    ...(timeout && typeof timeout === 'object' ? { timeout } : {}),
+    ...(typeof hint === 'string' && hint ? { hint } : {}),
+    skipped: Array.isArray(skipped) ? skipped : [],
+  };
+  return stamped.id || stamped.message ? stamped : null;
+}
