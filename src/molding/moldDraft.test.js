@@ -406,13 +406,16 @@ test('a plate, a tray, a snap hook, and a through hole classify every face', () 
   assertCoversMesh(hole, holeMesh);
 });
 
-test('a drafted cup is positive at or above 1° and an inverted cup is negative at or above 1°', () => {
+test('a drafted cup leans against the pull outside and along it inside; inverted, the other way', () => {
   const cupMesh = taperedCup(true);
   const cup = draftOf(cupMesh);
   const cupWalls = cup.samples.filter((sample) => Math.abs(sample.signedDeg) < 45);
   assert.ok(cupWalls.length > 0);
-  assert.ok(cupWalls.some((sample) => sample.signedDeg > 4 && sample.signedDeg < 5));
-  assert.ok(cupWalls.every((sample) => sample.signedDeg > 1));
+  // Outside walls: 1 in 12 → −4.76°, normals point against +Z. Hole walls:
+  // 1 in 10.5 → +5.44°, normals point along +Z.
+  assert.ok(cupWalls.some((sample) => sample.signedDeg < -4.6 && sample.signedDeg > -4.9), 'outside walls lean against the pull');
+  assert.ok(cupWalls.some((sample) => sample.signedDeg > 5.3 && sample.signedDeg < 5.6), 'hole walls lean along the pull');
+  assert.ok(cupWalls.every((sample) => Math.abs(sample.signedDeg) > 1));
   assert.equal(cup.below.count, 0);
   assert.ok(cup.positive.count > 0);
   assert.ok(cup.positive.area > 0);
@@ -425,8 +428,9 @@ test('a drafted cup is positive at or above 1° and an inverted cup is negative 
   assert.ok(split.negative.count > 0);
   assert.ok(split.positive.count > 0);
   assert.ok(split.below.count > 0);
-  assert.ok(split.below.positive.count > 0);
-  assert.equal(split.below.negative.count, 0);
+  // At 5° the 4.76° outside walls drop out; the 5.44° hole walls stay.
+  assert.equal(split.below.positive.count, 0);
+  assert.ok(split.below.negative.count > 0);
   assert.ok(split.positive.area > 0);
   assert.ok(split.below.area > 0);
 
@@ -434,8 +438,9 @@ test('a drafted cup is positive at or above 1° and an inverted cup is negative 
   const back = draftOf(backMesh);
   const backWalls = back.samples.filter((sample) => Math.abs(sample.signedDeg) < 45);
   assert.ok(backWalls.length > 0);
-  assert.ok(backWalls.some((sample) => sample.signedDeg < -4 && sample.signedDeg > -5));
-  assert.ok(backWalls.every((sample) => sample.signedDeg < -1));
+  assert.ok(backWalls.some((sample) => sample.signedDeg > 4.6 && sample.signedDeg < 4.9), 'outside walls now lean along the pull');
+  assert.ok(backWalls.some((sample) => sample.signedDeg < -5.3 && sample.signedDeg > -5.6), 'hole walls now lean against it');
+  assert.ok(backWalls.every((sample) => Math.abs(sample.signedDeg) > 1));
   assert.equal(back.below.count, 0);
   assert.ok(back.negative.count > 0);
   assert.ok(back.negative.area > 0);

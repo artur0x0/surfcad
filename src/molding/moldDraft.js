@@ -1,9 +1,12 @@
 /**
  * Mold draft and ejector hints (injection molding).
  *
- * Draft here is signed against the pull. Positive draft opens along the
- * pull, on an outside wall and on a hole wall. Negative draft closes along
- * the pull: the steel on the outward-normal side cannot pull off.
+ * Draft here is the signed angle between the face normal and the pull:
+ * asin(n · pull). Positive means the normal points along the pull (a tray's
+ * inside walls, the flange top); negative means it points against the pull
+ * (a tray's outside walls, the bottom). That is the usual CAD draft-analysis
+ * sign. It does not say which half of the mould forms the face; the
+ * core/cavity split does.
  *
  * Three classes, against the selected threshold T. Positive draft at or
  * above T is Positive ≥ T and uses the cavity colour. Negative draft at or
@@ -16,10 +19,12 @@
  * curved fillet whose average leaves the side-wall band. Nothing here
  * changes the mesh.
  *
- * The sign uses the part centroid in the plane perpendicular to the pull.
- * A normal that points away from that center is an outside wall, and its
- * lean is flipped. A normal that points toward the center is a hole wall,
- * and its lean is kept. An off-center hole can misread the near wall.
+ * A planar stamped face gets one angle for the whole face: its facets agree
+ * within MOLD_DRAFT_PLANAR_DEG, so the stamped normal is the plane, and the
+ * float jitter of the triangle normals (about 0.002° on a 1° wall) cannot
+ * split the face across the threshold. Curved faces stay per facet. The
+ * threshold itself has MOLD_DRAFT_TOL_DEG of slack, so a wall drafted at
+ * exactly the threshold passes.
  *
  * Ejector pins and sleeves are a heuristic on the wall field. A thin side
  * wall is a rib, and each connected patch gets a pin at its centroid. A
@@ -40,7 +45,11 @@ export const MOLD_DRAFT_CLUSTER_DEG = 35;
 
 const NEUTRAL_SIN = Math.sin((MOLD_DRAFT_NEUTRAL_DEG * Math.PI) / 180);
 const CLUSTER_COS = Math.cos((MOLD_DRAFT_CLUSTER_DEG * Math.PI) / 180);
-const SIDE_EPS = 1e-4;
+/** Slack at the threshold: a wall drafted at exactly T is at or above T. */
+export const MOLD_DRAFT_TOL_DEG = 0.01;
+/** Facets of a stamped face within this of the stamped normal are one plane. */
+export const MOLD_DRAFT_PLANAR_DEG = 0.05;
+const PLANAR_COS = Math.cos((MOLD_DRAFT_PLANAR_DEG * Math.PI) / 180);
 
 /**
  * Positive ≥ T. The same array as the cavity face in `PARTING_ROLE_RGB`.
@@ -91,11 +100,6 @@ function round3(v) {
   return [round(v[0]), round(v[1]), round(v[2])];
 }
 
-function horizontal(v, d) {
-  const along = dot(v, d);
-  return [v[0] - d[0] * along, v[1] - d[1] * along, v[2] - d[2] * along];
-}
-
 /** Draft angle in degrees between a wall and the pull. 0 is parallel to the pull. */
 export function draftAngleDeg(normal, pull) {
   const n = unit(normal);
@@ -128,41 +132,57 @@ function thresholdOf(value) {
   return parsed.threshold == null ? MOLD_DRAFT_MIN_DEG : parsed.threshold;
 }
 
-function partCenter(tris) {
-  const center = [0, 0, 0];
-  let weight = 0;
+/**
+ * One normal per planar stamped face. Triangles of one stamped face share
+ * the same stamped normal; when every facet's geometric normal agrees with
+ * it within MOLD_DRAFT_PLANAR_DEG the face is a plane and that normal is the
+ * angle for all of them. A curved face (a fillet's facets step 0.9°) is left
+ * per facet. Unstamped triangles are left alone.
+ * @returns {Map<number, number[]>} triangle index → unit normal to use
+ */
+export function planarFaceNormals(tris) {
+  const groups = new Map();
   for (const tri of tris) {
-    const w = tri.area > 0 ? tri.area : 1;
-    const at = tri.centroid || [0, 0, 0];
-    weight += w;
-    for (let k = 0; k < 3; k++) center[k] += at[k] * w;
+    if (!tri.n || !tri.nGeom || tri.n === tri.nGeom) continue;
+    const key = `${tri.n[0].toFixed(9)},${tri.n[1].toFixed(9)},${tri.n[2].toFixed(9)}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { n: unit(tri.n), tris: [], planar: true };
+      groups.set(key, group);
+    }
+    group.tris.push(tri);
+    if (group.planar && group.n) {
+      const g = unit(tri.nGeom);
+      if (!g || dot(g, group.n) < PLANAR_COS) group.planar = false;
+    }
   }
-  if (!(weight > 0)) return [0, 0, 0];
-  return center.map((c) => c / weight);
+  const out = new Map();
+  for (const group of groups.values()) {
+    if (!group.planar || !group.n) continue;
+    for (const tri of group.tris) out.set(tri.t, group.n);
+  }
+  return out;
 }
 
 /**
- * Signed draft in degrees. Positive opens along `pull`. `center` is the
- * part centroid. A lone triangle on that center keeps the raw lean.
+ * Signed draft in degrees: asin(n · pull). Positive points along the pull,
+ * negative against it. The extra arguments are accepted for older callers
+ * and ignored.
  */
-export function signedDraftDeg(normal, pull, centroid, center) {
+export function signedDraftDeg(normal, pull) {
   const n = unit(normal);
   const d = unit(pull);
   if (!n || !d) return null;
   const along = Math.max(-1, Math.min(1, dot(n, d)));
-  const lean = (Math.asin(along) * 180) / Math.PI;
-  const at = centroid || center || [0, 0, 0];
-  const origin = center || [0, 0, 0];
-  const offset = [at[0] - origin[0], at[1] - origin[1], at[2] - origin[2]];
-  const exterior = dot(horizontal(n, d), horizontal(offset, d)) > SIDE_EPS;
-  const signed = exterior ? -lean : lean;
+  const signed = (Math.asin(along) * 180) / Math.PI;
   if (Math.abs(signed) < 1e-4) return 0;
   return round(signed);
 }
 
 function stateOf(signed, threshold) {
-  if (signed >= threshold) return 'positive';
-  if (signed <= -threshold) return 'negative';
+  const gate = Math.max(0, threshold - MOLD_DRAFT_TOL_DEG);
+  if (signed >= gate) return 'positive';
+  if (signed <= -gate) return 'negative';
   return 'below';
 }
 
@@ -383,25 +403,26 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
  * A bad pull or an empty mesh is an empty report, not an error.
  * The buckets use the default 1° threshold. `classifyMoldDraft` retargets them.
  * Positive ≥ T, Negative ≥ T, and Below T, with the Below T sign split.
- * Every triangle with a geometric normal is sampled. `nGeom` wins over the
- * stamped face normal in `n`, which is one average and mis-aims a fillet.
- * The 10° band stays on ejector ribs only.
+ * Every triangle with a geometric normal is sampled. A planar stamped face
+ * takes its stamped normal for every facet (`planarFaceNormals`); elsewhere
+ * `nGeom` wins over the stamped face normal in `n`, which is one average and
+ * mis-aims a fillet. The 10° band stays on ejector ribs only.
  */
 export function analyzeMoldDraft(tris, pull, wall = null) {
   const d = unit(pull);
   if (!d || !Array.isArray(tris) || !tris.length) return emptyDraft();
   const flags = flagOf(wall);
-  const center = partCenter(tris);
+  const planar = planarFaceNormals(tris);
   const samples = [];
   const ribs = [];
   const bosses = [];
   for (const tri of tris) {
-    const n = unit(tri.nGeom || tri.n);
+    const n = planar.get(tri.t) || unit(tri.nGeom || tri.n);
     if (!n) continue;
     const along = dot(n, d);
     const sideWall = Math.abs(along) <= NEUTRAL_SIN;
     const angle = draftAngleDeg(n, d);
-    const signed = signedDraftDeg(n, d, tri.centroid, center);
+    const signed = signedDraftDeg(n, d);
     if (signed != null) {
       samples.push({
         t: tri.t,

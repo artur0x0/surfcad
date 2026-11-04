@@ -3,7 +3,9 @@
  * handler paints the active part. `on: false` removes the skin so face
  * paint and the part colour show again. This is not CAD draft mode.
  *
- * Positive draft opens along the pull. Negative draft closes along the pull.
+ * Positive draft means the face normal points along the pull; negative
+ * means it points against it (asin(n · pull)). A planar stamped face gets
+ * one angle; a wall drafted at exactly the threshold passes.
  * Positive ≥ T uses the cavity colour. Negative ≥ T uses the core colour.
  * |draft| below T is the needs-work hatch, and that class still reports
  * its sign. A wall at 0° is Below T and its sign stays positive.
