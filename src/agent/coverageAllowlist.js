@@ -42,6 +42,7 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-git-behind-keep', reason: 'PR 8 removed git_behind_resolve keep (Go back is not a tool).' }),
   Object.freeze({ id: 'data-git-save-dismiss', reason: 'Save conflict Go back writes nothing (not an agent command).' }),
   Object.freeze({ id: 'data-git-branch-switch-go-back', reason: 'Branch-switch Go back changes neither the branch nor files (not an agent command).' }),
+  Object.freeze({ id: 'data-git-conflict-get-remote', reason: 'Conflict popup Get remote drops the queued local changes and reopens from the tip; it writes nothing. Agents reopen the assembly or use git_branch_switch use_remote.' }),
   Object.freeze({ id: 'data-git-install-app', reason: 'Save dialog opens the SurfCAD GitHub App install page when the signed-in user has not installed the app.' }),
   Object.freeze({ id: 'data-joints-row-scroll-prev', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),
   Object.freeze({ id: 'data-joints-row-scroll-next', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),

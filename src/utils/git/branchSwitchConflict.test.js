@@ -200,5 +200,5 @@ test('switch does not open the outbox hold or the save-conflict check', () => {
   assert.equal(feed.includes('data-git-branch-pane-toolbar'), false);
   assert.match(feed, /BranchPaneList/);
   assert.match(feed, /BranchSwitchConflictChoices/);
-  assert.match(feed, /Stay on branch/);
+  assert.match(feed, /SyncConflictChoices/);
 });

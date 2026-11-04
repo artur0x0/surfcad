@@ -4919,13 +4919,15 @@ const App = () => {
    * and still load.
    * v2 opens by assembly id (openV2Assembly). A folder name is not a v2 id.
    */
-  const handleSwitchBranch = async (branchName, { choice, preview = false } = {}) => {
+  const handleSwitchBranch = async (branchName, { choice, preview = false, reload = false } = {}) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
       return { status: 'error', error: 'Not in Git mode' };
     }
     const current = gitWorkingBranch();
-    if (!branchName || branchName === current) {
+    // `reload` reopens the current branch from its tip (the conflict
+    // popup's Get remote); a plain switch to the current branch is a no-op.
+    if (!branchName || (branchName === current && !reload)) {
       return { status: 'same', branch: current };
     }
     const choiceName = choice === 'use_local' || choice === 'use_remote' ? choice : null;
@@ -6740,7 +6742,7 @@ const App = () => {
   };
 
   /**
-   * Conflict popup → Overwrite main. The moved-tip guard stays in place for
+   * Conflict popup → Keep mine (the force-write). The moved-tip guard stays in place for
    * Save and for a background flush. This is the explicit force-write: the
    * queued local files land on the current main tip, then the conflict and
    * the dirty dots clear. No second confirm.
@@ -6781,6 +6783,33 @@ const App = () => {
       };
     } catch (err) {
       return { status: 'error', error: err?.message || 'Overwrite failed' };
+    }
+  };
+
+  /**
+   * Conflict popup → Get remote. The local changes the outbox hold was
+   * protecting are dropped (every queued op on the working branch, and a
+   * pending plan-save), then the assembly is reopened from the branch tip
+   * through the branch-switch open path. Nothing is written to git.
+   */
+  const handleTakeRemote = async () => {
+    const vault = gitVaultRef.current;
+    if (!vault?.repo || !gitAdapterRef.current) return { status: 'error', error: 'No repo' };
+    try {
+      const store = gitSync();
+      await store.ready();
+      const branch = gitWorkingBranch();
+      for (const op of store.pending(vault.repo, branch)) await store.drop(op.id);
+      await store.clearPendingSave?.(vault.repo, branch);
+      const result = await handleSwitchBranch(branch, { choice: 'use_remote', reload: true });
+      if (result?.status !== 'switched') {
+        return { status: 'error', error: result?.error || 'Could not reload from the repo' };
+      }
+      setSyncConflict(null);
+      setUploadError(null);
+      return { status: 'reloaded', branch };
+    } catch (err) {
+      return { status: 'error', error: err?.message || 'Could not reload from the repo' };
     }
   };
 
@@ -12585,6 +12614,7 @@ const App = () => {
       vaultLayout={assemblyDoc?.vaultLayout || null}
       onGitCommit={handleGitCommit}
       onOverwriteMain={handleOverwriteMain}
+      onTakeRemote={handleTakeRemote}
       behindPartIds={behindPartIdSet}
       assemblyBehind={!!behindMarkers.assemblyBehind}
       assemblyPath={gitAssemblyPath || ''}
