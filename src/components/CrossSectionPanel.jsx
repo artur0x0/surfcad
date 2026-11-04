@@ -52,7 +52,7 @@ const CrossSectionPanel = forwardRef(({
   partingActive = false,
   partingPending = false,
   onPartingToggle = null,
-  /** Mold draft and ejector hints. Inspection group, immediately after core and cavity. Hidden in game. */
+  /** Mold draft. Inspection group, immediately after core and cavity. Hidden in game. */
   showMoldDraft = false,
   moldDraftActive = false,
   moldDraftPending = false,

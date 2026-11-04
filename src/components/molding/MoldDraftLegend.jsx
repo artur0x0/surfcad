@@ -2,8 +2,7 @@
  * Mold-draft section of the molding results pane.
  *
  * Threshold buttons rebucket the signed field. The reference plane is the
- * shared pull control above this section. Pin and sleeve counts stay a
- * side-wall estimate. This is not the CAD draft tool.
+ * shared pull control above this section. This is not the CAD draft tool.
  */
 
 import React from 'react';
@@ -61,8 +60,6 @@ export default function MoldDraftLegend({ legend, onThreshold = null }) {
       state: 'below',
       signText: `${belowPositive} positive · ${belowNegative} negative`,
     },
-    { key: 'pins', label: 'Ejector pin', count: legend.pins || 0, swatch: null, state: null },
-    { key: 'sleeves', label: 'Sleeve', count: legend.sleeves || 0, swatch: null, state: null },
   ];
   return (
     <div

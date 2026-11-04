@@ -1,5 +1,5 @@
 /**
- * Show or hide signed mold draft and the ejector counts. The viewport
+ * Show or hide signed mold draft. The viewport
  * handler paints the active part. `on: false` removes the skin so face
  * paint and the part colour show again. This is not CAD draft mode.
  *
@@ -18,7 +18,7 @@ const SCHEMA = Object.freeze({
   properties: {
     on: {
       type: 'boolean',
-      description: 'true shows signed mold draft and ejector counts. false restores paint and the part colour. Omit to toggle. Pass threshold without on to show at that threshold.',
+      description: 'true shows signed mold draft. false restores paint and the part colour. Omit to toggle. Pass threshold without on to show at that threshold.',
     },
     threshold: {
       type: 'number',

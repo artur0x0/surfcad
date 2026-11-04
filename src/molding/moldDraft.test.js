@@ -91,21 +91,6 @@ function appendMesh(dstPos, dstIdx, src, flip) {
   }
 }
 
-function uniformShell() {
-  const positions = [];
-  const indices = [];
-  appendMesh(positions, indices, boxMesh([0, 0, 0], [20, 20, 20]), false);
-  appendMesh(positions, indices, boxMesh([2, 2, 2], [18, 18, 18]), true);
-  return { positions, indices };
-}
-
-function withPart(shell, part) {
-  const positions = shell.positions.slice();
-  const indices = shell.indices.slice();
-  appendMesh(positions, indices, part, false);
-  return { positions, indices };
-}
-
 test('the draft cluster angle matches the undercut region angle', () => {
   assert.equal(MOLD_DRAFT_CLUSTER_DEG, MOLD_REGION_NORMAL_DEG);
   assert.equal(MOLD_DRAFT_MIN_DEG, 1);
@@ -139,9 +124,6 @@ test('a box flags four vertical walls and classifies the caps', () => {
   assert.equal(draft.below.negative.count, 0);
   assert.equal(draft.triangles.filter((row) => row.state === 'below' && row.sign === 'positive').length, 8);
   assertCoversMesh(draft, mesh);
-  assert.equal(draft.ejectors.heuristic, true);
-  assert.equal(draft.ejectors.pinCount, 0);
-  assert.equal(draft.ejectors.sleeveCount, 0);
   assert.equal(result.fit, 'good');
   const legend = moldDraftLegendModel(draft);
   assert.equal(legend.violations, 4);
@@ -219,39 +201,6 @@ test('a 3° wall is not a violation and 1° stays clear', () => {
   assert.equal(parseDraftThreshold(90).threshold, 90);
   assert.equal(parseDraftThreshold(91).error.code, 'bad_args');
   assert.equal(signedDraftDeg([1, 0, 0], [0, 0, 1], [5, 0, 0], [0, 0, 0]), 0);
-});
-
-test('a thin rib yields pins and a thick boss yields one sleeve', () => {
-  const shell = uniformShell();
-  const rib = analyzePullDirection({
-    ...withPart(shell, boxMesh([10, 9, 9], [10.8, 11.5, 11.5])),
-    pull: [0, 0, 1],
-  });
-  // The whole rib is the 0.8 mm wall, including the ends, so both side pairs are thin.
-  assert.equal(rib.moldDraft.ejectors.pinCount, 4);
-  assert.equal(rib.moldDraft.ejectors.sleeveCount, 0);
-  for (const pin of rib.moldDraft.ejectors.pins) {
-    assert.ok(pin.center[0] > 9.5 && pin.center[0] < 11.2);
-    assert.equal(pin.kind, 'pin');
-  }
-  const boss = analyzePullDirection({
-    ...withPart(shell, boxMesh([8, 8, 8], [12, 16, 12])),
-    pull: [0, 0, 1],
-  });
-  assert.equal(boss.moldDraft.ejectors.sleeveCount, 1);
-  assert.equal(boss.moldDraft.ejectors.pinCount, 0);
-  const sleeve = boss.moldDraft.ejectors.sleeves[0];
-  assert.equal(sleeve.kind, 'sleeve');
-  assert.ok(Math.abs(sleeve.center[2] - 8) < 0.5);
-  const plain = analyzePullDirection({ ...shell, pull: [0, 0, 1] });
-  assert.equal(plain.moldDraft.ejectors.pinCount, 0);
-  assert.equal(plain.moldDraft.ejectors.sleeveCount, 0);
-  assert.equal(plain.moldDraft.violationCount, 8);
-  assert.equal(plain.moldDraft.below.count, 8);
-  assert.equal(plain.moldDraft.below.positive.count, 8);
-  assert.ok(plain.moldDraft.positive.count > 0);
-  assert.ok(plain.moldDraft.negative.count > 0);
-  assertCoversMesh(plain.moldDraft, shell);
 });
 
 function addLoop(positions, loop, z) {

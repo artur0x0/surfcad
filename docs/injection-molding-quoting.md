@@ -30,9 +30,10 @@ its own machining rate.
 
 ## Adders
 
-Slides, lifters, ejector pins, and sleeves use the card's dollar adders.
-The count is the analysis count times the cavity count, so each cavity
-pays for its own actions. A shared slide across a family mold is not
+Slides and lifters use the card's dollar adders. The count is the analysis
+count times the cavity count, so each cavity pays for its own actions.
+Ejector pins and sleeves are no longer counted by the analysis; the card
+keeps those adders and the report passes a count of zero. A shared slide across a family mold is not
 modeled.
 
 A hot runner is suggested when the flow is at least the flow limit, or

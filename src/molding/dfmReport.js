@@ -72,13 +72,12 @@ function namingOf(parting) {
 
 /**
  * Readable summary of a mold-analysis object. Null when the object is not
- * that result. Counts only: no triangle lists, no ejector positions, no money.
+ * that result. Counts only: no triangle lists, no money.
  */
 export function dfmReport(analysis) {
   if (!analysis || analysis.kind !== 'mold-analysis') return null;
   const wall = analysis.wall || {};
   const draft = analysis.moldDraft || {};
-  const ejectors = draft.ejectors || {};
   const sides = analysis.sideActions || {};
   const groups = Array.isArray(sides.groups) ? sides.groups : [];
   const nominal = roundTo(wall.nominal, 2);
@@ -122,11 +121,6 @@ export function dfmReport(analysis) {
         kind: group?.kind === 'lifter' ? 'lifter' : 'slide',
         pull: pullOf(group?.pull),
       })),
-    },
-    ejectors: {
-      heuristic: true,
-      pinCount: finite(ejectors.pinCount) ?? 0,
-      sleeveCount: finite(ejectors.sleeveCount) ?? 0,
     },
     naming: namingOf(analysis.parting),
   };

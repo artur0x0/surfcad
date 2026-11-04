@@ -40,7 +40,7 @@
  * It also carries the core / cavity split and parting line
  * (`src/molding/parting.js`) for that same pull, and the side-action
  * groups (`src/molding/sideActions.js`) clustered from these undercuts.
- * It also carries signed mold draft and ejector hints
+ * It also carries signed mold draft
  * (`src/molding/moldDraft.js`) for that same pull.
  */
 

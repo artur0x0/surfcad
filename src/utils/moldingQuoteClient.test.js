@@ -38,7 +38,7 @@ test('the quote body measures the mesh and does not send a price', () => {
   assert.equal(body.part.maxWallMm, 2);
   assert.equal(body.part.partingLengthMm, 60);
   assert.equal(body.part.slideCount, 1);
-  assert.equal(body.part.pinCount, 2);
+  assert.equal(body.part.pinCount, 0);
   assert.equal(body.part.flowLengthMm, null);
   assert.equal(body.grade, 'ABS');
   assert.equal(JSON.stringify(body).includes('usd'), false);

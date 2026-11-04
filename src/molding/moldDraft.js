@@ -1,5 +1,5 @@
 /**
- * Mold draft and ejector hints (injection molding).
+ * Mold draft (injection molding).
  *
  * Draft here is the signed angle between the face normal and the pull:
  * asin(n · pull). Positive means the normal points along the pull (a tray's
@@ -26,10 +26,9 @@
  * threshold itself has MOLD_DRAFT_TOL_DEG of slack, so a wall drafted at
  * exactly the threshold passes.
  *
- * Ejector pins and sleeves are a heuristic on the wall field. A thin side
- * wall is a rib, and each connected patch gets a pin at its centroid. A
- * thick face that looks against the pull is a boss end, and each connected
- * patch gets a sleeve. This is not a mold design.
+ * Ejector pins and sleeves were once counted here from the wall field. That
+ * was too fine a detail for a budgetary quote and the count was noise (one
+ * rib read as thirty pins), so the tool reports draft only.
  */
 
 import { PARTING_NEUTRAL_DEG, PARTING_ROLE_RGB } from './parting.js';
@@ -38,12 +37,11 @@ import { PARTING_NEUTRAL_DEG, PARTING_ROLE_RGB } from './parting.js';
 export const MOLD_DRAFT_MIN_DEG = 1;
 /** Buttons in the draft section. The agent may pass any angle in (0, 90]. */
 export const MOLD_DRAFT_PRESETS = Object.freeze([0.5, 1, 2, 3, 5]);
-/** Same band as `PARTING_NEUTRAL_DEG`. Ejector pins use it. Draft does not. */
+/** Same band as `PARTING_NEUTRAL_DEG`. Reported as `neutralDeg`; draft does not use it. */
 export const MOLD_DRAFT_NEUTRAL_DEG = PARTING_NEUTRAL_DEG;
 /** Matches `MOLD_REGION_NORMAL_DEG`. Triangles this close stay one face. */
 export const MOLD_DRAFT_CLUSTER_DEG = 35;
 
-const NEUTRAL_SIN = Math.sin((MOLD_DRAFT_NEUTRAL_DEG * Math.PI) / 180);
 const CLUSTER_COS = Math.cos((MOLD_DRAFT_CLUSTER_DEG * Math.PI) / 180);
 /** Slack at the threshold: a wall drafted at exactly T is at or above T. */
 export const MOLD_DRAFT_TOL_DEG = 0.01;
@@ -268,42 +266,11 @@ function cluster(members) {
   return groups;
 }
 
-function flagOf(wall) {
-  const flags = new Map();
-  const field = Array.isArray(wall?.field) ? wall.field : [];
-  for (const sample of field) {
-    if (sample?.index == null) continue;
-    flags.set(sample.index, sample.flag);
-  }
-  return flags;
-}
-
-function places(groups, kind) {
-  return groups.map((group) => ({
-    id: group.id,
-    kind,
-    center: group.center,
-    area: group.area,
-    triangleCount: group.triangleCount,
-  }));
-}
-
 function bucketOf(members) {
   const regions = cluster(members);
   let area = 0;
   for (const member of members) area += member.area || 0;
   return { count: regions.length, area: round(area), regions };
-}
-
-function emptyEjectors() {
-  return {
-    heuristic: true,
-    pull: null,
-    pinCount: 0,
-    sleeveCount: 0,
-    pins: [],
-    sleeves: [],
-  };
 }
 
 function emptyBucket() {
@@ -331,7 +298,6 @@ function emptyDraft(threshold = MOLD_DRAFT_MIN_DEG) {
     regions: [],
     triangles: [],
     samples: [],
-    ejectors: emptyEjectors(),
   };
 }
 
@@ -343,9 +309,7 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
   const minDeg = thresholdOf(threshold);
   const samples = Array.isArray(report?.samples) ? report.samples : [];
   if (!samples.length) {
-    const empty = emptyDraft(minDeg);
-    empty.ejectors = report?.ejectors || empty.ejectors;
-    return empty;
+    return emptyDraft(minDeg);
   }
   const positiveMembers = [];
   const negativeMembers = [];
@@ -394,34 +358,27 @@ export function classifyMoldDraft(report, threshold = MOLD_DRAFT_MIN_DEG) {
     regions,
     triangles,
     samples,
-    ejectors: report.ejectors || emptyEjectors(),
   };
 }
 
 /**
- * Signed draft and ejector candidates along `pull`.
+ * Signed draft along `pull`.
  * A bad pull or an empty mesh is an empty report, not an error.
  * The buckets use the default 1° threshold. `classifyMoldDraft` retargets them.
  * Positive ≥ T, Negative ≥ T, and Below T, with the Below T sign split.
  * Every triangle with a geometric normal is sampled. A planar stamped face
  * takes its stamped normal for every facet (`planarFaceNormals`); elsewhere
  * `nGeom` wins over the stamped face normal in `n`, which is one average and
- * mis-aims a fillet. The 10° band stays on ejector ribs only.
+ * mis-aims a fillet.
  */
-export function analyzeMoldDraft(tris, pull, wall = null) {
+export function analyzeMoldDraft(tris, pull) {
   const d = unit(pull);
   if (!d || !Array.isArray(tris) || !tris.length) return emptyDraft();
-  const flags = flagOf(wall);
   const planar = planarFaceNormals(tris);
   const samples = [];
-  const ribs = [];
-  const bosses = [];
   for (const tri of tris) {
     const n = planar.get(tri.t) || unit(tri.nGeom || tri.n);
     if (!n) continue;
-    const along = dot(n, d);
-    const sideWall = Math.abs(along) <= NEUTRAL_SIN;
-    const angle = draftAngleDeg(n, d);
     const signed = signedDraftDeg(n, d);
     if (signed != null) {
       samples.push({
@@ -435,22 +392,8 @@ export function analyzeMoldDraft(tris, pull, wall = null) {
         signedDeg: signed,
       });
     }
-    const flag = flags.get(tri.t);
-    if (flag === 'thin' && sideWall) ribs.push({ ...tri, n, draftDeg: angle });
-    if (flag === 'thick' && along < -NEUTRAL_SIN) bosses.push({ ...tri, n, draftDeg: angle });
   }
-  const pins = places(cluster(ribs), 'pin');
-  const sleeves = places(cluster(bosses), 'sleeve');
-  const classified = classifyMoldDraft({ samples, ejectors: emptyEjectors() }, MOLD_DRAFT_MIN_DEG);
-  classified.ejectors = {
-    heuristic: true,
-    pull: round3(d),
-    pinCount: pins.length,
-    sleeveCount: sleeves.length,
-    pins,
-    sleeves,
-  };
-  return classified;
+  return classifyMoldDraft({ samples }, MOLD_DRAFT_MIN_DEG);
 }
 
 function packBucket(bucket) {
@@ -474,8 +417,6 @@ export function moldDraftSummary(moldDraft) {
     violations: moldDraft.violationCount,
     minDeg: moldDraft.minDeg,
     minDraftDeg: moldDraft.minDraftDeg,
-    pins: moldDraft.ejectors?.pinCount || 0,
-    sleeves: moldDraft.ejectors?.sleeveCount || 0,
   };
 }
 
@@ -491,7 +432,5 @@ export function moldDraftLegendModel(moldDraft) {
     negative: summary.negative,
     below: summary.below,
     violations: summary.violations,
-    pins: summary.pins,
-    sleeves: summary.sleeves,
   };
 }
