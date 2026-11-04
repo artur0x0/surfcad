@@ -22,7 +22,7 @@ const SCHEMA = Object.freeze({
 
 export const moldPartingCommand = Object.freeze({
   name: 'mold_parting',
-  uiEntry: Object.freeze(['data-mold-parting', 'data-mold-side-action-group']),
+  uiEntry: Object.freeze(['data-mold-parting']),
   schema: SCHEMA,
   example: { on: true },
   immediate: true,

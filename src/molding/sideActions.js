@@ -932,8 +932,11 @@ export function groupSideActions(regions, pull, tris = null, opts = {}) {
 }
 
 /**
- * Core/cavity legend plus one row per slide or lifter. The Side action
- * swatch is inserted only when that count is greater than 0.
+ * Core/cavity legend rows. The Side action swatch is inserted only when the
+ * part has a block, and the Undercut swatch only when a block is unresolved
+ * (it is painted in its own colour). `groups` is kept for the agent, which
+ * can still highlight one block by id; the pane does not list them. The
+ * slide / lifter / undercut breakdown is the mold report's job.
  * `partingLegendModel` itself stays the three role rows.
  */
 export function splitLegendModel(parting, sideActions = null, selectedId = null) {
@@ -945,6 +948,9 @@ export function splitLegendModel(parting, sideActions = null, selectedId = null)
   for (const row of base.rows) {
     if (row.role === 'parting-line' && showSide) {
       rows.push({ role: 'side', label: 'Side action', css: rgbCss(SIDE_ACTION_FACE_RGB) });
+      if ((sideActions?.unresolvedCount || 0) > 0) {
+        rows.push({ role: 'undercut', label: 'Undercut', css: rgbCss(SIDE_ACTION_KIND_RGB.unresolved) });
+      }
     }
     rows.push(row);
   }

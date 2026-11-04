@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { REPORT_QUANTITIES } from '../../molding/moldReport.js';
+import { REPORT_QUANTITIES, sideActionBreakdown } from '../../molding/moldReport.js';
 import { PAY_FOR_REVIEW_MESSAGE } from '../../utils/moldingLeadClient.js';
 import { PARTS_TEXT_INPUT_CLASS, PARTS_TEXT_INPUT_STYLE } from '../../utils/partsChrome.js';
 import { SM_TAP } from '../sheetMetal/SmControls.jsx';
@@ -77,7 +77,9 @@ export default function MoldReportPanel({
         <Row
           label="Side actions"
           testId="sides"
-          value={Number.isFinite(geometry.sideActionCount) ? String(geometry.sideActionCount) : null}
+          value={Number.isFinite(geometry.sideActionCount)
+            ? `${geometry.sideActionCount}${sideActionBreakdown(geometry) ? ` (${sideActionBreakdown(geometry)})` : ''}`
+            : null}
         />
         {geometry.draft && (
           <Row

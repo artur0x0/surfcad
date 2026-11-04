@@ -149,13 +149,16 @@ test('each molding pane renders the scroll container and its last control', asyn
       groups: [{ id: 0, kind: 'slide', css: '#0a0', label: 'Slide', pull: '+X', areaLabel: '12 mm²', selected: true }],
     },
   }));
+  // The pane is a visual: the Side action swatch, no per-block list. The
+  // slide / lifter / undercut breakdown is the mold report's.
   assert.match(sides, /data-parting-legend/);
-  assert.match(sides, /data-mold-side-action-group/);
-  assert.match(sides, /data-ui-action="data-mold-side-action-group"/);
-  assert.match(sides, /data-side-action-area/);
-  assert.match(sides, /12 mm²/);
-  assert.match(sides, /\+X/);
-  assert.match(sides, /aria-pressed="true"/);
+  assert.match(sides, /data-parting-swatch="side"/);
+  assert.match(sides, /Side action/);
+  assert.doesNotMatch(sides, /data-mold-side-action-group/);
+  assert.doesNotMatch(sides, /data-side-action-area/);
+  assert.doesNotMatch(sides, /12 mm²/);
+  assert.doesNotMatch(sides, /\+X/);
+  assert.doesNotMatch(sides, /Slide/);
   assert.match(sides, /data-mold-pane-end/);
   assert.doesNotMatch(sides, /data-side-action-legend/);
   assert.doesNotMatch(sides, /Heuristic/);

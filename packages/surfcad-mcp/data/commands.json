@@ -2708,8 +2708,7 @@
       "group": "measure",
       "immediate": true,
       "uiEntry": [
-        "data-mold-parting",
-        "data-mold-side-action-group"
+        "data-mold-parting"
       ],
       "example": {
         "on": true

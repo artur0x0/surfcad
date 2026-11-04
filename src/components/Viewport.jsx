@@ -17448,10 +17448,7 @@ const Viewport = forwardRef(({
           )}
           {wallLegend && <WallLegend legend={wallLegend} />}
           {partingLegend && (
-            <PartingLegend
-              legend={partingLegend}
-              onSelectGroup={(id) => agentMoldPartingRef.current({ group: id })}
-            />
+            <PartingLegend legend={partingLegend} />
           )}
           {moldDraftLegend && (
             <MoldDraftLegend

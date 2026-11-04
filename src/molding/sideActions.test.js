@@ -183,13 +183,16 @@ test('an occluded wall is a side action only once it leaves the vertical band', 
   assert.ok(group.trappedArea > 40, `trapped ${group.trappedArea}`);
 });
 
-test('the core and cavity legend lists each side action', () => {
+test('the core and cavity legend adds the Side action swatch, and Undercut only when a block is unresolved', () => {
   const parting = { counts: { core: 1, cavity: 1, parting: 0 } };
+  const slide = splitLegendModel(parting, groupSideActions([region(1, [1, 0, 0.2], 1, { area: 12 })], [0, 0, 1]));
+  assert.deepEqual(slide.rows.map((row) => row.label), ['Core', 'Cavity', 'Side action', 'Parting line']);
   const grouped = groupSideActions([
     region(2, [0, 0, -1], -1, { area: 12 }),
   ], [0, 0, 1]);
   const legend = splitLegendModel(parting, grouped, 0);
-  assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Side action', 'Parting line']);
+  assert.deepEqual(legend.rows.map((row) => row.label), ['Core', 'Cavity', 'Side action', 'Undercut', 'Parting line']);
+  assert.equal(legend.rows.find((row) => row.role === 'undercut').css, 'rgb(204, 77, 77)');
   assert.equal(legend.groups[0].label, 'Undercut');
   assert.equal(legend.groups[0].areaLabel, '12 mm²');
   assert.equal(legend.groups[0].pull, '+X');
