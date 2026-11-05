@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.6 - 2026-11-05
 
 - Server relay: the frame cap (`MAX_AGENT_MESSAGE_BYTES`) is 8 MB, up from 256 KB. A `mold_fit`, `mold_dfm` or `mold_side_actions` result on a real part was larger than 256 KB, so the server dropped the tab's socket ("Max payload size exceeded"), the command came back `tab_asleep`, and a prompt typed while the socket flapped was lost ("Message was not delivered"). Backend change, ships with the backend deploy.
 
