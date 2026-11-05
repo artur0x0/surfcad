@@ -143,9 +143,9 @@ returns to `idle`; so do Stop, `close_session`, and disconnect. While the
 session is `working` with no prompt, the prompt shows the same collapsed chrome
 as the working prompt state (chat collapsed, spinner and "Agent is working...",
 field disabled), Send stays but is disabled (there is no prompt to Stop), the
-phone chat hides on that edge, the phone bot button spins, and the profile
-avatar (`data-profile-agent-working="1"`, `data-profile-chip-state="spinning"`)
-is a spinner. `replying` keeps the chat open with the dots. DEV
+phone chat hides on that edge, and the phone bot button spins. The profile
+avatar never spins for agent work (only for its own auth phases). `replying`
+keeps the chat open with the dots. DEV
 `?agentPromptDemo=1&agentPromptState=session-working` pins it.
 **Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
 "Hide agent prompt") hangs from the prompt's bottom edge as a 44 × 28 pill tab,
