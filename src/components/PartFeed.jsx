@@ -907,7 +907,7 @@ const PartFeed = forwardRef(function PartFeed({
     } else if (result.status === 'conflict') {
       error = result.assemblyExists
         ? 'This assembly already exists in the repo. Rename the assembly, or pick another repo name.'
-        : `These repo files already exist with different content: ${result.paths.join(', ')}`;
+        : `These already exist in the repo with different content: ${(result.paths || []).map((path) => partNameForRepoPath(path)).join(', ')}`;
     } else if (result.status === 'empty') error = 'Add a part before creating a repo.';
     setMoveFlow((prev) => ({ ...(prev || {}), stage: 'form', result, error }));
   };
@@ -1477,6 +1477,12 @@ const PartFeed = forwardRef(function PartFeed({
   // v2 vaults store parts by id: no name-derived path under the row, the real
   // path on the name as a tooltip (partRowSubtitles).
   const { subtitles, paths: rowPaths } = partRowSubtitles(rows, vaultLayout);
+  /** A repo path in a message reads as the part's name; the id-named file stays internal. */
+  const partNameForRepoPath = (path) => {
+    const text = String(path || '');
+    const row = rows.find((item) => item && ((item.path && item.path === text) || (item.id && text.includes(String(item.id)))));
+    return row?.name || text;
+  };
   const desktopRowLayout = placement === 'desktop';
 
   const renderPartRow = (row, index) => {
@@ -2728,7 +2734,6 @@ const PartFeed = forwardRef(function PartFeed({
                 <span className="font-medium text-chrome-text">{conflictFlow.name}</span>
                 {'. Reload takes the remote version, Keep mine keeps yours, or Check in mine parks yours on a new branch (base auto-detected).'}
               </p>
-              <p className="mt-2 truncate font-mono text-[10px] text-gray-500" title={conflictFlow.path}>{conflictFlow.path}</p>
             </div>
           )}
           {conflictFlow.stage === 'busy' && <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Working…</p>}
@@ -3213,7 +3218,7 @@ const PartFeed = forwardRef(function PartFeed({
             ) : pendingDelete.step === 'confirm-repo' ? (
               <>
                 <p className="mt-2 text-xs text-gray-300" data-part-delete-repo-message="">
-                  {partRepoDeleteConfirmCopy(pendingDelete.path || pendingDelete.id)}
+                  {partRepoDeleteConfirmCopy(pendingDelete.name || pendingDelete.path || pendingDelete.id)}
                 </p>
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                   <button

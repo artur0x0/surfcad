@@ -21,7 +21,8 @@ import { partRepoDeleteConfirmCopy } from '../../src/utils/assembly.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (rel) => readFileSync(join(root, rel), 'utf8');
-const COPY = partRepoDeleteConfirmCopy('assemblies/Widget/FilletKilla.js');
+// The second confirm names the part, not its repo file (style guide rule 6).
+const COPY = partRepoDeleteConfirmCopy('FilletKilla');
 
 let failed = 0;
 let passed = 0;
@@ -51,7 +52,7 @@ console.log('part delete dialog — source');
     && /next\.step === 'confirm-repo'/.test(feed)
     && /onDeletePart\?\.\(pending\.id, \{ fromRepo: next\.action === 'drop-repo' \}\)/.test(feed));
   ok('the second confirm names the vault file',
-    /partRepoDeleteConfirmCopy\(pendingDelete\.path \|\| pendingDelete\.id\)/.test(feed)
+    /partRepoDeleteConfirmCopy\(pendingDelete\.name \|\| pendingDelete\.path \|\| pendingDelete\.id\)/.test(feed)
     && /data-part-delete-repo-message/.test(feed)
     && /data-part-delete-repo-commit/.test(feed)
     && /This can't be undone from SurfCAD\./.test(asm));
@@ -162,7 +163,7 @@ async function runSize(browser, width, height) {
   await page.locator('[data-part-delete-dialog][data-part-delete-step="repo"]').waitFor();
   const message = (await page.locator('[data-part-delete-repo-message]').innerText()).replace(/\s+/g, ' ').trim();
   const commitLabel = (await page.locator('[data-part-delete-repo-commit]').innerText()).trim();
-  ok(`${label}: repo confirm names FilletKilla.js`,
+  ok(`${label}: repo confirm names the part FilletKilla, not its file`,
     message === COPY && commitLabel === 'Delete' && (await deleted(page)) == null,
     message);
   const repoShot = join(shotDir, `part-delete-repo-${label}.png`);
