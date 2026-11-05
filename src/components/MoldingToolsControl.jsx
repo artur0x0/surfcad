@@ -14,11 +14,13 @@ import React, { useState } from 'react';
 import {
   AlignHorizontalSpaceAround,
   ArrowLeft,
-  ArrowUpFromLine,
   Factory,
   Receipt,
   SquareSplitHorizontal,
 } from 'lucide-react';
+// The draft tool is the draft-angle pictogram (lucide `angle`, vendored),
+// the same glyph as the left rail's Draft; the up arrow is Extrude's.
+import Angle from './icons/Angle';
 import { pressMoldTool } from './pressMoldTool';
 import { toolToggleClass } from './toolToggle';
 
@@ -107,7 +109,7 @@ const MoldingToolsControl = ({
               data-mold-draft-state={toolState(moldDraftActive, moldDraftPending)}
               data-ui-action="data-mold-draft"
             >
-              <ArrowUpFromLine size={20} />
+              <Angle size={20} />
             </button>
           )}
           {showReport && (
