@@ -6,7 +6,7 @@
  *
  * Screenshots go to GOLDEN_SHOT_DIR or os.tmpdir(), never the artifacts folder.
  */
-/* global document, getComputedStyle, indexedDB, localStorage, sessionStorage */
+/* global document, getComputedStyle, indexedDB, localStorage, sessionStorage, window */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -161,6 +161,8 @@ check('shot dir is not the artifacts folder', !String(SHOT_DIR).startsWith('/opt
     && /shrink-0 items-center self-center pointer-events-auto"\s+data-brand-header-host=""/.test(view)
     && /<BrandHeaderMark \/>/.test(view)
     && /<PuzzleUnlock enabled=\{mode !== 'game'\} onUnlock=\{onStartGame\} \/>/.test(view));
+  check('profile chip stacks on the two-line title only (a part line and the assembly)',
+    /stackedTitle=\{!!\(showCadTitle && !hideCadTitle && titleParts\.part && titleParts\.assembly\)\}/.test(view));
   check('docs name the identity golden',
     /golden:brand-identity/.test(arch) && /golden:brand-identity/.test(map));
 }
@@ -211,6 +213,8 @@ async function seedAssembly(page) {
     localStorage.setItem('surfcad.lastAssembly', JSON.stringify({
       'user-ar': { name: doc.name, activeId: doc.activeId, source: 'git', savedAt: Date.now() },
     }));
+    // The bridge selects the part for the two-line title check.
+    localStorage.setItem('surfcadAgent', '1');
     await new Promise((resolve, reject) => {
       const req = indexedDB.deleteDatabase('surfcad-assembly');
       req.onsuccess = () => resolve();
@@ -554,6 +558,20 @@ attachConsentPresetToBrowser(browser);
     && rowAlign390.chipsMidY != null
     && Math.abs(rowAlign390.brandMidY - rowAlign390.chipsMidY) <= 1,
     JSON.stringify(rowAlign390));
+  // No part selected: the title is the assembly pill alone (one line). The
+  // chip must sit level with the wordmark, not dropped to a two-line centre.
+  const oneLine = await phone.page.evaluate(() => ({
+    lines: document.querySelectorAll('[data-viewer-title-line]').length,
+    stacked: !!document.querySelector('[data-profile-chip-stacked]'),
+  }));
+  check('390 assembly-only title is one line and the chip is not stacked',
+    oneLine.lines === 1 && oneLine.stacked === false, JSON.stringify(oneLine));
+  check('390 profile chip is vertically centred with the wordmark on the one-line title',
+    rowAlign390
+    && rowAlign390.profileMidY != null
+    && rowAlign390.brandMidY != null
+    && Math.abs(rowAlign390.profileMidY - rowAlign390.brandMidY) <= 1,
+    JSON.stringify(rowAlign390));
   checkHeaderFit('390', await readHeaderFit(phone.page));
   await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-390.png') });
   await phone.page.setViewportSize({ width: 360, height: 844 });
@@ -561,6 +579,28 @@ attachConsentPresetToBrowser(browser);
   checkHeaderFit('360', await readHeaderFit(phone.page));
   await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-360.png') });
   await phone.page.setViewportSize({ width: 390, height: 844 });
+  // Select the part: the title becomes two lines and the chip centres on them.
+  await phone.page.waitForFunction(() => typeof window.surfcad?.call === 'function', null, { timeout: 15000 });
+  const picked = await phone.page.evaluate(() => window.surfcad.call('set_active_part', JSON.stringify({ part_id: 'bracket' })));
+  check('390 set_active_part bracket', picked?.ok === true, JSON.stringify(picked));
+  await phone.page.waitForSelector('[data-viewer-title-line="part"]', { timeout: 15000 });
+  await phone.page.waitForTimeout(250);
+  const twoLine = await phone.page.evaluate(() => ({
+    lines: document.querySelectorAll('[data-viewer-title-line]').length,
+    stacked: !!document.querySelector('[data-profile-chip-stacked]'),
+  }));
+  const rowAlignTwo = await readHeaderAlign(phone.page);
+  check('390 part title is two lines and the chip is stacked',
+    twoLine.lines === 2 && twoLine.stacked === true, JSON.stringify(twoLine));
+  check('390 brand and profile chip are vertically centred with the two-line title',
+    rowAlignTwo
+    && rowAlignTwo.brandMidY != null
+    && rowAlignTwo.chipsMidY != null
+    && rowAlignTwo.profileMidY != null
+    && Math.abs(rowAlignTwo.brandMidY - rowAlignTwo.chipsMidY) <= 1
+    && Math.abs(rowAlignTwo.profileMidY - rowAlignTwo.chipsMidY) <= 1,
+    JSON.stringify(rowAlignTwo));
+  await phone.page.screenshot({ path: join(SHOT_DIR, 'brand-header-390-part.png') });
   await phone.page.locator('[data-stage-btn="parts"]').click();
   await phone.page.waitForTimeout(300);
   const partsBrandCount = await phone.page.locator('[data-stage-pane="parts"] [data-brand-header]').count();
