@@ -32,6 +32,11 @@ function emitAt(at) {
 function emitSeq(item, fields) {
   const n = Number(item?.seq);
   if (Number.isFinite(n) && n >= 1) fields.push(`seq: ${Math.round(n)}`);
+  // Multi-loop sketch: which closed profile the item belongs to, and
+  // whether a shape builder wrote the constraint (hidden from the strip).
+  const loop = Number(item?.loop);
+  if (Number.isInteger(loop) && loop >= 1) fields.push(`loop: ${loop}`);
+  if (item?.auto === true) fields.push('auto: true');
 }
 
 function emitItem(item) {
@@ -307,6 +312,11 @@ function keepSeq(item) {
   const n = Number(item.seq);
   if (Number.isFinite(n) && n >= 1) item.seq = Math.round(n);
   else delete item.seq;
+  const loop = Number(item.loop);
+  if (Number.isInteger(loop) && loop >= 1) item.loop = loop;
+  else delete item.loop;
+  if (item.auto === true) item.auto = true;
+  else delete item.auto;
   return item;
 }
 

@@ -540,6 +540,15 @@ jobs:
             echo "feature failed pool golden did not pass (see log above)"
             exit 1
           fi
+          bounded "sketch loop chips" npm run golden:sketch-loop-chips | tee "${RUNNER_TEMP}/sketch-loop-chips.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/sketch-loop-chips.log"; then
+            echo "sketch loop chips golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'sketch loop chips golden: ok' "${RUNNER_TEMP}/sketch-loop-chips.log"; then
+            echo "sketch loop chips golden did not pass (see log above)"
+            exit 1
+          fi
           bounded "agent session toast" npm run golden:agent-session-toast | tee "${RUNNER_TEMP}/agent-session-toast.log"
           if grep -q 'no system Chrome found' "${RUNNER_TEMP}/agent-session-toast.log"; then
             echo "agent session toast golden skipped because Chrome was not found; CI must launch it"
