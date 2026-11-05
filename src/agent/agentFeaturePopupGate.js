@@ -37,6 +37,22 @@ export function allowFeaturePopup() {
   return true;
 }
 
+/**
+ * The agent's own work surfaces: the contour sketch (`sketch_begin`) and a
+ * feature slot card (`slot_open`, `insert_make_extrude`). They are how an
+ * agent builds, so a working session does not hold them the way it holds
+ * the feature cards an agent command would pop as a side effect. An agent
+ * call takes the card as agent-owned (dismissed when a new prompt starts
+ * working); a user tap goes through `allowFeaturePopup` as before.
+ */
+export function allowAgentWorkSurface() {
+  if (agentDepth > 0) {
+    popupOwner = 'agent';
+    return true;
+  }
+  return allowFeaturePopup();
+}
+
 /** An in-flight feature-edit launch may mount after the agent command returns. */
 export function setAuthorizedFeatureEdit(on) {
   authorizedEdit = on === true;

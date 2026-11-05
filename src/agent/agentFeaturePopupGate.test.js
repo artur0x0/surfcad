@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  allowAgentWorkSurface,
   allowFeaturePopup,
   registerFeaturePopupDismiss,
   resetAgentFeaturePopupGateForTests,
@@ -80,4 +81,38 @@ test('bridge commands run inside the agent-driven scope', () => {
   const app = readFileSync(join(root, '../App.jsx'), 'utf8');
   assert.match(app, /featurePopupOpen=\{featurePopupOpen\}/);
   assert.match(app, /onFeatureCardChange=\{setFeaturePopupOpen\}/);
+});
+
+test('the agent\'s sketch and slot card open while the session is working; a user tap keeps the gate', async () => {
+  resetAgentFeaturePopupGateForTests();
+  try {
+    setAgentPromptWorking(true);
+    let surface = null;
+    let popup = null;
+    await withAgentDrivenChange(() => {
+      surface = allowAgentWorkSurface();
+      popup = allowFeaturePopup();
+    });
+    assert.equal(surface, true, 'sketch_begin / slot_open get their card');
+    assert.equal(popup, false, 'a side-effect feature card is still held');
+    // The card is agent-owned: a new prompt starting to work dismisses it.
+    let dismissed = 0;
+    registerFeaturePopupDismiss(() => { dismissed += 1; });
+    setAgentPromptWorking(false);
+    setAgentPromptWorking(true);
+    assert.equal(dismissed, 1);
+    // No agent on the stack: the same call is a user tap.
+    assert.equal(allowAgentWorkSurface(), true);
+  } finally {
+    resetAgentFeaturePopupGateForTests();
+  }
+});
+
+test('the viewport routes the agent sketch and slot entries through the work-surface gate', () => {
+  const view = readFileSync(join(root, '../components/Viewport.jsx'), 'utf8');
+  assert.match(view, /agentSurface \? allowAgentWorkSurface\(\) : allowFeaturePopup\(\)/);
+  assert.match(view, /enterContourMode\(\{ entry, agentSurface: true \}\)/);
+  assert.match(view, /openFeatureSlots\(kind, null, \{ agentSurface: true \}\)/);
+  assert.match(view, /code: 'sketch_blocked'/);
+  assert.match(view, /code: 'slot_blocked'/);
 });

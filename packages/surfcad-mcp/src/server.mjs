@@ -46,6 +46,7 @@ import {
 import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
 import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition } from './helpers.mjs';
 import { mergeRegisteredIntoListCommands } from './listCommandsMerge.mjs';
+import { tabAdvertisesTool } from './unlistedTools.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
@@ -204,6 +205,8 @@ export async function createSurfcadMcpServer(options = {}) {
   const session = options.session || new RelaySession();
   const bridgeNames = new Set(catalog.commands.map((command) => command.name));
   const bridgeTools = bridgeToolDefinitions(catalog).map((tool) => augmentStatusTool(augmentScreenshotTool(tool)));
+  /** Names outside the shipped catalog the paired tab was asked about (tabAdvertisesTool). */
+  const unlistedToolCache = new Map();
   const mcpOnlyNames = registeredToolDefinitions(bridgeTools)
     .map((tool) => tool.name)
     .filter((name) => !bridgeNames.has(name));
@@ -283,7 +286,10 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     const known = bridgeTools.some((t) => t.name === name);
-    if (!known) {
+    // A name this package's catalog lacks is refused outright when nothing
+    // is paired; a paired tab is asked whether it advertises it (a tool the
+    // app shipped after this npm release) and the call is forwarded if so.
+    if (!known && !session.isPaired()) {
       return errorResult({ code: 'unknown_tool', message: `Unknown tool: ${name}` });
     }
 
@@ -300,6 +306,9 @@ export async function createSurfcadMcpServer(options = {}) {
       } else if (session.state !== 'pairing') {
         return errorResult(notPairedError(), name);
       }
+    }
+    if (!known && !(await tabAdvertisesTool(session, name, unlistedToolCache))) {
+      return errorResult({ code: 'unknown_tool', message: `Unknown tool: ${name}` });
     }
 
     try {
