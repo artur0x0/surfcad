@@ -776,14 +776,14 @@ export const COMMAND_META = {
     mutates: false,
   },
   create_assembly: {
-    description: `Seed a blank assembly with one empty part (no demo script, no seed cube: the first insert_* creates the body). Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partCount }.${BUILD_FLOW_NOTE}`,
+    description: `Seed a blank assembly with one empty, active part (no demo script, no seed cube: the first insert_* creates the body). The result partId (also activeId) is that seed part: build the first part on it, rename it with rename_part { part_id, name } (or pass part_name), and do not call create_part for the first part; create_part is for the second part onward. Single-flight per tab: overlapping calls return the same assemblyId. Optional name is a non-unique label. No git write. Returns { assemblyId, assemblyName, activeId, partId, partName, partCount }.${BUILD_FLOW_NOTE}`,
     result: { type: 'object', additionalProperties: true },
     errors: ['internal'],
     mutates: true,
   },
   create_part: {
     description:
-      `Add a part and make it the active part before returning. The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm only as a rough block-out. A position, in an assembly of two or more parts, adds warning { code: "unjointed_part", part_id, hint } when the new part is in no joint; the call still succeeds. Working copy only: nothing reaches git without git_save.${BUILD_FLOW_NOTE}`,
+      `Add a part and make it the active part before returning. The first part of a new assembly already exists: use create_assembly's partId instead of calling create_part (a create_part straight after create_assembly, with no script, reuses that untouched seed part and returns reusedSeed: true). The part starts empty (no seed cube): the first insert_* creates the body. The result partId is a new opaque surf id, not the previously active part. When script is set, that script runs before the call returns (ok, errors, failures, status); a failed script still leaves the part. Agent calls default to the assembly origin; pass position [x,y,z] mm only as a rough block-out. A position, in an assembly of two or more parts, adds warning { code: "unjointed_part", part_id, hint } when the new part is in no joint; the call still succeeds. Working copy only: nothing reaches git without git_save.${BUILD_FLOW_NOTE}`,
     result: {
       type: 'object',
       additionalProperties: true,
@@ -1310,13 +1310,43 @@ const INSERT_BLEND_META = {
   description: `${INSERT_HELPER_META.description}${BLEND_COST_NOTE}`,
 };
 
-/** An insert_* description ends with the code the block carries at default arguments (insertEmits.js). */
+/** Guide pointers appended to the tool descriptions (surfcad-mcp 0.3.6 §3E). */
+const MOLDING_GUIDE_LINK = ' Molding rules: guide { topic: "molding" }.';
+const SHELL_ORDER_LINK = ' Order: shell first, then concave fillets, then convex fillets (guide { topic: "modeling" }).';
+const REUSE_LINK = ' Prefer this over rebuilding geometry by hand (guide { topic: "modeling" }).';
+export const GUIDE_LINKS = Object.freeze({
+  mold_fit: MOLDING_GUIDE_LINK,
+  mold_dfm: MOLDING_GUIDE_LINK,
+  mold_draft: MOLDING_GUIDE_LINK,
+  mold_parting: MOLDING_GUIDE_LINK,
+  mold_side_actions: MOLDING_GUIDE_LINK,
+  mold_pull: MOLDING_GUIDE_LINK,
+  mold_wall_map: MOLDING_GUIDE_LINK,
+  mold_quote: MOLDING_GUIDE_LINK,
+  insert_boss: MOLDING_GUIDE_LINK,
+  insert_add_draft: MOLDING_GUIDE_LINK,
+  insert_shell: SHELL_ORDER_LINK,
+  insert_fillet_edges: SHELL_ORDER_LINK,
+  insert_mirror: REUSE_LINK,
+  insert_hole_pattern: REUSE_LINK,
+  insert_polar_array: REUSE_LINK,
+  insert_array3_d: REUSE_LINK,
+  insert_pattern_points: REUSE_LINK,
+  insert_part: REUSE_LINK,
+});
+
+function withGuideLink(name, meta) {
+  const link = GUIDE_LINKS[name];
+  return link ? { ...meta, description: `${meta.description}${link}` } : meta;
+}
+
+/** An insert_* description ends with the code the block carries at default arguments (insertEmits.js), after any guide pointer. */
 function withEmit(name, meta) {
-  return { ...meta, description: `${meta.description}${emitNote(name)}` };
+  return { ...meta, description: `${meta.description}${GUIDE_LINKS[name] || ''}${emitNote(name)}` };
 }
 
 export function metaForCommand(name) {
-  if (COMMAND_META[name]) return COMMAND_META[name];
+  if (COMMAND_META[name]) return withGuideLink(name, COMMAND_META[name]);
   if (name === 'insert_move') return withEmit(name, INSERT_MOVE_META);
   if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
   if (name === 'insert_mirror') return withEmit(name, INSERT_MIRROR_META);

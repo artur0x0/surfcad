@@ -56,12 +56,14 @@ export const createAssemblyCommand = Object.freeze({
     additionalProperties: false,
     properties: {
       name: { type: 'string', description: 'Optional display label. Names are not unique and are not used as keys.' },
+      part_name: { type: 'string', description: 'Optional label for the seed part (the result partId). Same as rename_part on it afterwards.' },
     },
   }),
-  example: { name: 'Gearbox' },
+  example: { name: 'Gearbox', part_name: 'Housing' },
   async run(ctx, args) {
     const name = typeof args?.name === 'string' ? args.name.trim() : '';
-    return hostCall(ctx, 'agentCreateAssembly', name ? { name } : {});
+    const partName = typeof args?.part_name === 'string' ? args.part_name.trim() : '';
+    return hostCall(ctx, 'agentCreateAssembly', { ...(name ? { name } : {}), ...(partName ? { partName } : {}) });
   },
 });
 

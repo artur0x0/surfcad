@@ -451,6 +451,7 @@ import DEFAULT_SCRIPT, { blankPartStarter } from './utils/defaultScript';
 import {
   composeHelperInsert,
   HELPER_PALETTE_ITEMS,
+  isBufferEmpty,
   newPartStarterScript,
   starterCubeScript,
 } from './utils/helperPaletteSnippets';
@@ -7458,13 +7459,15 @@ const App = () => {
     return assemblyRef.current;
   };
 
-  /** Agent create_assembly: optional label, no uniquify, no git write. */
-  const seedAgentAssembly = async ({ name } = {}) => {
+  /** Agent create_assembly: optional labels (assembly, seed part), no uniquify, no git write. */
+  const seedAgentAssembly = async ({ name, partName } = {}) => {
     const seedId = mintSurfId();
     const source = githubConnected ? 'git' : 'local';
     const starter = blankPartStarter(source === 'git' ? seedId : null);
     const raw = typeof name === 'string' ? name.trim() : '';
     const label = raw || DEFAULT_ASSEMBLY_NAME;
+    const rawPart = typeof partName === 'string' ? partName.trim() : '';
+    const seedLabel = rawPart || DEFAULT_PART_NAME;
     const vaultLayout = newAssemblyVaultLayout(source, assemblyRef.current);
     const seedDoc = serializeAssembly({
       id: mintSurfId(),
@@ -7474,7 +7477,7 @@ const App = () => {
       ...(vaultLayout ? { vaultLayout } : {}),
       parts: [{
         id: seedId,
-        name: DEFAULT_PART_NAME,
+        name: seedLabel,
         visible: true,
         order: 0,
         ...(source === 'git' ? { isSynced: false, surfId: seedId } : {}),
@@ -11299,20 +11302,26 @@ const App = () => {
       viewportRef.current?.showCadBodyHighlight?.();
       return { partIds: resolved };
     },
-    async agentCreateAssembly({ name } = {}) {
+    async agentCreateAssembly({ name, partName } = {}) {
       if (createAssemblyInFlightRef.current) {
         return createAssemblyInFlightRef.current;
       }
       const work = (async () => {
         const before = assemblyRef.current;
-        const after = await seedAgentAssembly({ name });
+        const after = await seedAgentAssembly({ name, partName });
         if (before && after) recordAgentAssemblyStep(before);
+        // The seed part is the first part: the agent builds on partId and
+        // does not create_part for it (surfcad-mcp 0.3.6 §3B).
+        const seed = after?.parts?.find((row) => row.id === after.activeId) || after?.parts?.[0] || null;
         return {
           result: {
             assemblyId: after?.id ?? null,
             assemblyName: after?.name ?? '',
             activeId: after?.activeId ?? null,
+            partId: seed?.id ?? after?.activeId ?? null,
+            partName: seed?.name ?? '',
             partCount: after?.parts?.length ?? 0,
+            note: 'partId is the empty, active seed part: build the first part on it and rename_part it; create_part is for the second part onward.',
           },
         };
       })();
@@ -11408,6 +11417,42 @@ const App = () => {
       const before = assemblyRef.current;
       if (!before) {
         return { error: { code: 'no_assembly', message: 'No assembly loaded' } };
+      }
+      // A create_part straight after create_assembly reuses the untouched seed
+      // part instead of leaving an empty "Part (1)" behind (surfcad-mcp 0.3.6
+      // §3B): one part, still unrenamed, still blank, and no script to run.
+      const seed = before.parts?.length === 1 ? before.parts[0] : null;
+      const seedText = seed ? partScriptsRef.current?.[seed.id] : null;
+      const seedUntouched = !!seed
+        && seed.name === DEFAULT_PART_NAME
+        && !seed.instanceOf
+        && isBufferEmpty(typeof seedText === 'string' ? seedText : '')
+        && (typeof script !== 'string' || !script.trim())
+        && (position == null || (Array.isArray(position) && position.every((v) => Number(v) === 0)));
+      if (seedUntouched) {
+        const label = typeof name === 'string' ? name.trim() : '';
+        if (label && label !== seed.name) {
+          const renamed = await handleRenamePart(seed.id, label);
+          if (renamed?.status === 'renamed') recordAgentAssemblyStep(before);
+        }
+        let doc = assemblyRef.current;
+        if (doc.activeId !== seed.id) doc = rememberAssembly({ ...doc, activeId: seed.id });
+        if (cadPartIdRef.current !== seed.id) rememberCadPart(seed.id);
+        const text = typeof seedText === 'string' ? seedText : '';
+        let outcome;
+        try {
+          outcome = await agentRunOutcome(text);
+        } catch (err) {
+          outcome = {
+            ok: false,
+            errors: [String(err?.message || err || 'Script failed')],
+            volume: null,
+            bbox: null,
+            partName: findPartById(doc, seed.id)?.name || '',
+            runFailure: null,
+          };
+        }
+        return { result: { partId: seed.id, partCount: doc?.parts?.length ?? 1, reusedSeed: true, run: outcome, script: text } };
       }
       // Agent parts stay path-less in a git assembly: git_save (behind the
       // write consent) paths and commits them with the assembly.

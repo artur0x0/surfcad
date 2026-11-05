@@ -21,12 +21,16 @@ test('create_assembly is single-flight, optional label, no git write', () => {
   const create = sliceFn('async agentCreateAssembly(', 'agentGetPartTransform(');
   assert.equal(WRITE.test(create), false, create);
   assert.match(create, /createAssemblyInFlightRef/);
-  assert.match(create, /seedAgentAssembly\(\{ name \}\)/);
+  assert.match(create, /seedAgentAssembly\(\{ name, partName \}\)/);
   assert.match(create, /assemblyId: after\?\.id/);
+  // 0.3.6 §3B: the seed part is named in the result so the agent builds on it.
+  assert.match(create, /partId: seed\?\.id \?\? after\?\.activeId/);
+  assert.match(create, /partName: seed\?\.name/);
   assert.equal(/nextAssemblyName|handleNewAssembly\(/.test(create), false);
   const seed = sliceFn('const seedAgentAssembly', 'const agentGitReadContext');
   assert.equal(WRITE.test(seed), false, seed);
   assert.match(seed, /raw \|\| DEFAULT_ASSEMBLY_NAME/);
+  assert.match(seed, /rawPart \|\| DEFAULT_PART_NAME/);
   assert.equal(/nextAssemblyName/.test(seed), false);
 });
 

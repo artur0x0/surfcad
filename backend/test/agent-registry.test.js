@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createManualClock } from '../agent/clock.js';
-import { AGENT_PRESENCE_TTL_MS, MAX_PENDING, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
+import { AGENT_PRESENCE_TTL_MS, MAX_PENDING, MOLD_COMMAND_MS, RESULT_RETENTION_MS, TAB_ASLEEP_MS } from '../agent/limits.js';
 import { TAB_ASLEEP_ERROR, createMemoryTabRegistry } from '../agent/registry.js';
 
 function setup() {
@@ -113,6 +113,69 @@ describe('tab registry', () => {
     assert.equal(seen.length, 1);
     assert.equal(result.result.resumed, true);
     assert.notEqual(result.error?.message, 'SurfCAD tab is asleep');
+  });
+
+  test('a mold_* command the tab took survives 30 s and resolves when the tab answers at 100 s', async () => {
+    const { clock, registry } = setup();
+    const seen = [];
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: (frame) => seen.push(frame) });
+    const done = registry.submit({
+      userId: 'user-a',
+      frame: { id: 'm1', command: 'mold_fit', args: {} },
+    });
+    assert.equal(seen.length, 1);
+    clock.advance(TAB_ASLEEP_MS + 1_000);
+    const early = await Promise.race([done.then(() => 'done'), Promise.resolve('pending')]);
+    assert.equal(early, 'pending');
+    clock.advance(100_000 - (TAB_ASLEEP_MS + 1_000));
+    registry.complete('user-a', 'm1', commandResponse({ id: 'm1', ok: true, result: { fit: 'good' } }));
+    const result = await done;
+    assert.equal(result.ok, true);
+    assert.equal(result.result.fit, 'good');
+  });
+
+  test('a mold_* command the tab took but never answered is command_timeout at 120 s', async () => {
+    const { clock, registry } = setup();
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: () => {} });
+    const done = registry.submit({
+      userId: 'user-a',
+      frame: { id: 'm2', command: 'mold_side_actions', args: {} },
+    });
+    clock.advance(MOLD_COMMAND_MS - 1);
+    assert.equal(await Promise.race([done.then(() => 'done'), Promise.resolve('pending')]), 'pending');
+    clock.advance(1);
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'command_timeout');
+    assert.equal(result.error.details.command, 'mold_side_actions');
+    assert.equal(result.error.details.budgetMs, MOLD_COMMAND_MS);
+  });
+
+  test('a mold_* command no tab took is still tab_asleep at 30 s', async () => {
+    const { clock, registry } = setup();
+    const done = registry.submit({
+      userId: 'user-a',
+      frame: { id: 'm3', command: 'mold_fit', args: {} },
+    });
+    clock.advance(TAB_ASLEEP_MS);
+    const result = await done;
+    assert.equal(result.error.code, 'tab_asleep');
+  });
+
+  test('a status command the tab took still times out at 30 s, as command_timeout', async () => {
+    const { clock, registry } = setup();
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send: () => {} });
+    const done = registry.submit({
+      userId: 'user-a',
+      frame: { id: 's1', command: 'status', args: {} },
+    });
+    clock.advance(TAB_ASLEEP_MS - 1);
+    assert.equal(await Promise.race([done.then(() => 'done'), Promise.resolve('pending')]), 'pending');
+    clock.advance(1);
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'command_timeout');
+    assert.equal(result.error.details.budgetMs, TAB_ASLEEP_MS);
   });
 
   test('unread results are dropped after the retention window', async () => {

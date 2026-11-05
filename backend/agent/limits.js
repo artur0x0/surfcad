@@ -4,6 +4,14 @@ export const MAX_AGENT_MESSAGE_BYTES = 256 * 1024;
 /** How long a command waits for a tab to reconnect. */
 export const TAB_ASLEEP_MS = 30_000;
 
+/**
+ * Budget for a `mold_*` command once a tab has taken it. `mold_fit` searches
+ * about 80 pull directions plus the wall and side-action passes, which runs
+ * well past 30 s on a real part. A mold command no tab has taken still fails
+ * as asleep at `TAB_ASLEEP_MS`.
+ */
+export const MOLD_COMMAND_MS = 120_000;
+
 /** Device-code lifetime. */
 export const PAIR_TTL_MS = 10 * 60 * 1000;
 

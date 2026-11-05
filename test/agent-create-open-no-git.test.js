@@ -31,6 +31,11 @@ test('agentCreatePart and agentOpenAssembly do not call git', () => {
   assert.match(create, /if \(doc\.activeId !== created\.id\)/);
   assert.match(create, /activeId: created\.id/);
   assert.match(create, /rememberCadPart\(created\.id\)/);
+  // 0.3.6 §3B: a create_part straight after create_assembly reuses the untouched seed part
+  // (one part, unrenamed, blank, no script) instead of leaving an empty "Part (1)" behind.
+  assert.match(create, /seed\.name === DEFAULT_PART_NAME/);
+  assert.match(create, /isBufferEmpty\(/);
+  assert.match(create, /reusedSeed: true/);
   // create_part runs the new part before it returns, blank starter included (Pi 5 C3).
   assert.equal(/if \(!runScript\)/.test(create), false);
   assert.match(create, /refreshGenRef\.current \+= 1;/);

@@ -55,6 +55,21 @@ export function tabAsleepError() {
   });
 }
 
+/**
+ * The tab took the command and ran past its budget (mold_* analyses get
+ * 120 s; everything else 30 s). The tab is awake; the command is the problem.
+ * @param {string} [message]
+ * @param {unknown} [details]
+ */
+export function commandTimeoutError(message, details) {
+  return Object.assign(new Error(message || 'SurfCAD tab took the command but did not answer in time'), {
+    code: 'command_timeout',
+    hint: 'The tab is awake but this command ran past its budget. Retry once with the tab in the foreground; for mold_* pass pull to skip the direction search, or simplify the part.',
+    retryable: true,
+    ...(details && typeof details === 'object' ? { details } : {}),
+  });
+}
+
 export function tooManyPendingError() {
   return Object.assign(new Error('Too many commands are waiting'), {
     code: 'too_many_pending',
@@ -115,6 +130,7 @@ export function asRemoteError(error) {
     const code = /** @type {Error & { code?: string }} */ (error).code;
     if (
       code === 'tab_asleep'
+      || code === 'command_timeout'
       || code === 'too_many_pending'
       || code === 'token_revoked'
       || code === 'expired'
@@ -129,6 +145,9 @@ export function asRemoteError(error) {
     ? record.message
     : (typeof error === 'string' ? error : '');
   if (code === 'tab_asleep' || message === 'SurfCAD tab is asleep') return tabAsleepError();
+  if (code === 'command_timeout') {
+    return commandTimeoutError(message, /** @type {{ details?: unknown }} */ (record).details);
+  }
   if (code === 'too_many_pending' || message === 'Too many commands are waiting') return tooManyPendingError();
   if (code === 'expired' || message === 'Token expired') return tokenExpiredError();
   if (code === 'token_revoked' || code === 'unauthorized' || code === '4001') return tokenRevokedError();

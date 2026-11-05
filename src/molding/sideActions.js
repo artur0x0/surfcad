@@ -207,8 +207,8 @@ function sampleExits(origin, dir, tris, own, bounds) {
 
 /** Below this a face is parallel to the motion and never blocks it. */
 const FACING_SIN = Math.sin((3 * Math.PI) / 180);
-/** Lifter tilt toward the core. The first that clears is taken. */
-const LIFTER_TILTS_DEG = [15, 20, 25];
+/** Lifter tilt toward the core. The first that clears is taken. Quoted by the MCP molding guide (its test pins these). */
+export const LIFTER_TILTS_DEG = Object.freeze([15, 20, 25]);
 /** A stamped face at least this far inside a block's window joins it whole. */
 const WHOLE_FACE_FRACTION = 0.8;
 
