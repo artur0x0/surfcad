@@ -221,6 +221,7 @@ export async function callOverHttp(options) {
 function isTerminal(err) {
   const code = err && typeof err === 'object' ? /** @type {{ code?: string }} */ (err).code : '';
   return code === 'tab_asleep'
+    || code === 'command_timeout'
     || code === 'too_many_pending'
     || code === 'token_revoked'
     || code === 'expired'

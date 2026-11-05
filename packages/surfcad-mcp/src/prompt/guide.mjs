@@ -39,7 +39,7 @@ Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: tr
 
 Reading results: every model-changing tool answers { ok, errors, status } with return "status" by default over MCP (no script echo; get_script reads it, get_script { range: { fromFeature, toFeature } } reads one span). status.runState is not_run_yet | ok | failed; errors rows are feature_failed with the viewport's text and a detail reason.
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
-Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" }; list_helpers { names } documents any script helper.
+Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" }; list_helpers { names } documents any script helper.
 
 In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} Be interactive: post_progress while you work, especially during long reasoning. A fresh surfcad-mcp process per tool call is normal and stays present. A long-lived process is optional and nothing depends on it. Call close_session once when you are done. close_session is not sent on process exit. state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting (not a prompt id, one per second). After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {} and on a remote session. An idle session that has not received a prompt has recent: [].`;
 
@@ -128,6 +128,91 @@ Hardware. One part per unique fastener type, patterned to every place it goes: l
 
 Saving. Working-copy tools never commit. git_save { message } is the one vault write; it answers consent_pending while the Allow dialog is up (retry the same call after the user clicks Allow), clean when nothing changed, and passes through pending_save, unsupported_vault_version, conflict and repo-moved unchanged. Checked out on main, git_save and git_add_to_repo answer save_on_main and write nothing: git_branch_create { name }, then git_save { message } on that branch. A save is many GitHub round trips: when it is still running after about 20 s, git_save answers { status: "running", saveId } and keeps going; poll git_save_status { save_id } until it answers the save result.`;
 
+const MODELING = `3D modeling guidelines. Follow these on every part; for a part that will be injection molded also read guide { topic: "molding" }.
+
+First part. create_assembly already made the first part and made it active; its result partId is that part. rename_part it and build on it. Do not call create_part for the first part; create_part is for the second part onward.
+
+Order of operations.
+- Block out with primitives, then Build and Shape, then Polish, then pattern and place (the ribbon order in guide { topic: "start" }).
+- Shell before fillets: insert_shell first, then fillet the concave (inside) edges, then the convex (outside) edges. Filleting every convex edge before the shell can leave the shell as several bodies; shell-first keeps one body and an even wall. Check status.bodyCount is 1 after each step.
+- Draft (insert_add_draft) goes before the shell, so the inside walls inherit it.
+- Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the fillet selection: select the faces whose edges you want with select_faces, then insert_fillet_edges { use_selection: true }.
+
+Reuse instead of rebuilding.
+- Repeated parts: one part, many instances. insert_part { part_id, instance: true } or a pattern, never a second copy rebuilt by hand. Hardware is one part per unique fastener type, patterned to every place it goes.
+- Symmetric geometry: model one half or one side and insert_mirror it.
+- Repeated features: insert_hole_pattern for holes, insert_polar_array for bolt circles, insert_array3_d for grids, insert_pattern_points to put one copy on every hole center. Never place the same hole N times.
+- Prefer boolean operations with primitives (insert_cube, insert_rounded_box, insert_cylinder, insert_tube, insert_sphere with combine add or subtract, or insert_boolean) over hand sketches. Sketch (sketch_begin, then insert_make_extrude or insert_make_revolve) only for a profile no primitive or primitive boolean gives.
+- Features first; insert_code_snippet only for a real feature gap, with its // FEATURE-GAP line.
+
+Assemblies and joints.
+- Fix one base part with a fixed joint (joint_create { type: "fixed" }).
+- Place every part that touches or attaches to another with joint_create: one call creates the joint and solves the placement. Block-out positions are rough; joints set the final positions.
+- Use part_set_transform only for a part that touches nothing. An unjointed_part warning means a touching part has no joint yet: joint it.
+- After a part edit, a joint_broken warning means a joint face moved or vanished: list_joints {}, then fix the part or joint_edit to new picks.
+- Pick joint faces by stamped name (list_faces, then face_id) rather than by position, so the joint survives later edits; and add joints as soon as two parts mate, not at the end.
+
+Check your work. After each stage: status (runState ok, bodyCount 1 for a one-piece part), screenshot { save_to } from iso plus one useful view, and show the user.`;
+
+/**
+ * Design guidelines for high pressure injection molding. The numbers that
+ * have a code constant are pinned by test/moldingGuide.test.mjs against
+ * src/molding (draft threshold, the 0.5° vertical band, the lifter tilts,
+ * the wall thin/thick ratios). Rib ratio, wall range and texture draft are
+ * design rules with no code constant.
+ */
+const MOLDING = `Design guidelines: high pressure injection molding. Follow these whenever the user's part will be injection molded. Check the part with mold_fit and mold_draft before you call it done.
+
+Draft.
+- Give every face that slides against the mold at least 1° of draft along the pull. This is also the default mold_draft / mold_dfm threshold.
+- Use 0.5° only as a rare exception, and tell the user where.
+- 0.25° is acceptable only around ejector sleeves.
+- Textured surfaces: use at least 3°, or follow the Mold-Tech recommendation for that specific texture (deeper textures need more draft).
+- The checker treats a wall within 0.5° of vertical as vertical. That wall is below threshold, so it is not a pass.
+
+Wall thickness.
+- Keep walls between 1 and 6.35 mm. Prefer 1 to 4 mm.
+- Never go below 0.75 mm.
+- Keep the wall uniform: avoid thin areas under 50% of nominal. mold_fit flags walls thinner than 0.6× nominal as thin and thicker than 1.5× nominal as thick. Fix any flagged region, or explain it to the user.
+
+Ribs.
+- Make ribs 0.5 to 0.65× the adjoining wall thickness.
+- When a rib must be thicker because it is tall, add a moat (a local groove in the wall at the rib's base) that is 40% of the wall thickness deep and 40% of the wall thickness wide. This keeps the junction from becoming a thick section that sinks or voids.
+
+Ejector side.
+- Put holes and rib patterns on the ejector (cavity) side where possible, so the part releases with the ejector half and does not stick in the other half.
+
+Undercuts, slides and lifters.
+- Every undercut adds steel and cost. Aim for none.
+- mold_fit fit bands: good is 0 undercut regions, fixable is 1 to 4, not_a_fit is 5 or more.
+- Slide: withdraws in the parting plane. All trapped features that share one direction on one connected surface are one block, so two holes in one wall are one slide. Group features to share slides.
+- Lifter: used only when no in-plane direction frees the region. The checker tries tilts of 15°, 20°, then 25° into the core and takes the first that leaves the part without entering material. 20° is the nominal lifter angle. A feature that needs more than 25° cannot be made with a lifter.
+- Unresolved undercut: no straight direction frees it (for example, a slot whose ends narrow toward the outer face). Redesign it. Do not leave it for a special mechanism unless the user agrees.
+- A wall within 0.5° of vertical is not a side action. Faces nearly parallel to the motion (under about 3°) do not block it.
+
+What mold_fit checks.
+- Pull direction: it searches box axes, large planar normals, and about 80 icosphere directions, and picks the pull with the least occluded undercut area. Pass pull to score your own axis.
+- Wall: local thickness per triangle, with nominal, min, max, mean, and median, plus thin regions (under 0.6× nominal) and thick regions (over 1.5×).
+- Draft: checked against 1°. Triangles within 0.5° of perpendicular to the pull are not undercuts.
+- Parting: core and cavity by visibility, with one outer parting loop.
+- sideActions: slides, lifters, and unresolved undercuts. Their count is what the report prices.
+- Ejector pin candidate spots: place ejectors on flat, thick, cored-out areas, not on cosmetic faces.
+- It is a geometric check, not a supplier DFM. It can run up to 120 s on a real part; keep the tab in the foreground.
+
+Edges.
+- Avoid sharp edges. Fillet edges and corners everywhere except along the parting line, which must stay sharp so the mold halves shut off cleanly, and at the base of ribs, where the rib-to-wall junction must stay sharp to reduce sink. Do not fillet a rib base.
+- Avoid sudden thickness jumps, knife edges, and sharp inside corners (rib bases excepted).
+
+Shape.
+- Avoid big openings in the middle of a part. Flow has to split around them and meet again, which leaves knit lines (weak, visible seams).
+- Avoid horseshoe or C-shaped parts, because they warp. Add a tie bar or close the shape if the design allows it.
+- Avoid very long aspect ratios (more than about 10:1). They warp and often need hot runners.
+
+SurfCAD examples (from the flanged-box side-action playtests).
+- Keep the flange flush with the inside wall at the rim, with no step into the cavity.
+- Make bosses protrude outward, not into the cavity.
+- Keep flange holes clear of the corner fillets.`;
+
 /** Topic name → one-line summary and the text. Order is the listing order. */
 export const GUIDE_TOPICS = Object.freeze({
   start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt', text: START },
@@ -138,6 +223,8 @@ export const GUIDE_TOPICS = Object.freeze({
   limits: { summary: 'The 30 s kernel budget, what is slow, worker restarts and stale status, result sizes, pairing errors', text: LIMITS },
   camera: { summary: 'Which side each named view looks from, explicit poses, select_clear before a screenshot, screenshot to file', text: CAMERA },
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
+  modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part, shell before fillets, draft before shell, reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
+  molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -217,12 +304,12 @@ export function guideResourceContents(uri, version = loadPackageVersion()) {
 export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
-  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists every topic (${GUIDE_TOPIC_NAMES.join(', ')}).`,
+  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
   'Flow: 1 Block create_part then insert_cube / insert_cylinder / insert_tube, screenshot. 2 Build insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish insert_fillet_edges, insert_chamfer_edges. 4 Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules that bite: helper names (cut, hole, shell, ...) are reserved, never redeclare them; set_script needs the active part\'s id (set_active_part first) and only rewrites a whole part, insert_code_snippet { gap, why, script } is the one-operation fallback; use_selection is single use: pick, insert once, pick again (nothing selected is no_selection).',
   'Verify: select_clear → camera_set { view } → screenshot { save_to: true }. right puts the camera on +X, front on -Y, top on +Z.',
   'Save only when the user asks: git_save { message } answers consent_pending until the user clicks Allow; retry the same call.',
-  'Keep results small: tools default to return: "status" (no script echo; get_script reads it), list_faces { filter, page }, list_commands { group }.',
+  'Small results: tools default to return: "status" (no script echo; get_script reads it), list_faces { filter, page }, list_commands { group }.',
 ].join('\n');
 
 export function guideToolDefinition() {

@@ -110,7 +110,7 @@ test('App mints one surf-id at create (not a UUID row id)', () => {
   assert.equal(/newLocalPartId/.test(imp), false);
 
   const agentAsm = sliceBetween(APP, 'async agentCreateAssembly', 'agentGetPartTransform');
-  assert.match(agentAsm, /seedAgentAssembly\(\{ name \}\)/);
+  assert.match(agentAsm, /seedAgentAssembly\(\{ name, partName \}\)/);
   assert.equal(/handleNewAssembly\(/.test(agentAsm), false);
   const agentPart = sliceBetween(APP, 'async agentCreatePart', 'async agentOpenAssembly');
   assert.match(agentPart, /handleAddPart\(/);

@@ -6,6 +6,7 @@ import {
   MAX_HELD_PROMPTS,
   MAX_PENDING,
   MAX_TABS_PER_USER,
+  MOLD_COMMAND_MS,
   PROMPT_HOLD_MS,
   RESULT_RETENTION_MS,
   SESSION_MESSAGE_GAP_MS,
@@ -13,6 +14,12 @@ import {
 } from './limits.js';
 
 export const TAB_ASLEEP_ERROR = 'SurfCAD tab is asleep';
+
+/** The tab took the command and has not answered inside its budget. */
+export const COMMAND_TIMEOUT_ERROR = 'SurfCAD tab took the command but did not answer in time';
+
+/** Commands that get `MOLD_COMMAND_MS` once a tab has taken them. */
+const LONG_COMMAND = /^mold_/;
 
 /**
  * @param {string} userId
@@ -34,6 +41,22 @@ function asleepResponse(frame) {
 }
 
 /**
+ * @param {{ id?: string | number, command?: string }} frame
+ * @param {number} budgetMs
+ */
+function commandTimeoutResponse(frame, budgetMs) {
+  return commandResponse({
+    id: frame.id,
+    ok: false,
+    error: {
+      code: 'command_timeout',
+      message: `${COMMAND_TIMEOUT_ERROR} (${Math.round(budgetMs / 1000)} s)`,
+      details: { command: frame.command, budgetMs },
+    },
+  });
+}
+
+/**
  * In-memory tab registry for one Node process.
  *
  * The returned methods are the seam a later Redis pub/sub implementation
@@ -45,6 +68,7 @@ function asleepResponse(frame) {
  * @param {{
  *   clock?: ReturnType<typeof createSystemClock>,
  *   asleepMs?: number,
+ *   moldCommandMs?: number,
  *   retentionMs?: number,
  *   maxPending?: number,
  *   maxTabs?: number,
@@ -56,6 +80,7 @@ function asleepResponse(frame) {
 export function createMemoryTabRegistry(opts = {}) {
   const clock = opts.clock || createSystemClock();
   const asleepMs = opts.asleepMs ?? TAB_ASLEEP_MS;
+  const moldCommandMs = opts.moldCommandMs ?? MOLD_COMMAND_MS;
   const retentionMs = opts.retentionMs ?? RESULT_RETENTION_MS;
   const maxPending = opts.maxPending ?? MAX_PENDING;
   const maxTabs = opts.maxTabs ?? MAX_TABS_PER_USER;
@@ -78,6 +103,8 @@ export function createMemoryTabRegistry(opts = {}) {
    *   userId: string,
    *   tokenId: string,
    *   frame: { id?: string | number, command: string, args: unknown },
+   *   budgetMs: number,
+   *   asleepAt: number,
    *   deadline: number,
    *   sentTo: string | null,
    *   finished: boolean,
@@ -370,7 +397,13 @@ export function createMemoryTabRegistry(opts = {}) {
   function sweep() {
     const t = clock.now();
     for (const item of [...pending.values()]) {
-      if (item.deadline <= t) item.finish(asleepResponse(item.frame));
+      // Never taken by a tab: asleep at the short hold, whatever the budget.
+      // Taken and still running past the budget: the tab is awake, the
+      // command is the problem, and the agent gets told so.
+      if (!item.sentTo && item.asleepAt <= t) item.finish(asleepResponse(item.frame));
+      else if (item.deadline <= t) {
+        item.finish(item.sentTo ? commandTimeoutResponse(item.frame, item.budgetMs) : asleepResponse(item.frame));
+      }
     }
     for (const [key, done] of [...completed.entries()]) {
       if (t - done.at >= retentionMs) completed.delete(key);
@@ -382,7 +415,8 @@ export function createMemoryTabRegistry(opts = {}) {
     timer = null;
     let next = Infinity;
     for (const item of pending.values()) {
-      if (item.deadline < next) next = item.deadline;
+      const at = item.sentTo ? item.deadline : Math.min(item.asleepAt, item.deadline);
+      if (at < next) next = at;
     }
     for (const done of completed.values()) {
       const at = done.at + retentionMs;
@@ -464,6 +498,8 @@ export function createMemoryTabRegistry(opts = {}) {
       }
       if (found.tabs.size === 0) users.delete(String(userId));
       else deliver(String(userId));
+      // A command handed back by a vanished tab is on the asleep clock again.
+      arm();
     },
 
     /**
@@ -561,6 +597,7 @@ export function createMemoryTabRegistry(opts = {}) {
           }),
         };
       }
+      const budgetMs = LONG_COMMAND.test(String(input.frame.command)) ? moldCommandMs : asleepMs;
       /** @type {PendingCommand} */
       const item = {
         userId,
@@ -570,7 +607,9 @@ export function createMemoryTabRegistry(opts = {}) {
           command: input.frame.command,
           args: input.frame.args == null ? {} : input.frame.args,
         },
-        deadline: clock.now() + asleepMs,
+        budgetMs,
+        asleepAt: clock.now() + asleepMs,
+        deadline: clock.now() + budgetMs,
         sentTo: null,
         finished: false,
         listeners: [],

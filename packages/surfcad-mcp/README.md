@@ -64,6 +64,7 @@ Clear failures:
 | What happened | What you see |
 | --- | --- |
 | No SurfCAD tab for about 30 seconds | `SurfCAD tab is asleep` |
+| A tab took the command but ran past its budget (120 s for `mold_*`, 30 s otherwise) | `command_timeout` |
 | Token revoked (socket close 4001, `token revoked`) | Run `npx surfcad-mcp login` again |
 | Pairing expired (HTTP `expired`, or socket close 4001, `token expired`) | Agent pairing expired, get a new join code |
 | Too many commands already waiting | `Too many commands are waiting` |

@@ -89,7 +89,7 @@ test('reply_to_user and the guide start topic require a closing reply, including
 });
 
 test('the topics are the planned set, each under 1,500 words, and start carries the build guidance verbatim', () => {
-  assert.deepEqual([...GUIDE_TOPIC_NAMES], ['start', 'dialect', 'features', 'selection', 'paint', 'limits', 'camera', 'assembly']);
+  assert.deepEqual([...GUIDE_TOPIC_NAMES], ['start', 'dialect', 'features', 'selection', 'paint', 'limits', 'camera', 'assembly', 'modeling', 'molding']);
   for (const name of GUIDE_TOPIC_NAMES) {
     const words = GUIDE_TOPICS[name].text.trim().split(/\s+/).length;
     assert.ok(words > 80 && words < 1500, `${name}: ${words} words`);
@@ -110,6 +110,14 @@ test('the topics are the planned set, each under 1,500 words, and start carries 
   assert.match(GUIDE_TOPICS.features.text, /@contour id=/);
   assert.match(GUIDE_TOPICS.paint.text, /paint_confirm/);
   assert.match(GUIDE_TOPICS.assembly.text, /part_set_transform/);
+  // 0.3.6: modeling and molding guidelines, cross-linked from start and the tool descriptions.
+  assert.match(GUIDE_TOPICS.start.text, /guide \{ topic: "modeling" \}; molded parts: guide \{ topic: "molding" \}/);
+  assert.match(GUIDE_TOPICS.start.text, /"assembly" \| "modeling" \| "molding"/);
+  assert.match(GUIDE_TOPICS.modeling.text, /Do not call create_part for the first part/);
+  assert.match(GUIDE_TOPICS.modeling.text, /insert_shell first, then fillet the concave/);
+  assert.match(GUIDE_TOPICS.modeling.text, /insert_mirror/);
+  assert.match(GUIDE_TOPICS.molding.text, /mold_fit and mold_draft before you call it done/);
+  assert.match(GUIDE_TOPICS.molding.text, /Do not fillet a rib base/);
 });
 
 test('callGuideTool lists topics with no args, returns one topic, and names the topics on an unknown one', () => {
