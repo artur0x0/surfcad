@@ -185,6 +185,7 @@ import { compareWorkingCopyToCommit } from './agent/state/workingCopyUnsaved';
 import { findPartById, unknownAssemblyError, unknownPartError } from './agent/state/identity';
 import { decidePartVisible } from './agent/state/partVisible';
 import { listV2Assemblies, openV2Assembly, overlayWorkingCopyBrowseNames, PART_USE_SCAN_REFUSED, scanOtherAssemblyPartUses } from './utils/git/v2VaultRead';
+import { assemblyMissingOnBranchError, findAssemblyOnBranch } from './utils/git/assemblyOnBranch';
 import { assemblyRows } from './agent/state/assemblyRows';
 import { assemblyIdPath, partIdPath, parseIdPath } from './utils/git/idPaths';
 import { readSurfName } from './utils/git/surfId';
@@ -4989,10 +4990,27 @@ const App = () => {
             const git = gitAdapterRef.current;
             const tip = (await git.getBranch(vault.repo, branchName))?.sha || null;
             if (!tip) throw new Error(`Branch not found: ${branchName}`);
-            const loaded = await openV2Assembly(git, vault.repo, id, {
-              branch: branchName,
-              headSha: tip,
-            });
+            let loaded;
+            try {
+              loaded = await openV2Assembly(git, vault.repo, id, {
+                branch: branchName,
+                headSha: tip,
+              });
+            } catch (err) {
+              if (err?.code !== 'unknown_assembly') throw err;
+              // No assemblies/<id>.surf.json on that branch (a side branch
+              // cut from a base that predates this assembly's id file).
+              // Open the assembly of the same name there; otherwise say in
+              // words what the branch has, never the id.
+              const label = assemblyName(doc);
+              const found = await findAssemblyOnBranch(git, vault.repo, { name: label, branch: branchName });
+              if (!signal()) return null;
+              if (found.missing) throw assemblyMissingOnBranchError(label, branchName, found.available);
+              loaded = await openV2Assembly(git, vault.repo, found.id, {
+                branch: branchName,
+                headSha: tip,
+              });
+            }
             if (!signal()) return null;
             progress({
               name: loaded.doc?.name,
@@ -7465,6 +7483,18 @@ const App = () => {
     return applySeededAssembly(seedDoc, starter, seedId);
   };
 
+  /** The name of a vault assembly that is not the open one, for a commit message; the id only when the list has no row. */
+  const deletedAssemblyLabel = async (ctx, assemblyId) => {
+    try {
+      const rows = await listV2Assemblies(ctx.adapter, ctx.vault.repo, ctx.branch);
+      const hit = rows.find((row) => row.id === assemblyId);
+      if (hit?.name) return hit.name;
+    } catch {
+      /* the id is the fallback */
+    }
+    return assemblyId;
+  };
+
   const agentGitReadContext = async (label) => {
     const doc = assemblyRef.current;
     if (!doc || doc.source !== 'git') {
@@ -7542,7 +7572,12 @@ const App = () => {
       if (err?.message === NO_REPO_YET_COPY) setUploadNotice(NO_REPO_YET_COPY);
       if (err?.code === UNSUPPORTED_VAULT_CODE) setUploadError(UNSUPPORTED_VAULT_COPY);
       if (err?.code === 'unknown_assembly') {
-        return { status: 'error', code: 'unknown_assembly', error: err.message };
+        // The list the user picked from is stale: say so in words, not with the id.
+        return {
+          status: 'error',
+          code: 'unknown_assembly',
+          error: `That assembly is no longer in the repo on ${gitWorkingBranch()}. Refresh the list and try again.`,
+        };
       }
       return gitOpCatchResult(err, 'Could not open assembly');
     }
@@ -11652,7 +11687,8 @@ const App = () => {
         deleteParts: deleteParts === true,
         confirm: true,
         online,
-        message: open ? `Delete ${assemblyName(doc)}` : `Delete ${assemblyId}`,
+        // The commit message names the assembly, not its id, even when it is not the open one.
+        message: `Delete ${open ? assemblyName(doc) : await deletedAssemblyLabel(ctx, assemblyId)}`,
       });
       if (result.status !== 'local' && result.status !== 'committed') {
         return {

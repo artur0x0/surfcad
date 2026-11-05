@@ -26,6 +26,12 @@ screen?” stay in [ui-map.md](./ui-map.md). Runtime map:
 5. **New color = token first, then a class.** Add a `--chrome-*` or
    `--brand-*` channel on `:root` in `src/index.css`, then a semantic
    class in `@layer components`. Do not start from a hex in a component.
+6. **User-facing copy names parts and assemblies by name, never by surf
+   id or repo path.** Ids (`2026-11-02-13-16-54-0296-d5c6`) and id-named
+   files (`parts/<id>.js`) stay internal and in agent envelopes. A popup,
+   toast, or error that has only an id looks the name up (a row in the
+   feed, `listV2Assemblies`) or says "that assembly"; it does not print
+   the id.
 
 The lint job runs `scripts/ci/check-ui-contrast.mjs`. It flags dark text
 classes or `#000` / `#111`-style colors on the same element as a dark
