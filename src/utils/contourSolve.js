@@ -373,7 +373,7 @@ export function contourFromRoundedRectangle(width, height, radius, centered = tr
       points: [{ id: 'p0', at: [cx, cy] }],
       lines: [],
       arcs: [{ id: 'a0', center: 'p0', radius: r, full: true, sweep: 'ccw', segments: 64 }],
-      dimensions: [{ id: 'd0', kind: 'radius', arc: 'a0', value: r }],
+      dimensions: markAuto([{ id: 'd0', kind: 'radius', arc: 'a0', value: r }]),
       constraints: markAuto([{ id: 'k0', kind: 'fix', items: ['p0'], at: { p0: [cx, cy] } }]),
     });
   }
@@ -508,19 +508,21 @@ export function contourFromRoundedRectangle(width, height, radius, centered = tr
     });
     di += 1;
   }
-  return assignSeq({ points, lines, arcs, dimensions, constraints: markAuto(constraints) });
+  return assignSeq({ points, lines, arcs, dimensions: markAuto(dimensions), constraints: markAuto(constraints) });
 }
 
 /**
- * The constraints a shape builder writes to hold its own form (a
- * rectangle's horizontals and verticals, a centre fix, a polygon's equal
- * sides). `auto: true` marks them as the shape's, not the user's: once the
- * shape is one loop of several (`loop` on the item), the strip and the tag
- * layer leave them out, so a second rectangle does not read as a set of
- * relationships between the two.
+ * The rows a shape builder writes for its own form: the constraints that
+ * hold it (a rectangle's horizontals and verticals, a centre fix, a
+ * polygon's equal sides) and the dimensions that size it (lengths, a
+ * radius). `auto: true` marks them as the shape's, not the user's. A shape
+ * added as another loop of a sketch (`appendSketchLoop`) keeps only the
+ * form constraints, hidden from the strip and the tag layer, and drops the
+ * fix and the dimensions, so it arrives free and undimensioned like the
+ * first shape did. A lone promoted shape still lists every row.
  */
-function markAuto(constraints) {
-  return constraints.map((item) => (item && !item.auto ? { ...item, auto: true } : item));
+function markAuto(items) {
+  return items.map((item) => (item && !item.auto ? { ...item, auto: true } : item));
 }
 
 /** Axis-aligned rectangle in UV. Centered uses the origin. Fully defined. */
@@ -553,7 +555,7 @@ export function contourFromRectangle(width, height, centered = true) {
     { id: 'd0', kind: 'length', edge: 'e0', value: w },
     { id: 'd1', kind: 'length', edge: 'e1', value: h },
   ];
-  return assignSeq({ points, lines, arcs: [], dimensions, constraints: markAuto(constraints) });
+  return assignSeq({ points, lines, arcs: [], dimensions: markAuto(dimensions), constraints: markAuto(constraints) });
 }
 
 /**
@@ -568,7 +570,7 @@ export function contourFromCircle(radius, segments = 64) {
     points: [{ id: 'p0', at: [0, 0] }],
     lines: [],
     arcs: [{ id: 'a0', center: 'p0', radius: r, full: true, sweep: 'ccw', segments: seg }],
-    dimensions: [{ id: 'd0', kind: 'radius', arc: 'a0', value: r }],
+    dimensions: markAuto([{ id: 'd0', kind: 'radius', arc: 'a0', value: r }]),
     constraints: markAuto([{ id: 'k0', kind: 'fix', items: ['p0'], at: { p0: [0, 0] } }]),
   });
 }
@@ -615,7 +617,7 @@ export function contourFromPolygon(preset, radius) {
   // that included it would see a branch and refuse the polygon.
   lines.push({ id: `e${sides}`, a: 'p0', b: 'p1', guide: true });
   const dimensions = [{ id: 'd0', kind: 'length', edge: `e${sides}`, value: r }];
-  return assignSeq({ points, lines, arcs: [], dimensions, constraints: markAuto(constraints) });
+  return assignSeq({ points, lines, arcs: [], dimensions: markAuto(dimensions), constraints: markAuto(constraints) });
 }
 
 function orientPair(a, b) {

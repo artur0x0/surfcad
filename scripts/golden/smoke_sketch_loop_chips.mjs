@@ -7,11 +7,11 @@
  * rectangle (Line ×8, Length ×4, Horizontal ×4, Vertical ×4, Fix ×2) and
  * the canvas drew every builder constraint as a tag between the two.
  *
- * Checks: one Rectangle chip after the first click; Rectangle 1, Length,
- * Length, Rectangle 2, Length, Length after the second; Circle and Radius
- * join after the circle; no constraint tags on the canvas; the dimension
- * tags are the shapes' sizes; a canvas tap on the inner rectangle lights
- * its loop chip; the loop chip's Delete removes that rectangle only.
+ * Checks: one Rectangle chip after the first click; Rectangle 1 and
+ * Rectangle 2 after the second, with no dimensions (a second shape arrives
+ * as free and undimensioned as the first); Circle joins after the circle;
+ * no constraint or dimension tags on the canvas; the inner rectangle's
+ * chip lights on tap; its Delete removes that rectangle only.
  */
 /* global document, window, indexedDB, localStorage */
 import { spawn } from 'node:child_process';
@@ -181,28 +181,32 @@ const one = await readChips(page);
 check('one rectangle is one chip', one.length === 1 && one[0].id === 'shape' && one[0].label === 'Rectangle', JSON.stringify(one));
 
 await page.locator('[data-contour-tool="rectangle"]').click({ force: true });
-await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 6, null, { timeout: 10000 }).catch(() => {});
+await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 2, null, { timeout: 10000 }).catch(() => {});
 const two = await readChips(page);
-check('two rectangles are two shape chips, each with its two lengths, in loop order',
-  JSON.stringify(two.map((chip) => chip.label)) === JSON.stringify(['Rectangle', 'Length', 'Length', 'Rectangle', 'Length', 'Length'])
-  && two[0].id === 'loop:1' && two[3].id === 'loop:2'
-  && two[0].kind === 'rectangle' && two[3].kind === 'rectangle',
+check('two rectangles are two shape chips and nothing else, in loop order',
+  JSON.stringify(two.map((chip) => chip.label)) === JSON.stringify(['Rectangle', 'Rectangle'])
+  && two[0].id === 'loop:1' && two[1].id === 'loop:2'
+  && two[0].kind === 'rectangle' && two[1].kind === 'rectangle',
   JSON.stringify(two));
-check('no Line, Horizontal, Vertical or Fix chips', !two.some((chip) => /Line|Horizontal|Vertical|Fix/.test(chip.label || '')), JSON.stringify(two));
+check('no Line, Length, Horizontal, Vertical or Fix chips', !two.some((chip) => /Line|Length|Horizontal|Vertical|Fix/.test(chip.label || '')), JSON.stringify(two));
 await page.waitForTimeout(400);
 const tagsTwo = await readTags(page);
 check('the canvas shows no constraint tags', tagsTwo.icons.length === 0, JSON.stringify(tagsTwo.icons));
-check('the dimension tags are the two rectangles\' sizes (four lengths)', tagsTwo.dims.length === 4, JSON.stringify(tagsTwo.dims));
+check('the canvas shows no dimension tags: nothing was dimensioned', tagsTwo.dims.length === 0, JSON.stringify(tagsTwo.dims));
+const entitiesTwo = await agentCall(page, 'list_sketch_entities', {});
+check('the sketch has no dimensions and no fix', (entitiesTwo?.result?.dimensions || []).length === 0
+  && !(entitiesTwo?.result?.constraints || []).some((con) => con.kind === 'fix'),
+  JSON.stringify({ dims: entitiesTwo?.result?.dimensions, cons: (entitiesTwo?.result?.constraints || []).map((c) => c.kind) }));
 await page.screenshot({ path: `${SHOT_DIR}/sketch-loop-chips-two-1280.png` });
 
 await page.locator('[data-contour-tool="circle"]').click({ force: true });
-await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 8, null, { timeout: 10000 }).catch(() => {});
+await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 3, null, { timeout: 10000 }).catch(() => {});
 const three = await readChips(page);
-check('a circle adds a Circle chip and its Radius',
-  JSON.stringify(three.map((chip) => chip.label).slice(6)) === JSON.stringify(['Circle', 'Radius'])
-  && three[6].id === 'loop:3' && three[6].kind === 'circle',
+check('a circle adds one Circle chip and no Radius',
+  JSON.stringify(three.map((chip) => chip.label)) === JSON.stringify(['Rectangle', 'Rectangle', 'Circle'])
+  && three[2].id === 'loop:3' && three[2].kind === 'circle',
   JSON.stringify(three));
-check('still no constraint tags', (await readTags(page)).icons.length === 0);
+check('still no constraint or dimension tags', (await readTags(page)).icons.length === 0 && (await readTags(page)).dims.length === 0);
 await page.screenshot({ path: `${SHOT_DIR}/sketch-loop-chips-three-1280.png` });
 
 // Tap the inner rectangle's chip: it is pressed, and its Delete card drops only that loop.
@@ -213,10 +217,10 @@ check('the inner rectangle chip is pressed after a tap', pressed.find((chip) => 
 const card = await page.locator('[data-contour-card="entity"]').count();
 check('its short card opens', card === 1, String(card));
 await page.locator('[data-contour-entity-delete]').click({ force: true });
-await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 5, null, { timeout: 10000 }).catch(() => {});
+await page.waitForFunction(() => document.querySelectorAll('[data-sketch-entities] [data-sketch-id]').length === 2, null, { timeout: 10000 }).catch(() => {});
 const after = await readChips(page);
-check('Delete on the loop chip removes that rectangle and its two lengths only',
-  JSON.stringify(after.map((chip) => chip.label)) === JSON.stringify(['Rectangle', 'Length', 'Length', 'Circle', 'Radius']),
+check('Delete on the loop chip removes that rectangle only',
+  JSON.stringify(after.map((chip) => chip.label)) === JSON.stringify(['Rectangle', 'Circle']),
   JSON.stringify(after));
 const entities = await agentCall(page, 'list_sketch_entities', {});
 const lines = entities?.result?.lines || [];

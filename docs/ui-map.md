@@ -271,8 +271,9 @@ Desktop specifics:
   (`data-sketch-broken`). A line, arc, circle, polyline, unpromoted shape, or reference
   chip opens a short card whose only action is Delete. On a sketch with several closed
   shapes each loop is one shape chip (`data-sketch-id="loop:<n>"`, Rectangle, Circle, Polygon
-  or Polyline) followed by its dimensions; the shape builders' own constraints are hidden
-  from the strip and the canvas, and a loop chip's Delete removes that whole loop
+  or Polyline) with no dimensions of its own: a shape added after the first arrives free and
+  undimensioned, its builder constraints are hidden from the strip and the canvas, and a
+  loop chip's Delete removes that whole loop
   (`golden:sketch-loop-chips`). The polyline chip deletes the whole chain
   (`data-contour-card="entity"`, `data-contour-entity-delete`). Nothing that
   names it deletes at once, and the toast Undo is the sketch history
