@@ -106,9 +106,8 @@ await page.waitForSelector('[data-cad-run]', { state: 'attached', timeout: 12000
 const working = await page.evaluate(() => ({
   spinner: !!document.querySelector('[data-agent-working]'),
   session: document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-session-state') || '',
-  avatar: document.querySelector('[data-profile-chip-variant="viewport"]')?.getAttribute('data-profile-agent-working') || '',
 }));
-check('the agent session is working (the state that held every agent card)', working.spinner && working.avatar === '1', JSON.stringify(working));
+check('the agent prompt is working (the state that held every agent card)', working.spinner, JSON.stringify(working));
 
 const cube = await agentCall(page, 'insert_cube', { width: 60, depth: 40, height: 10 });
 check('insert_cube', cube?.ok === true, JSON.stringify(cube));

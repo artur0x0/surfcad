@@ -6,6 +6,7 @@
 - Tool descriptions point at them: `mold_*`, `insert_boss`, `insert_add_draft` ("Molding rules"), `insert_shell`, `insert_fillet_edges` ("shell first, then concave fillets, then convex"), `insert_mirror`, the pattern tools and `insert_part` ("prefer this over rebuilding geometry by hand"). The start topic carries a pointer line.
 - `create_assembly` returns `partId` and `partName` for its seed part (plus a `note`) and takes an optional `part_name`. The agent builds the first part on that id and does not call `create_part` for it. A `create_part` straight after `create_assembly`, with no script, reuses the untouched seed and returns `reusedSeed: true` instead of leaving an empty "Part (1)" behind.
 - Server relay: a `mold_*` command a tab has taken gets a 120 s budget (`MOLD_COMMAND_MS`) instead of the 30 s asleep hold; `mold_fit` on a real part used to come back `tab_asleep` while the tab was still computing. A command a tab took but did not answer inside its budget is `command_timeout` (new hint; terminal on the HTTPS fallback); a command no tab took is still `tab_asleep` at 30 s. Backend change, ships with the backend deploy.
+- SurfCAD tab: the profile avatar no longer spins while the agent works. The prompt chrome and the phone bot button still show the working state.
 
 ## 0.3.5 - 2026-11-05
 

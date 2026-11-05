@@ -14,7 +14,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useAuthState } from '../hooks/useAuthState';
 import { chipView } from '../utils/authPhase.js';
 import { agentBridgeRingLabel, agentBridgeRingState } from '../agent/ws/agentBridgeChrome.js';
-import { subscribeAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { forgetAgentChatSession } from '../agent/ws/agentChatPersist.js';
 import { profileInitials } from '../utils/profileInitials.js';
 import { useAgentBridgeHost } from './AgentBridgeHost';
@@ -46,11 +45,10 @@ export default function ProfileChip({
     ? 'spinning'
     : (session.offerReconnect ? 'reconnect' : 'idle');
   const view = chipView({ phase, motion });
-  // While the paired agent is working (a prompt in flight, or a build it
-  // started on its own) the avatar is a spinner, like the phone bot button.
-  const [agentWorking, setAgentWorking] = useState(false);
-  useEffect(() => subscribeAgentPromptWorking(setAgentWorking), []);
-  const spinning = view.spinner || agentWorking;
+  // Agent work does not spin the avatar. The prompt chrome and the phone bot
+  // button (MobileStageToggle) carry the working state; the avatar spins only
+  // for its own auth phases.
+  const spinning = view.spinner;
   const signedIn = session.githubConnected;
   const reauth = session.needsReconnect;
   const canClear = typeof onClearLocalCadData === 'function';
@@ -190,7 +188,6 @@ export default function ProfileChip({
         data-profile-chip-state={spinning ? 'spinning' : (view.reconnect ? 'reconnect' : view.auth)}
         data-profile-initials={label || (signedIn ? 'user' : 'out')}
         data-profile-auth={view.auth}
-        data-profile-agent-working={agentWorking ? '1' : '0'}
         aria-busy={spinning ? 'true' : 'false'}
         aria-expanded={showPanel ? (panelOpen ? 'true' : 'false') : undefined}
         aria-haspopup={showPanel ? 'dialog' : undefined}

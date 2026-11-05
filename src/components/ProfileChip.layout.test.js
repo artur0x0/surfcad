@@ -39,11 +39,11 @@ test('connection ring is driven by the live agentBridgeLink, not a boolean', () 
   assert.equal(SRC.includes('<AgentBridgePairing'), false);
 });
 
-test('the avatar spins while the paired agent is working, prompt or not', () => {
-  assert.match(SRC, /subscribeAgentPromptWorking\(setAgentWorking\)/);
-  assert.match(SRC, /const spinning = view\.spinner \|\| agentWorking;/);
+test('the avatar spins for its own auth phases only, never for agent work', () => {
+  assert.equal(SRC.includes('subscribeAgentPromptWorking'), false);
+  assert.equal(SRC.includes('data-profile-agent-working'), false);
+  assert.match(SRC, /const spinning = view\.spinner;/);
   assert.match(SRC, /data-profile-chip-state=\{spinning \? 'spinning'/);
-  assert.match(SRC, /data-profile-agent-working=\{agentWorking \? '1' : '0'\}/);
   assert.match(SRC, /aria-busy=\{spinning \? 'true' : 'false'\}/);
   assert.match(SRC, /\{spinning \? \(\s*<Loader2/);
 });
