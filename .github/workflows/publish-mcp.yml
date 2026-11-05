@@ -111,6 +111,14 @@ jobs:
         if: steps.gate.outputs.should_publish == 'true'
         run: npm ci
 
+      # The package e2e tests (perCallPresence, remoteRelay) import
+      # backend/agent, which pulls backend/db (mongoose) from backend's own
+      # lockfile. Without this the 0.3.5 publish failed in "Test surfcad-mcp
+      # package" with ERR_MODULE_NOT_FOUND mongoose (run 41969161475).
+      - name: Install backend dependencies
+        if: steps.gate.outputs.should_publish == 'true'
+        run: npm ci --prefix backend
+
       - name: Test surfcad-mcp package
         if: steps.gate.outputs.should_publish == 'true'
         working-directory: packages/surfcad-mcp
