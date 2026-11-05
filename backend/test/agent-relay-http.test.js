@@ -29,7 +29,9 @@ async function listen(relay) {
   const sessions = new Map();
   const app = express();
   app.set('trust proxy', 1);
-  app.use(express.json({ limit: '2mb' }));
+  // Above the relay cap, so the oversized-body probe reaches the router's own
+  // 413 (serverApp mounts the capped agent parser ahead of the global one).
+  app.use(express.json({ limit: MAX_AGENT_MESSAGE_BYTES + 64 * 1024 }));
   app.use(express.urlencoded({ extended: false }));
   app.use((req, _res, next) => {
     const id = req.header('x-test-user');

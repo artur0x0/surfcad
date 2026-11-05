@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Server relay: the frame cap (`MAX_AGENT_MESSAGE_BYTES`) is 8 MB, up from 256 KB. A `mold_fit`, `mold_dfm` or `mold_side_actions` result on a real part was larger than 256 KB, so the server dropped the tab's socket ("Max payload size exceeded"), the command came back `tab_asleep`, and a prompt typed while the socket flapped was lost ("Message was not delivered"). Backend change, ships with the backend deploy.
+
 - `guide { topic: "modeling" }` (3D modeling guidelines: build on the create_assembly seed part, shell before fillets, draft before shell, reuse over rebuilding, joints, check bodyCount) and `guide { topic: "molding" }` (design guidelines for high pressure injection molding: draft, wall thickness, ribs, ejector side, slides and lifters, what mold_fit checks, edges, shape). Also served as `surfcad://guide/modeling` and `surfcad://guide/molding`. The molding numbers that have a code constant are pinned to `src/molding` by a test.
 - Tool descriptions point at them: `mold_*`, `insert_boss`, `insert_add_draft` ("Molding rules"), `insert_shell`, `insert_fillet_edges` ("shell first, then concave fillets, then convex"), `insert_mirror`, the pattern tools and `insert_part` ("prefer this over rebuilding geometry by hand"). The start topic carries a pointer line.
 - `create_assembly` returns `partId` and `partName` for its seed part (plus a `note`) and takes an optional `part_name`. The agent builds the first part on that id and does not call `create_part` for it. A `create_part` straight after `create_assembly`, with no script, reuses the untouched seed and returns `reusedSeed: true` instead of leaving an empty "Part (1)" behind.

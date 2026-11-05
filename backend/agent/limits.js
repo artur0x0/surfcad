@@ -1,5 +1,14 @@
-/** Largest command or handshake frame the server relay will accept. */
-export const MAX_AGENT_MESSAGE_BYTES = 256 * 1024;
+/**
+ * Largest frame the server relay will accept: the WebSocket payload cap on
+ * both the tab and the agent socket, and the body limit on the agent HTTP
+ * routes. 8 MB. It was 256 KB until 2026-11-05: a mold_fit / mold_dfm /
+ * mold_side_actions result on a ~22k-triangle part is larger than that, so
+ * `ws` dropped the tab socket ("Max payload size exceeded"), the tab
+ * reconnected and resent the same frame, the command ended tab_asleep, and a
+ * prompt typed meanwhile was lost. Every sender is signed in (tab cookie or
+ * agent token) and rate limited, so the cap is a sanity bound, not a defence.
+ */
+export const MAX_AGENT_MESSAGE_BYTES = 8 * 1024 * 1024;
 
 /** How long a command waits for a tab to reconnect. */
 export const TAB_ASLEEP_MS = 30_000;
