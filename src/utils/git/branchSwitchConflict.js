@@ -7,7 +7,7 @@
  * (Create a new branch / Overwrite) stays on Save.
  *
  * Switch used to open two dialogs on the same popup: adoptVaultOpening's
- * outbox hold (Stay on branch / Open on GitHub / Overwrite main) and
+ * outbox hold (Go back / Keep mine / Get remote) and
  * checkGitRemoteBehind's main-moved notice. The second effect replaced the
  * first. Neither runs on switch.
  */

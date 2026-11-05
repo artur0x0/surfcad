@@ -19,6 +19,7 @@ import ProfileChip from './ProfileChip';
 import VaultPickerDialog from './VaultPickerDialog';
 import BranchPaneList from './BranchPaneList';
 import BranchSwitchConflictChoices from './BranchSwitchConflictChoices';
+import SyncConflictChoices from './SyncConflictChoices';
 import GithubSaveAccessNotice from './GithubSaveAccessNotice';
 import { useAuthState } from '../hooks/useAuthState';
 import { useCartChrome } from '../hooks/useCart';
@@ -412,6 +413,7 @@ const PartFeed = forwardRef(function PartFeed({
   onGitCommit = null,
   vaultLayout = null,
   onOverwriteMain = null,
+  onTakeRemote = null,
   // G4 pull/conflicts
   behindPartIds = null,
   assemblyBehind = false,
@@ -912,13 +914,6 @@ const PartFeed = forwardRef(function PartFeed({
     setMoveFlow((prev) => ({ ...(prev || {}), stage: 'form', result, error }));
   };
 
-  /** G13 conflict popup: open the side branch compare URL on GitHub. */
-  const openConflictOnGithub = () => {
-    const head = commitFlow?.result?.branch;
-    if (!head) return;
-    onMergeBranch?.({ head, base: 'main' });
-  };
-
   const refreshBranchPane = async (preserveError = '', { ensureBranch = null } = {}) => {
     setBranchFlow((prev) => ({
       stage: 'pane',
@@ -1330,6 +1325,31 @@ const PartFeed = forwardRef(function PartFeed({
       draft,
       result: prior,
       error: result.error || 'Overwrite failed',
+    });
+  };
+
+  /** Conflict popup → Get remote: drop the queued local changes and reload from the tip. */
+  const runTakeRemote = async () => {
+    if (commitFlow?.stage === 'busy') return;
+    const draft = commitFlow?.draft || '';
+    const prior = commitFlow?.result || null;
+    setCommitFlow({ stage: 'busy', busy: 'reload', draft, result: prior, error: '' });
+    const result = (await onTakeRemote?.()) || { status: 'error', error: 'Reload unavailable' };
+    if (result.status === 'reloaded') {
+      onSyncConflictClear?.();
+      setCommitFlow(null);
+      if (leaveGuard?.stage === 'commit' && leaveGuard.pending) {
+        const pending = leaveGuard.pending;
+        setLeaveGuard(null);
+        queueMicrotask(() => proceedAssemblyAction(pending));
+      }
+      return;
+    }
+    setCommitFlow({
+      stage: 'error',
+      draft,
+      result: prior,
+      error: result.error || 'Could not reload from the repo',
     });
   };
 
@@ -2571,35 +2591,11 @@ const PartFeed = forwardRef(function PartFeed({
                 </>
               )}
               {commitFlow.stage === 'ask-force' && (
-                <>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
-                    onClick={closeCommit}
-                    data-git-keep-branch=""
-                    data-git-conflict-stay=""
-                  >
-                    Stay on branch
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md px-3 py-1.5 text-xs text-chrome-text hover:bg-white/10 border border-gray-600"
-                    data-git-conflict-open-github=""
-                    onClick={openConflictOnGithub}
-                  >
-                    Open on GitHub
-                  </button>
-                  <button
-                    type="button"
-                    data-ui-action="data-git-conflict-overwrite"
-                    data-git-force-merge=""
-                    data-git-conflict-overwrite=""
-                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
-                    onClick={runForceMerge}
-                  >
-                    Overwrite main
-                  </button>
-                </>
+                <SyncConflictChoices
+                  onGoBack={closeCommit}
+                  onKeepMine={runForceMerge}
+                  onGetRemote={runTakeRemote}
+                />
               )}
               {(commitFlow.stage === 'done' || commitFlow.stage === 'error') && (
                 <button type="button" className="rounded-md px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10" onClick={closeCommit} data-git-dialog-cancel="">
@@ -2641,7 +2637,9 @@ const PartFeed = forwardRef(function PartFeed({
             </>
           )}
           {commitFlow.stage === 'busy' && (
-            <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">Committing…</p>
+            <p className="text-xs text-chrome-secondary" data-git-dialog-loading="">
+              {commitFlow.busy === 'reload' ? 'Reloading from the repo…' : 'Committing…'}
+            </p>
           )}
           {commitFlow.stage === 'ask-force' && (
             <div
@@ -2651,7 +2649,7 @@ const PartFeed = forwardRef(function PartFeed({
             >
               <p className="text-xs text-gray-300">
                 {commitFlow.result?.syncHold
-                  ? `Nothing was written on ${commitFlow.result?.branch || 'this branch'}. Your local changes stay queued.`
+                  ? `${commitFlow.result?.branch || 'This branch'} moved in the repo since your last sync, and you have local changes. Nothing was written.`
                   : (
                     <>
                       {'Your changes were committed to '}
@@ -2660,8 +2658,11 @@ const PartFeed = forwardRef(function PartFeed({
                     </>
                   )}
               </p>
+              <p className="mt-2 text-xs text-gray-300" data-git-conflict-help="">
+                Keep mine writes your local files over the repo. Get remote drops your local changes and reloads from the repo. Go back leaves them queued.
+              </p>
               <p className="mt-2 text-xs text-amber-300" data-git-force-merge-warning="" data-git-conflict-warning="">
-                {commitFlow.result?.warning || 'Overwrite main replaces tip-side edits in these files; other remote files stay.'}
+                {commitFlow.result?.warning || 'Keep mine replaces tip-side edits in these files; other remote files stay.'}
               </p>
             </div>
           )}

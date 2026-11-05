@@ -32,14 +32,21 @@ ok('seeds without Shared checkboxes', /sharedIds: \[\]/.test(feed));
 ok('conflict is a popup not toast', /data-git-conflict-popup/.test(feed)
   && /data-git-force-merge-ask/.test(feed)
   && !/data-git-conflict-toast/.test(feed));
-ok('Stay on branch', /data-git-conflict-stay/.test(feed) && /Stay on branch/.test(feed)
-  && /data-git-keep-branch/.test(feed) && !/Keep on branch/.test(feed));
-ok('Open on GitHub', /data-git-conflict-open-github/.test(feed) && /Open on GitHub/.test(feed)
-  && /openConflictOnGithub/.test(feed) && /onMergeBranch\?\.\(\{ head/.test(feed));
-ok('Overwrite main keeps force-merge wiring', /data-git-conflict-overwrite/.test(feed)
-  && /Overwrite main/.test(feed) && /data-git-force-merge=""/.test(feed)
-  && /data-git-force-merge-warning/.test(feed) && /runForceMerge/.test(feed)
+const choices = readFileSync(new URL('../../src/components/SyncConflictChoices.jsx', import.meta.url), 'utf8');
+ok('Go back', /data-git-conflict-stay/.test(choices) && /Go back/.test(choices)
+  && /data-git-keep-branch/.test(choices) && !/Stay on branch/.test(choices) && !/Keep on branch/.test(choices)
+  && /onGoBack=\{closeCommit\}/.test(feed));
+ok('no Open on GitHub', !/data-git-conflict-open-github/.test(choices) && !/Open on GitHub/.test(choices)
+  && !/openConflictOnGithub/.test(feed));
+ok('Keep mine keeps force-merge wiring', /data-git-conflict-overwrite/.test(choices)
+  && /Keep mine/.test(choices) && !/Overwrite main/.test(choices) && /data-git-force-merge=""/.test(choices)
+  && /data-git-force-merge-warning/.test(feed) && /onKeepMine=\{runForceMerge\}/.test(feed)
   && !/>Force merge</.test(feed));
+ok('Get remote drops the queue and reloads', /data-git-conflict-get-remote/.test(choices) && /Get remote/.test(choices)
+  && /onGetRemote=\{runTakeRemote\}/.test(feed) && /onTakeRemote\?\.\(\)/.test(feed)
+  && /handleTakeRemote/.test(app) && /store\.drop\(op\.id\)/.test(app)
+  && /reload: true/.test(app));
+ok('one row', /flex flex-nowrap justify-end gap-2/.test(choices));
 ok('Overwrite main force-writes', /data-git-conflict-warning/.test(feed)
   && /onOverwriteMain/.test(feed)
   && /runForceMerge/.test(feed)
@@ -61,7 +68,7 @@ ok('light vocab: Repo label, + Part|Assembly create; folder open', /htmlFor="git
 
 ok('architecture documents G13', /G13/.test(arch)
   && /Create repo|Create vault|repo create|vault create|slim/i.test(arch)
-  && /Stay on branch|Overwrite main|Open on GitHub/.test(arch));
+  && /Go back \/ Keep mine \/ Get remote/.test(arch));
 
 console.log(failed ? `\n❌ FAIL (${failed} failed, ${passed} passed)` : `\n✅ PASS (${passed})`);
 process.exit(failed ? 1 : 0);

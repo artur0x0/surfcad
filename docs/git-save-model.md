@@ -325,7 +325,7 @@ Copy: “There is a conflict between your local files and files in the repositor
 | **Create a new branch** | Write the planned files on a new branch and switch. Agent: `git_behind_resolve { action: "branch" }` + `confirm: true`. |
 | **Overwrite** | “My changed files win.” Re-plan against the **current remote tip** just before the forced write (`baseSha = remote tip`). Local bytes for planned paths; other remote files stay. Not per-part. Agent: `git_force_overwrite` + `confirm: true`. |
 
-There is no separate upgrade-conflict dialog. Opening or reloading while the outbox is behind the tip still uses the legacy hold (Stay on branch / Open on GitHub / Overwrite main). No per-part overwrite chrome.
+There is no separate upgrade-conflict dialog. Opening or reloading while the outbox is behind the tip uses the outbox hold popup (Go back / Keep mine / Get remote, one row): Keep mine is the Overwrite above, Get remote drops the queued local changes and reopens from the tip. No per-part overwrite chrome.
 
 ### 2.10 Offline, seed, missing part
 

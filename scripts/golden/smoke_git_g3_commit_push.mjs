@@ -276,12 +276,15 @@ ok('assembly save promotes path-less parts once, then adopts',
   && /applyCommittedWorkspace\(result\)/.test(app)
   && /result\.moved/.test(app)
   && !/runAddStrayToRepo/.test(feed) && !/No repo path for/.test(feed));
-ok('force merge ask', /data-git-force-merge-ask/.test(feed) && /data-git-force-merge=""/.test(feed)
-  && /data-git-keep-branch/.test(feed) && /data-git-force-merge-warning/.test(feed));
+const choices = readFileSync(new URL('../../src/components/SyncConflictChoices.jsx', import.meta.url), 'utf8');
+ok('force merge ask', /data-git-force-merge-ask/.test(feed) && /data-git-force-merge=""/.test(choices)
+  && /data-git-keep-branch/.test(choices) && /data-git-force-merge-warning/.test(feed));
 ok('G13 conflict popup options', /data-git-conflict-popup/.test(feed)
-  && /data-git-conflict-stay/.test(feed) && /Stay on branch/.test(feed)
-  && /data-git-conflict-open-github/.test(feed) && /Open on GitHub/.test(feed)
-  && /data-git-conflict-overwrite/.test(feed) && /Overwrite main/.test(feed)
+  && /<SyncConflictChoices/.test(feed)
+  && /data-git-conflict-stay/.test(choices) && /Go back/.test(choices)
+  && /data-git-conflict-overwrite/.test(choices) && /Keep mine/.test(choices)
+  && /data-git-conflict-get-remote/.test(choices) && /Get remote/.test(choices)
+  && !/Open on GitHub/.test(feed) && !/Stay on branch/.test(feed) && !/Overwrite main/.test(feed)
   && !/Keep on branch/.test(feed) && !/>Force merge</.test(feed));
 ok('App queues Save; Overwrite main force-flushes', /handleGitCommit/.test(app)
   && /assembleCommitFiles\(gitAdapterRef\.current/.test(app)
