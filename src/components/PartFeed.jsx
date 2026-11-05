@@ -1482,6 +1482,9 @@ const PartFeed = forwardRef(function PartFeed({
   const renderPartRow = (row, index) => {
     const selected = row.id === activeId;
     const status = row.error ? 'error' : row.missing ? 'missing' : 'ok';
+    // Red row: the script failed, or it recovered by skipping a thrown
+    // feature (the strip marks that chip; the row says so too).
+    const failedRow = !!(row.error || row.featureFailed);
     const subtitle = subtitles.get(row.id) || '';
     const partNeedsRepo = row.action === 'add-to-repo' || row.action === 'find-in-repo';
     const canPartSave = !!(row.dirty || partNeedsRepo);
@@ -1727,9 +1730,12 @@ const PartFeed = forwardRef(function PartFeed({
             Upload
           </button>
         ) : null}
-        {row.error && (
-          <div className="mt-0.5 text-[10px] font-medium text-red-300" data-part-error="">
-            Script failed
+        {failedRow && (
+          <div
+            className="mt-0.5 text-[10px] font-medium text-red-300"
+            data-part-error={row.error ? '' : 'feature'}
+          >
+            {row.error ? 'Script failed' : 'Feature failed'}
           </div>
         )}
       </div>
@@ -1743,6 +1749,7 @@ const PartFeed = forwardRef(function PartFeed({
         data-part-row={row.id}
         data-part-selected={selected ? 'true' : 'false'}
         data-part-status={status}
+        data-part-feature-failed={row.featureFailed ? 'true' : undefined}
         data-part-dirty={row.dirty ? 'true' : 'false'}
         data-part-sync={row.syncFailed ? 'failed' : row.pending ? 'sending' : row.dirty ? 'dirty' : 'clean'}
         data-part-behind={behindSet.has(row.id) ? 'true' : 'false'}
@@ -1771,9 +1778,9 @@ const PartFeed = forwardRef(function PartFeed({
         }}
         className={`relative flex w-full cursor-pointer border-b border-white/5 px-2 py-2 text-left ${
           desktopRowLayout ? 'flex-col gap-1' : 'items-center gap-2'
-        } ${row.error ? 'bg-red-950/55 ring-1 ring-inset ring-red-500/80' : ''} ${
-          selected && !row.error ? 'bg-blue-950/50' : ''
-        } ${!selected && !row.error ? 'hover:bg-white/5' : ''}`}
+        } ${failedRow ? 'bg-red-950/55 ring-1 ring-inset ring-red-500/80' : ''} ${
+          selected && !failedRow ? 'bg-blue-950/50' : ''
+        } ${!selected && !failedRow ? 'hover:bg-white/5' : ''}`}
       >
         {selected && (
           <span

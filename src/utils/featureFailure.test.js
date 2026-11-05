@@ -7,6 +7,8 @@ import {
   failedFeatureTitles,
   featureSkipFailure,
   instrumentFeatureBlocks,
+  outcomeFromFeatureSkip,
+  stampRunFailure,
   unionSkipIds,
 } from './featureFailure.js';
 import { parseFeatureMarkers } from './featureMarkers.js';
@@ -126,4 +128,57 @@ test('instrumented blocks carry kind and label for progress and timings', () => 
   const { features } = instrumentFeatureBlocks(script);
   assert.deepEqual(features.map((f) => [f.id, f.kind]), [['cube1', 'cube'], ['shell1', 'shell']]);
   assert.ok(features.every((f) => typeof f.label === 'string' && f.label));
+});
+
+test('stampRunFailure keeps the failed block, the message and the skipped rows; a good run is null', () => {
+  const script = midChain();
+  const feats = parseFeatureMarkers(script);
+  const fillet = feats.find((f) => f.id === 'fillet1');
+  const block = script.slice(fillet.startOffset, fillet.endOffset);
+  const stamped = stampRunFailure(script, {
+    ok: false,
+    featureId: 'fillet1',
+    featureBlock: block,
+    scriptLine: null,
+    message: ' no boundary between faces 90 and 91 ',
+    detail: 'no boundary between faces 90 and 91',
+    skipped: [{ id: 'shell1', block: 'x', threw: false, dependsOn: 'fillet1' }],
+    hint: 'pick again',
+  });
+  assert.equal(stamped.id, 'fillet1');
+  assert.equal(stamped.kind, 'fillet');
+  assert.equal(stamped.block, block);
+  assert.equal(stamped.message, 'no boundary between faces 90 and 91');
+  assert.equal('detail' in stamped, false, 'a detail equal to the message is dropped');
+  assert.equal(stamped.hint, 'pick again');
+  assert.equal(stamped.skipped.length, 1);
+  assert.ok(failedFeatureIds(script, stamped).has('fillet1'));
+  assert.equal(stampRunFailure(script, { ok: true }), null);
+  assert.equal(stampRunFailure(script, { ok: false }), null, 'no feature and no message is nothing to show');
+  const messageOnly = stampRunFailure(script, { ok: false, message: 'Script must return a Manifold object' });
+  assert.equal(messageOnly.id, undefined);
+  assert.equal(messageOnly.message, 'Script must return a Manifold object');
+  // An id the script no longer holds still rides on the stamp (the popup names it).
+  const moved = stampRunFailure(script, { ok: false, featureId: 'gone', featureBlock: 'nope', message: 'boom' });
+  assert.equal(moved.id, 'gone');
+  assert.equal(moved.kind, undefined);
+});
+
+test('outcomeFromFeatureSkip maps a recovered run and ignores a skip with no block', () => {
+  const skip = {
+    featureId: 'fillet1', featureBlock: 'blk', scriptLine: 7, message: 'bad edge', skipped: [{ id: 'shell1' }], code: 'feature_timeout', timeout: { elapsedMs: 31000 }, hint: 'h',
+  };
+  const outcome = outcomeFromFeatureSkip(skip);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.featureId, 'fillet1');
+  assert.equal(outcome.featureBlock, 'blk');
+  assert.equal(outcome.scriptLine, 7);
+  assert.equal(outcome.message, 'bad edge');
+  assert.deepEqual(outcome.skipped, [{ id: 'shell1' }]);
+  assert.equal(outcome.code, 'feature_timeout');
+  assert.equal(outcome.timeout.elapsedMs, 31000);
+  assert.equal(outcome.hint, 'h');
+  assert.equal(outcomeFromFeatureSkip(null), null);
+  assert.equal(outcomeFromFeatureSkip({ message: 'x' }), null);
+  assert.equal(outcomeFromFeatureSkip({ featureId: 'a' }).message, 'Script execution failed');
 });

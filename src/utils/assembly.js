@@ -1054,6 +1054,10 @@ export function recordPartRun(runs, id, outcome) {
       ...(outcome.assetKey != null ? { assetKey: outcome.assetKey } : {}),
       ...(outcome.scriptKey && !ship.scriptKey ? { scriptKey: outcome.scriptKey } : {}),
       ...(outcome.unmoved === true ? { unmoved: true } : {}),
+      // A recovered run: the solid is there, one feature block failed.
+      ...(outcome.featureFailure && typeof outcome.featureFailure === 'object'
+        ? { featureFailure: outcome.featureFailure }
+        : {}),
     }
     : {
       ok: false,
@@ -1134,6 +1138,7 @@ export function preserveHiddenPartRuns(doc, nextRuns, prevRuns) {
     if (earlier.assetKey != null) kept.assetKey = earlier.assetKey;
     if (earlier.scriptKey) kept.scriptKey = earlier.scriptKey;
     if (earlier.unmoved === true) kept.unmoved = true;
+    if (earlier.featureFailure && typeof earlier.featureFailure === 'object') kept.featureFailure = earlier.featureFailure;
     runs[def] = kept;
   }
   return runs;
@@ -1151,6 +1156,10 @@ export function feedRows(doc, runs, scripts) {
     const run = runs?.[def] || null;
     const missing = part.missing === true || !hasScript;
     const error = !missing && !!run && run.ok === false && !run.empty && !run.skipped;
+    // The run recovered by skipping a thrown feature: the row has a mesh
+    // and still shows red, as the strip chip for that feature does.
+    const featureFailed = !missing && !!run && run.ok === true
+      && !!(run.featureFailure && typeof run.featureFailure === 'object');
     return {
       id: part.id,
       path: typeof part.path === 'string' ? part.path : null,
@@ -1158,6 +1167,7 @@ export function feedRows(doc, runs, scripts) {
       visible: part.visible !== false,
       order: part.order,
       error,
+      featureFailed,
       missing,
       action: missing ? missingRowAction(source) : null,
       mesh: !missing && run && run.ok === true ? run.mesh : null,

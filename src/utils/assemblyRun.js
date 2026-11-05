@@ -16,6 +16,7 @@ import {
 } from './assembly.js';
 import { missingMeshMessage, resolvePartMeshes } from './meshAssets.js';
 import { kernelCrashRecord } from '../workers/kernelCrash.js';
+import { outcomeFromFeatureSkip, stampRunFailure } from './featureFailure.js';
 import { shipFieldsFromResult } from './meshShip.js';
 
 /**
@@ -42,8 +43,13 @@ async function buildPart({ doc, scripts, execute, part }) {
     if (result?.cleared) return { ok: false, empty: true };
     const mesh = result?.mesh && result.mesh.vertProperties ? result.mesh : null;
     const geom = geometryFromExecuteResult(result);
+    // A recovered run (a feature threw and was skipped) is a solid with a
+    // failure on it. The record keeps that failure so the Parts feed row
+    // and, once this part is active, the strip chips show it without a rerun.
+    const skip = outcomeFromFeatureSkip(result?.featureSkip);
+    const featureFailure = skip ? stampRunFailure(resolved.script, skip) : null;
     return mesh
-      ? { ok: true, mesh, ...geom, ...shipFieldsFromResult(result) }
+      ? { ok: true, mesh, ...geom, ...shipFieldsFromResult(result), ...(featureFailure ? { featureFailure } : {}) }
       : { ok: false, error: 'Script must return a Manifold object' };
   } catch (err) {
     const crash = kernelCrashRecord(err);

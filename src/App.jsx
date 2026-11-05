@@ -17,7 +17,7 @@ import MobileStageToggle from './components/MobileStageToggle';
 import FeatureStrip from './components/FeatureStrip';
 import JointsRow from './components/JointsRow';
 import { FeatureDeleteToast } from './components/FeatureEditDelete';
-import { failedFeatureFromOutcome, failedFeatureIds, failedFeatureTitles } from './utils/featureFailure';
+import { failedFeatureIds, failedFeatureTitles, stampRunFailure } from './utils/featureFailure';
 import {
   commitScriptAtRollback,
   repairScriptReturns,
@@ -744,28 +744,17 @@ const App = () => {
         : null;
       featureCacheRef.current = { ...featureCacheRef.current, [key]: { cache: summary, cached } };
     }
-    // Tracked block first (works on Safari), the stack's line second.
-    const next = ok ? null : failedFeatureFromOutcome(script, { featureId, featureBlock, scriptLine });
-    const uiMessage = typeof message === 'string' && message.trim() ? message.trim() : '';
-    const uiDetail = typeof detail === 'string' && detail.trim() && detail.trim() !== uiMessage
-      ? detail.trim()
-      : '';
-    let stamped = null;
-    if (!ok && (next || uiMessage)) {
-      stamped = {
-        ...(next || {}),
-        ...(typeof featureId === 'string' && featureId && !next?.id ? { id: featureId } : {}),
-        ...(uiMessage ? { message: uiMessage } : {}),
-        ...(uiDetail ? { detail: uiDetail } : {}),
-        ...(crash && typeof crash === 'object' ? { crash } : {}),
-        // A block the watchdog killed; the part was rebuilt without it.
-        ...(typeof code === 'string' && code ? { code } : {}),
-        ...(timeout && typeof timeout === 'object' ? { timeout } : {}),
-        ...(typeof hint === 'string' && hint ? { hint } : {}),
-        skipped: Array.isArray(skipped) ? skipped : [],
-      };
-      if (!stamped.id && !stamped.message) stamped = null;
-    }
+    publishRunFailure(stampRunFailure(script, {
+      ok, scriptLine, featureId, featureBlock, skipped, message, detail, crash, code, timeout, hint,
+    }));
+  };
+  /**
+   * Make `stamped` the failure the strip, the sheet, the popup and the
+   * agent read. Every run reports here; a part switch that reuses a built
+   * mesh republishes the failure kept on that part's run record, so the
+   * chips of a part that recovered on the pool still turn red.
+   */
+  const publishRunFailure = (stamped) => {
     // Publish before setState. The agent reads this ref when execute resolves,
     // which is before the next render would have copied state into the ref.
     runOutcomeEpochRef.current += 1;
@@ -2794,6 +2783,11 @@ const App = () => {
           const bodyCount = geom.bodyCount != null
             ? geom.bodyCount
             : (Array.isArray(run.bodyCentroids) ? run.bodyCentroids.length : undefined);
+          // The viewport reported this run before it resolved: a recovered
+          // run (a skipped feature) stamped runFailureRef, a clean one
+          // cleared it. The record keeps the stamp for the Parts row and
+          // for the next part switch that reuses this mesh.
+          const reported = runFailureRef.current;
           const built = {
             ok: true,
             mesh: run.mesh,
@@ -2803,6 +2797,9 @@ const App = () => {
             bbox: geom.bbox,
             assetKey: assetKeyForDef(viewDef),
             ...shipFieldsFromResult(run),
+            ...(reported && typeof reported === 'object' && (reported.id || reported.message)
+              ? { featureFailure: reported }
+              : {}),
           };
           assignDefRun(runs, viewDef, built);
           if (built.meshKey) {
@@ -2845,8 +2842,12 @@ const App = () => {
         && keptRuns[viewId]?.ok === true
       ) {
         // The mesh stayed on the page, so the viewport does not emit a run
-        // outcome. The agent still needs this refresh to count as finished.
-        handleRunOutcome({ ok: true, script: activeScriptText });
+        // outcome. The agent still needs this refresh to count as finished,
+        // and the strip needs the failure this part's run kept (a feature
+        // that threw and was skipped on the pool, or on an earlier primary
+        // run), so the chips of a part switched to still turn red.
+        const kept = keptRuns[viewId].featureFailure;
+        publishRunFailure(kept && typeof kept === 'object' ? kept : null);
       }
       for (const [id, run] of Object.entries(keptRuns)) {
         if (run?.ok && run.mesh?.vertProperties) partLeftoversRef.current[id] = run.mesh;
