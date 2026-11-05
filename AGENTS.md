@@ -74,7 +74,7 @@ GitHub does not enforce these as required checks, so read every job's result you
 2. Make CI green. Treat any failed job as a blocker.
 3. Artur playtests the change. Merge only once CI is green and Artur has played it.
 4. **Agents never deploy to prod or staging.** Prod and staging deploys and npm publishes need Artur's explicit go, and the lead coder carries them out. Do not SSH into hosts, reload nginx, or restart services.
-5. `surfcad-mcp` publishes itself (`.github/workflows/publish-mcp.yml`). Any merge to `main` that changes `version` in `packages/surfcad-mcp/package.json` publishes once CI passes. Do not bump that version, push a `surfcad-mcp-v*` tag, or run the publish workflow unless Artur has said go for that release.
+5. `surfcad-mcp` publishes itself (`.github/workflows/publish-mcp.yml`). Once `version` in `packages/surfcad-mcp/package.json` is on `main` and not yet on npm, the next green CI run on `main` publishes it. Do not bump that version, push a `surfcad-mcp-v*` tag, or run the publish workflow unless Artur has said go for that release.
 
 ## Security rules
 

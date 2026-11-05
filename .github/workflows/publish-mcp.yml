@@ -58,18 +58,18 @@ jobs:
 
           case "${GITHUB_EVENT_NAME}" in
             workflow_run)
-              PARENT_JSON="$(git show HEAD^:"$PKG" 2>/dev/null || true)"
-              if [[ -z "$PARENT_JSON" ]]; then
-                PARENT_VERSION=""
-              else
-                PARENT_VERSION="$(jq -r .version <<<"$PARENT_JSON")"
-              fi
-              if [[ "$VERSION" == "$PARENT_VERSION" ]]; then
-                echo "Package version unchanged ($VERSION); skipping publish for workflow_run."
+              # Decide against npm, not against the parent commit. CI cancels an
+              # in-progress run when a newer commit lands on main, so two merges a
+              # few minutes apart leave the bump commit's CI cancelled (no publish),
+              # and the next commit's CI sees the bump already in its parent and
+              # would skip for good (0.3.5 on 2026-11-05). Any green CI on main
+              # whose version npm does not have yet publishes it.
+              if npm view "surfcad-mcp@${VERSION}" version 2>/dev/null | grep -q .; then
+                echo "surfcad-mcp@${VERSION} is already on npm; skipping publish for workflow_run."
                 echo "should_publish=false" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
-              echo "Version bumped $PARENT_VERSION -> $VERSION (workflow_run on main after CI success)."
+              echo "surfcad-mcp@${VERSION} is not on npm yet (workflow_run on main after CI success)."
               ;;
             push)
               TAG="${GITHUB_REF#refs/tags/}"
