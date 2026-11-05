@@ -227,13 +227,34 @@ export function insetLoopParams(tool, params, bounds) {
 }
 
 /**
+ * A shape as it joins a multi-loop sketch: without the builder's fix and
+ * sizing dimensions. The user drew one rectangle and tapped Rect again;
+ * nothing was dimensioned, so nothing is. The form constraints (`auto`
+ * horizontals, verticals, equals, tangents) stay so a rectangle remains
+ * one; they are hidden on a multi-loop sketch. Rows without `auto` (a
+ * dimension or constraint the user added to a promoted shape) stay.
+ */
+export function stripAutoSizing(spec) {
+  if (!spec) return spec;
+  return {
+    ...spec,
+    dimensions: (spec.dimensions || []).filter((dim) => !(dim && dim.auto === true)),
+    constraints: (spec.constraints || []).filter((con) => !(con && con.auto === true && con.kind === 'fix')),
+  };
+}
+
+/**
  * Add one closed profile to the sketch. The stored model is the merged
- * solver spec (points, lines, arcs, dimensions, constraints).
+ * solver spec (points, lines, arcs, dimensions, constraints). Both the
+ * incoming shape and a first shape that was still a bare tool (no
+ * `params.contour`) join without their builder sizing; a promoted first
+ * shape keeps the rows the user already saw.
  */
 export function appendSketchLoop(state, tool, params, { inset = false } = {}) {
   let base;
   try {
     base = specOfState(state);
+    if (!state?.params?.contour) base = stripAutoSizing(base);
   } catch (err) {
     return { ok: false, message: err.message || String(err) };
   }
@@ -245,7 +266,7 @@ export function appendSketchLoop(state, tool, params, { inset = false } = {}) {
   }
   let extra;
   try {
-    extra = contourFromTool(tool, nextParams);
+    extra = stripAutoSizing(contourFromTool(tool, nextParams));
   } catch (err) {
     return { ok: false, message: err.message || String(err) };
   }
