@@ -19,6 +19,7 @@ import { normalizeSheetSpec } from './sheetMetal/sheetModel.js';
 import { emitSolveContour, parseSolveContour } from './contourScript.js';
 import { contourDeleteConfirmLabel } from './contourUsers.js';
 import { isBlockFeatureKind, rewriteBlockSolidLet } from './blockSolid.js';
+import { fastenerClearanceDia } from '../workers/fastenerSizes.js';
 
 const NUM = '[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
 /** rotateAbout axis literal: a quoted world axis or a [ax, ay, az] vector (no capture groups). */
@@ -675,15 +676,15 @@ export function parseFeatureEdit(kind, blockText) {
     return { ...base, fields, edges, faces };
   }
   if (kind === 'holePattern') {
-    const n = grab(block, /n:\s*(\d+)/);
-    const m = grab(block, /m:\s*(\d+)/);
+    const n = grab(block, /\bn:\s*(\d+)/);
+    const m = grab(block, /\bm:\s*(\d+)/);
     const su = grab(block, new RegExp(`spacingU:\\s*(${NUM})`));
     const sv = grab(block, new RegExp(`spacingV:\\s*(${NUM})`));
-    const dia = grab(block, new RegExp(`dia:\\s*(${NUM})`));
-    if (!n || !dia) return fail('No hole pattern');
+    const dia = holePatternDia(block);
+    if (!n || dia == null) return fail('No hole pattern');
     return {
       ...base,
-      fields: { n: num(n[1]), m: m ? num(m[1]) : 2, spacingU: su ? num(su[1]) : 18, spacingV: sv ? num(sv[1]) : 14, dia: num(dia[1]) },
+      fields: { n: num(n[1]), m: m ? num(m[1]) : 2, spacingU: su ? num(su[1]) : 18, spacingV: sv ? num(sv[1]) : 14, dia },
       edges, faces,
     };
   }
@@ -1159,6 +1160,35 @@ function rewriteBossCall(block, fields) {
   return block.replace(BOSS_CALL_RE, `$1${lit(num(fields.u, 0))}$3${lit(num(fields.v, 0))}$5${bossOptsLiteral(fields)}$7`);
 }
 
+/** `dia: _cd1` in a hole grid: the name a Hole insert with the grid option bound in the block, or null. */
+function holePatternDiaName(block) {
+  const named = grab(block, /\bdia:\s*([A-Za-z_$][\w$]*)\s*[,}]/);
+  return named ? named[1] : null;
+}
+
+/**
+ * The grid's hole diameter: the literal in the call, or the value the
+ * block binds to the name the call uses (`const _cd1 = 3.4;` or
+ * `const _cd1 = fastenerClearanceDia('M3', 'normal');`). Null when neither.
+ */
+function holePatternDia(block) {
+  const literal = grab(block, new RegExp(`\\bdia:\\s*(${NUM})\\s*[,}]`));
+  if (literal) return num(literal[1]);
+  const name = holePatternDiaName(block);
+  if (!name) return null;
+  const bound = grab(block, new RegExp(`const\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*([^;]+);`));
+  if (!bound) return null;
+  const lit = grab(bound[1], new RegExp(`^\\s*(${NUM})\\s*$`));
+  if (lit) return num(lit[1]);
+  const call = grab(bound[1], /fastenerClearanceDia\s*\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/);
+  if (!call) return null;
+  try {
+    return fastenerClearanceDia(call[1], call[2]);
+  } catch {
+    return null;
+  }
+}
+
 function rewriteBlock(block, session, draft) {
   const kind = session.kind;
   const fields = draft.fields || {};
@@ -1219,14 +1249,46 @@ function rewriteBlock(block, session, draft) {
     const fn = /tapDrillHole\s*\(/.test(next) && kind !== 'clearanceHole' && !/clearanceHole\s*\(/.test(next)
       ? 'tapDrillHole'
       : (/clearanceHole\s*\(/.test(next) ? 'clearanceHole' : 'tapDrillHole');
-    setNum(new RegExp(`(${fn}\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*)(${NUM})`), 'u');
+    // Every field the card shows is written: u, v, the size, and the fit.
+    const head = `${fn}\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*`;
+    setNum(new RegExp(`(${head})(${NUM})`), 'u');
+    setNum(new RegExp(`(${head}${NUM}\\s*,\\s*)(${NUM})`), 'v');
+    if (typeof fields.size === 'string' && fields.size && fields.size !== prev.size) {
+      next = next.replace(new RegExp(`(${head}${NUM}\\s*,\\s*${NUM}\\s*,\\s*')([^']+)(')`), `$1${fields.size}$3`);
+    }
+    if (fn === 'clearanceHole' && typeof fields.fit === 'string' && fields.fit && fields.fit !== prev.fit) {
+      next = next.replace(new RegExp(`(${head}${NUM}\\s*,\\s*${NUM}\\s*,\\s*'[^']+'\\s*,\\s*[^,]+,\\s*')([^']+)(')`), `$1${fields.fit}$3`);
+    }
   } else if (kind === 'boss') {
     next = rewriteBossCall(next, { ...prev, ...fields });
   } else if (kind === 'holePattern') {
-    setNum(/(n:\s*)(\d+)/, 'n');
+    // The grid's counts, both spacings and the diameter. A diameter the
+    // call takes by name (`dia: _cd1`, a Hole insert with the grid option)
+    // is rewritten on that name's binding, as a literal.
+    setNum(/(\bn:\s*)(\d+)/, 'n');
+    setNum(/(\bm:\s*)(\d+)/, 'm');
+    setNum(new RegExp(`(spacingU:\\s*)(${NUM})`), 'spacingU');
+    setNum(new RegExp(`(spacingV:\\s*)(${NUM})`), 'spacingV');
+    if (fields.dia != null && !sameValue(fields.dia, prev.dia)) {
+      const name = holePatternDiaName(next);
+      if (name) {
+        next = next.replace(
+          new RegExp(`(const\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*)[^;]+(;)`),
+          `$1${lit(fields.dia)}$2`,
+        );
+      } else {
+        setNum(new RegExp(`(\\bdia:\\s*)(${NUM})`), 'dia');
+      }
+    }
   } else if (kind === 'cboreHole' || kind === 'cskHole') {
     const fn = kind === 'cboreHole' ? 'cboreHole' : 'cskHole';
-    setNum(new RegExp(`(${fn}\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'diaThru');
+    const head = `${fn}\\s*\\(\\s*[^,]+,\\s*[^,]+,\\s*`;
+    const arg = (k) => `(${head}(?:${NUM}\\s*,\\s*){${k}})(${NUM})`;
+    setNum(new RegExp(arg(0)), 'u');
+    setNum(new RegExp(arg(1)), 'v');
+    setNum(new RegExp(arg(2)), 'diaThru');
+    setNum(new RegExp(arg(3)), kind === 'cboreHole' ? 'diaCbore' : 'diaCsk');
+    setNum(new RegExp(arg(4)), kind === 'cboreHole' ? 'cboreDepth' : 'cskDepth');
   } else if (kind === 'shell') {
     setNum(new RegExp(`(hollow\\s*\\(\\s*[^,]+,\\s*)(${NUM})`), 'wall');
   } else if (kind === 'draft') {
@@ -1336,9 +1398,25 @@ function rewriteBlock(block, session, draft) {
       }
     }
   } else if (kind === 'array') {
-    setNum(new RegExp(`(array3D\\s*\\(\\s*[^,]+,\\s*\\[\\s*)(${NUM})`), 'nx');
+    // array3D(body, [nx, ny, nz], [sx, sy, sz]): every count and spacing.
+    const counts = `array3D\\s*\\(\\s*[^,]+,\\s*\\[\\s*`;
+    const spacings = `${counts}${NUM}\\s*,\\s*${NUM}\\s*,\\s*${NUM}\\s*\\]\\s*,\\s*\\[\\s*`;
+    setNum(new RegExp(`(${counts})(${NUM})`), 'nx');
+    setNum(new RegExp(`(${counts}${NUM}\\s*,\\s*)(${NUM})`), 'ny');
+    setNum(new RegExp(`(${counts}${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'nz');
+    setNum(new RegExp(`(${spacings})(${NUM})`), 'sx');
+    setNum(new RegExp(`(${spacings}${NUM}\\s*,\\s*)(${NUM})`), 'sy');
+    setNum(new RegExp(`(${spacings}${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'sz');
   } else if (kind === 'polarArray') {
     setNum(new RegExp(`(polarArray\\s*\\(\\s*[^,]+,\\s*)(${NUM})`), 'count');
+    setNum(new RegExp(`(polarArray\\s*\\(\\s*[^,]+,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'boltCircleRadius');
+    // A drilled pattern: the bore cylinder's height and both radii.
+    if (/part\s*=\s*part\.subtract\(/.test(next)) {
+      const cyl = `Manifold\\.cylinder\\s*\\(\\s*`;
+      setNum(new RegExp(`(${cyl})(${NUM})`), 'boreHeight');
+      setNum(new RegExp(`(${cyl}${NUM}\\s*,\\s*)(${NUM})`), 'boreRadius');
+      setNum(new RegExp(`(${cyl}${NUM}\\s*,\\s*${NUM}\\s*,\\s*)(${NUM})`), 'boreRadius');
+    }
   } else if (kind === 'code') {
     const gap = fields.gap != null ? fields.gap : prev.gap;
     const why = fields.why != null ? fields.why : prev.why;
