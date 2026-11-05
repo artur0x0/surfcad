@@ -50,6 +50,7 @@ import {
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { fillAgentHost } from '../agent/host';
 import {
+  allowAgentWorkSurface,
   allowFeaturePopup,
   featurePopupAllowed,
   registerFeaturePopupDismiss,
@@ -4635,9 +4636,10 @@ const Viewport = forwardRef(({
     closeFeatureSlots,
   ]);
 
-  const openFeatureSlots = useCallback((entry, seeded = null) => {
-    if (!allowFeaturePopup()) return;
-    if (!isSolidContourEntry(entry) || mode === 'game') return;
+  const openFeatureSlots = useCallback((entry, seeded = null, { agentSurface = false } = {}) => {
+    // A slot card an agent opens is its work surface (see enterContourMode).
+    if (!(agentSurface ? allowAgentWorkSurface() : allowFeaturePopup())) return false;
+    if (!isSolidContourEntry(entry) || mode === 'game') return false;
     slotReturnRef.current = null;
     if (contourModeRef.current) exitContourMode();
     holdContourOverlays(overlayVis, entry);
@@ -4701,11 +4703,13 @@ const Viewport = forwardRef(({
     exitContourMode(back ? 'slot' : undefined);
   }, [exitContourMode]);
 
-  const enterContourMode = useCallback(({ entry, centresEdit = null, keepSheet = false, sheetSketch = null } = {}) => {
-    if (!allowFeaturePopup()) return;
+  const enterContourMode = useCallback(({ entry, centresEdit = null, keepSheet = false, sheetSketch = null, agentSurface = false } = {}) => {
+    // The agent's sketch is its work surface: a working session does not
+    // hold it (allowAgentWorkSurface). A user tap keeps the popup gate.
+    if (!(agentSurface ? allowAgentWorkSurface() : allowFeaturePopup())) return false;
     if (isSolidContourEntry(entry) && mode !== 'game') {
-      openFeatureSlots(entry);
-      return;
+      openFeatureSlots(entry, null, { agentSurface });
+      return true;
     }
     holdContourOverlays(overlayVis, entry);
     feaCloseRef.current();
@@ -4799,6 +4803,7 @@ const Viewport = forwardRef(({
     // Soft-fail / refuse only — no informational toast on successful feature UI open.
     if (next.enterRefuse) showContourToast(next.enterRefuse);
     applyContourPartGhost(true);
+    return true;
   }, [mode, openFeatureSlots, selectedFace, selectedPlaneId, armedContourId, applyContourPartGhost, clearFilletBlendPreview, clearEdgeHover, clearEdgeHighlight, getHelperBuffer, currentScript]);
 
   const sheetHoleSketch = sheetMetalMode?.holeSketch || null;
@@ -13494,7 +13499,12 @@ const Viewport = forwardRef(({
       onFaceSelected?.(null);
       setSelectedPlaneId(null);
     }
-    enterContourMode({ entry });
+    enterContourMode({ entry, agentSurface: true });
+    if (!contourModeRef.current) {
+      // The sketch did not open (a card the user owns, or a refused entry):
+      // say so instead of answering ok and letting sketch_add find nothing.
+      return { error: { code: 'sketch_blocked', message: 'The sketch did not open; close the card that is up and call sketch_begin again' } };
+    }
     const accept = args.accept_plane !== false;
     const offset = args.offset;
     if (accept || offset != null) {
@@ -13797,7 +13807,10 @@ const Viewport = forwardRef(({
     if (contourModeRef.current) {
       return { error: { code: 'sketch_open', message: 'Close the open sketch before opening a slot card' } };
     }
-    openFeatureSlots(kind);
+    openFeatureSlots(kind, null, { agentSurface: true });
+    if (!featureSlotsRef.current) {
+      return { error: { code: 'slot_blocked', message: 'The feature slot card did not open; close the card that is up and try again' } };
+    }
     return { result: { kind } };
   };
 

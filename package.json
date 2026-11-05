@@ -314,6 +314,7 @@
         "golden:feature-skip-midchain": "node scripts/golden/smoke_feature_skip_midchain.mjs",
         "golden:feature-failed-pool": "node scripts/golden/smoke_feature_failed_pool.mjs",
         "golden:sketch-loop-chips": "node scripts/golden/smoke_sketch_loop_chips.mjs",
+        "golden:agent-sketch-while-working": "node scripts/golden/smoke_agent_sketch_while_working.mjs",
         "golden:rollback-bar": "node scripts/golden/smoke_rollback_bar.mjs",
         "golden:rollback-hit": "node scripts/golden/smoke_rollback_hit.mjs",
         "golden:rollback-insert": "node scripts/golden/smoke_rollback_insert.mjs",
