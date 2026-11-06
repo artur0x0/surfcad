@@ -10,11 +10,16 @@
 #   - cargo-deny
 #   - wasm freshness
 #   - mesh wasm freshness
+#   - step wasm freshness
 #   - calculix reference
 # cargo-deny and wasm freshness run their real checks when
 # packages/surfcad-fea is present. Mesh wasm freshness runs when
-# packages/surfcad-mesh/pkg is present. If those files are absent the jobs
+# packages/surfcad-mesh/pkg is present, and step wasm freshness when
+# packages/surfcad-step/pkg is. If those files are absent the jobs
 # skip and exit 0, because a skipped job would not satisfy a required check.
+# packages/surfcad-step is Open CASCADE Technology (LGPL-2.1), the one
+# copyleft exception in this repository: a separate wasm module for STEP
+# import. See packages/surfcad-step/LICENSES.md.
 # GPL, AGPL, and LGPL fail the Rust license check because they are not in
 # packages/surfcad-fea/deny.toml's allow list. The license job also rejects
 # non-commercial npm licences and fails when public/THIRD_PARTY_NOTICES.txt
@@ -529,6 +534,15 @@ jobs:
           fi
           if ! grep -q 'agent prompt states golden: ok' "${RUNNER_TEMP}/agent-prompt-states.log"; then
             echo "agent prompt states golden did not pass (see log above)"
+            exit 1
+          fi
+          bounded "step upload local" npm run golden:step-upload-local | tee "${RUNNER_TEMP}/step-upload-local.log"
+          if grep -q 'no system Chrome found' "${RUNNER_TEMP}/step-upload-local.log"; then
+            echo "step upload local golden skipped because Chrome was not found; CI must launch it"
+            exit 1
+          fi
+          if ! grep -q 'step upload local: ok' "${RUNNER_TEMP}/step-upload-local.log"; then
+            echo "step upload local golden did not pass (see log above)"
             exit 1
           fi
           bounded "feature failed pool" npm run golden:feature-failed-pool | tee "${RUNNER_TEMP}/feature-failed-pool.log"
@@ -1229,6 +1243,86 @@ jobs:
       - name: Rebuild the committed mesh wasm and fail on drift
         if: steps.mesh.outputs.present == 'true'
         run: node scripts/fea/check-mesh-wasm-fresh.mjs
+
+  # Rebuilds the committed STEP reader wasm (Open CASCADE Technology) with
+  # emsdk 6.0.12 and fails if packages/surfcad-step/pkg differs byte for byte.
+  #
+  # A clean build compiles about 3,400 OCCT sources, so a pass is remembered.
+  # The cache key is the hash of every build input and of the committed
+  # output. A hit means this exact pair was already rebuilt and matched, and
+  # the rebuild is skipped. A change to the build script, the CMake file, the
+  # wrapper, or pkg/ is a different key and rebuilds. The marker is saved only
+  # when the job succeeds.
+  step-wasm-freshness:
+    name: step wasm freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect the committed STEP wasm
+        id: step
+        run: |
+          if [[ -f packages/surfcad-step/pkg/surfcad_step.wasm && -f scripts/step/build-step-wasm.mjs ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "skip: packages/surfcad-step wasm is not in this revision"
+          fi
+
+      - name: Look up an earlier pass for these inputs and this output
+        if: steps.step.outputs.present == 'true'
+        id: verified
+        uses: actions/cache@v4
+        with:
+          path: packages/surfcad-step/.verified
+          key: step-wasm-verified-${{ runner.os }}-${{ hashFiles('scripts/step/build-step-wasm.mjs', 'scripts/step/check-step-wasm-fresh.mjs', 'packages/surfcad-step/CMakeLists.txt', 'packages/surfcad-step/src/api.cpp', 'packages/surfcad-step/pkg/surfcad_step.js', 'packages/surfcad-step/pkg/surfcad_step.wasm') }}
+
+      - name: Report a remembered pass
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit == 'true'
+        run: echo "step wasm freshness ok (these inputs and this output were already rebuilt and matched)"
+
+      - uses: actions/setup-node@v4
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        with:
+          node-version: 22
+
+      - name: Cache emsdk 6.0.12
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-6.0.12-${{ runner.os }}
+
+      - name: Cache the OCCT checkout
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: packages/surfcad-step/.deps/src
+          key: step-occt-${{ runner.os }}-${{ hashFiles('scripts/step/build-step-wasm.mjs') }}
+
+      - name: Install the host build tools
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ python3
+
+      # The build script uses ~/emsdk when it exists, which is the path the
+      # cache step above saves.
+      - name: Fetch emsdk when the cache missed
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        run: |
+          if [[ ! -f "$HOME/emsdk/emsdk.py" ]]; then
+            git clone --depth 1 --branch 6.0.12 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          fi
+
+      - name: Rebuild the committed STEP wasm and fail on drift
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        run: node scripts/step/check-step-wasm-fresh.mjs
+
+      - name: Record the pass
+        if: steps.step.outputs.present == 'true' && steps.verified.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p packages/surfcad-step/.verified
+          date -u +%FT%TZ > packages/surfcad-step/.verified/ok
 
   # External CalculiX reference for solve_tet10 (C3D10) and solve_shell (S6).
   #

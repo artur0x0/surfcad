@@ -2,6 +2,8 @@
 
 `POST /api/convert/step` writes multer uploads and OBJ output under `UPLOAD_FOLDER` (`config.uploadFolder`). The convert route deletes each request's input and output in a `finally` block on success and on error. The systemd timer below is a **safety net** for leftovers when the Node process dies without running that cleanup (kill -9, OOM, host crash).
 
+The app no longer calls this route: since the STEP reader moved into the browser (`packages/surfcad-step`), a STEP file is converted on the user's device and is not uploaded. The route stays mounted, behind a session, for direct API callers, so the cleanup and the guards below still apply to it.
+
 **Status:** timer units are in the repo; they are **not enabled on prod** until Artur runs the steps below.
 
 ## Guards (read before enabling)

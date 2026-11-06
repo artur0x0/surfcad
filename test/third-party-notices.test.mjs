@@ -34,3 +34,29 @@ test('jszip is elected under MIT', () => {
   assert.match(notices, /Shipped under: MIT \(elected\)/);
   assert.doesNotMatch(notices, /GNU GENERAL PUBLIC LICENSE/);
 });
+
+test('the STEP reader notice names OCCT, the LGPL, the exception, and where the source is', () => {
+  assert.match(notices, /This software makes use of Open CASCADE Technology/);
+  assert.match(notices, /https:\/\/github\.com\/Open-Cascade-SAS\/OCCT/);
+  assert.match(notices, /Pinned tag: V8_0_1/);
+  assert.match(notices, /b8f597c677811d1f9f4d8a97f5ae2825c0353a42/);
+  assert.match(notices, /GNU LESSER GENERAL PUBLIC LICENSE\s+Version 2\.1, February 1999/);
+  assert.match(notices, /Open CASCADE exception \(version 1\.0\) to GNU LGPL version 2\.1/);
+  assert.match(notices, /packages\/surfcad-step\/src\/api\.cpp/);
+  assert.match(notices, /packages\/surfcad-step\/CMakeLists\.txt/);
+  assert.match(notices, /scripts\/step\/build-step-wasm\.mjs/);
+  assert.match(notices, /Using a modified build/);
+  assert.match(notices, /Compiled without modification/);
+  // Third-party code that ships inside OCCT keeps its own notice.
+  assert.match(notices, /DELABELLA - Delaunay triangulation library/);
+  assert.match(notices, /The author of this software is David M\. Gay/);
+  assert.match(notices, /Copyright \(c\) 2001-2004 Unicode, Inc\./);
+  assert.match(notices, /Copyright \(c\) 1993 The Regents of the University of California/);
+  assert.match(notices, /As a special exception, you may create a larger work that contains/);
+});
+
+test('the notice pin is the pin the STEP build script fetches', async () => {
+  const { OCCT_PIN } = await import('../scripts/step/build-step-wasm.mjs');
+  assert.ok(notices.includes(`Pinned commit: ${OCCT_PIN.commit}`));
+  assert.ok(notices.includes(`Pin: ${OCCT_PIN.tag} (${OCCT_PIN.commit})`));
+});

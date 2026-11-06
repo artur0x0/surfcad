@@ -30,6 +30,7 @@ import { failedPartIdsFor } from './utils/failedPartOutline';
 import { bodyCountOfWorkerMesh } from './utils/meshBodyComponents';
 import ErrorPopup from './components/ErrorPopup';
 import GitBehindToast from './components/GitBehindToast';
+import StepImportToast from './components/StepImportToast';
 import AssemblyOpenSpinner, { AssemblyOpenFailureToast } from './components/AssemblyOpenSpinner';
 import { landingMobileStage, linkedMobileStage } from './utils/mobileStage';
 import {
@@ -53,10 +54,7 @@ import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
 import { track, trackFeatureCommits, trackPaletteFeature } from './utils/analytics';
-import { 
-  importFile,
-  isBackendFormat,
-} from './utils/importModel';
+import { importFile, isStepFormat } from './utils/importModel';
 import {
   downloadMeshExport,
   downloadModelFromMesh,
@@ -1156,6 +1154,8 @@ const App = () => {
   cartCheckoutRef.current = cartCheckout;
   const onCartCheckoutRef = useRef(() => {});
   const [isUploading, setIsUploading] = useState(false);
+  // True while a STEP file converts in the browser. Drives the Importing toast.
+  const [stepImporting, setStepImporting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadNotice, setUploadNotice] = useState(null);
@@ -1536,7 +1536,9 @@ const App = () => {
       },
       // Push a reference from raw meshData delivered as a JSON string (keeps the CDP
       // expression a single scalar): { numProp, vertProperties:[...], triVerts:[...] }.
-      // Used by the STEP channel: backend /api/convert/step (OCCT) -> meshData -> worker.
+      // Used by the external harness's STEP channel: the harness converts the reference
+      // itself and pushes the meshData here. The app's own STEP import runs in the browser
+      // (src/step/stepClient.js) and never calls the server.
       async stageReferenceLoadMesh(filename, meshDataJson, tolerance, timeoutMs = 180000) {
         const ctx = window.__MANIFOLD_CONTEXT__;
         if (!ctx || !ctx.isReady) return { ok: false, error: 'manifold context not ready' };
@@ -10160,12 +10162,9 @@ const App = () => {
 
   // Upload creates a new part. It never overwrites the script that is open.
   // The mesh stays in the local asset cache. This does not commit to the vault.
+  // Every format, STEP included, is converted on this device; no file is uploaded.
   const handleImport = async (file) => {
     if (!file) return;
-    if (isBackendFormat(file.name) && !isAuthenticated) {
-      setUploadError('Sign in to import STEP');
-      return;
-    }
     if (!manifoldReady) {
       setUploadError('Manifold not ready. Please wait...');
       return;
@@ -10177,6 +10176,7 @@ const App = () => {
     }
 
     setIsUploading(true);
+    setStepImporting(isStepFormat(file.name));
     setUploadError(null);
     setUploadNotice(null);
 
@@ -10305,6 +10305,7 @@ const App = () => {
       setUploadError(error.message || 'Failed to import file');
     } finally {
       setIsUploading(false);
+      setStepImporting(false);
     }
   };
 
@@ -13260,6 +13261,7 @@ const App = () => {
               </ErrorPopup>
             </div>
           )}
+          {stepImporting && !uploadError && <StepImportToast />}
           {uploadError && (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-upload-toast="" data-upload-toast-kind="error">
               <ErrorPopup
@@ -13623,6 +13625,7 @@ const App = () => {
               </ErrorPopup>
             </div>
           )}
+        {stepImporting && !uploadError && <StepImportToast />}
         {uploadError && (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-upload-toast="" data-upload-toast-kind="error">
               <ErrorPopup

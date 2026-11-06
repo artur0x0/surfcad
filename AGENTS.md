@@ -12,6 +12,7 @@ Where it links to a doc, follow that doc. Do not copy its content here.
 - Manifold CAD script helpers: [docs/helper-functions.md](docs/helper-functions.md).
   - Fillet/chamfer/blend code: load [.claude/skills/fillets/SKILL.md](.claude/skills/fillets/SKILL.md) first.
 - Kernel and goldens contract: [docs/validation.md](docs/validation.md).
+- STEP import (Open CASCADE wasm) and its licence terms: [packages/surfcad-step/README.md](packages/surfcad-step/README.md), [packages/surfcad-step/LICENSES.md](packages/surfcad-step/LICENSES.md). Read both before touching `packages/surfcad-step` or `src/step`.
 - Git vault on-disk format: [docs/vault-schema.md](docs/vault-schema.md).
 - Git save lessons learned: [docs/git-integration.md](docs/git-integration.md). Read it before changing the git save path.
 - Agent catalog and `window.surfcad` bridge: [docs/agent-export.md](docs/agent-export.md).
@@ -35,7 +36,7 @@ npm run preview             # vite preview
 - Never ship a `build:playtest` bundle to production. CI checks that the production bundle has no playtest auto-approve.
 - The playtest MCP demo is `npm run build:playtest && npm run demo:mcp` (`VITE_SURFCAD_PLAYTEST=1` only). Production `npm run build` never ships the auto-approve path. CI smoke builds the playtest bundle before goldens.
 - After you add a helper, change a helper signature or docs, change the Manifold types, or change a bridge command, run `npm run export:agent` and commit the regenerated `src/agent/commands.json` and `src/lib/surfcad/catalog/`.
-- The FEA and mesh wasm are committed (`packages/surfcad-fea/pkg`, `packages/surfcad-mesh/pkg`). If you change their sources, rebuild with `npm run fea:build` / `npm run fea:mesh`. CI fails on drift.
+- The FEA, mesh, and STEP wasm are committed (`packages/surfcad-fea/pkg`, `packages/surfcad-mesh/pkg`, `packages/surfcad-step/pkg`). If you change their sources, rebuild with `npm run fea:build` / `npm run fea:mesh` / `npm run step:build`. CI fails on drift.
 
 ## Test locally before you open a PR
 
@@ -63,7 +64,7 @@ npm run golden:<name>                # in-repo smokes, scripts/golden/; see docs
 | Agent bridge FEA golden | playtest build + FEA bridge golden |
 | license | no copyleft or non-commercial npm deps; `public/THIRD_PARTY_NOTICES.txt` up to date |
 | cargo-deny | Rust licence allow-list for `packages/surfcad-fea` (GPL is rejected) |
-| wasm freshness / mesh wasm freshness | committed wasm matches a fresh rebuild |
+| wasm freshness / mesh wasm freshness / step wasm freshness | committed wasm matches a fresh rebuild. The STEP job skips the rebuild when the same inputs and output already passed |
 | calculix reference | solver compared against an apt-installed `ccx` (external process only) |
 
 GitHub does not enforce these as required checks, so read every job's result yourself. `playtest-nightly.yml` is a nightly scripted playtest and does not gate merges. The Safari popup pairing golden (`npm run golden:agent-bridge-safari-popup`, Playwright WebKit) is no longer a CI job; run it by hand when touching the loopback popup bridge.
@@ -83,7 +84,9 @@ GitHub does not enforce these as required checks, so read every job's result you
 - **npm publishes go through Trusted Publishing (OIDC) only.** Never add `NPM_TOKEN`, an `.npmrc` auth token, or a publish step that uses one.
 - **Production never sends `Cross-Origin-Opener-Policy: same-origin`.** It cuts off the Safari loopback bridge popup. If COOP is ever needed, use `same-origin-allow-popups`. This covers nginx (`docs/nginx-snippets/surfcad-security.conf`, `docs/nginx-surfcad.com.conf`) and backend `helmet` (`backend/serverApp.js`). Details: [docs/ops/nginx-headers.md](docs/ops/nginx-headers.md).
 - Do not add GPL/AGPL/LGPL or non-commercial dependencies. Never vendor, link, or bundle CalculiX.
-- Uploaded STEP files are deleted right after conversion (`backend/routes/convert.js`, in `finally`). The prune timer (`deploy/systemd/`, [docs/ops/upload-prune.md](docs/ops/upload-prune.md)) exists only to catch leftovers from crashes, and it is not installed on prod yet. Never rely on it for cleanup, and do not loosen its guards.
+  - **One exception, granted by Artur on 2026-11-06:** Open CASCADE Technology (LGPL-2.1 with the Open CASCADE exception) in `packages/surfcad-step`, as a separate wasm module for STEP import. It covers that module only. Do not add an OCCT npm package, link OCCT into another wasm or into the JS bundle, or put application code into `packages/surfcad-step/src/api.cpp`. The terms and what the build enforces are in [packages/surfcad-step/LICENSES.md](packages/surfcad-step/LICENSES.md).
+- **STEP files stay on the device.** The app converts STEP in the browser (`src/step`, `packages/surfcad-step`). It does not upload the file and has no server fallback. Do not add one, and do not call `/api/convert` from `src/`. `test/step-import-local.test.js` and `npm run golden:step-upload-local` pin this.
+- The server STEP converter (`backend/routes/convert.js`) is kept but the app no longer calls it. A file uploaded to it is deleted right after conversion (in `finally`). The prune timer (`deploy/systemd/`, [docs/ops/upload-prune.md](docs/ops/upload-prune.md)) exists only to catch leftovers from crashes, and it is not installed on prod yet. Never rely on it for cleanup, and do not loosen its guards.
 
 ## Monitoring
 

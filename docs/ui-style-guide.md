@@ -469,6 +469,10 @@ Errors use this same glass card. They are not a blue rounded pill.
   Padding comes from the Toasts section, not from the call site.
 - Soft-fail toasts are portaled at `fixed top-16 left-1/2 z-50` so they sit
   above the feature strip and the left rail.
+- The STEP Importing toast (`StepImportToast.jsx`) is the stacked card in the
+  `cyan` tone: a spinner and `Importing…` on the first row, one sentence and
+  the open-source notices link below. It has no dismiss control and leaves
+  when the import settles.
 - The execution-error toast is one card for every message: `fixed top-16
   inset-x-3 z-50` (most of the viewport width, the same card on desktop). It
   does not shrink to the text. The first line is the word `Error`, and the

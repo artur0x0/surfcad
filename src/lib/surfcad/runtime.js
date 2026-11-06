@@ -13127,9 +13127,9 @@ const checkMemoryUsage = (limitMB) => {
 // runs HERE, in the worker, against that build. The harness's npm manifold-3d
 // copy stays a cross-check, never the arbiter.
 //
-// Reference channel: STEP has no browser import path (backend obj_converter is
-// a x86_64 ELF and firejail is absent on this box), so references are pushed as
-// OBJ. importOBJ uses this same ladder (strict, then weld) so an STL
+// Reference channel: the harness converts its STEP references itself and
+// pushes them as OBJ (or as mesh arrays). importOBJ and importMeshData (the
+// app's own STEP import) use this same ladder (strict, then weld) so a
 // triangle soup can become a solid. Mesh.merge() is not used: that repair
 // crashes on unwelded input.
 // ============================================================================
@@ -13814,7 +13814,37 @@ self.onmessage = async (event) => {
         });
         break;
       }
-      
+
+      // Import raw triangle arrays and create a Manifold. The STEP reader
+      // (src/step/stepMesh.js) returns one soup with no vertices shared
+      // between faces, so this runs the same ladder as importOBJ without the
+      // OBJ text round trip. `tolerance` is the weld grid in millimetres.
+      case 'importMeshData': {
+        if (!isInitialized) {
+          throw new Error('Worker not initialized');
+        }
+        const { vertProperties, triVerts, filename, tolerance } = payload;
+        if (!vertProperties?.length || !triVerts?.length) {
+          throw new Error('Mesh contains no geometry');
+        }
+        let manifold;
+        try {
+          manifold = _meshDataToManifold(vertProperties, triVerts, tolerance > 0 ? tolerance : 0.0001).manifold;
+        } catch {
+          throw new Error('Invalid mesh. The mesh may not be watertight.');
+        }
+        _replaceCachedManifold(manifold);
+        cachedExecuteNonce = null;
+        const bbox = manifold.boundingBox();
+        _postWorkerResult(self, id, {
+          mesh: serializeResult(manifold),
+          volume: manifold.volume(),
+          boundingBox: { min: [...bbox.min], max: [...bbox.max] },
+          filename,
+        });
+        break;
+      }
+
       // ── Stage verification protocol (dev tooling; see _stageVerify above) ──
 
       // Push a reference solid into the worker-side registry.

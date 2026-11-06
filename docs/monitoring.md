@@ -82,7 +82,7 @@ We append an event and bump `lastLoginAt` / `loginCount` only when Passport esta
 
 The admin report’s `activeUsers` total is distinct `login_events.userId` values in the requested window. Daily `series.activeUsers` is distinct users who logged in that UTC day. This is not a live socket count.
 
-Assemblies and parts live in GitHub, and STEP conversions are files on disk — they are not Mongo collections, so they are omitted.
+Assemblies and parts live in GitHub, and STEP conversions run in the browser — they are not Mongo collections, so they are omitted.
 
 Quotes older than seven days may already have been TTL-deleted; the report counts whatever is still in `quotes`.
 

@@ -73,6 +73,12 @@ packages/surfcad-mesh/build-native/
 packages/surfcad-mesh/build-wasm/
 packages/surfcad-mesh/pkg-rebuild/
 
+# STEP reader: committed wasm is packages/surfcad-step/pkg. Deps and build trees are not.
+packages/surfcad-step/.deps/
+packages/surfcad-step/build-wasm/
+packages/surfcad-step/pkg-rebuild/
+packages/surfcad-step/.verified/
+
 # Puzzle win capture (Slice 04)
 backend/data/wins.jsonl
 

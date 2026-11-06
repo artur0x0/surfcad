@@ -77,6 +77,10 @@ The full CI matrix is in [AGENTS.md](AGENTS.md#what-ci-runs).
 
 The solver crate is `packages/surfcad-fea` (Apache-2.0). CalculiX is GPL-2.0-only and is not part of the build. CI may install the `ccx` binary with apt and compare displacements and von Mises against it. That binary is never vendored, linked, bundled, or committed, and it is never a Cargo dependency. The license gate and `cargo deny` stay closed to GPL. Details are in [packages/surfcad-fea/README.md](packages/surfcad-fea/README.md). The volume mesher is [packages/surfcad-mesh](packages/surfcad-mesh/README.md).
 
+## STEP import
+
+A STEP file is converted in the browser and is never uploaded. The reader is Open CASCADE Technology compiled to WebAssembly: [packages/surfcad-step](packages/surfcad-step/README.md). OCCT is LGPL-2.1 with the Open CASCADE exception. It is the one copyleft exception in this repository and it stays inside that separate wasm module; the terms are in [packages/surfcad-step/LICENSES.md](packages/surfcad-step/LICENSES.md). The server converter (`backend/routes/convert.js`) is still in the tree, and the app does not call it.
+
 ## Goldens
 
 `npm run verify` runs the external harness at `${CADGEN_HARNESS:-/home/artur/cadgen-workspace}/harness/verify_all.mjs`. It is not in this repo and not in CI. The contract is [docs/validation.md](docs/validation.md). Two pilot parts are known exclusions and report `fail(expected)`: `9771f32b` (a script that wedges the worker) and `f6f416e1` (no transpiled script).
