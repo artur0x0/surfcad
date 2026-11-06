@@ -252,6 +252,10 @@ export default function AgentBridgePairing({
       link: linkVisibleRef.current,
     });
     forgetAgentChatSession();
+    // Disconnect ends that agent's login, not only this window's socket:
+    // the server revokes the agent that last worked here and it has to pair
+    // again. Sent before the socket closes. The local relay has no login.
+    connRef.current?.revokeAgent?.();
     // This window is no longer where the agent works: a reload must not
     // take the role back from another window.
     claimWindowRef.current = false;

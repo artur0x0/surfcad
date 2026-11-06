@@ -102,7 +102,7 @@ export function createMemoryTabRegistry(opts = {}) {
   const presence = new Map();
 
   /**
-   * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number }} TabRecord
+   * @typedef {{ tabId: string, userId: string, send: (frame: object) => void, lastActiveAt: number, seq: number, agentTokenId: string | null }} TabRecord
    * @typedef {{
    *   userId: string,
    *   tokenId: string,
@@ -268,7 +268,7 @@ export function createMemoryTabRegistry(opts = {}) {
    * @param {'tabs' | 'agents'} side
    * @returns {number} sockets that accepted the frame
    */
-  function forward(userId, frame, side) {
+  function forward(userId, frame, side, tokenId = null) {
     if (side === 'tabs') {
       // One tab, never a broadcast: the tab waiting on this prompt id, else
       // the agent window. Presence is the only frame every tab hears.
@@ -276,6 +276,7 @@ export function createMemoryTabRegistry(opts = {}) {
       if (!tab) return 0;
       try {
         tab.send(frame);
+        if (tokenId) tab.agentTokenId = String(tokenId);
         return 1;
       } catch {
         return 0;
@@ -498,6 +499,8 @@ export function createMemoryTabRegistry(opts = {}) {
           command: item.frame.command,
           args: item.frame.args,
         }));
+        // The agent that last worked in this window: Disconnect revokes it.
+        if (item.tokenId) tab.agentTokenId = item.tokenId;
       } catch {
         item.sentTo = null;
       }
@@ -534,6 +537,8 @@ export function createMemoryTabRegistry(opts = {}) {
         send: tab.send,
         lastActiveAt: clock.now(),
         seq,
+        // A reload registers the same tab id again: it is still the window that agent worked in.
+        agentTokenId: (replacing && existing?.tabs.get(tab.tabId)?.agentTokenId) || null,
       });
       deliver(userId);
       return true;
@@ -1038,10 +1043,25 @@ export function createMemoryTabRegistry(opts = {}) {
      * agent window. Other windows of the account stay quiet.
      * @param {string} userId
      * @param {object} frame
+     * @param {string | null} [tokenId] the agent's token, when the frame comes from one
      * @returns {number} 1 when a tab took the frame, else 0
      */
-    forwardToTabs(userId, frame) {
-      return forward(userId, frame, 'tabs');
+    forwardToTabs(userId, frame, tokenId = null) {
+      return forward(userId, frame, 'tabs', tokenId);
+    },
+
+    /**
+     * The token of the agent that last worked in a window: the last one
+     * whose command, status, progress or reply this tab took. Null when no
+     * agent has worked there since it registered. The user's Disconnect in
+     * that window revokes this one login and no other.
+     * @param {string} userId
+     * @param {string} tabId
+     * @returns {string | null}
+     */
+    agentTokenForTab(userId, tabId) {
+      const tab = users.get(String(userId))?.tabs.get(String(tabId));
+      return tab?.agentTokenId || null;
     },
 
     /**

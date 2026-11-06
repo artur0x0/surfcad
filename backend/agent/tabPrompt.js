@@ -8,6 +8,16 @@ export const TAB_CLAIMED = 'tab.claimed';
 export const TAB_CLAIM_MAX = 64;
 
 /**
+ * Tab → server: the user chose Disconnect in this window. The server revokes
+ * the login of the agent that last worked here, so that agent needs a new
+ * pairing. A socket that merely drops (sleep, reload, network) sends nothing
+ * and revokes nothing.
+ */
+export const TAB_DISCONNECT = 'tab.disconnect';
+/** Server → tab: `{ revoked }`, true when an agent login was revoked. */
+export const TAB_DISCONNECTED = 'tab.disconnected';
+
+/**
  * Tab → agent prompt frames on the server relay.
  *
  * A live agent socket gets a prompt immediately. While the agent is present

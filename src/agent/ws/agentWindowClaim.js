@@ -17,6 +17,12 @@
 export const AGENT_WINDOW_CLAIM_KEY = 'surfcad.agent.window';
 export const TAB_CLAIM = 'tab.claim';
 export const TAB_CLAIMED = 'tab.claimed';
+/**
+ * Tab → server: the user chose Disconnect in this window. The server revokes
+ * the login of the agent that last worked here; that agent needs a new
+ * pairing. A socket that only drops (sleep, reload, network) sends nothing.
+ */
+export const TAB_DISCONNECT = 'tab.disconnect';
 const CLAIM_MAX = 64;
 
 /**

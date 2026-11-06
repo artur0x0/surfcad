@@ -391,8 +391,11 @@ Desktop specifics:
   **Account** (`data-profile-account`, user icon), **Admin** (`data-profile-admin`,
   only when `/api/auth/me` has `isAdmin`), **Sign out**, then **Privacy choices**
   (`data-profile-privacy-choices`, same Accept all / Required only popup as
-  first visit). **Disconnect** (`data-agent-bridge-disconnect`, unplug icon) is the local
-  agent relay and appears only while an agent is paired or connected — not
+  first visit). **Disconnect** (`data-agent-bridge-disconnect`, unplug icon) is the
+  agent relay and appears only while an agent is paired or connected. On the server
+  relay it also ends that agent's login (`tab.disconnect`): the agent that last worked
+  in this window must pair again. A reload, a sleeping tab or a dropped socket does
+  not. It is not
   GitHub write-grant (that stays the sr-only Parts **Disconnect GitHub**
   control). **Account** opens a scrollable pane (`data-profile-account-pane`,
   VaultPickerDialog `account`) with read-only user info, **Privacy choices**,

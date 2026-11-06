@@ -660,7 +660,7 @@ export function createAgentRouter(deps) {
         return res.status(401).json({ error: 'Authentication required' });
       }
       if (type === 'agent.progress') {
-        deps.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true });
+        deps.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true }, auth.id);
         await deps.tokens.markUsed(auth);
         logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
         return res.status(202).json({ ok: true });
@@ -678,7 +678,7 @@ export function createAgentRouter(deps) {
           return res.status(429).json({ error: 'rate_limited' });
         }
       }
-      deps.registry.forwardToTabs(auth.userId, req.body);
+      deps.registry.forwardToTabs(auth.userId, req.body, auth.id);
       await deps.tokens.markUsed(auth);
       logRelay({ event: 'prompt', userId: auth.userId, type, bytes });
       return res.status(202).json({ ok: true });

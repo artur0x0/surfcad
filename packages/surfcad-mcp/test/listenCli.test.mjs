@@ -221,3 +221,36 @@ test('the install steps name login, wake set with both forms, wake test and list
   assert.match(WAKE_SETUP_STEPS[2], /^npx surfcad-mcp wake test/);
   assert.match(WAKE_SETUP_STEPS[3], /^npx surfcad-mcp listen --detach/);
 });
+
+test('Disconnect in SurfCAD: the listener stops, forgets the login, and a restart asks for a new one', async () => {
+  const { readSavedLogin } = await import('../src/remote/tokenStore.mjs');
+  const env = await tempEnv();
+  await login(env);
+  await runCli(['wake', 'set', '--post', 'http://127.0.0.1:8644/wake'], { env, io: capture().io });
+  const wakes = [];
+  let polls = 0;
+  const fetchDouble = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/wake') { wakes.push(1); return new Response('{}', { status: 200 }); }
+    polls += 1;
+    // What the relay answers once the token is revoked.
+    return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401 });
+  };
+  const c = capture();
+  const outcome = await runCli(['listen'], { env, io: c.io, fetch: fetchDouble, onSignals() {} });
+  assert.deepEqual(outcome, { action: 'exit', code: 2 });
+  assert.equal(polls, 1, 'one refused poll, no retry loop');
+  assert.equal(wakes.length, 0, 'no wake storm');
+  assert.match(c.out.stderr, /no longer valid; run npx surfcad-mcp login/);
+  assert.equal(await readSavedLogin(env), null, 'the dead login is gone from this machine');
+  assert.equal(await readListenerPid(env), null);
+  // Restarting does not spin on the old token: it asks for a login.
+  const again = capture();
+  const second = await runCli(['listen'], { env, io: again.io, fetch: fetchDouble, onSignals() {} });
+  assert.equal(second.code, 1);
+  assert.match(again.out.stderr, /No saved login\. Run npx surfcad-mcp login first/);
+  assert.equal(polls, 1);
+  const status = capture();
+  await runCli(['status'], { env, io: status.io });
+  assert.match(status.out.stdout, /not logged in/);
+});

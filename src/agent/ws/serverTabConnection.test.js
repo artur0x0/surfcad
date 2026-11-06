@@ -231,3 +231,29 @@ test('a refused resume forgets the claim; Disconnect releases it; neither reache
   assert.deepEqual(claims(again), [], 'after Disconnect the window does not take the agent back');
   conn.disconnect();
 });
+
+test('Disconnect: revokeAgent sends tab.disconnect once the tab is registered, and only then', () => {
+  const factory = fakeSocketFactory();
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true, result: { ok: true } }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+    claimStore: { read: () => null, write() {}, clear() {} },
+  });
+  // No socket yet: nothing to tell.
+  assert.equal(conn.revokeAgent(), false);
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  // Open but not registered: the server does not know this tab yet.
+  assert.equal(conn.revokeAgent(), false);
+  socket.fire('message', { data: JSON.stringify({ type: 'registered', v: 1, tabId: 't1', agentConnected: true }) });
+  assert.equal(conn.revokeAgent(), true);
+  assert.deepEqual(socket.sent.at(-1), { type: 'tab.disconnect', v: 1 });
+  // The frame is queued before the close: Disconnect calls revokeAgent, then disconnect.
+  conn.disconnect();
+  assert.equal(conn.revokeAgent(), false, 'nothing is sent on a closed connection');
+  // A reconnect, a reload or a sleeping tab never sends it by itself.
+  assert.equal(socket.sent.filter((frame) => frame.type === 'tab.disconnect').length, 1);
+});

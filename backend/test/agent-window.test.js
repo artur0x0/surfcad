@@ -314,3 +314,138 @@ describe('agent window (websocket)', () => {
     b.ws.close();
   });
 });
+
+/**
+ * Disconnect. Brief mcp-pairing-wake-bootstrap 2026-11-06 §5: the user's
+ * Disconnect ends the agent's login, not only this window's socket. The
+ * agent it ends is the one that last worked in the window that sent it.
+ */
+describe('Disconnect revokes the agent that last worked in the window', () => {
+  test('registry: a window remembers the agent whose command or frame it last took, through a reload', () => {
+    const { registry } = setup();
+    registry.registerAgent({ userId: 'u', agentId: 'ag', send() {} });
+    registry.claimAgentWindow('u', 'A');
+    assert.equal(registry.agentTokenForTab('u', 'A'), null, 'nobody has worked here yet');
+    registry.submit({ userId: 'u', tokenId: 'tok-1', frame: { id: 'c1', command: 'status' } });
+    assert.equal(registry.agentTokenForTab('u', 'A'), 'tok-1');
+    assert.equal(registry.agentTokenForTab('u', 'B'), null, 'the other window is not where it worked');
+    // Another agent of the account replies in the same window: it is now the last.
+    registry.forwardToTabs('u', { type: 'agent.status', v: 1, working: true, state: 'working' }, 'tok-2');
+    assert.equal(registry.agentTokenForTab('u', 'A'), 'tok-2');
+    // A frame with no token (an older caller) changes nothing.
+    registry.forwardToTabs('u', { type: 'agent.progress', v: 1, working: true });
+    assert.equal(registry.agentTokenForTab('u', 'A'), 'tok-2');
+    // The same tab id registers again (a reload): still that agent's window.
+    registry.registerTab({ userId: 'u', tabId: 'A', send() {} });
+    assert.equal(registry.agentTokenForTab('u', 'A'), 'tok-2');
+    assert.equal(registry.agentTokenForTab('u', 'nope'), null);
+    assert.equal(registry.agentTokenForTab('other', 'A'), null);
+  });
+
+  test('Disconnect in a window: that agent is rejected at once and needs a new login; another agent of the account keeps working', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const one = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const two = await relay.tokens.issue({ userId: 'user-a', label: 'desktop' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const http401 = async (token) => (await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0&session=probe00000001`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })).status;
+    const tabHeaders = { origin: 'https://surfcad.com', 'x-test-user': 'user-a' };
+
+    const a = connect(url, tabHeaders);
+    await a.opened;
+    await a.waitFor((m) => m.type === 'registered', 'A registered');
+    a.send({ type: 'tab.claim', v: 1 });
+    await a.waitFor((m) => m.type === 'tab.claimed', 'A claimed');
+
+    const agentOne = connect(url, { authorization: `Bearer ${one.token}` });
+    await agentOne.opened;
+    agentOne.send({ type: 'hello', v: 1 });
+    await agentOne.waitFor((m) => m.type === 'hello', 'agent one hello');
+    const closedOne = new Promise((resolve) => agentOne.ws.once('close', (code, reason) => resolve({ code, reason: reason.toString() })));
+
+    // Agent one works in window A.
+    agentOne.send({ id: 'c1', command: 'status', args: {} });
+    const command = await a.waitFor((m) => m.command === 'status', 'the command in A');
+    a.send({ id: command.id, ok: true, result: { ok: true } });
+    await agentOne.waitFor((m) => m.id === 'c1', 'the result at the agent');
+    assert.equal(await http401(one.token), 200);
+    assert.equal(await http401(two.token), 200);
+
+    // The user chooses Disconnect in A.
+    a.send({ type: 'tab.disconnect', v: 1 });
+    const answer = await a.waitFor((m) => m.type === 'tab.disconnected', 'the disconnect answer');
+    assert.equal(answer.revoked, true);
+    // Its socket is closed with the revoke code, and the token no longer authenticates.
+    const closed = await closedOne;
+    assert.equal(closed.code, 4001);
+    assert.equal(closed.reason, 'token revoked');
+    assert.equal(await http401(one.token), 401, 'the old token cannot read messages');
+    const again = connect(url, { authorization: `Bearer ${one.token}` });
+    await assert.rejects(again.opened, 'the old token cannot open a socket');
+    const posted = await fetch(`http://127.0.0.1:${port}/agent/commands`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${one.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'c2', command: 'status', args: {} }),
+    });
+    assert.equal(posted.status, 401, 'the old token cannot send a command');
+    // The account's other agent login is untouched.
+    assert.equal(await http401(two.token), 200);
+    const listed = await relay.tokens.list('user-a');
+    assert.deepEqual(
+      listed.map((t) => [t.label, t.revokedAt != null]).sort(),
+      [['desktop', false], ['laptop', true]],
+      'one login revoked, the other live',
+    );
+
+    // A second Disconnect in the same window has nobody left to revoke.
+    const seen = a.seen.length;
+    a.send({ type: 'tab.disconnect', v: 1 });
+    await a.waitFor(() => a.seen.slice(seen).some((m) => m.type === 'tab.disconnected'), 'second answer');
+    assert.equal(a.seen.slice(seen).find((m) => m.type === 'tab.disconnected').revoked, false);
+    a.ws.close();
+  });
+
+  test('a window where no agent worked revokes nobody; a socket that only drops revokes nobody', async () => {
+    const relay = createAgentRelay();
+    const port = await listen(relay);
+    const issued = await relay.tokens.issue({ userId: 'user-a', label: 'laptop' });
+    const url = `ws://127.0.0.1:${port}/agent`;
+    const alive = async () => (await fetch(`http://127.0.0.1:${port}/agent/prompts?timeout=0&session=probe00000002`, {
+      headers: { Authorization: `Bearer ${issued.token}` },
+    })).status;
+    const tabHeaders = { origin: 'https://surfcad.com', 'x-test-user': 'user-a' };
+
+    const a = connect(url, tabHeaders);
+    await a.opened;
+    await a.waitFor((m) => m.type === 'registered', 'A registered');
+    a.send({ type: 'tab.claim', v: 1 });
+    await a.waitFor((m) => m.type === 'tab.claimed', 'A claimed');
+    const b = connect(url, tabHeaders);
+    await b.opened;
+    await b.waitFor((m) => m.type === 'registered', 'B registered');
+
+    const agent = connect(url, { authorization: `Bearer ${issued.token}` });
+    await agent.opened;
+    agent.send({ type: 'hello', v: 1 });
+    await agent.waitFor((m) => m.type === 'hello', 'agent hello');
+    agent.send({ type: 'agent.status', v: 1, working: true, state: 'working' });
+    await a.waitFor((m) => m.type === 'agent.status', 'status on A');
+
+    // Disconnect in B, where the agent never worked.
+    b.send({ type: 'tab.disconnect', v: 1 });
+    const answer = await b.waitFor((m) => m.type === 'tab.disconnected', 'B answer');
+    assert.equal(answer.revoked, false);
+    assert.equal(await alive(), 200);
+    assert.equal(agent.ws.readyState, WebSocket.OPEN);
+
+    // Window A sleeps, reloads or loses its network: the socket closes with no Disconnect.
+    a.ws.close();
+    await settle();
+    assert.equal(await alive(), 200, 'a dropped tab is not a Disconnect');
+    assert.equal(agent.ws.readyState, WebSocket.OPEN);
+    agent.ws.close();
+    b.ws.close();
+  });
+});

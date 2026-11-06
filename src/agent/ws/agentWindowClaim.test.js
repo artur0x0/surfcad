@@ -76,3 +76,17 @@ test('the tab and the server agree on the frame names, and the claim is per tab 
   assert.match(pairing, /if \(claimWindowRef\.current\) conn\.claim\(\);/);
   assert.match(pairing, /claimWindowRef\.current = false;\s*connRef\.current\?\.release\?\.\(\);/);
 });
+
+test('the Disconnect menu handler revokes the agent before it releases and closes; no other path does', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../../components/AgentBridgePairing.jsx', import.meta.url), 'utf8');
+  const start = src.indexOf('const disconnectFromUser = useCallback(');
+  assert.ok(start > 0);
+  const body = src.slice(start, src.indexOf('}, [disconnectPairing]);', start));
+  const revoke = body.indexOf('connRef.current?.revokeAgent?.()');
+  const release = body.indexOf('connRef.current?.release?.()');
+  const close = body.indexOf('disconnectPairing()');
+  assert.ok(revoke > 0 && release > revoke && close > release, 'revoke, then release, then close');
+  // Only the user's Disconnect revokes: reconnects, errors and unmounts do not.
+  assert.equal(src.split('revokeAgent').length - 1, 1);
+});

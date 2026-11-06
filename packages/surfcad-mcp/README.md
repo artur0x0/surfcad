@@ -240,6 +240,12 @@ Bridge refusals (`consent_pending`, `real_repo_blocked`, `confirm_required`, `no
 
 If the SurfCAD tab or the relay goes away mid-session, tool calls return `pairing_lost` right away (with a `hint`) instead of waiting for the MCP client timeout. The server keeps re-pairing in the background with the same code. The tab reconnects by itself, so calls start working again once SurfCAD is back in Chrome, with no new code and no reload. A call made while you still need to click Allow returns `pair_pending`. The relay pings every socket every 5 s (`SURFCAD_AGENT_BRIDGE_HEARTBEAT_MS`) and logs each drop on stderr with a timestamp and reason. Pairing codes are redacted in the log. Set `SURFCAD_AGENT_BRIDGE_WS_VERBOSE=1` to also log routine pairing events.
 
+## Disconnect
+
+When the user chooses **Disconnect** in SurfCAD (server relay), the server revokes the login of the agent that last worked in that window. From then on every call with that token answers `token_revoked`. The MCP server deletes the saved login and unregisters any webhook the first time it sees that, and `surfcad-mcp listen` stops and deletes it too, so nothing retries with a dead token and `npx surfcad-mcp status` says `not logged in`. Nothing reconnects by itself: the user pairs again and you run `npx surfcad-mcp login`. The saved wake setup is kept, so a new login only needs `npx surfcad-mcp listen --detach`.
+
+A reload, a sleeping tab or a dropped connection is not a Disconnect and revokes nothing.
+
 ## Monorepo maintenance
 
 In the [SurfCAD monorepo](https://github.com/artur0x0/surfcad), `npm run export:agent` regenerates `data/commands.json` from `src/agent/commands.json`. CI fails if that copy is stale (`test/commandsFreshness.test.mjs`). Before publishing, run `export:agent` and `npm run smoke:pack` in this package.

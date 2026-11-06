@@ -24,7 +24,7 @@ import { RelaySession } from './relay.mjs';
 import { resolveAgentName, resolveServerUrl } from './remote/config.mjs';
 import { handleRemoteStdinEnd, installRemoteProcessExitLogs } from './remote/processExit.mjs';
 import { RemoteSession } from './remote/session.mjs';
-import { readSavedLogin } from './remote/tokenStore.mjs';
+import { forgetLoginIfToken, readSavedLogin } from './remote/tokenStore.mjs';
 import { waitForPairing } from './pairWait.mjs';
 import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mjs';
 import {
@@ -279,7 +279,38 @@ export function createInProcessWake(options) {
   return wake;
 }
 
+/**
+ * The login this process runs on (server relay only), until the server says
+ * it is dead.
+ * @type {{ token: string, env: NodeJS.ProcessEnv, clear?: () => void } | null}
+ */
+let liveLogin = null;
+
+/**
+ * The user disconnected this agent in SurfCAD, or the pairing expired. The
+ * token is dead on the server. Drop the saved copy and the webhook so
+ * nothing here reuses it: the next step is an explicit `surfcad-mcp login`.
+ * @param {unknown} code
+ */
+export function forgetDeadLogin(code) {
+  if (!liveLogin || (code !== 'token_revoked' && code !== 'expired')) return Promise.resolve(false);
+  const { token, env, clear } = liveLogin;
+  liveLogin = null;
+  try {
+    clear?.();
+  } catch {
+    /* the webhook is process memory; nothing else to undo */
+  }
+  return forgetLoginIfToken(token, env);
+}
+
+/** Test hook: the login `forgetDeadLogin` acts on. */
+export function _setLiveLogin(login) {
+  liveLogin = login;
+}
+
 function toolErrorPayload(err) {
+  if (err && typeof err === 'object') void forgetDeadLogin(err.code);
   if (err && typeof err === 'object' && err.code) {
     return formatBridgeError({
       code: err.code,
@@ -546,6 +577,7 @@ async function runRemoteMcpServer(options) {
     onUnread: remoteWake,
   });
   remoteWake.attach(remote.prompts);
+  liveLogin = { token: saved.token, env, clear: () => remote.prompts.unregisterWebhook() };
   const { server, session } = await createSurfcadMcpServer({ session: remote });
   server.oninitialized = () => {
     remote.applyClientInfo(server.getClientVersion());

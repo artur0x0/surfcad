@@ -4,7 +4,7 @@
  */
 
 import { resolveServerUrl } from '../remote/config.mjs';
-import { readSavedLogin } from '../remote/tokenStore.mjs';
+import { forgetLoginIfToken, readSavedLogin } from '../remote/tokenStore.mjs';
 import {
   clearListenerPid,
   listenerLogPath,
@@ -174,6 +174,10 @@ export async function runListenCommand(parsed, ctx) {
       waker: createWaker(wake, { fetch: ctx.fetch, spawn: ctx.spawn, env }),
       isAwake: () => agentAwake(env),
     });
+    // Disconnected in SurfCAD, or expired: the saved login is dead. Forget
+    // it, so `status` says "not logged in" and nothing retries with it. The
+    // server answers a revoked token with a plain 401 ("unauthorized" here).
+    if (out.reason !== 'stopped') await forgetLoginIfToken(saved.token, env);
     return out.reason === 'stopped' ? 0 : 2;
   } finally {
     await clearListenerPid(pid, env);
