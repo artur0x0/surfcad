@@ -27,7 +27,7 @@ import {
   saveWake,
   wakeForms,
 } from './wakeConfig.mjs';
-import { WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS } from './wakeSetupText.mjs';
+import { HOST_PROVISION_NOTE, WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS } from './wakeSetupText.mjs';
 
 export { WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS };
 
@@ -48,7 +48,7 @@ export function wakeReadinessNote(state, opts = {}) {
   } else if (state?.coldWake === 'listener_stopped') {
     lines.push(`Idle wake: set (${forms.join(', then ')}) but the listener is not running, so a message sent while you are idle will not start a session. Run: npx surfcad-mcp listen --detach`);
   } else {
-    lines.push(`Idle wake: unavailable on this host. Nothing here can start a session of you, so the user's messages reach you only while you are in a turn and long-polling read_messages { wait_ms: 10000 }. Tell the user that if they expect answers while you are idle. Do not ask the user for a webhook URL. A host that can start a turn sets SURFCAD_WAKE_POST or SURFCAD_WAKE_EXEC in this MCP server's config; ${WAKE_GUIDE_POINTER} has the manual way.`);
+    lines.push(`Idle wake: unavailable on this host. Nothing here can start a session of you, so the user's messages reach you only while you are in a turn and long-polling read_messages { wait_ms: 10000 }. Tell the user that if they expect answers while you are idle. Do not ask the user for a webhook URL. ${HOST_PROVISION_NOTE} Otherwise a host that can start a turn sets SURFCAD_WAKE_POST or SURFCAD_WAKE_EXEC in this MCP server's config; ${WAKE_GUIDE_POINTER} has the manual way.`);
   }
   if (state?.greeting === 'sent_by_wake') {
     lines.push(`A new session of you was started to greet the user in the SurfCAD chat ("${WAKE_GREETING}"). That greeting is the check that the wake works. Do not greet again.`);

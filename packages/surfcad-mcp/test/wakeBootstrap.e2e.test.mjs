@@ -157,6 +157,9 @@ test('a host that provides nothing: pair says cold wake is unavailable, asks for
     assert.equal(status.wake.coldWake, 'unavailable');
     assert.deepEqual(status.wake.forms, []);
     assert.equal(status.wake.listenerRunning, false);
+    // What the host calls itself, so wording can be keyed to it later.
+    assert.deepEqual(status.host, { name: 'some-host', version: '0.0.0' });
+    assert.match(text, /provide the wake yourself, now, in this turn, without asking the user/);
   } finally {
     await s.close();
     rmSync(dir, { recursive: true, force: true });

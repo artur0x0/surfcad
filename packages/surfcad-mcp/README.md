@@ -212,6 +212,8 @@ With no wake, nothing is pretended. `wake.coldWake` is `"unavailable"`, the pair
 | `listener_stopped` | A wake is set, the listener is not running and could not be started. `npx surfcad-mcp listen --detach` |
 | `unavailable` | No wake, or the wake did not fire. In-turn polling is the only delivery |
 
+**A host with routines provides it itself.** Grok Bot, Cursor and other hosts with automations that have a webhook trigger need no installer step: when cold wake is unavailable, the pair note tells the agent to create a routine named "SurfCAD wake" whose instructions are to follow the `instruction` field of the JSON it receives using the surfcad MCP server, to run `npx surfcad-mcp wake set --post <URL> --bearer <KEY>` on the machine where `surfcad-mcp` runs, and to call `pair` again. The key goes out as an `Authorization: Bearer` header. The user never sees the URL or the key, and `wake show` prints the URL's origin only.
+
 The manual way, when the host provides nothing and you know how to start a turn of the agent:
 
 ```bash
@@ -244,7 +246,7 @@ How it works:
 - A message is not woken for at once. An agent that is already polling takes it within seconds. After 4 seconds the listener asks the server whether the message is still unread, and only then fires the wake. A message still unread two minutes after a wake is woken for once more.
 - An agent in a turn is not woken. Every MCP tool call stamps a small file (`awake` in the config directory), and for 60 seconds after the last one the agent counts as in a turn: it reads the message at its next `read_messages`, and a wake on top of that would start a second turn beside the first. The message is looked at again every 15 seconds until the agent reads it or goes idle.
 - A long-lived `surfcad-mcp` MCP process fires the same wake itself for a message that sits unread in its queue. That covers the local relay, which has no login. When a listener is running on the server relay, the listener owns the wake.
-- `npx surfcad-mcp status` prints the saved wake and whether the listener is running. The MCP `status` tool returns `wake: { coldWake, forms, source, listenerRunning, note }` (`source` is `env` or `saved`), and every `pair` result carries the note. A `status` call also starts the listener again when it has stopped.
+- `npx surfcad-mcp status` prints the saved wake and whether the listener is running. The MCP `status` tool returns `wake: { coldWake, forms, source, listenerRunning, note }` (`source` is `env` or `saved`) and `host: { name, version }` (what the MCP client calls itself), and every `pair` result carries the note. A `status` call also starts the listener again when it has stopped.
 - A new session has no memory of earlier ones. The wake's `instruction` says so and points it at the message in `prompts`, `status` for the open part, and `guide { topic: "start" }`.
 - `npx surfcad-mcp wake show | test | clear`, `npx surfcad-mcp listen --stop`. The listener logs to `listener.log` in the config directory. Start it again after a reboot, or add `npx surfcad-mcp listen` to the host's startup (a systemd user unit, launchd, pm2).
 
