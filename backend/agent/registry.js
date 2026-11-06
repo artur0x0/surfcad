@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { commandRequest, commandResponse } from '../../packages/surfcad-mcp/src/commandProtocol.mjs';
 import { createSystemClock } from './clock.js';
 import {
@@ -5,6 +6,7 @@ import {
   MAX_AGENTS_PER_USER,
   MAX_HELD_PROMPTS,
   MAX_PENDING,
+  MAX_PROMPT_TABS,
   MAX_TABS_PER_USER,
   MOLD_COMMAND_MS,
   PROMPT_HOLD_MS,
@@ -75,6 +77,7 @@ function commandTimeoutResponse(frame, budgetMs) {
  *   maxAgents?: number,
  *   promptHoldMs?: number,
  *   presenceTtlMs?: number,
+ *   newClaim?: () => string,
  * }} [opts]
  */
 export function createMemoryTabRegistry(opts = {}) {
@@ -88,6 +91,7 @@ export function createMemoryTabRegistry(opts = {}) {
   const promptHoldMs = opts.promptHoldMs ?? PROMPT_HOLD_MS;
   const presenceTtlMs = opts.presenceTtlMs ?? AGENT_PRESENCE_TTL_MS;
   const sessionMessageGapMs = opts.sessionMessageGapMs ?? SESSION_MESSAGE_GAP_MS;
+  const newClaim = typeof opts.newClaim === 'function' ? opts.newClaim : () => randomUUID();
   /** @type {Map<string, number>} */
   const sessionMessageAt = new Map();
   /**
@@ -114,7 +118,19 @@ export function createMemoryTabRegistry(opts = {}) {
    * }} PendingCommand
    */
 
-  /** @type {Map<string, { tabs: Map<string, TabRecord>, selectedId: string | null }>} */
+  /**
+   * One row per account. `ownerId` is the agent window: the tab that
+   * paired the agent (it sent `tab.claim`) or the tab the user last sent a
+   * prompt from. Commands, and the agent's chat frames (status, replies,
+   * activity, progress, session notes), go to that one tab, so a second
+   * window or device on the same account does not animate or run the
+   * agent's edits. `ownerClaim` is an opaque id the owning tab keeps, so
+   * the same tab can take the role back after a reload and a tab whose
+   * claim was superseded cannot. `promptTabs` remembers which tab sent
+   * each prompt id, so the frames about that prompt reach the tab that is
+   * waiting on it.
+   * @type {Map<string, { tabs: Map<string, TabRecord>, selectedId: string | null, ownerId: string | null, ownerClaim: string | null, promptTabs: Map<string, string> }>}
+   */
   const users = new Map();
   /** @type {Map<string, Map<string, { agentId: string, userId: string, send: (frame: object) => void }>>} */
   const agents = new Map();
@@ -146,7 +162,7 @@ export function createMemoryTabRegistry(opts = {}) {
   function bucket(userId) {
     let found = users.get(userId);
     if (!found) {
-      found = { tabs: new Map(), selectedId: null };
+      found = { tabs: new Map(), selectedId: null, ownerId: null, ownerClaim: null, promptTabs: new Map() };
       users.set(userId, found);
     }
     return found;
@@ -253,9 +269,19 @@ export function createMemoryTabRegistry(opts = {}) {
    * @returns {number} sockets that accepted the frame
    */
   function forward(userId, frame, side) {
-    const found = side === 'tabs'
-      ? users.get(String(userId))?.tabs
-      : agents.get(String(userId));
+    if (side === 'tabs') {
+      // One tab, never a broadcast: the tab waiting on this prompt id, else
+      // the agent window. Presence is the only frame every tab hears.
+      const tab = tabForAgentFrame(String(userId), frame);
+      if (!tab) return 0;
+      try {
+        tab.send(frame);
+        return 1;
+      } catch {
+        return 0;
+      }
+    }
+    const found = agents.get(String(userId));
     if (!found) return 0;
     let delivered = 0;
     for (const peer of found.values()) {
@@ -377,12 +403,20 @@ export function createMemoryTabRegistry(opts = {}) {
     }
   }
 
-  /** @param {string} userId */
+  /**
+   * The tab the agent works in: an explicit `POST /agent/tabs/select`,
+   * else the agent window (the tab that paired or last sent a prompt),
+   * else the most recently active tab.
+   * @param {string} userId
+   */
   function activeTab(userId) {
     const found = users.get(userId);
     if (!found || found.tabs.size === 0) return null;
     if (found.selectedId && found.tabs.has(found.selectedId)) {
       return found.tabs.get(found.selectedId) || null;
+    }
+    if (found.ownerId && found.tabs.has(found.ownerId)) {
+      return found.tabs.get(found.ownerId) || null;
     }
     /** @type {TabRecord | null} */
     let best = null;
@@ -392,6 +426,27 @@ export function createMemoryTabRegistry(opts = {}) {
       }
     }
     return best;
+  }
+
+  /**
+   * Where one agent → tab frame goes. A frame about a prompt (`id`) goes
+   * to the tab that sent that prompt while it is still open. Everything
+   * else goes to the agent window.
+   * @param {string} userId
+   * @param {object} frame
+   * @returns {TabRecord | null}
+   */
+  function tabForAgentFrame(userId, frame) {
+    const found = users.get(userId);
+    if (!found || found.tabs.size === 0) return null;
+    const id = frame && typeof (/** @type {{ id?: unknown }} */ (frame)).id === 'string'
+      ? /** @type {{ id: string }} */ (frame).id
+      : '';
+    if (id) {
+      const sender = found.promptTabs.get(id);
+      if (sender && found.tabs.has(sender)) return found.tabs.get(sender) || null;
+    }
+    return activeTab(userId);
   }
 
   function sweep() {
@@ -493,6 +548,8 @@ export function createMemoryTabRegistry(opts = {}) {
       if (!found) return;
       found.tabs.delete(tabId);
       if (found.selectedId === tabId) found.selectedId = null;
+      // The claim id stays: the same tab may come back (a reload) and resume it.
+      if (found.ownerId === tabId) found.ownerId = null;
       for (const item of pending.values()) {
         if (item.userId === String(userId) && item.sentTo === tabId) item.sentTo = null;
       }
@@ -516,6 +573,65 @@ export function createMemoryTabRegistry(opts = {}) {
       return true;
     },
 
+    /**
+     * Make this tab the agent window. A fresh claim (the user started
+     * pairing here, or sent a prompt from here) always wins and mints a
+     * claim id the tab keeps. `resume` is a claim id from before a reload:
+     * it is honoured when it is still the current claim, or when no live
+     * tab holds the role; a tab whose claim another window superseded is
+     * refused, so an old window cannot take the agent back by reloading.
+     * @param {string} userId
+     * @param {string} tabId
+     * @param {string} [resume]
+     * @returns {string | null} the claim id, or null when refused
+     */
+    claimAgentWindow(userId, tabId, resume) {
+      const key = String(userId);
+      const found = users.get(key);
+      if (!found || !found.tabs.has(tabId)) return null;
+      const ownerLive = found.ownerId != null && found.tabs.has(found.ownerId);
+      if (typeof resume === 'string' && resume) {
+        if (ownerLive && found.ownerId !== tabId && found.ownerClaim !== resume) return null;
+        found.ownerId = tabId;
+        found.ownerClaim = resume;
+      } else if (!(ownerLive && found.ownerId === tabId && found.ownerClaim)) {
+        found.ownerId = tabId;
+        found.ownerClaim = newClaim();
+      }
+      // A command no tab has taken yet goes to the new agent window.
+      deliver(key);
+      return found.ownerClaim;
+    },
+
+    /**
+     * The tab commands and agent chat frames go to right now, or null.
+     * @param {string} userId
+     * @returns {string | null}
+     */
+    agentWindowId(userId) {
+      return activeTab(String(userId))?.tabId ?? null;
+    },
+
+    /**
+     * Remember which tab sent a prompt, so the ack, replies and status for
+     * that id reach it. The newest `MAX_PROMPT_TABS` ids are kept.
+     * @param {string} userId
+     * @param {unknown} promptId
+     * @param {string} tabId
+     */
+    notePromptTab(userId, promptId, tabId) {
+      const found = users.get(String(userId));
+      if (!found || !found.tabs.has(tabId)) return false;
+      if (typeof promptId !== 'string' || !promptId || promptId.length > 80) return false;
+      found.promptTabs.delete(promptId);
+      found.promptTabs.set(promptId, tabId);
+      while (found.promptTabs.size > MAX_PROMPT_TABS) {
+        const oldest = found.promptTabs.keys().next().value;
+        found.promptTabs.delete(oldest);
+      }
+      return true;
+    },
+
     /** @param {string} userId */
     listTabs(userId) {
       const found = users.get(String(userId));
@@ -526,6 +642,7 @@ export function createMemoryTabRegistry(opts = {}) {
           id: tab.tabId,
           lastActiveAt: tab.lastActiveAt,
           selected: found.selectedId === tab.tabId,
+          agentWindow: found.ownerId === tab.tabId,
         }));
     },
 
@@ -913,12 +1030,15 @@ export function createMemoryTabRegistry(opts = {}) {
     },
 
     /**
-     * Prompt frames from an agent socket. Not stored.
+     * Prompt frames from an agent socket. Not stored. One tab hears each
+     * frame: the tab that sent the prompt the frame is about, else the
+     * agent window. Other windows of the account stay quiet.
      * @param {string} userId
      * @param {object} frame
+     * @returns {number} 1 when a tab took the frame, else 0
      */
     forwardToTabs(userId, frame) {
-      forward(userId, frame, 'tabs');
+      return forward(userId, frame, 'tabs');
     },
 
     /**

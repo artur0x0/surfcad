@@ -135,7 +135,12 @@ leaves Stop available.
 paired agent is doing when no prompt from this chat is pending, such as a
 build it started from its MCP host, or a prompt read by an earlier one-shot
 `surfcad-mcp` process. It lives in the tab, so a fresh process per tool call
-keeps nothing and still shows. Inputs: a bridge command this tab runs that
+keeps nothing and still shows. On the server relay only one window of an
+account, the agent window (the one Connect agent was pressed in, or the one
+the user last sent a prompt from), receives the agent's status, progress,
+replies and commands; another open window or device stays on idle with an
+empty chat (see the server relay paragraph in
+[architecture.md](./architecture.md)). Inputs: a bridge command this tab runs that
 changes the model (`mutates` in the catalog) enters or refreshes `working`; a
 read never does. `agent.status` (an explicit `set_status`, or the process
 entering building) sets the state at once, with or without a prompt id.

@@ -1,5 +1,12 @@
 import { PAIR_MSG } from '../../packages/surfcad-mcp/src/relayMessages.mjs';
 
+/** Tab → server: make this tab the agent window. `claim` resumes one after a reload. */
+export const TAB_CLAIM = 'tab.claim';
+/** Server → tab: the claim id to keep, or `claim: null` when a resume was refused. */
+export const TAB_CLAIMED = 'tab.claimed';
+/** A claim id is a UUID; anything longer is not one. */
+export const TAB_CLAIM_MAX = 64;
+
 /**
  * Tab → agent prompt frames on the server relay.
  *
@@ -18,8 +25,10 @@ import { PAIR_MSG } from '../../packages/surfcad-mcp/src/relayMessages.mjs';
  * @param {string} userId
  * @param {object} frame
  * @param {(frame: object) => void} reply
+ * @param {string} [tabId] the sending tab. A prompt makes it the agent
+ *   window: the agent answers, and works, where the user is talking to it.
  */
-export function deliverTabAgentFrame(registry, userId, frame, reply) {
+export function deliverTabAgentFrame(registry, userId, frame, reply, tabId) {
   const type = typeof frame?.type === 'string' ? frame.type : '';
   if (type === PAIR_MSG.AGENT_MESSAGE) return;
   if (type !== 'agent.prompt' && type !== 'agent.prompt.cancel') {
@@ -40,6 +49,13 @@ export function deliverTabAgentFrame(registry, userId, frame, reply) {
       state: dropped ? 'cancelled' : 'not_found',
     });
     return;
+  }
+  if (tabId && id) {
+    // The replies to this prompt go back to this tab, and it becomes the
+    // agent window. No frame is sent for that: the tab's next message is
+    // still the ack. Only an explicit `tab.claim` is answered.
+    registry.notePromptTab?.(userId, id, tabId);
+    registry.claimAgentWindow?.(userId, tabId);
   }
   const outcome = registry.deliverPrompt(userId, frame, {
     onExpire() {
