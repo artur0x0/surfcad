@@ -66,7 +66,7 @@ test('every tool a hint or topic names is a real tool', () => {
   const argNames = new Set([
     'use_selection', 'body_index', 'face_id', 'part_id', 'assembly_id', 'in_reply_to', 'retry_after_ms', 'wait_ms',
     'save_to', 'polygon_preset', 'timeout_ms', 'joint_id', 'accept_plane', 'front_of_model', 'normal_to_sketch',
-    'out_of_memory', 'wasm_abort', 'sweep_path',
+    'out_of_memory', 'wasm_abort', 'sweep_path', 'job_id',
   ]);
   const codes = new Set(Object.keys(ERROR_HINTS));
   const text = Object.values(ERROR_HINTS).map((row) => `${row.hint}\n${row.guide || ''}`).join('\n')

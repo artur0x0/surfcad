@@ -4,6 +4,10 @@
  * centre, and the tip does not touch the button. Checked at 390, and at
  * the other phone widths, after a resize and after the keyboard lift.
  *
+ * The pane always has a visible border (the measured outline, or the CSS
+ * border before a measurement), never a clip-path over the glass, and it
+ * paints above the feature strip when the keyboard lifts it that high.
+ *
  * DEV stub: `?agentPromptDemo=1&agentPromptState=chat`.
  */
 /* global document, window, getComputedStyle */
@@ -66,7 +70,7 @@ const measure = (page) => page.evaluate(() => {
   const button = document.querySelector('[data-agent-chat-open]');
   const tail = document.querySelector('[data-agent-prompt-tail]');
   const prompt = document.querySelector('[data-agent-prompt]');
-  const path = tail?.querySelector('path')?.getAttribute('d') || '';
+  const path = tail?.querySelector('[data-agent-prompt-outline]')?.getAttribute('d') || '';
   if (!tip || !button || !tail || !prompt) {
     return { ready: false, missing: { tip: !tip, button: !button, tail: !tail, prompt: !prompt } };
   }
@@ -197,6 +201,140 @@ check(
   JSON.stringify(m && { gap: m.gap }),
 );
 
+// The pane's border. With the tail measured, one outline path runs around
+// the box and the tail in the outline token and the CSS border is
+// transparent (no line across the tail base). The glass is a plain rounded
+// box: no clip-path, which Safari does not apply to a backdrop-filter.
+const OUTLINE = 'rgb(107, 114, 128)';
+const chrome = (page_) => page_.evaluate(() => {
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  const fill = tail?.querySelector('[data-agent-prompt-bubble]');
+  const outline = tail?.querySelector('[data-agent-prompt-outline]');
+  const tailFill = tail?.querySelector('.agent-prompt-bubble-tail-fill');
+  const svg = outline?.ownerSVGElement;
+  const prompt = document.querySelector('[data-agent-prompt]');
+  if (!tail || !fill || !outline || !svg || !prompt) return null;
+  const fs = getComputedStyle(fill);
+  const os = getComputedStyle(outline);
+  const pr = prompt.getBoundingClientRect();
+  const fr = fill.getBoundingClientRect();
+  const or = outline.getBoundingClientRect();
+  return {
+    ready: tail.getAttribute('data-agent-prompt-tail-ready'),
+    shape: tail.getAttribute('data-agent-prompt-tail-shape'),
+    borderWidth: fs.borderTopWidth,
+    borderColor: fs.borderTopColor,
+    radius: fs.borderTopLeftRadius,
+    clip: fs.clipPath,
+    fillBg: fs.backgroundColor,
+    fillMatchesPrompt: Math.abs(fr.width - pr.width) <= 1 && Math.abs(fr.height - pr.height) <= 1,
+    svgVisible: getComputedStyle(svg).visibility,
+    stroke: os.stroke,
+    strokeWidth: os.strokeWidth,
+    outlineWidth: or.width,
+    outlineBelowBox: or.bottom - pr.bottom,
+    tailFillD: tailFill?.getAttribute('d') || '',
+    viewBox: svg.getAttribute('viewBox'),
+  };
+});
+await page.evaluate(() => {
+  document.querySelector('[data-agent-prompt]')?.style.removeProperty('--agent-prompt-lift');
+  window.dispatchEvent(new window.Event('resize'));
+});
+await waitReady(page);
+m = await waitAligned(page, 390);
+let c = await chrome(page);
+check(
+  'measured: the outline path is the border, in the outline token, around the box and the tail',
+  c && c.ready === '1' && c.shape === 'tail' && c.svgVisible === 'visible' && c.stroke === OUTLINE
+    && parseFloat(c.strokeWidth) >= 1 && c.outlineWidth >= 200 && c.outlineBelowBox >= 4,
+  JSON.stringify(c),
+);
+check(
+  'measured: the CSS border is transparent, so no line crosses the tail base',
+  c && c.borderWidth === '1px' && /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)|transparent/.test(c.borderColor),
+  JSON.stringify(c && { borderColor: c.borderColor, borderWidth: c.borderWidth }),
+);
+check(
+  'the glass is a plain rounded box the size of the prompt: no clip-path, no viewBox scaling',
+  c && c.clip === 'none' && c.radius === '16px' && c.fillMatchesPrompt === true && c.viewBox == null
+    && /^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+ L [\d.]+ [\d.]+ Z$/.test(c.tailFillD),
+  JSON.stringify(c && { clip: c.clip, radius: c.radius, fillMatchesPrompt: c.fillMatchesPrompt, viewBox: c.viewBox, tailFillD: c.tailFillD }),
+);
+
+// Before any measurement (or if the measure never lands) the pane is the
+// CSS box: glass fill and a visible border, with the SVG hidden.
+const unmeasured = await page.evaluate(() => {
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  const fill = tail.querySelector('[data-agent-prompt-bubble]');
+  const svg = tail.querySelector('svg');
+  const was = tail.getAttribute('data-agent-prompt-tail-ready');
+  tail.setAttribute('data-agent-prompt-tail-ready', '0');
+  const fs = getComputedStyle(fill);
+  const out = {
+    borderWidth: fs.borderTopWidth,
+    borderColor: fs.borderTopColor,
+    borderBottom: fs.borderBottomColor,
+    fillBg: fs.backgroundColor,
+    visibility: fs.visibility,
+    svg: getComputedStyle(svg).visibility,
+  };
+  tail.setAttribute('data-agent-prompt-tail-ready', was);
+  return out;
+});
+check(
+  'not measured: rectangular glass with a visible border on every side',
+  unmeasured && unmeasured.borderWidth === '1px' && unmeasured.borderColor === OUTLINE && unmeasured.borderBottom === OUTLINE
+    && unmeasured.visibility === 'visible' && unmeasured.svg === 'hidden'
+    && !/rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(unmeasured.fillBg),
+  JSON.stringify(unmeasured),
+);
+
+// Keyboard up: the chat is lifted over the feature strip. It must paint
+// above the strip (and every other piece of viewer chrome), and stay under
+// the modal layer.
+const stacking = await page.evaluate(async () => {
+  const prompt = document.querySelector('[data-agent-prompt]');
+  const strip = document.querySelector('[data-cad-feature-strip]');
+  if (!prompt || !strip) return { missing: { prompt: !prompt, strip: !strip } };
+  const sr = strip.getBoundingClientRect();
+  const before = prompt.getBoundingClientRect();
+  const lift = Math.max(0, before.top - sr.top + 12);
+  prompt.style.setProperty('--agent-prompt-lift', `${lift}px`);
+  await new Promise((r) => setTimeout(r, 400));
+  const pr = prompt.getBoundingClientRect();
+  const top = Math.max(pr.top, sr.top);
+  const bottom = Math.min(pr.bottom, sr.bottom);
+  const covered = [];
+  for (let i = 1; i <= 7; i += 1) {
+    const x = pr.left + (pr.width * i) / 8;
+    const y = top + (bottom - top) / 2;
+    const hit = document.elementFromPoint(x, y);
+    covered.push(!!hit && prompt.contains(hit));
+  }
+  const out = {
+    overlap: Math.round(bottom - top),
+    covered,
+    promptZ: Number(getComputedStyle(prompt).zIndex),
+    stripZ: Number(getComputedStyle(strip).zIndex),
+    pillZ: Number(getComputedStyle(document.querySelector('[data-agent-chat-open]')?.closest('[class*="z-"]') || document.body).zIndex) || null,
+  };
+  prompt.style.removeProperty('--agent-prompt-lift');
+  return out;
+});
+check(
+  'lifted over the feature strip, the chat paints on top of it',
+  stacking && stacking.overlap >= 10 && stacking.covered.every(Boolean),
+  JSON.stringify(stacking),
+);
+check(
+  'chat z-order: above the feature strip and the stage pill, under the modal layer (z-50)',
+  stacking && stacking.promptZ > stacking.stripZ && stacking.promptZ > 30 && stacking.promptZ < 40,
+  JSON.stringify(stacking),
+);
+await page.waitForTimeout(300);
+await waitReady(page);
+
 // The tail cannot be placed (no Bot button). The glass fill must stay as
 // a rounded rectangle. This is the phone bug where the text floated.
 await page.evaluate(() => {
@@ -212,12 +350,15 @@ await page.waitForFunction(() => {
 const box = await page.evaluate(() => {
   const tail = document.querySelector('[data-agent-prompt-tail]');
   const fill = tail?.querySelector('.agent-prompt-bubble-fill');
-  const path = tail?.querySelector('path')?.getAttribute('d') || '';
+  const outline = tail?.querySelector('[data-agent-prompt-outline]');
+  const path = outline?.getAttribute('d') || '';
   const user = document.querySelector('.agent-prompt-msg--user');
   return {
     shape: tail?.getAttribute('data-agent-prompt-tail-shape') || '',
     ready: tail?.getAttribute('data-agent-prompt-tail-ready') || '',
     visibility: tail ? getComputedStyle(tail).visibility : '',
+    stroke: outline ? getComputedStyle(outline).stroke : '',
+    tailFill: tail?.querySelector('.agent-prompt-bubble-tail-fill')?.getAttribute('d') || '',
     fill: fill ? getComputedStyle(fill).backgroundColor : '',
     pathDetour: /H [\d.]+ L [\d.]+ [\d.]+ L [\d.]+/.test(path),
     userClass: user?.className || '',
@@ -228,6 +369,11 @@ const opaque = (color) => typeof color === 'string' && color.length > 0 && !/rgb
 check(
   'no button: rectangular glass fill stays',
   box && box.shape === 'box' && box.ready === '1' && box.visibility !== 'hidden' && opaque(box.fill) && box.pathDetour === false,
+  JSON.stringify(box),
+);
+check(
+  'no button: the border stays (the outline path around the box, no tail fill)',
+  box && box.stroke === OUTLINE && box.tailFill === '',
   JSON.stringify(box),
 );
 check(

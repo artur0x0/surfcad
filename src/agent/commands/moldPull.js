@@ -3,6 +3,7 @@
  * or Right (+X). Face uses a normal in the part local frame. Core/cavity,
  * side actions, and mold draft all recompute from that pull.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 import { MOLD_PULL_PLANES, unitPull } from '../../molding/pullReference.js';
 
@@ -71,8 +72,8 @@ export const moldPullCommand = Object.freeze({
       plane: args.plane,
       pull: args.mode === 'face' ? args.normal : null,
     });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_pull', out, ctx);
   },
 });

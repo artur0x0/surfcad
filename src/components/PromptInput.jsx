@@ -14,6 +14,7 @@ import {
   shouldShowAgentPrompt,
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
+import { createPressGate } from '../agent/agentPromptPress.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { pendingShown, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
 import {
@@ -64,8 +65,10 @@ import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
 import { AgentPromptFrame } from './AgentPromptTail.jsx';
 
 /** Keep the caret in the field. A tap that blurs first is dropped on iOS.
- *  Cancelling pointerdown also drops the click on WebKit, so the button
- *  runs its action on pointerup and the form submit ignores that duplicate. */
+ *  Cancelling pointerdown can also drop the click, so the button runs its
+ *  action on pointerup. When the click does follow, in the same task or a
+ *  later one, a press gate (agentPromptPress.js) treats it as that tap's
+ *  echo and it does not run the action a second time. */
 function keepFieldFocus(event) {
   event.preventDefault();
 }
@@ -343,7 +346,12 @@ export default function PromptInput({
       setShotOn(false);
     }
   }, []);
-  const pressHandledRef = useRef(false);
+  // One gate per button: a tap on the camera must not swallow a click on Send.
+  const actionGateRef = useRef(null);
+  if (actionGateRef.current == null) actionGateRef.current = createPressGate();
+  const cameraGateRef = useRef(null);
+  if (cameraGateRef.current == null) cameraGateRef.current = createPressGate();
+  const shotBusyRef = useRef(false);
   const [fieldFocused, setFieldFocused] = useState(false);
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -758,15 +766,27 @@ export default function PromptInput({
   }, []);
 
   const toggleShot = useCallback(async () => {
+    // A capture is in flight: this press is not a second toggle.
+    if (shotBusyRef.current) return { ok: false, reason: 'capture_busy', attached: false };
     if (shotOn || shot) {
+      // Disengage: the pending image is dropped, so Send is text only.
       discardShot();
       return { ok: true, attached: false };
     }
-    const attached = await Promise.resolve(attachViewerShot(captureViewer));
+    shotBusyRef.current = true;
+    let attached;
+    try {
+      attached = await Promise.resolve(attachViewerShot(captureViewer));
+    } finally {
+      shotBusyRef.current = false;
+    }
     if (!attached.ok) {
       discardShot();
+      // Say why the button did not turn on instead of doing nothing.
+      setAck({ delivery: 'failed', error: 'capture_failed' });
       return attached;
     }
+    setAck((prev) => (prev?.error === 'capture_failed' ? null : prev));
     setShot(attached.shot);
     setShotOn(true);
     return { ok: true, attached: true };
@@ -828,10 +848,8 @@ export default function PromptInput({
 
   const onSubmit = (event) => {
     event?.preventDefault?.();
-    if (event?.type === 'submit' && pressHandledRef.current) {
-      pressHandledRef.current = false;
-      return;
-    }
+    // The form submit that follows a tap already handled on pointerup.
+    if (event?.type === 'submit' && actionGateRef.current.echo()) return;
     if (pending) {
       stopAgent();
       return;
@@ -840,22 +858,18 @@ export default function PromptInput({
   };
 
   const onActionPointerUp = (event) => {
-    pressHandledRef.current = true;
+    actionGateRef.current.press();
     onSubmit(event);
-    window.setTimeout(() => { pressHandledRef.current = false; }, 0);
   };
 
   const onCameraPointerUp = () => {
-    pressHandledRef.current = true;
+    cameraGateRef.current.press();
     toggleShot();
-    window.setTimeout(() => { pressHandledRef.current = false; }, 0);
   };
 
   const onCameraClick = () => {
-    if (pressHandledRef.current) {
-      pressHandledRef.current = false;
-      return;
-    }
+    // The click of the tap pointerup already handled, however late it comes.
+    if (cameraGateRef.current.echo()) return;
     toggleShot();
   };
 
@@ -1051,8 +1065,8 @@ export default function PromptInput({
           ) : null}
           <button
             type="button"
-            className={`agent-prompt-icon-btn agent-prompt-camera ${
-              shotCue ? 'text-success' : 'text-on-dark'
+            className={`agent-prompt-icon-btn agent-prompt-camera text-on-dark${
+              shotCue ? ' surface-success' : ''
             }`}
             onPointerDown={keepFieldFocus}
             onMouseDown={keepFieldFocus}
@@ -1060,6 +1074,7 @@ export default function PromptInput({
             onClick={onCameraClick}
             data-ui-action="data-agent-prompt-screenshot"
             data-agent-prompt-screenshot=""
+            data-agent-prompt-shot-on={shotCue ? '1' : '0'}
             aria-label={shotCue ? 'Discard screenshot' : 'Attach screenshot'}
             aria-pressed={shotCue}
             disabled={!canCapture && !shotCue}

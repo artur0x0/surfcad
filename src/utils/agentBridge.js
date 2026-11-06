@@ -615,6 +615,8 @@ export function createSurfcadBridge(hostSource) {
     }),
     listFaces: (args) => hostFn('listFaces')?.(args),
     moldFit: (args) => hostFn('moldFit')?.(args),
+    // Stage and percent of the running mold analysis, for a heartbeat (commands/moldJob.js).
+    moldProgress: () => hostFn('moldProgress')?.() ?? null,
     moldPull: (args) => hostFn('moldPull')?.(args),
     moldWallMap: (args) => hostFn('moldWallMap')?.(args),
     moldParting: (args) => hostFn('moldParting')?.(args),

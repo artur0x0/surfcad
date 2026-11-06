@@ -273,7 +273,32 @@ describe('tab registry', () => {
     const own = await registry.wait('user-a', 'c1', 0, 'tok-a');
     assert.equal(own.status, 'done');
     assert.equal(own.response.result.n, 1);
+    // A second read by the same token is the result again, not "no longer
+    // waiting": the first read may never have reached the agent.
+    const again = await registry.wait('user-a', 'c1', 0, 'tok-a');
+    assert.equal(again.status, 'done');
+    assert.equal(again.response.result.n, 1);
+    assert.equal(await registry.wait('user-a', 'c1', 0, 'tok-b'), null, 'still not another token\'s');
+  });
+
+  test('a result read while the command was in flight can be read again, until retention drops it', async () => {
+    const clock = createManualClock(5_000);
+    const registry = createMemoryTabRegistry({ clock, asleepMs: TAB_ASLEEP_MS, retentionMs: RESULT_RETENTION_MS });
+    registry.registerTab({ userId: 'user-a', tabId: 't1', send() {} });
+    registry.submit({ userId: 'user-a', tokenId: 'tok-a', frame: { id: 'c1', command: 'sketch_accept_plane', args: {} } });
+    // The event stream is waiting when the tab answers.
+    const streamed = registry.wait('user-a', 'c1', 5000, 'tok-a');
+    registry.complete('user-a', 'c1', commandResponse({ id: 'c1', ok: true, result: { ok: true } }));
+    assert.equal((await streamed).status, 'done');
+    // The stream never reached the agent, so it polls: the result is still there.
+    const polled = await registry.wait('user-a', 'c1', 0, 'tok-a');
+    assert.equal(polled.status, 'done');
+    assert.deepEqual(polled.response.result, { ok: true });
+    clock.advance(RESULT_RETENTION_MS - 1);
+    assert.equal((await registry.wait('user-a', 'c1', 0, 'tok-a')).status, 'done');
+    clock.advance(1);
     assert.equal(await registry.wait('user-a', 'c1', 0, 'tok-a'), null);
+    assert.equal(registry.debugPayloads().includes('sketch_accept_plane'), false);
   });
 
   test('abortToken ends an in-flight wait and drops the result', async () => {

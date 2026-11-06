@@ -113,6 +113,18 @@ export function agentPromptTailLayout({
 }
 
 /**
+ * The tail triangle alone, as a closed path for its fill. The box fill is
+ * plain CSS (a rounded rectangle), so only this small piece is drawn. Its
+ * base sits exactly on the bottom edge of the box. Empty when there is no tail.
+ * @param {{ height: number, tipX: number, tipY: number, baseLeft: number, baseRight: number, hasTail?: boolean } | null} box
+ */
+export function agentPromptTailFillPath(box) {
+  if (!box || box.hasTail !== true || !(box.tipY > box.height)) return '';
+  const n = (v) => round2(v);
+  return `M ${n(box.baseLeft)} ${n(box.height)} L ${n(box.tipX)} ${n(box.tipY)} L ${n(box.baseRight)} ${n(box.height)} Z`;
+}
+
+/**
  * Rounded box with the tail cut into the bottom edge. One subpath: the
  * bottom stroke leaves the edge, touches the tip, and returns. It does not
  * close the base. `hasTail: false` (or a tip that sits on the bottom edge)
