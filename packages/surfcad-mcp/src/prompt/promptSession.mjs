@@ -106,6 +106,9 @@ export function normalizeContext(ctx) {
   return { value: Object.keys(out).length ? out : undefined };
 }
 
+/** How long a queued prompt waits for read_messages before `onUnread` hears of it. */
+export const PROMPT_UNREAD_GRACE_MS = 4_000;
+
 function defaultSetTimer(fn, ms) {
   const timer = setTimeout(fn, ms);
   if (typeof timer.unref === 'function') timer.unref();
@@ -126,7 +129,13 @@ function defaultSetTimer(fn, ms) {
  *   idleMs?: number,
  *   webhookTimeoutMs?: number,
  *   onTaken?: (ids: string[]) => void,
+ *   onUnread?: (prompts: Array<{ id: string, text: string, ts: string, screenshot?: object }>) => void,
+ *   unreadGraceMs?: number,
  * }} options
+ * `onUnread` fires for a prompt that is still in the queue `unreadGraceMs`
+ * after it arrived: nobody called read_messages. The owner uses it to wake
+ * the agent (src/listen). An agent that is polling takes the prompt well
+ * inside the grace and never hears a wake.
  * `onTaken` fires with the prompt ids the agent now has (read_messages
  * returned them, or the webhook POST succeeded). The server relay holds a
  * prompt until it hears this, so a one-shot process that exits before
@@ -138,6 +147,8 @@ export function createPromptSession(options) {
   }
   const send = options.send;
   const onTaken = typeof options.onTaken === 'function' ? options.onTaken : null;
+  const onUnread = typeof options.onUnread === 'function' ? options.onUnread : null;
+  const unreadGraceMs = options.unreadGraceMs ?? PROMPT_UNREAD_GRACE_MS;
   /** @param {string[]} ids */
   function noteTaken(ids) {
     if (!onTaken || ids.length === 0) return;
@@ -516,6 +527,16 @@ export function createPromptSession(options) {
     }
     if (dropped.length) pruneRecent();
     emit(ack(prompt.id, 'queued'));
+    if (onUnread) {
+      setTimer(() => {
+        if (epoch !== life || states.get(prompt.id) !== 'queued') return;
+        try {
+          onUnread([prompt]);
+        } catch {
+          /* a wake is best effort */
+        }
+      }, unreadGraceMs);
+    }
   }
 
   /**
@@ -950,6 +971,10 @@ export function createPromptSession(options) {
     registerWebhook,
     unregisterWebhook,
     deliveryStatus,
+    /** Still waiting for read_messages (not read, not cancelled, not dropped). */
+    isQueued(id) {
+      return states.get(id) === 'queued';
+    },
     clear,
     webhookRegistered() {
       return webhook != null;

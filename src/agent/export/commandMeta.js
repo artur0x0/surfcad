@@ -1318,7 +1318,7 @@ const INSERT_BLEND_META = {
 
 /** Guide pointers appended to the tool descriptions (surfcad-mcp 0.3.6 §3E). */
 const MOLDING_GUIDE_LINK = ' Molding rules: guide { topic: "molding" }.';
-const SHELL_ORDER_LINK = ' Order (required): shell first, then concave fillets and chamfers, then convex ones. After a shell or a concave blend pick the edges by name (select_edges { names } or a face pick, then use_selection: true); the no-selection default is for a plain block and fails there (guide { topic: "modeling" }).';
+const SHELL_ORDER_LINK = ' Order (required): shell first, then concave fillets and chamfers, then convex ones. After a shell or a concave blend pick the edges by name (select_edges { names } or a face pick, then use_selection: true); the no-selection default takes every convex edge, is for a plain block, and can fail there (guide { topic: "modeling" }).';
 const SHELL_OPENING_LINK = ' Order (required): shell before any fillet or chamfer; blending every convex edge first leaves several bodies. openScope opens every face that faces that way (default "z"): when a post, boss or flange stands on such a face, open the other side ("-z") or use "none". status.bodyCount must be 1 straight after the shell (guide { topic: "modeling" }).';
 const REUSE_LINK = ' Prefer this over rebuilding geometry by hand (guide { topic: "modeling" }).';
 export const GUIDE_LINKS = Object.freeze({

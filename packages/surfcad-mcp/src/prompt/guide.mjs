@@ -23,6 +23,7 @@ import {
   READ_MESSAGES_POLL_MS,
   WEBHOOK_REQUIRED_GUIDANCE,
 } from './promptTools.mjs';
+import { WAKE_GUIDE_SECTION } from '../listen/wakeSetupText.mjs';
 import { agentPromptStallMinutes } from './promptStall.mjs';
 import {
   ERROR_TOPIC_CODES,
@@ -152,8 +153,8 @@ Order of operations (required technique).
 - Draft goes before the shell, so the inside walls inherit it.
 - Shell opening. insert_shell opens every face that faces openScope (default "z", the +Z faces). When a post, boss or flange stands on a face that faces that way, the shell removes that face and cuts the feature loose (2 bodies). Open the other side (openScope: "-z") or use "none" for a closed hollow. status.bodyCount must be 1 straight after the shell, before any blend.
 - Pick blend edges by name once the part has a shell or a concave blend. list_feature_edges names each edge by its two faces; "cylinder1.top~cylinder2.side" is the concave edge where a post meets its base. select_edges { names: [...] } then insert_fillet_edges or insert_chamfer_edges { use_selection: true }. A face pick (select_faces { names }, then use_selection: true) blends that one face's convex edges.
-- The no-selection default (every convex edge) is for a plain block with no shell and no concave blend. After a shell or a concave blend it fails and the part stays as it was: the fillet answers feature_failed "filletEdges: edge is concave", the chamfer "chamferEdges: edge N split the solid into 2 bodies".
-- A chamfer leg or fillet radius on a shelled part stays below the wall thickness, one named rim at a time. A rim-face pick takes the inner and the outer rim together, and a leg at or above the wall cuts through.
+- The no-selection default (every convex edge) is for a plain block with no shell and no concave blend. After a shell it also takes both rims of every wall. After a concave blend it can fail and leave the part as it was (always when the blend runs onto a sphere or another doubly curved face): the fillet answers feature_failed "filletEdges: edge is concave", the chamfer "chamferEdges: edge N split the solid into 2 bodies". Pick by name there.
+- A chamfer leg or fillet radius on a shelled part stays below the wall thickness, one named rim at a time. A rim-face pick takes the inner and the outer rim together, and a leg at or above the wall removes the rim face and leaves a ridge.
 - Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the selection.
 - Check status.bodyCount is 1 after the shell and after every blend. If it is not, undo that step and fix the order or the opening; do not union the pieces back together.
 
@@ -161,7 +162,7 @@ Playtest cases. Each failing sequence was reproduced in the app on 2026-11-06; r
 - A. Disc base with a vertical post, one body (insert_cylinder { radius: 30, height: 8 }, then insert_cylinder { radius: 8, height: 40, z: 4, combine: "add" }). Fails: insert_fillet_edges { radius: 2 } on every convex edge (with or without sphericalCorners), then insert_shell { wall: 1.5 }: bodyCount 2. Also fails: insert_shell with the default opening: 2 bodies, the post is cut off its base. Works: insert_shell { wall: 1.5, openScope: "-z" }: 1 body; the concave edge "cylinder1.top~cylinder2.side" by name, radius 2: 1 body; the convex edges by name, radius 1: 1 body.
 - B. Post with a sphere tip (ring holder). Shell first, opening away from the tip; then the post-to-sphere concave edge by name; then the convex edges by name. The no-selection convex fillet after that concave fillet fails ("edge is concave").
 - C. Flanged box (a box block plus a flange block, one body). Fails: insert_fillet_edges on every convex edge (sphericalCorners or not), then insert_shell { wall: 2 }: 9 or more bodies. Works: insert_shell first: 1 body when the opening does not face the flange's top face (2 when it does); then concave, then convex, by name.
-- D. Shelled cup or tube, then a large chamfer over the rim face (top and inner rim as one pick). insert_chamfer_edges answers feature_failed "chamferEdges: edge N split the solid into 2 bodies" and the part stays as it was. Works: one named rim ("cylinder1.side~cylinder1.top") with a leg below the wall (0.8 on a 2 mm wall). Do not shell a tube: it is already hollow, and shelling it leaves the top face in pieces and the inner wall as unnamed facets.
+- D. Shelled cup or tube, then a chamfer over the rim face (outer and inner rim as one pick). A leg at or above the wall removes the whole rim face and leaves a ridge. An older app build refuses the rim-face pick at any leg: feature_failed "chamferEdges: edge N split the solid into 2 bodies", and the part stays as it was. Works on every build: one named rim ("cylinder1.side~cylinder1.top") with a leg below the wall (0.8 on a 2 mm wall). Do not shell a tube: it is already hollow, and shelling it leaves the top face in pieces and the inner wall as unnamed facets.
 
 Reuse instead of rebuilding.
 - Repeated parts: one part, many instances. insert_part { part_id, instance: true } or a pattern, never a second copy rebuilt by hand. Hardware is one part per unique fastener type, patterned to every place it goes.
@@ -187,7 +188,9 @@ Check your work. After each stage: status (runState ok, bodyCount 1 for a one-pi
  */
 const CHAT = `In-viewer chat: the required workflow. Everything here is a requirement, not a tip. Follow it after every pair and for every prompt the user sends from the SurfCAD chat box.
 
-A. After every pair or login, before you wait for a prompt (required)
+${WAKE_GUIDE_SECTION}
+
+A2. After every pair or login, before you wait for a prompt (required)
 1. ${WEBHOOK_REQUIRED_GUIDANCE} status.webhookRegistered is then true until this process exits.
 2. The URL and bearer are held in this process's memory only: never logged, never written to disk, never returned, never sent to the tab. Unpair, a new pair, and a new process all start with no webhook, so register again every time.
 3. No webhook URL yet: ask the user once, in these words: "${PROMPT_ONBOARDING_ASK}"
@@ -287,7 +290,7 @@ export const GUIDE_TOPICS = Object.freeze({
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
   modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part (never create_part for the first part); required blend order draft, shell, concave, then convex fillets and chamfers, edges picked by name; the shell opening; shell-after-fillet playtest cases A to D; reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
-  chat: { summary: 'REQUIRED in-viewer chat workflow: register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
+  chat: { summary: 'REQUIRED in-viewer chat workflow: the wake setup at install (so the user can message you while you are idle), register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -367,7 +370,8 @@ export function guideResourceContents(uri, version = loadPackageVersion()) {
 export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
-  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
+  // The wake pointer is here because every host shows these lines first. The cap is 2048 bytes.
+  `Install: set up the wake, guide chat A. Pair, then guide { topic: "start" } before the first model call; guide {} topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
   'Flow: first part = create_assembly\'s partId (create_part: later parts only); insert_cube / insert_cylinder / insert_tube, insert_hole, insert_cut, insert_shell, then blends, concave before convex. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');
