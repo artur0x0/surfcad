@@ -53,10 +53,7 @@ import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
 import { track, trackFeatureCommits, trackPaletteFeature } from './utils/analytics';
-import { 
-  importFile,
-  isBackendFormat,
-} from './utils/importModel';
+import { importFile } from './utils/importModel';
 import {
   downloadMeshExport,
   downloadModelFromMesh,
@@ -1536,7 +1533,9 @@ const App = () => {
       },
       // Push a reference from raw meshData delivered as a JSON string (keeps the CDP
       // expression a single scalar): { numProp, vertProperties:[...], triVerts:[...] }.
-      // Used by the STEP channel: backend /api/convert/step (OCCT) -> meshData -> worker.
+      // Used by the external harness's STEP channel: the harness converts the reference
+      // itself and pushes the meshData here. The app's own STEP import runs in the browser
+      // (src/step/stepClient.js) and never calls the server.
       async stageReferenceLoadMesh(filename, meshDataJson, tolerance, timeoutMs = 180000) {
         const ctx = window.__MANIFOLD_CONTEXT__;
         if (!ctx || !ctx.isReady) return { ok: false, error: 'manifold context not ready' };
@@ -10160,12 +10159,9 @@ const App = () => {
 
   // Upload creates a new part. It never overwrites the script that is open.
   // The mesh stays in the local asset cache. This does not commit to the vault.
+  // Every format, STEP included, is converted on this device; no file is uploaded.
   const handleImport = async (file) => {
     if (!file) return;
-    if (isBackendFormat(file.name) && !isAuthenticated) {
-      setUploadError('Sign in to import STEP');
-      return;
-    }
     if (!manifoldReady) {
       setUploadError('Manifold not ready. Please wait...');
       return;

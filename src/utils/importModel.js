@@ -1,6 +1,7 @@
 // utils/modelImport.js
-// Consolidated model import - handles STL, OBJ, 3MF (frontend) and STEP (backend)
-// Uses OBJ as intermediate format for reliable Manifold construction
+// Consolidated model import - handles STL, OBJ, 3MF and STEP, all in the browser.
+// Mesh files use OBJ as the intermediate format. STEP is meshed by the Open CASCADE
+// wasm module and handed to the Manifold worker as arrays.
 
 import manifoldContext from './ManifoldWorker';
 import { importSTL, importOBJ, import3MF, meshToOBJ } from './model-io';
@@ -136,26 +137,17 @@ export const listCachedModels = async () => {
 // FORMAT DETECTION
 // ============================================================================
 
-const FRONTEND_FORMATS = ['.stl', '.obj', '.3mf'];
-const BACKEND_FORMATS = ['.step', '.stp'];
+const MESH_FORMATS = ['.stl', '.obj', '.3mf'];
+const STEP_FORMATS = ['.step', '.stp'];
 
 const getExtension = (filename) => 
   filename.toLowerCase().slice(filename.lastIndexOf('.'));
 
-export const isFrontendFormat = (filename) => 
-  FRONTEND_FORMATS.includes(getExtension(filename));
+export const isMeshFormat = (filename) => 
+  MESH_FORMATS.includes(getExtension(filename));
 
-export const isBackendFormat = (filename) => 
-  BACKEND_FORMATS.includes(getExtension(filename));
-
-/** Client-safe STEP import errors. 401 is "sign in"; never show converter stdout. */
-export function stepImportErrorMessage(status, payload) {
-  if (status === 401) return 'Sign in to import STEP';
-  if (status === 429) {
-    return payload?.details || payload?.error || 'Too many STEP imports. Try again shortly.';
-  }
-  return payload?.details || payload?.error || 'STEP conversion failed';
-}
+export const isStepFormat = (filename) => 
+  STEP_FORMATS.includes(getExtension(filename));
 
 // ============================================================================
 // SCRIPT GENERATION
@@ -190,35 +182,20 @@ return importedModel;`;
 };
 
 // ============================================================================
-// STEP IMPORT (Backend)
+// STEP IMPORT (in the browser)
 // ============================================================================
 
-/**
- * Convert STEP file to Manifold via backend
- */
-const convertStepToManifold = async (file, deflection = 0.1) => {
-  const API_URL = import.meta.env.VITE_API_URL;
-  
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('deflection', deflection.toString());
-  
-  const response = await fetch(`${API_URL}/api/convert/step`, {
-    method: 'POST',
-    credentials: 'include',
-    body: formData
-  });
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ details: 'Conversion failed' }));
-    throw new Error(stepImportErrorMessage(response.status, error));
-  }
-  
-  return response.json();
-};
+/** Weld grid for the STEP reader's per-face triangle soup, in millimetres. */
+const STEP_WELD_TOLERANCE_MM = 0.001;
+
+const STEP_NOT_SOLID_MESSAGE =
+  'This STEP file did not convert to a closed solid. Check that the model is a solid body and try again.';
 
 /**
- * Import STEP file via backend
+ * Import a STEP file. The file is read and meshed on this device by the
+ * Open CASCADE wasm module (src/step/stepClient.js) and the Manifold worker
+ * welds the result into a solid. Nothing is uploaded, and there is no server
+ * fallback: a file the module cannot convert fails with a message.
  */
 export const importStepFile = async (file, deflection = 0.1, options = {}) => {
   const startTime = Date.now();
@@ -227,25 +204,43 @@ export const importStepFile = async (file, deflection = 0.1, options = {}) => {
   console.log(`[Import] Starting STEP import: ${filename}`);
   
   try {
-    const response = await convertStepToManifold(file, deflection);
-    
-    if (!response.success) {
-      throw new Error(response.details || 'STEP conversion failed');
+    const convert = options.convertStep || (await import('../step/stepClient.js')).convertStep;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const soup = await convert(bytes, { deflection });
+    console.log(`[Import] STEP meshed: ${soup.triVerts.length / 3} triangles, ${soup.solids} solids, ${soup.faces} faces`);
+
+    let result;
+    try {
+      result = await manifoldContext.importMeshData(
+        { vertProperties: soup.vertProperties, triVerts: soup.triVerts },
+        filename,
+        { tolerance: STEP_WELD_TOLERANCE_MM },
+      );
+    } catch (error) {
+      console.error('[Import] STEP mesh is not a solid:', error);
+      throw new Error(STEP_NOT_SOLID_MESSAGE);
     }
-    
-    const meshData = response.data;
+    if (!result || !result.mesh) {
+      throw new Error(STEP_NOT_SOLID_MESSAGE);
+    }
     
     if (!options.skipCache) {
-      await cacheManifoldData(filename, meshData);
-      manifoldContext.cacheImportedModel(filename, meshData);
+      await cacheManifoldData(filename, result.mesh);
+      manifoldContext.cacheImportedModel(filename, result.mesh);
     }
     
-    const script = generateImportScript(filename, meshData.volume);
+    const script = generateImportScript(filename, result.volume);
     
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[Import] ✓ STEP import complete in ${duration}s`);
+    console.log(`[Import] ✓ STEP import complete in ${duration}s (volume: ${result.volume.toFixed(2)} mm³)`);
     
-    return { script, filename, meshData };
+    return {
+      script,
+      filename,
+      meshData: result.mesh,
+      volume: result.volume,
+      boundingBox: result.boundingBox,
+    };
   } catch (error) {
     console.error('[Import] STEP import failed:', error);
     throw error;
@@ -337,9 +332,9 @@ export const importMeshFile = async (file, options = {}) => {
 export const importFile = async (file, options = {}) => {
   const filename = file.name;
   
-  if (isFrontendFormat(filename)) {
+  if (isMeshFormat(filename)) {
     return importMeshFile(file, options);
-  } else if (isBackendFormat(filename)) {
+  } else if (isStepFormat(filename)) {
     return importStepFile(file, options.deflection || 0.1, options);
   } else {
     const ext = getExtension(filename);
@@ -356,8 +351,8 @@ export default {
   importStepFile,
   
   // Format detection
-  isFrontendFormat,
-  isBackendFormat,
+  isMeshFormat,
+  isStepFormat,
   
   // Script utilities
   parseImportedModels,

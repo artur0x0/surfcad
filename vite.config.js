@@ -44,6 +44,20 @@ export default defineConfig({
   server: {
     // dev-only: allow cloudflared quick-tunnel hostnames
     allowedHosts: true,
+    watch: {
+      // Local wasm build trees. The OCCT checkout and its objects are tens of
+      // thousands of files; watching them exhausts inotify (ENOSPC) and the
+      // dev server exits. The committed pkg/ folders stay watched.
+      ignored: [
+        '**/packages/surfcad-step/.deps/**',
+        '**/packages/surfcad-step/build-wasm/**',
+        '**/packages/surfcad-step/pkg-rebuild/**',
+        '**/packages/surfcad-mesh/.deps/**',
+        '**/packages/surfcad-mesh/build-wasm/**',
+        '**/packages/surfcad-mesh/build-native/**',
+        '**/packages/surfcad-mesh/pkg-rebuild/**',
+      ],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

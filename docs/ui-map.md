@@ -1038,7 +1038,8 @@ Camera and snaps `src/utils/viewCamera.js`; cutting plane
 wires `src/utils/savedContours.js`.
 
 ### Files and commerce
-Import `src/utils/importModel.js` (+ `POST /api/convert/step`); export
+Import `src/utils/importModel.js` (STEP is converted in the browser by
+`src/step/` and `packages/surfcad-step`; nothing is uploaded); export
 `src/utils/exportModel.js`, `src/utils/model-io.js`. Quoting
 `src/utils/quoting.js`; checkout resume `src/utils/checkoutStorage.js`; auth
 `src/hooks/useAuth.jsx`. Backend: `backend/server.js`,

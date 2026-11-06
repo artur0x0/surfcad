@@ -109,17 +109,13 @@ describe('concurrency gate', () => {
   });
 });
 
-test('convert route uses execFile and requireAuth; frontend asks signed-out users to sign in', async () => {
+test('convert route uses execFile and requireAuth', async () => {
   const convert = await readFile(new URL('../backend/routes/convert.js', import.meta.url), 'utf8');
   assert.match(convert, /from 'child_process'/);
   assert.match(convert, /execFile/);
   assert.doesNotMatch(convert, /shell:\s*'\/bin\/bash'/);
   assert.match(convert, /requireAuth/);
   assert.match(convert, /concurrencyMiddleware/);
-  const frontend = await readFile(new URL('../src/utils/importModel.js', import.meta.url), 'utf8');
-  assert.match(frontend, /credentials:\s*'include'/);
-  assert.match(frontend, /Sign in to import STEP/);
-  const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(app, /Sign in to import STEP/);
-  assert.match(app, /isBackendFormat/);
+  // The app no longer calls this route: STEP import runs in the browser.
+  // test/step-import-local.test.js pins that.
 });

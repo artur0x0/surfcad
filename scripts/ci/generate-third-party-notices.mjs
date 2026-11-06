@@ -8,12 +8,12 @@
  * Rust crates are the ones `cargo tree` links into the wasm32 FEA module
  * (`-e normal,no-proc-macro`). npm packages are the ones whose modules are
  * in the Vite production bundle, not the devDependency list and not every
- * production package that happens to be installed. Mesh and Emscripten
- * notices are assembled from scripts/ci/license-texts/, which are the
- * upstream licence files at the pins in scripts/fea/build-mesh-wasm.mjs.
- * Those snapshots are what `--check` reads, so the mesh section does not
- * clone upstream on every CI run. The Rust and npm sections are regenerated
- * from the lockfile and the bundle.
+ * production package that happens to be installed. Mesh, STEP reader, and
+ * Emscripten notices are assembled from scripts/ci/license-texts/, which are
+ * the upstream licence files at the pins in scripts/fea/build-mesh-wasm.mjs
+ * and scripts/step/build-step-wasm.mjs. Those snapshots are what `--check`
+ * reads, so those sections do not clone upstream on every CI run. The Rust
+ * and npm sections are regenerated from the lockfile and the bundle.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -22,6 +22,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build, mergeConfig } from 'vite';
 import baseConfig from '../../vite.config.js';
+import { EMSDK_VERSION as STEP_EMSDK_VERSION, OCCT_PIN } from '../step/build-step-wasm.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -607,13 +608,128 @@ function meshSection() {
   };
 }
 
+function stepSection() {
+  const occt = [
+    'Open CASCADE Technology (OCCT)',
+    `Pin: ${OCCT_PIN.tag} (${OCCT_PIN.commit})`,
+    'Upstream: https://github.com/Open-Cascade-SAS/OCCT',
+    'Licence: LGPL-2.1-only WITH OCCT-exception-1.0',
+    'Compiled without modification. Thirteen toolkits are compiled (TKernel, TKMath, TKG2d,',
+    'TKG3d, TKGeomBase, TKBRep, TKGeomAlgo, TKTopAlgo, TKShHealing, TKMesh, TKXSBase, TKDE,',
+    'TKDESTEP) and the linker keeps the objects the STEP reader and the mesher reach.',
+    'Copyright:',
+    '  Copyright (c) OPEN CASCADE SAS, and Matra Datavision for files written before 1999.',
+    '  Each source file carries its own notice at the pinned tag.',
+    '',
+    'Licence text (LICENSE_LGPL_21.txt):',
+    bundledText('step/lgpl-2.1.txt'),
+    '',
+    'Licence text (OCCT_LGPL_EXCEPTION.txt):',
+    bundledText('step/occt-lgpl-exception.txt'),
+  ].join('\n');
+  const components = [
+    occt,
+    component('surfcad-step wrapper', [
+      'Source: packages/surfcad-step/src/api.cpp in this application\'s source repository',
+      'Licence: LGPL-2.1-only WITH OCCT-exception-1.0, the same terms as OCCT (texts above).',
+      'The C interface around the OCCT STEP reader and mesher. It is the only',
+      'application code in surfcad_step.wasm.',
+    ], [], ['Copyright (c) 2026 the SurfCAD authors']),
+    component('DELABELLA (inside OCCT, BRepMesh)', [
+      `OCCT ${OCCT_PIN.tag}: src/ModelingAlgorithms/TKMesh/BRepMesh/delabella.cpp`,
+      'Upstream: https://github.com/msokalski/delabella',
+      'Licence: MIT',
+    ], [{ label: 'delabella.cpp header', text: bundledText('step/delabella-mit.txt') }]),
+    component('strtod by David M. Gay (inside OCCT, Standard)', [
+      `OCCT ${OCCT_PIN.tag}: src/FoundationClasses/TKernel/Standard/Standard_Strtod.cxx`,
+      'Licence: the permission notice in that file (Lucent Technologies).',
+    ], [{ label: 'Standard_Strtod.cxx header', text: bundledText('step/strtod-lucent.txt') }]),
+    component('Unicode conversion code (inside OCCT, NCollection)', [
+      `OCCT ${OCCT_PIN.tag}: src/FoundationClasses/TKernel/NCollection/NCollection_UtfIterator.lxx`,
+      'Licence: the Unicode, Inc. notice in that file.',
+    ], [{ label: 'NCollection_UtfIterator.lxx notice', text: bundledText('step/unicode-notice.txt') }]),
+    component('FlexLexer.h (inside OCCT, FlexLexer)', [
+      `OCCT ${OCCT_PIN.tag}: src/FoundationClasses/TKernel/FlexLexer/FlexLexer.h`,
+      'Licence: BSD (The Regents of the University of California).',
+    ], [{ label: 'FlexLexer.h header', text: bundledText('step/flexlexer-bsd.txt') }]),
+    component('Bison parser skeleton (inside OCCT, StepFile)', [
+      `OCCT ${OCCT_PIN.tag}: src/DataExchange/TKDESTEP/StepFile/step.tab.cxx and step.tab.hxx`,
+      'The STEP parser is Bison output. It is used under the special exception in the',
+      'skeleton\'s notice, which lets a work that contains the skeleton be distributed',
+      'under terms of its own choice. Here those terms are OCCT\'s. The GNU General',
+      'Public License does not apply to this use and its text is not included.',
+    ], [{ label: 'step.tab.cxx skeleton notice', text: bundledText('step/bison-skeleton-exception.txt') }]),
+  ];
+  return {
+    count: components.length,
+    text: [
+      'STEP reader',
+      '-----------',
+      '',
+      `${components.length} components in packages/surfcad-step/pkg (surfcad_step.wasm and its glue).`,
+      'This software makes use of Open CASCADE Technology. How to obtain the source and',
+      'how to run the application with a modified build are described earlier in this file.',
+      '',
+      components.join(`\n\n${RULE}\n\n`),
+    ].join('\n'),
+  };
+}
+
+function lgplSourceOffer() {
+  return [
+    'GNU Lesser General Public License 2.1 — the STEP reader',
+    '-------------------------------------------------------',
+    '',
+    'STEP import uses Open CASCADE Technology (OCCT). OCCT is licensed under the',
+    'GNU Lesser General Public License version 2.1 with the Open CASCADE',
+    'exception version 1.0. Both texts are in the STEP reader section later in',
+    'this file. You may use, study, modify, and replace the library under those',
+    'terms.',
+    '',
+    'OCCT is distributed only inside surfcad_step.wasm. That WebAssembly file',
+    'holds OCCT and a small wrapper, and no other part of the application. The',
+    'application fetches it by URL when a STEP file is imported and calls the',
+    'functions it exports. OCCT is not linked into any other file the',
+    'application ships.',
+    '',
+    'Source',
+    '  OCCT',
+    '    Upstream: https://github.com/Open-Cascade-SAS/OCCT',
+    `    Pinned tag: ${OCCT_PIN.tag}`,
+    `    Pinned commit: ${OCCT_PIN.commit}`,
+    '    Compiled without modification.',
+    '  Wrapper and build files, in this application\'s source repository',
+    '  (https://github.com/artur0x0/surfcad):',
+    '    packages/surfcad-step/src/api.cpp',
+    '      The wrapper. Its header comment documents the exported functions and',
+    '      the layout of the result.',
+    '    packages/surfcad-step/CMakeLists.txt',
+    '      The list of OCCT toolkits that are compiled, and the compile and',
+    '      link options.',
+    '    scripts/step/build-step-wasm.mjs',
+    `      Fetches OCCT at the pin and builds the module with Emscripten ${STEP_EMSDK_VERSION}.`,
+    '',
+    'Using a modified build',
+    '  Run `node scripts/step/build-step-wasm.mjs` in a checkout of the',
+    '  repository above, after changing OCCT or the wrapper. It writes',
+    '  surfcad_step.wasm and surfcad_step.js to packages/surfcad-step/pkg.',
+    '  A build works with the application when it exports surfcad_step_abi',
+    '  (returning 1), surfcad_step_mesh, surfcad_step_free, malloc, and free',
+    '  as api.cpp declares them. To run the application with your build, serve',
+    '  your surfcad_step.wasm in place of the one the application requests, for',
+    '  example with the local overrides feature of your browser\'s developer',
+    '  tools, or build the application from the repository with your file in',
+    '  packages/surfcad-step/pkg.',
+  ].join('\n');
+}
+
 function emscriptenSection() {
   const pieces = [
     component('Emscripten', [
       'Pin: emsdk 6.0.12, Emscripten tag 6.0.12 (5488e0871d46d19a3209988190fa6a653126256f)',
       'Upstream: https://github.com/emscripten-core/emscripten',
       'Licence: MIT AND University of Illinois/NCSA Open Source License',
-      'The shipped surfcad_mesh.js glue is generated from this runtime.',
+      'The shipped surfcad_mesh.js and surfcad_step.js glue is generated from this runtime.',
       'The emcc compiler itself is not shipped. The copyright line points at AUTHORS,',
       'which is included in full.',
     ], [
@@ -621,31 +737,31 @@ function emscriptenSection() {
       { label: 'AUTHORS', text: bundledText('emscripten/emscripten-authors.txt') },
     ]),
     component('musl libc', [
-      'Bundled with Emscripten 6.0.12 and statically linked into the mesher wasm.',
+      'Bundled with Emscripten 6.0.12 and statically linked into the mesher and STEP reader wasm.',
       'Upstream COPYRIGHT from that Emscripten tag (system/lib/libc/musl/COPYRIGHT).',
       'Licence: MIT, with the third-party attributions in that file.',
     ], [{ label: 'COPYRIGHT', text: bundledText('emscripten/musl-copyright.txt') }]),
     component('libc++', [
       'LLVM 22.1.8, as updated by Emscripten 6.0.6 and carried in emsdk 6.0.12.',
-      'Statically linked into the mesher wasm.',
+      'Statically linked into the mesher and STEP reader wasm.',
       'Upstream: https://github.com/llvm/llvm-project/blob/llvmorg-22.1.8/libcxx/LICENSE.TXT',
       'Licence: Apache-2.0 WITH LLVM-exception, plus the legacy terms in that file.',
     ], [{ label: 'libcxx/LICENSE.TXT', text: bundledText('emscripten/libcxx-license.txt') }]),
     component('libc++abi', [
       'LLVM 22.1.8, as updated by Emscripten 6.0.6 and carried in emsdk 6.0.12.',
-      'Statically linked into the mesher wasm.',
+      'Statically linked into the mesher and STEP reader wasm.',
       'Upstream: https://github.com/llvm/llvm-project/blob/llvmorg-22.1.8/libcxxabi/LICENSE.TXT',
       'Licence: Apache-2.0 WITH LLVM-exception, plus the legacy terms in that file.',
     ], [{ label: 'libcxxabi/LICENSE.TXT', text: bundledText('emscripten/libcxxabi-license.txt') }]),
     component('libunwind', [
       'LLVM 22.1.8, as updated by Emscripten 6.0.3 and carried in emsdk 6.0.12.',
-      'Statically linked (the mesher builds with C++ exceptions).',
+      'Statically linked (the mesher and the STEP reader build with C++ exceptions).',
       'Upstream: https://github.com/llvm/llvm-project/blob/llvmorg-22.1.8/libunwind/LICENSE.TXT',
       'Licence: Apache-2.0 WITH LLVM-exception, plus the legacy terms in that file.',
     ], [{ label: 'libunwind/LICENSE.TXT', text: bundledText('emscripten/libunwind-license.txt') }]),
     component('compiler-rt', [
       'LLVM 22.1.8, as updated by Emscripten 6.0.3 and carried in emsdk 6.0.12.',
-      'Statically linked into the mesher wasm.',
+      'Statically linked into the mesher and STEP reader wasm.',
       'Upstream: https://github.com/llvm/llvm-project/blob/llvmorg-22.1.8/compiler-rt/LICENSE.TXT',
       'Licence: Apache-2.0 WITH LLVM-exception, plus the legacy terms in that file.',
     ], [{ label: 'compiler-rt/LICENSE.TXT', text: bundledText('emscripten/compiler-rt-license.txt') }]),
@@ -653,11 +769,11 @@ function emscriptenSection() {
   return {
     count: pieces.length,
     text: [
-      'Emscripten runtime linked into the volume mesher',
-      '-----------------------------------------------',
+      'Emscripten runtime linked into the volume mesher and the STEP reader',
+      '-------------------------------------------------------------------',
       '',
       `${pieces.length} runtime components. emsdk 6.0.12 links musl, libc++, libc++abi,`,
-      'libunwind, and compiler-rt into the wasm, and the JS glue is Emscripten\'s.',
+      'libunwind, and compiler-rt into each wasm, and the JS glue is Emscripten\'s.',
       'Those are distributed with the application, so their notices are included.',
       '',
       pieces.join(`\n\n${RULE}\n\n`),
@@ -723,7 +839,11 @@ function introduction() {
     'This file is the notice for third-party code distributed with the',
     'application. The production build copies public/ into the site output,',
     'so this file ships. packages/surfcad-mesh/LICENSES.md is a developer note',
-    'in the source tree and is not part of the production build.',
+    'in the source tree and is not part of the production build. The same is',
+    'true of packages/surfcad-step/LICENSES.md.',
+    '',
+    'This software makes use of Open CASCADE Technology (STEP import), under the',
+    'GNU Lesser General Public License 2.1. See the section on that licence below.',
     '',
     'jszip is used under the MIT licence, elected from (MIT OR GPL-3.0-or-later).',
     'It comes in via three-3mf-exporter. The GPL-3.0-or-later alternative is not',
@@ -734,6 +854,7 @@ function introduction() {
 
 async function generate() {
   const mesh = meshSection();
+  const step = stepSection();
   const emscripten = emscriptenSection();
   const rust = rustSection();
   const npm = await npmSection();
@@ -743,7 +864,15 @@ async function generate() {
     '',
     RULE,
     '',
+    lgplSourceOffer(),
+    '',
+    RULE,
+    '',
     mesh.text,
+    '',
+    RULE,
+    '',
+    step.text,
     '',
     RULE,
     '',
@@ -767,6 +896,7 @@ async function generate() {
     notices,
     counts: {
       mesh: mesh.count,
+      step: step.count,
       emscripten: emscripten.count,
       rust: rust.count,
       npm: npm.count,
@@ -783,7 +913,7 @@ function isDirectRun() {
 if (isDirectRun()) {
   const check = process.argv.includes('--check');
   const { notices, counts } = await generate();
-  console.log(`notices: mesh ${counts.mesh}, emscripten ${counts.emscripten}, rust ${counts.rust}, npm ${counts.npm}`);
+  console.log(`notices: mesh ${counts.mesh}, step ${counts.step}, emscripten ${counts.emscripten}, rust ${counts.rust}, npm ${counts.npm}`);
   if (check) {
     const current = readText(OUT);
     const next = notices.replace(/\s+$/, '');

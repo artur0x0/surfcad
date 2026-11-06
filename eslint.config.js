@@ -53,6 +53,10 @@ export default [
       'packages/surfcad-mesh/build-native/**',
       'packages/surfcad-mesh/build-wasm/**',
       'packages/surfcad-mesh/pkg-rebuild/**',
+      'packages/surfcad-step/pkg/**', // emscripten glue
+      'packages/surfcad-step/.deps/**',
+      'packages/surfcad-step/build-wasm/**',
+      'packages/surfcad-step/pkg-rebuild/**',
       'backend/node_modules/**',
       'public/**',
       '.deploy-backups/**', // gitignored snapshots incl. minified bundles (flat config ignores .gitignore on its own)

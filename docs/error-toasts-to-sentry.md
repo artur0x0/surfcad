@@ -85,7 +85,6 @@ Line and column for script errors already exist on the thrown value when the wor
 | `handleNewAssembly` — local script save failed | `assembly` |
 | `handleAddPart` — local script save failed | `assembly` |
 | `seedOpenAssembly` (sheet-metal bind) — local script save failed | `assembly` |
-| `handleImport` — sign in required for STEP | `export` |
 | `handleImport` — Manifold not ready | `geometry` |
 | `handleImport` — no assembly open | `assembly` |
 | `handleImport` — raw file too large | `export` |

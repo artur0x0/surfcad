@@ -419,7 +419,56 @@ class ManifoldWorker {
       });
     });
   }
-  
+
+  /**
+   * Import raw triangle arrays and create a Manifold (the STEP reader's soup).
+   * Same repair ladder as importOBJ: strict, weld identical positions, weld on
+   * a grid of `options.tolerance` millimetres.
+   *
+   * @param {{ vertProperties: Float32Array, triVerts: Uint32Array }} meshData
+   * @param {string} filename
+   * @param {{ tolerance?: number, timeoutMs?: number }} [options]
+   * @returns {Promise<{mesh: Object, volume: number, boundingBox: Object}>}
+   */
+  async importMeshData(meshData, filename, options = {}) {
+    if (!this.isReady) {
+      throw new Error('ManifoldWorker not initialized');
+    }
+
+    const timeoutMs = options.timeoutMs || this.config.timeoutMs;
+
+    return new Promise((resolve, reject) => {
+      const requestId = this._generateRequestId();
+
+      const timeoutId = setTimeout(() => {
+        this.pendingRequests.delete(requestId);
+        reject(new Error(`importMeshData timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
+
+      this.pendingRequests.set(requestId, {
+        resolve: (result) => {
+          clearTimeout(timeoutId);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        }
+      });
+
+      this.worker.postMessage({
+        type: 'importMeshData',
+        id: requestId,
+        payload: {
+          vertProperties: meshData.vertProperties,
+          triVerts: meshData.triVerts,
+          filename,
+          tolerance: options.tolerance,
+        }
+      });
+    });
+  }
+
   /**
    * ── Stage verification protocol (dev tooling; pairs with the worker's
    * stageReference... / stageVerify cases). The staging environment (bundled
@@ -1491,6 +1540,21 @@ class ManifoldContext {
     }
     
     return await this.worker.importOBJ(objString, filename);
+  }
+
+  /**
+   * Import raw triangle arrays and create Manifold (STEP import).
+   * @param {{ vertProperties: Float32Array, triVerts: Uint32Array }} meshData
+   * @param {string} filename - Filename for caching
+   * @param {{ tolerance?: number, timeoutMs?: number }} [options]
+   * @returns {Promise<{mesh: Object, volume: number, boundingBox: Object}>}
+   */
+  async importMeshData(meshData, filename, options = {}) {
+    if (!this.worker || !this.worker.isReady) {
+      throw new Error('ManifoldContext not initialized');
+    }
+
+    return await this.worker.importMeshData(meshData, filename, options);
   }
 
   /**
