@@ -27,7 +27,7 @@ import {
   saveWake,
   wakeForms,
 } from './wakeConfig.mjs';
-import { HOST_PROVISION_NOTE, WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS } from './wakeSetupText.mjs';
+import { HOST_PROVISION_NOTE, WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS, WAKE_UNAVAILABLE_USER_MESSAGE } from './wakeSetupText.mjs';
 
 export { WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS };
 
@@ -54,6 +54,9 @@ export function wakeReadinessNote(state, opts = {}) {
     lines.push(`A new session of you was started to greet the user in the SurfCAD chat ("${WAKE_GREETING}"). That greeting is the check that the wake works. Do not greet again.`);
   } else if (state?.greeting === 'send_it_yourself') {
     lines.push(`Greet the user now: reply_to_user { text: "${WAKE_GREETING}" } with no in_reply_to.`);
+    if (state?.coldWake !== 'ready') {
+      lines.push(`Then, once, tell the user in the SurfCAD chat that the setup is still needed, in these words: reply_to_user { text: "${WAKE_UNAVAILABLE_USER_MESSAGE}" } with no in_reply_to. Do not repeat it on later pairs, and do not ask the user for a URL or a key.`);
+    }
   } else if (state?.greeting === 'wake_failed') {
     lines.push(`The wake did not start a session, so idle wake is not working yet. Greet the user yourself: reply_to_user { text: "${WAKE_GREETING}" } with no in_reply_to.`);
   }
