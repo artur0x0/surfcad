@@ -4,6 +4,7 @@
  * the slide and lifter groups. `on: false` removes the skin so face paint
  * and the part colour show again. `group` highlights one side action.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 const SCHEMA = Object.freeze({
   type: 'object',
@@ -32,8 +33,8 @@ export const moldPartingCommand = Object.freeze({
       return { error: { code: 'internal', message: 'moldParting handler is missing' } };
     }
     const out = show({ on: args?.on, group: args?.group });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_parting', out, ctx);
   },
 });

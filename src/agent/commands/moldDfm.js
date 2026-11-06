@@ -3,6 +3,7 @@
  * and `buildMoldReport`. `grade` and `quantity` select the resin and the
  * lot. `on: false` closes the panel. It does not paint a skin.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 const SCHEMA = Object.freeze({
   type: 'object',
@@ -40,8 +41,8 @@ export const moldDfmCommand = Object.freeze({
       grade: args?.grade,
       quantity: args?.quantity,
     });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_dfm', out, ctx);
   },
 });
