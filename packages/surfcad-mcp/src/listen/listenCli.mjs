@@ -216,7 +216,7 @@ export async function bootstrapAfterLogin(ctx) {
   if (state.coldWake === 'listener_stopped') {
     return `Idle wake: set (${state.forms.join(', then ')}) but the listener is not running. Run: npx surfcad-mcp listen --detach\n`;
   }
-  return 'Idle wake: unavailable (no wake is set). Chat messages reach the agent only while it is in a turn. See: npx surfcad-mcp --help, Wake.\n';
+  return `Idle wake: unavailable (no wake is set), so chat messages reach the agent only while it is in a turn. Next, as the agent: call the pair tool and do what its note says. ${HOST_PROVISION_NOTE} Or set SURFCAD_WAKE_POST / SURFCAD_WAKE_BEARER (or SURFCAD_WAKE_EXEC) in the MCP server's config. See: npx surfcad-mcp --help, Wake.\n`;
 }
 
 /**

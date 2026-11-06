@@ -309,3 +309,32 @@ test('remote mode without a saved login tells the user to log in', async () => {
   }
 });
 
+
+test('on the server relay, pair {} with no code connects and carries the idle-wake note; status says the package version', async () => {
+  // Grok Bot, 2026-11-06: a logged-in agent called pair {} and was refused
+  // with bad_pairing_code, so it never saw the note, the listener or the
+  // greeting. The saved login is the pairing there.
+  const session = await openRemoteStdio({
+    serverBin: SERVER_BIN,
+    clientName: 'surfcad-mcp-remote-pair',
+    onTabMessage: answerStatus,
+  });
+  try {
+    const paired = await session.client.callTool({ name: 'pair', arguments: {} });
+    const text = (paired.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    assert.equal(paired.isError, false, text.slice(0, 300));
+    assert.doesNotMatch(text, /bad_pairing_code/);
+    assert.match(text, /"paired": true/);
+    assert.match(text, /"remote": true/);
+    assert.match(text, /Idle wake: (ready|set|unavailable)/);
+    // A test run never bootstraps a wake on its machine: unavailable, no listener.
+    assert.match(text, /"coldWake": "unavailable"/);
+    const status = await session.client.callTool({ name: 'status', arguments: {} });
+    const body = JSON.parse((status.content || [])[0].text);
+    assert.match(body.mcpVersion, /^\d+\.\d+\.\d+/);
+    assert.equal(body.host.name, 'surfcad-mcp-remote-pair');
+    assert.equal(body.wake.coldWake, 'unavailable');
+  } finally {
+    await session.close();
+  }
+});

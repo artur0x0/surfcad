@@ -65,7 +65,7 @@ const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "sta
  */
 const PROMPT_TOOLS_WITHOUT_ACTIVITY = new Set(['set_status', 'post_progress', 'close_session', 'read_messages']);
 
-const STATUS_WAKE_NOTE = ' It also adds host ({ name, version }: what your MCP client calls itself, null when it did not say) and wake ({ coldWake, forms, source, listenerRunning, note }): whether a chat message can start a session of you while you are idle. coldWake is "ready", "listener_stopped" or "unavailable"; with "unavailable" messages reach you only while you are in a turn and polling (guide { topic: "chat" } section A).';
+const STATUS_WAKE_NOTE = ' It also adds mcpVersion (this surfcad-mcp package), host ({ name, version }: what your MCP client calls itself, null when it did not say) and wake ({ coldWake, forms, source, listenerRunning, note }): whether a chat message can start a session of you while you are idle. coldWake is "ready", "listener_stopped" or "unavailable"; with "unavailable" messages reach you only while you are in a turn and polling (guide { topic: "chat" } section A).';
 
 const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
@@ -90,7 +90,7 @@ function registeredToolDefinitions(bridgeTools) {
   return [
     {
       name: PAIR_TOOL_NAME,
-      description: `Pair this MCP server to an open SurfCAD tab via the local WebSocket relay. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS} After pairing call guide { topic: "start" } (How to build in SurfCAD: block out first, features first, hardware as patterned parts) before the first model call.`,
+      description: `Pair this MCP server to an open SurfCAD tab. Local relay: pass the 8-character code. Server relay (a saved login from npx surfcad-mcp login): call pair {} with no code; it connects, starts the wake listener and greets. ${pairingEnvHint()} ${PROMPT_SERVER_INSTRUCTIONS} After pairing call guide { topic: "start" } (How to build in SurfCAD: block out first, features first, hardware as patterned parts) before the first model call.`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -234,6 +234,15 @@ async function wakeStatus(session, opts = {}) {
     listenerRunning: state.listenerRunning,
     note: wakeReadinessNote(state, { remote }),
   };
+}
+
+/** @param {{ status?: () => { remote?: boolean } }} session */
+function sessionIsRemote(session) {
+  try {
+    return session?.status?.()?.remote === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -439,7 +448,11 @@ export async function createSurfcadMcpServer(options = {}) {
       const code = typeof args.code === 'string' && args.code.trim()
         ? args.code.trim()
         : (process.env.SURFCAD_PAIRING_CODE || '').trim();
-      if (!code) {
+      // On the server relay the saved login is the pairing: pair {} connects
+      // and runs the bootstrap. A logged-in agent was refused here for want of
+      // a loopback code it does not have (Grok Bot, 2026-11-06), which kept
+      // it from the note, the listener and the greeting.
+      if (!code && !sessionIsRemote(session)) {
         return errorResult({
           code: 'bad_pairing_code',
           message: `Missing pairing code. Pass { "code": "........" } or set SURFCAD_PAIRING_CODE. ${pairingEnvHint()}`,
@@ -493,7 +506,7 @@ export async function createSurfcadMcpServer(options = {}) {
         session.holdAgentWork(false);
       }
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
-        return textResult({ ...out.value, ...session.prompts.deliveryStatus(), wake: await wakeStatus(session), host: hostInfo(server) });
+        return textResult({ ...out.value, ...session.prompts.deliveryStatus(), wake: await wakeStatus(session), host: hostInfo(server), mcpVersion: version });
       }
       if (name === 'list_commands' && out.isError !== true) {
         out = {
