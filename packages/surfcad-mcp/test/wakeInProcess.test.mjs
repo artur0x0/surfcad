@@ -122,8 +122,15 @@ test('the readiness note says what is true: ready only with a wake and something
   assert.match(none, /If your host has routines or automations with a webhook trigger \(Grok Bot and Cursor do\), provide the wake yourself/);
   assert.match(none, /Call pair again\./);
   assert.match(none, /Greet the user now: reply_to_user \{ text: "Hi, what can I help you design\?" \} with no in_reply_to/);
+  // The user is told, once, in the SurfCAD chat that the setup is still needed (Artur, 2026-11-06).
+  assert.match(none, /Then, once, tell the user in the SurfCAD chat that the setup is still needed/);
+  assert.match(none, /I can answer here while I am active\. To reach me while I am idle, my side needs a one-time setup/);
+  assert.match(none, /Do not repeat it on later pairs, and do not ask the user for a URL or a key/);
   assert.doesNotMatch(none, /ready/);
 
+  // With a wake, a self-greeting carries no "setup needed" line.
+  const localReady = wakeReadinessNote(state({ forms: ['exec'], source: 'saved', coldWake: 'ready', greeting: 'send_it_yourself' }), { remote: false });
+  assert.doesNotMatch(localReady, /setup is still needed/);
   const ready = wakeReadinessNote(state({ forms: ['post', 'exec'], source: 'env', listenerRunning: true, coldWake: 'ready', greeting: 'sent_by_wake' }), { remote: true });
   assert.match(ready, /^Idle wake: ready \(post, then exec; listener running\)/);
   assert.match(ready, /a new session of you starts and reads the message/);

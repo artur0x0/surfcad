@@ -33,6 +33,14 @@ export const HOST_PROVISION_STEPS = Object.freeze([
 
 export const HOST_PROVISION_NOTE = `If your host has routines or automations with a webhook trigger (Grok Bot and Cursor do), provide the wake yourself, now, in this turn, without asking the user: ${HOST_PROVISION_STEPS.map((step, i) => `${i + 1}) ${step}`).join(' ')}`;
 
+/**
+ * What the agent tells the user in the SurfCAD chat, once, when cold wake
+ * is unavailable: the user should know they can only reach the agent while
+ * it is active, and what the one-time setup is. It names no URL or key and
+ * asks the user for nothing in the chat. Artur asked for this on 2026-11-06.
+ */
+export const WAKE_UNAVAILABLE_USER_MESSAGE = 'I can answer here while I am active. To reach me while I am idle, my side needs a one-time setup: a wake for my host (a routine webhook, or a command that starts me), put into my surfcad-mcp config or saved with npx surfcad-mcp wake set. Until that is done, message me while I am working.';
+
 /** The environment a host sets in this MCP server's config to provide its wake. */
 export const WAKE_ENV_NAMES = Object.freeze(['SURFCAD_WAKE_POST', 'SURFCAD_WAKE_BEARER', 'SURFCAD_WAKE_EXEC']);
 
