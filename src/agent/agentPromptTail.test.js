@@ -7,6 +7,7 @@ import {
   AGENT_PROMPT_TAIL_BASE,
   AGENT_PROMPT_TAIL_HEIGHT,
   agentPromptBubblePath,
+  agentPromptTailFillPath,
   agentPromptTailLayout,
   agentPromptTailTipAngle,
 } from './agentPromptTail.js';
@@ -131,7 +132,42 @@ test('when the tail cannot be placed the rectangular fill stays', () => {
     css,
     /\.agent-prompt-tail\[data-agent-prompt-tail-ready="0"\] \{\s*visibility:\s*hidden/,
   );
-  assert.match(css, /data-agent-prompt-tail-ready="0"\] \.agent-prompt-bubble-fill/);
+  // The pane is a CSS box that is drawn whether or not anything was measured.
+  assert.doesNotMatch(css, /data-agent-prompt-tail-ready="0"\][^{]*\.agent-prompt-bubble-fill/);
+});
+
+test('the pane always has a border: a CSS border until the outline path is measured, never neither', () => {
+  const tail = readFileSync(join(root, 'src/components/AgentPromptTail.jsx'), 'utf8');
+  const css = readFileSync(join(root, 'src/index.css'), 'utf8');
+  // The box: fill, border and shadow in plain CSS, with no condition on it.
+  assert.match(css, /\n {2}\.agent-prompt-bubble-fill \{[^}]*border: 1px solid rgb\(var\(--agent-prompt-outline\)\);[^}]*border-radius: var\(--agent-prompt-radius\);[^}]*box-shadow:/s);
+  // Only the measured state hides the CSS border, and it keeps its width.
+  assert.match(css, /\.agent-prompt-tail\[data-agent-prompt-tail-ready="1"\] \.agent-prompt-bubble-fill \{\s*border-color: transparent;\s*\}/);
+  assert.doesNotMatch(css, /data-agent-prompt-tail-ready="1"\] \.agent-prompt-bubble-fill \{[^}]*border(-width)?: (0|none)/);
+  // The unmeasured state hides only the SVG and the tip marker.
+  assert.match(css, /data-agent-prompt-tail-ready="0"\] \.agent-prompt-bubble-stroke,\s*\.agent-prompt-tail\[data-agent-prompt-tail-ready="0"\] \.agent-prompt-tail-tip \{\s*visibility: hidden;/);
+  // The outline is clearer than the hairline token: 3:1 or better on the viewport ground.
+  assert.match(css, /--chrome-border-strong: 107 114 128;/);
+  assert.match(css, /--agent-prompt-outline: var\(--chrome-border-strong\);/);
+  assert.match(css, /\.agent-prompt-bubble-stroke \{[^}]*width: 100%;[^}]*height: 100%;[^}]*color: rgb\(var\(--agent-prompt-outline\)\);/s);
+  // No clip-path over the glass, no viewBox scaling, no separate shadow layer.
+  assert.doesNotMatch(tail, /\.clipPath|webkitClipPath|setAttribute\('viewBox'|bubble-shadow/);
+  assert.doesNotMatch(css, /agent-prompt-bubble-shadow/);
+  assert.match(tail, /agentPromptTailFillPath\(layout\)/);
+  assert.match(tail, /className="agent-prompt-bubble-outline"/);
+});
+
+test('the tail fill is the triangle alone, with its base on the box edge', () => {
+  const prompt = { left: 76, top: 524, bottom: 788, width: 238, height: 264, visualWidth: 238, visualHeight: 264 };
+  const withTail = agentPromptTailLayout({ prompt, button: { left: 167, top: 807, width: 56 } });
+  assert.equal(withTail.hasTail, true);
+  const d = agentPromptTailFillPath(withTail);
+  assert.equal(d, `M ${withTail.baseLeft} ${withTail.height} L ${withTail.tipX} ${withTail.tipY} L ${withTail.baseRight} ${withTail.height} Z`);
+  // The outline leaves the bottom edge at the same two points, so fill and stroke meet.
+  const outline = agentPromptBubblePath(withTail);
+  assert.ok(outline.includes(`H ${withTail.baseRight} L ${withTail.tipX} ${withTail.tipY} L ${withTail.baseLeft} ${withTail.height}`));
+  assert.equal(agentPromptTailFillPath(agentPromptTailLayout({ prompt, button: null })), '');
+  assert.equal(agentPromptTailFillPath(null), '');
 });
 
 test('the tail is phone-only and uses the glass fill, not a new colour', () => {
@@ -143,6 +179,7 @@ test('the tail is phone-only and uses the glass fill, not a new colour', () => {
   assert.match(tail, /surface-glass/);
   assert.doesNotMatch(tail, /#[0-9a-fA-F]{3,8}|text-black|bg-gray-|text-gray-/);
   assert.match(css, /\.agent-prompt\.agent-prompt--compact \{[^}]*overflow: visible;[^}]*border: none;/s);
-  assert.match(css, /\.agent-prompt-bubble-stroke path \{[^}]*stroke: currentColor;/s);
-  assert.match(css, /color: rgb\(var\(--agent-prompt-border\)\)/);
+  assert.match(css, /\.agent-prompt-bubble-outline \{[^}]*stroke: currentColor;/s);
+  assert.match(css, /\.agent-prompt-bubble-tail-fill \{[^}]*fill: rgb\(var\(--chrome-surface\) \/ 0\.82\);/s);
+  assert.match(css, /color: rgb\(var\(--agent-prompt-outline\)\)/);
 });
