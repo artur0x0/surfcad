@@ -12,7 +12,18 @@
  * topic under 1,500 words.
  */
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from './buildGuidance.mjs';
-import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, PROMPT_TURN_GUIDANCE } from './promptTools.mjs';
+import {
+  BUILDING_STATUS_GUIDANCE,
+  CLOSING_REPLY_GUIDANCE,
+  LONG_POLL_GUIDANCE,
+  PROMPT_ONBOARDING_ASK,
+  PROMPT_SERVER_INSTRUCTIONS,
+  PROMPT_TURN_GUIDANCE,
+  READ_MESSAGES_MAX_WAIT_MS,
+  READ_MESSAGES_POLL_MS,
+  WEBHOOK_REQUIRED_GUIDANCE,
+} from './promptTools.mjs';
+import { agentPromptStallMinutes } from './promptStall.mjs';
 import {
   ERROR_TOPIC_CODES,
   ERROR_TOPIC_PREFIX,
@@ -39,7 +50,8 @@ Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: tr
 
 Reading results: every model-changing tool answers { ok, errors, status } with return "status" by default over MCP (no script echo; get_script reads it, get_script { range: { fromFeature, toFeature } } reads one span). status.runState is not_run_yet | ok | failed; errors rows are feature_failed with the viewport's text and a detail reason.
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
-Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" }; list_helpers { names } documents any script helper.
+Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" | "chat" }; list_helpers { names } documents any script helper.
+In-viewer chat is a required workflow, not a tip: read guide { topic: "chat" } after every pair and follow it for every prompt the user sends from the SurfCAD chat box (register_webhook after every pair, ack first, the ${READ_MESSAGES_POLL_MS / 1000} second read_messages long-poll while connected).
 
 In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} Be interactive: post_progress while you work, especially during long reasoning. A fresh surfcad-mcp process per tool call is normal and stays present. A long-lived process is optional and nothing depends on it. Call close_session once when you are done. close_session is not sent on process exit. state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting (not a prompt id, one per second). After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {} and on a remote session. An idle session that has not received a prompt has recent: [].
 
@@ -157,6 +169,42 @@ Assemblies and joints.
 Check your work. After each stage: status (runState ok, bodyCount 1 for a one-piece part), screenshot { save_to } from iso plus one useful view, and show the user.`;
 
 /**
+ * The in-viewer chat workflow, as a requirement. One normative sequence
+ * shared by the tab (what the user sees at each step) and the agent (which
+ * tool causes it). The webhook step and the long-poll fallback are part of
+ * it: without one of them a per-call agent misses the next message.
+ */
+const CHAT = `In-viewer chat: the required workflow. Everything here is a requirement, not a tip. Follow it after every pair and for every prompt the user sends from the SurfCAD chat box.
+
+A. After every pair or login, before you wait for a prompt (required)
+1. ${WEBHOOK_REQUIRED_GUIDANCE} status.webhookRegistered is then true until this process exits.
+2. The URL and bearer are held in this process's memory only: never logged, never written to disk, never returned, never sent to the tab. Unpair, a new pair, and a new process all start with no webhook, so register again every time.
+3. No webhook URL yet: ask the user once, in these words: "${PROMPT_ONBOARDING_ASK}"
+4. The user declines, or your host cannot receive callbacks: the long-poll in section C is the required fallback. Never run with neither a webhook nor the poll.
+
+B. Every prompt, in this order (required)
+1. The user's message appears in the chat box. It reaches you as a webhook POST or as a read_messages item with its id.
+2. Ack. Your first tool call after you receive the prompt is set_status { state: "responding", id: <prompt id> }. The chat shows the jumping dots. No modeling, no list_*, no screenshot, no other tool before this. set_status responding is the ack; there is no separate ack tool.
+3. Acknowledge in words, once: reply_to_user { in_reply_to: <id>, text: "Got it. Starting on <one-line plan>.", final: false }. Keep it short. Send it when work will follow.
+4. The tab keeps that reply on screen for about 10 seconds. That is the tab's timer. Do not sleep and do not wait for it.
+5. When you start geometry work: set_status { state: "building", id: <id> }, or post_progress. The chat folds and the spinner shows on the Bot control of the window that paired you. A building, post_progress, or model-changing call made during the 10 second hold takes effect when the hold ends. Do not call building for list_*, status, or read_messages.
+6. Do the work. Call post_progress occasionally while you are connected, especially during long reasoning.
+7. Close: reply_to_user { in_reply_to: <id>, text, final: true }. The spinner stops, the chat opens again with your confirmation, and you are idle. Say what changed. On failure or partial completion say what was done, what failed and why, and what is left.
+8. The user dismisses the chat and reviews the model. Go back to waiting (section C).
+A question that needs no geometry: step 2, then the answer as the final reply (step 7). A cancel item { "type": "cancel", "id" } means the user pressed Stop: stop work on that id and send no reply and no set_status for it.
+
+C. While connected: the ${READ_MESSAGES_POLL_MS / 1000} second long-poll (required)
+1. ${LONG_POLL_GUIDANCE}
+2. read_messages { wait_ms: ${READ_MESSAGES_POLL_MS} } answers as soon as a prompt or a cancel arrives, or with an empty list after ${READ_MESSAGES_POLL_MS / 1000} seconds. Call it again at once. If your host uses shorter waits, leave at most ${READ_MESSAGES_POLL_MS / 1000} seconds between polls. wait_ms may be up to ${READ_MESSAGES_MAX_WAIT_MS}.
+3. Keep the loop running after a final reply. The next message can arrive seconds later, and a second message sent within a minute of your final reply must reach you without a webhook.
+4. A registered webhook does not replace the loop: a failed POST puts the prompt in the queue for read_messages.
+5. An empty immediate read_messages {} does not mean the user never sent. status.queued can be above 0 while a fresh per-call process has not been offered the prompt yet. Use wait_ms.
+6. Polling is not activity. A poll keeps the session connected, and nothing more: it does not restart the "No activity from the agent for ${agentPromptStallMinutes()} min" stall window and it does not show the working state. Activity is set_status, a model-changing tool, post_progress, and reply_to_user. Do not poll to look busy; post_progress while you really work.
+
+D. One window
+The dots, the fold, the spinner, and your replies show only in the SurfCAD window that paired you (or, after the user sends a prompt from another window of the same account, that window). Your tool calls run in that window. Other windows of the account stay quiet.`;
+
+/**
  * Design guidelines for high pressure injection molding. The numbers that
  * have a code constant are pinned by test/moldingGuide.test.mjs against
  * src/molding (draft threshold, the 0.5° vertical band, the lifter tilts,
@@ -217,7 +265,7 @@ SurfCAD examples (from the flanged-box side-action playtests).
 
 /** Topic name → one-line summary and the text. Order is the listing order. */
 export const GUIDE_TOPICS = Object.freeze({
-  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt', text: START },
+  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt (the required chat workflow is the chat topic)', text: START },
   dialect: { summary: DIALECT_SUMMARY, text: renderDialectTopic() },
   features: { summary: 'Marker blocks, feature ids, edit / delete / rollback / undo, script snippets, sketches', text: FEATURES },
   selection: { summary: 'Face and edge keys, list_faces filters, single-use picks, no_selection, fillet edge sets', text: SELECTION },
@@ -227,6 +275,7 @@ export const GUIDE_TOPICS = Object.freeze({
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
   modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part, shell before fillets, draft before shell, reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
+  chat: { summary: 'REQUIRED in-viewer chat workflow: register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -314,7 +363,7 @@ export const SERVER_INSTRUCTIONS = [
 export function guideToolDefinition() {
   return {
     name: GUIDE_TOOL_NAME,
-    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}. Error recoveries: errors.<code> for the code an error payload carries (its see field names the topic), e.g. ${ERROR_GUIDE_TOPIC_NAMES.slice(0, 3).join(', ')}. The same texts are the ${GUIDE_RESOURCE_SCHEME}<topic> resources.`,
+    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call, and "chat" (the required in-viewer chat workflow) after every pair. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}. Error recoveries: errors.<code> for the code an error payload carries (its see field names the topic), e.g. ${ERROR_GUIDE_TOPIC_NAMES.slice(0, 3).join(', ')}. The same texts are the ${GUIDE_RESOURCE_SCHEME}<topic> resources.`,
     inputSchema: {
       type: 'object',
       additionalProperties: false,

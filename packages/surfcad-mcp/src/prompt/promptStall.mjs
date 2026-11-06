@@ -2,8 +2,9 @@
  * No agent activity for this long is a stall, not a silent return to idle.
  * The in-viewer prompt and the MCP prompt session share this one window.
  * It applies to both typing (the pane is responding) and working (the
- * agent is building). Relayed tool calls, status, replies, and
- * read_messages start it over.
+ * agent is building). Relayed tool calls, status, post_progress, and
+ * replies start it over. A read_messages poll does not: an agent that only
+ * long-polls is waiting, not working.
  */
 export const AGENT_PROMPT_STALL_MS = 15 * 60 * 1000;
 

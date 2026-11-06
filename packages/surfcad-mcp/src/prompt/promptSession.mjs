@@ -264,9 +264,10 @@ export function createPromptSession(options) {
   }
 
   /**
-   * The agent did something that is not a state change (another tool call,
-   * a read_messages poll). Restart the idle window and tell the tab, so its
-   * own deadline restarts too. A stall notice is replaced by the live state.
+   * The agent did something that is not a state change (another bridge
+   * tool call, a partial reply). Restart the idle window and tell the tab,
+   * so its own deadline restarts too. A stall notice is replaced by the
+   * live state. A read_messages poll never comes here.
    */
   function noteActivity() {
     if (lastId && states.get(lastId) === 'cancelled') return;
@@ -666,7 +667,9 @@ export function createPromptSession(options) {
         ? { data: item.screenshot.data, mimeType: 'image/png' }
         : null);
     }
-    noteActivity();
+    // A poll is not activity. read_messages (with or without wait_ms) must
+    // not restart the stall window or tell the tab the agent is active: an
+    // agent that only long-polls would otherwise never stall.
     noteTaken(takenIds);
     return { messages, images };
   }
@@ -828,10 +831,15 @@ export function createPromptSession(options) {
       throw Object.assign(new Error('text must be at most 500 characters'), { code: 'bad_args' });
     }
     const sent = emit({ type: PAIR_MSG.AGENT_PROGRESS, v: 1, working: true }, { required: true });
-    const payload = { ok: true, working: true };
-    if (sent && typeof sent.then === 'function') return sent.then(() => payload);
+    // Progress is the agent saying it is still at work: with a phase open
+    // it restarts the stall window, like a tool call or a partial reply.
+    const finish = () => {
+      noteActivity();
+      return { ok: true, working: true };
+    };
+    if (sent && typeof sent.then === 'function') return sent.then(finish);
     if (!sent) throw Object.assign(new Error('Not paired'), { code: 'not_paired' });
-    return payload;
+    return finish();
   }
 
   /**
