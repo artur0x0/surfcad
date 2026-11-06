@@ -721,6 +721,21 @@ describe('agent relay HTTP', () => {
     const sse = await send(port, '/agent/commands/s1/events', { token: mine.token });
     assert.match(sse.text, /event: result/);
     assert.match(sse.text, /"via":"sse"/);
+    // The stream took the result. If it never reached the agent (a proxy
+    // dropped it) the agent polls: it gets the result, not 404 "no longer
+    // waiting" for a command the tab ran.
+    const polled = await send(port, '/agent/commands/s1?timeout=0', { token: mine.token });
+    assert.equal(polled.status, 200);
+    assert.equal(polled.body.status, 'done');
+    assert.equal(polled.body.response.result.via, 'sse');
+    const streamedAgain = await send(port, '/agent/commands/s1/events?timeout=0', { token: mine.token });
+    assert.match(streamedAgain.text, /event: result/);
+    // Another account, and another token of the same account, still cannot read it.
+    const stolenAfter = await send(port, '/agent/commands/s1?timeout=0', { token: other.token });
+    assert.equal(stolenAfter.status, 404);
+    const sibling = await relay.tokens.issue({ userId: 'user-a', label: 'second agent' });
+    const siblingRead = await send(port, '/agent/commands/s1?timeout=0', { token: sibling.token });
+    assert.equal(siblingRead.status, 404);
   });
 
   test('a command for a user with no tab sleeps, and is not delivered to someone else', async () => {
