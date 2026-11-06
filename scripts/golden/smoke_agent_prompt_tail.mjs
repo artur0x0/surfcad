@@ -335,6 +335,53 @@ check(
 await page.waitForTimeout(300);
 await waitReady(page);
 
+// Rest: the chat clears the stage pill by the pill's own numbers (8px pad +
+// 30px pill + 18px for the tail and its gap = 56px) so the tail fits.
+const restGeometry = (page) => page.evaluate(() => {
+  const prompt = document.querySelector('[data-agent-prompt]');
+  const pill = document.querySelector('[data-mobile-stage-home-indicator]');
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  const pane = prompt?.parentElement;
+  if (!prompt || !pill || !tail || !pane) return { missing: { prompt: !prompt, pill: !pill, tail: !tail } };
+  return {
+    keyboard: prompt.getAttribute('data-agent-prompt-keyboard'),
+    bottom: getComputedStyle(prompt).bottom,
+    gap: Math.round(pane.getBoundingClientRect().bottom - prompt.getBoundingClientRect().bottom),
+    pillDisplay: getComputedStyle(pill).display,
+    shape: tail.getAttribute('data-agent-prompt-tail-shape'),
+    focused: document.activeElement?.hasAttribute('data-agent-prompt-input') === true,
+  };
+});
+let rest = await restGeometry(page);
+check(
+  'rest: 56px above the pane bottom, the pill shown, the tail drawn',
+  rest && rest.keyboard === '0' && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
+  JSON.stringify(rest),
+);
+
+// Composer focused on a touch device (the keyboard is up): the stage pill
+// is hidden and the chat drops to 20px above the visual viewport, as a
+// plain box. Artur, 2026-11-06: the box climbed too far on the phone.
+await page.focus('[data-agent-prompt-input]');
+await page.waitForFunction(() => document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-keyboard') === '1', null, { timeout: 5000 });
+await page.waitForFunction(() => document.querySelector('[data-agent-prompt-tail]')?.getAttribute('data-agent-prompt-tail-shape') === 'box', null, { timeout: 5000 });
+const typing = await restGeometry(page);
+check(
+  'composer focused: 20px above the pane bottom, the pill hidden, no tail',
+  typing && typing.focused && typing.keyboard === '1' && typing.bottom === '20px' && typing.gap === 20
+    && typing.pillDisplay === 'none' && typing.shape === 'box',
+  JSON.stringify(typing),
+);
+await page.evaluate(() => document.querySelector('[data-agent-prompt-input]')?.blur());
+await page.waitForFunction(() => document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-keyboard') === '0', null, { timeout: 5000 });
+await waitReady(page);
+rest = await restGeometry(page);
+check(
+  'composer blurred: the pill and the tail are back at 56px',
+  rest && rest.keyboard === '0' && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
+  JSON.stringify(rest),
+);
+
 // The tail cannot be placed (no Bot button). The glass fill must stay as
 // a rounded rectangle. This is the phone bug where the text floated.
 await page.evaluate(() => {

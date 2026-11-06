@@ -893,6 +893,7 @@ export default function PromptInput({
       }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}${folded && foldSettled ? ' agent-prompt--folded-hidden' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
+      data-agent-prompt-keyboard={fieldFocused && touchEdit ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}
       data-agent-prompt-state={effectiveMode}
       data-agent-session-state={session.mode}
