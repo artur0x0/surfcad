@@ -177,3 +177,17 @@ return part;`);
     /no face named 'x.y'.*script\.f0/,
   );
 });
+
+test('a pick whose triangles have no area still gets a name, and a stamp with no row is null, not a throw', () => {
+  // What is left of a face a chamfer consumed: its triangles are still in
+  // the pick and every one has zero area. The 3 mm rim chamfer on a shelled
+  // cup (2 mm wall) ran in the kernel and then failed here with "Cannot
+  // read properties of undefined (reading 'name')".
+  const row = (name) => ({ name, feature: name.split('.')[0], role: name.split('.')[1], record: {} });
+  const table = { triFace: [0, 0, 1], triArea: [0, 0, 0], faces: [row('cup.top'), row('cup.side')] };
+  const named = stampedNameForTriangles(table, [0, 1, 2]);
+  assert.equal(named.name, 'cup.top');
+  assert.deepEqual(named.names, ['cup.top', 'cup.side']);
+  assert.equal(stampedNameForTriangles({ triFace: [5], triArea: [0], faces: [] }, [0]), null);
+  assert.equal(stampedNameForTriangles({ triFace: [0], triArea: [Number.NaN], faces: [row('cup.top')] }, [0]).name, 'cup.top');
+});

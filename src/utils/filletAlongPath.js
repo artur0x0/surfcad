@@ -737,6 +737,51 @@ function _dnorm(a) {
   return [a[0] / L, a[1] / L, a[2] / L];
 }
 
+/** Largest distance from any of the points to the fitted circle (in 3D). */
+function _offCircle(seq, fit) {
+  let worst = 0;
+  for (const p of seq) {
+    const v = _dst(p, fit.C);
+    const h = _ddot(v, fit.n);
+    const rho = Math.hypot(v[0] - h * fit.n[0], v[1] - h * fit.n[1], v[2] - h * fit.n[2]);
+    const d = Math.hypot(h, rho - fit.R);
+    if (d > worst) worst = d;
+  }
+  return worst;
+}
+
+/**
+ * Samples this far off the first / middle / last circle are not an exact
+ * rim. Under it the old fit stands, bit for bit.
+ */
+const ARC_FIT_NOISE_MM = 1e-3;
+
+/**
+ * The circle a run is resampled on.
+ *
+ * First / middle / last is three far-apart points on an open arc. On a loop,
+ * or a run that wraps most of one, the last sample is next to the first: two
+ * of the three are a chord apart and the plane hangs on that one chord. A
+ * machined rim is flat and does not care. A crease cut by a boolean wobbles
+ * (31 µm in z where a 64-facet post meets a sphere), and that tilted the
+ * fitted circle by 4.4°: knots 0.5 mm off the crease, in the air on one side
+ * and inside the wall on the other. When the samples are off that circle,
+ * thirds of the run are tried and the closer circle wins.
+ */
+function _arcFit(seq) {
+  const iMid = Math.floor(seq.length / 2);
+  const iEnd = seq.length - 1;
+  const fit = circFit3(seq[0], seq[iMid], seq[iEnd]);
+  if (seq.length < 6) return fit;
+  const wraps = _dlen(_dst(seq[iEnd], seq[0])) < 0.5 * _dlen(_dst(seq[iMid], seq[0]));
+  if (!wraps) return fit;
+  const off = fit ? _offCircle(seq, fit) : Infinity;
+  if (!(off > ARC_FIT_NOISE_MM)) return fit;
+  const third = Math.floor(seq.length / 3);
+  const alt = circFit3(seq[0], seq[third], seq[2 * third]);
+  return alt && _offCircle(seq, alt) < off ? alt : fit;
+}
+
 /** Turn at b between chords a→b and b→c. ang in radians, axis = t0×t1. */
 function _turnAt(a, b, c) {
   const t0 = _dnorm(_dst(b, a));
@@ -824,6 +869,31 @@ function _densifySweepArcTurns(points, isClosed, maxTurnDeg, rotated, opts) {
   }
   if (!arc.some(Boolean)) return points.map((p) => p.slice());
 
+  // A closed loop of samples that wobble about one circle is that circle,
+  // whichever of its vertices passed the arc test. Its chords are uneven (a
+  // crease cut by a boolean: 0.2 to 1.6 mm on one loop), so some vertices
+  // turn under the limit and the loop came out as one run with a few raw
+  // samples left between its ends. The run's ends stay on their samples,
+  // and a sample 30 µm off the circle next to a 0.5 mm chord is a kink over
+  // the 5° run gate: the fillet was cut as 24 tubes. Exact rims (off by
+  // less than ARC_FIT_NOISE_MM) and loops with a designed corner keep the
+  // run logic below.
+  if (isClosed && !rotated && n >= 6 && !arc.every(Boolean)) {
+    let corner = false;
+    for (let i = 0; i < n; i++) {
+      if (info[i].ang > stepCap) { corner = true; break; }
+    }
+    const third = Math.floor(n / 3);
+    const loopFit = corner ? null : circFit3(points[0], points[third], points[2 * third]);
+    if (loopFit) {
+      const off = _offCircle(points, loopFit);
+      if (off > ARC_FIT_NOISE_MM && off <= Math.max(0.05, 0.01 * loopFit.R)) {
+        const whole = resample(points, true);
+        if (whole) return whole;
+      }
+    }
+  }
+
   // Closed paths have no distinguished start. Spin so a straight vertex is
   // index 0 and every arc span is a linear slice (no wrap bookkeeping).
   if (isClosed && !rotated && !arc.every(Boolean)) {
@@ -853,8 +923,7 @@ function _densifySweepArcTurns(points, isClosed, maxTurnDeg, rotated, opts) {
 
   function resample(seq, fullLoop) {
     if (seq.length < 3) return null;
-    const mid = seq[Math.floor(seq.length / 2)];
-    const fit = circFit3(seq[0], mid, seq[seq.length - 1]);
+    const fit = _arcFit(seq);
     if (!fit) return null;
     const { C, R } = fit;
     const nn = fit.n;
