@@ -101,6 +101,13 @@ export const PROMPT_HOLD_MS = 8_000;
 export const MAX_HELD_PROMPTS = 20;
 
 /**
+ * Prompt ids per account whose sending tab is remembered, so the ack,
+ * replies and status for a prompt reach the window that sent it. A chat
+ * turn is closed long before 200 newer prompts exist.
+ */
+export const MAX_PROMPT_TABS = 200;
+
+/**
  * Minimum gap between unsolicited agent messages for one account.
  * A paired agent can post without a prompt id; this stops a flood.
  */

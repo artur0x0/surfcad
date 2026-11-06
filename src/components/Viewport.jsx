@@ -2931,6 +2931,12 @@ const Viewport = forwardRef(({
       zoomToSelection: () => agentZoomToSelectionRef.current(),
       listFaces: (args) => agentListFacesRef.current(args),
       moldFit: (args) => agentMoldFitRef.current(args),
+      // The stage and percent of the mold analysis that is running, for the
+      // heartbeat a long mold_* call answers (commands/moldJob.js).
+      moldProgress: () => {
+        const cur = moldProgressRef.current;
+        return cur ? { stage: cur.stage, percent: cur.percent } : null;
+      },
       moldPull: (args) => applySharedPullRef.current(args),
       moldWallMap: (args) => agentMoldWallMapRef.current(args),
       moldParting: (args) => agentMoldPartingRef.current(args),

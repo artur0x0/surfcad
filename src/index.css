@@ -13,6 +13,9 @@
   --chrome-text-secondary: 156 163 175; /* gray-400 #9ca3af */
   --chrome-divider: 55 65 81; /* gray-700 #374151 */
   --chrome-border: 55 65 81; /* gray-700 #374151 */
+  /* A boundary that must read on its own over the 3D view: 3.4:1 on
+     chrome-background and 3.7:1 on chrome-surface (WCAG 1.4.11, 3:1). */
+  --chrome-border-strong: 107 114 128; /* gray-500 #6b7280 */
   /* Brand from #460. Token first, then a class — see docs/ui-style-guide.md. */
   --brand-paper: 250 250 249; /* #FAFAF9 */
   --brand-ink: 22 23 29; /* #16171D */
@@ -72,10 +75,14 @@
   --agent-prompt-fg: var(--chrome-text);
   --agent-prompt-muted: var(--chrome-text-secondary);
   --agent-prompt-border: var(--chrome-border);
+  /* Outer outline of the phone chat bubble. The hairline token is under
+     2:1 on the viewport ground, so the pane read as borderless there. */
+  --agent-prompt-outline: var(--chrome-border-strong);
   --agent-prompt-surface: var(--chrome-surface);
   --agent-prompt-success: var(--chrome-success);
   --agent-prompt-success-hover: var(--chrome-success-hover);
   --agent-prompt-radius: 16px;
+  --agent-prompt-z: 35;
   --agent-prompt-pad: 6px;
   --agent-prompt-btn: 44px;
   --agent-prompt-line: 24px;
@@ -840,7 +847,10 @@ textarea {
     left: 50%;
     transform: translateX(-50%) translateY(0);
     transition: transform 220ms ease;
-    z-index: 20;
+    /* Above the feature strip and the rails (z-10/20) and the toasts and
+       stage pill (z-30): the open chat is never painted under viewer
+       chrome. Under the cross-section popup (z-40) and modals (z-50). */
+    z-index: var(--agent-prompt-z);
     bottom: calc(var(--agent-prompt-rest-bottom) + var(--agent-prompt-lift, 0px));
     width: var(--agent-prompt-desktop-width);
     display: flex;
@@ -856,9 +866,12 @@ textarea {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
   }
-  /* Phone speech bubble. The glass fill is one clipped shape (box + tail)
-     and the stroke is that same path, so the outline does not cross the
-     tail base. Desktop keeps the rectangular border and shadow. */
+  /* Phone speech bubble. The pane is a plain rounded glass box with a CSS
+     border and shadow (.agent-prompt-bubble-fill), so it never depends on
+     a measurement or on clip-path over a backdrop-filter. When the tail is
+     measured, one SVG path draws the outline around the box and the tail
+     (no line across the tail base) and the CSS border goes transparent.
+     Desktop keeps the rectangular border and shadow on the prompt itself. */
   .agent-prompt.agent-prompt--compact {
     overflow: visible;
     border: none;
@@ -884,46 +897,48 @@ textarea {
     overflow: visible;
     pointer-events: none;
   }
-  /* Not ready yet (no measured box): the glass fill still covers the
-     prompt as a rounded rectangle. Never hide the layer — that is the
-     phone bug where the text floats with no pane. The tail path replaces
-     this once it fits. The empty stroke stays hidden until that path exists. */
-  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-bubble-fill {
+  /* The pane. Always drawn, always bordered. */
+  .agent-prompt-bubble-fill {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    box-sizing: border-box;
+    border: 1px solid rgb(var(--agent-prompt-outline));
     border-radius: var(--agent-prompt-radius);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+  }
+  /* The measured outline replaces the CSS border. Same colour and width, so
+     the pane does not flash on the swap; the border keeps its width so the
+     box does not move. */
+  .agent-prompt-tail[data-agent-prompt-tail-ready="1"] .agent-prompt-bubble-fill {
+    border-color: transparent;
   }
   .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-bubble-stroke,
   .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-tail-tip {
     visibility: hidden;
   }
-  .agent-prompt-bubble-shadow,
-  .agent-prompt-bubble-fill {
-    position: absolute;
-    inset: 0;
-  }
-  .agent-prompt-bubble-shadow {
-    z-index: 0;
-    background: rgb(0 0 0 / 0.28);
-    transform: translateY(6px);
-    filter: blur(9px);
-  }
-  .agent-prompt-bubble-fill {
-    z-index: 0;
-  }
   .agent-prompt-bubble-stroke {
     position: absolute;
-    inset: 0;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
     z-index: 2;
     overflow: visible;
     pointer-events: none;
-    color: rgb(var(--agent-prompt-border));
+    color: rgb(var(--agent-prompt-outline));
   }
-  .agent-prompt-bubble-stroke path {
+  /* Same tint as surface-glass. The tail is too small to need the frost. */
+  .agent-prompt-bubble-tail-fill {
+    fill: rgb(var(--chrome-surface) / 0.82);
+    stroke: none;
+  }
+  .agent-prompt-bubble-outline {
     fill: none;
     stroke: currentColor;
     stroke-width: 1;
     stroke-linejoin: miter;
     stroke-miterlimit: 2;
-    vector-effect: non-scaling-stroke;
   }
   .agent-prompt-tail-tip {
     position: absolute;
@@ -949,7 +964,7 @@ textarea {
   }
   /* The fold and unfold chevrons share one shape (ui-bug-triage #3): a 44 x 28
      pill. Open: a tab hanging from the prompt's bottom edge, drawn BEHIND the
-     prompt (z 19 under its 20) and tucked under it by --agent-prompt-tab-overlap,
+     prompt (one z step under it) and tucked under it by --agent-prompt-tab-overlap,
      so the prompt's corner radius occludes its top and it reads as a tab; the
      glyph sits in the visible band (padding-top = the overlap). A sibling, so
      the prompt keeps overflow: hidden. Folded: the same pill at the bottom of
@@ -970,7 +985,7 @@ textarea {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    z-index: 19;
+    z-index: calc(var(--agent-prompt-z) - 1);
     pointer-events: auto;
   }
   .agent-prompt-fold {
@@ -1213,6 +1228,16 @@ textarea {
     align-items: center;
     justify-content: center;
     border-radius: 8px;
+  }
+  /* Camera on: a filled success button with the light icon, so the engaged
+     state reads at a glance on a phone (no hover there). The icon button's
+     transparent ground comes later in this layer than surface-success, so
+     the pair of classes puts the surface back. */
+  .agent-prompt-icon-btn.surface-success {
+    background-color: rgb(var(--agent-prompt-success));
+  }
+  .agent-prompt-icon-btn.surface-success:hover {
+    background-color: rgb(var(--agent-prompt-success-hover));
   }
   .agent-prompt-send {
     flex: none;

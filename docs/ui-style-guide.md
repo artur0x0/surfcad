@@ -55,6 +55,7 @@ invent a palette.
 | `--chrome-text` | `243 244 246` | `#f3f4f6` | Text on dark chrome |
 | `--chrome-text-secondary` | `156 163 175` | `#9ca3af` | Muted text on dark chrome |
 | `--chrome-divider` / `--chrome-border` | `55 65 81` | `#374151` | Hairlines |
+| `--chrome-border-strong` | `107 114 128` | `#6b7280` | A boundary that has to read on its own over the 3D view (the phone agent chat outline): 3.4:1 on `--chrome-background`, 3.7:1 on `--chrome-surface` |
 | `--chrome-success` | `4 120 87` | `#047857` | Allow / positive controls; `text-on-dark` ≥4.5:1 |
 | `--chrome-success-hover` | `5 150 105` | `#059669` | Allow hover; `text-on-dark` ≥3:1 (icons) |
 
@@ -102,9 +103,9 @@ Defined in `src/index.css`. Keep the set small.
 | `text-muted-on-light` | `--brand-grey` | light surfaces |
 | `text-muted-on-splash-dark` | `--brand-grey-on-navy` | dark loading gate |
 | `font-ui` | system UI stack | every chrome surface |
-| `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons |
+| `surface-success` | `--chrome-success` (hover `--chrome-success-hover`) | `text-on-dark`; Allow / positive icon buttons, and the agent prompt's camera while a screenshot is attached (a filled green button, so the engaged state reads on a phone with no hover) |
 | `surface-danger` | `--chrome-danger` (hover `--chrome-danger-hover`) | `text-on-dark`; danger controls. Dark surface. Body contrast 5.88:1 |
-| `text-success` | `--chrome-success` (hover `--chrome-success-hover`) | outline Send / camera-on on a dark glass card |
+| `text-success` | `--chrome-success` (hover `--chrome-success-hover`) | outline Send on a dark glass card |
 | `surface-quiet` | `--chrome-border` (hover `--chrome-background`) | `text-on-dark`; Deny / secondary icon buttons |
 | `tool-toggle` | idle rail toggle: Tailwind `text-blue-600`, hover `bg-gray-100`, active `bg-blue-100` | light right rail. Blue icon. Not a dark surface |
 | `tool-toggle-on` | enabled rail toggle: Tailwind `text-green-600` on `bg-green-100` | add with `tool-toggle`. Light green wash, green icon |
@@ -169,14 +170,21 @@ are at least 44px on the row under the field.
 bubble. A small obtuse triangle (`data-agent-prompt-tail`) sits on the
 bottom edge and points down at the horizontal centre of the stage pill's
 Bot button (`data-agent-chat-open`). The tip stops a few pixels short of
-the button so the bubble reads as floating. The outline is a single path
-around the box and the tail: `surface-glass` fills both, and the stroke
-is `--agent-prompt-border`. There is no hairline across the tail base.
+the button so the bubble reads as floating. The pane is a plain CSS box:
+`surface-glass` with the corner radius, a shadow, and a 1px border in
+`--agent-prompt-outline` (`--chrome-border-strong`, clearer than the hairline
+token so the pane has an edge over the model). It is drawn before anything
+is measured. Once the Bot button is measured, one SVG path draws the outline
+around the box and the tail in that same token and the CSS border goes
+transparent, so there is no hairline across the tail base; a small triangle
+in the glass tint fills the tail. The pane always has one of the two
+borders. Do not clip the glass with `clip-path`: Safari does not clip a
+`backdrop-filter` to it, which is how the pane lost its shape there.
 The tail's horizontal place is measured from that button, including after
 a resize, a rotation, and when the keyboard lifts the field. When the tail
 cannot be placed (the gap under the box is under 4px, the box is too narrow,
-or the button is not measured yet), the same `surface-glass` fill, shadow,
-and stroke stay as a rounded rectangle. The tail is added only when it fits.
+or the button is not measured yet), the pane stays a bordered rounded
+rectangle. The tail is added only when it fits.
 The layer is never hidden, so the text does not float with no pane. User
 rows in that pane use `surface-panel` with `text-on-dark` so they stay
 readable over the glass. Agent rows stay `surface-dark`. Desktop has no

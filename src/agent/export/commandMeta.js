@@ -371,6 +371,12 @@ export const COMMAND_META = {
     errors: ['bad_args', 'no_mesh', 'internal'],
     mutates: false,
   },
+  mold_status: {
+    description: 'The next heartbeat or the final result of a mold_* analysis that answered { status: "running", jobId }. It waits up to about 30 s for the analysis, then answers either the result the original call would have returned (plus jobId) or another heartbeat { status: "running", stillRunning: true, jobId, command, phase?, percent?, elapsedSec, etaSec?, message }. A heartbeat is not a result: it has no fit, wall, or report fields. Call it again until status is not running. The analysis keeps running in the tab between calls and is never restarted; keep the SurfCAD tab in the foreground. Read-only and immediate. unknown_job: no analysis with that id ran past the budget in this tab (a mold_* call answers its result directly when it finishes in time), or it finished more than 10 minutes ago.',
+    result: { type: 'object', additionalProperties: true },
+    errors: ['bad_args', 'unknown_job', 'no_mesh', 'internal'],
+    mutates: false,
+  },
   mold_fit: {
     description: 'Read-only moldability fit for one part mesh, in the part local frame (the same frame as list_faces). Searches bounding-box axes, large planar normals, and an icosphere (about 80 directions, deduped within 5°, d and -d are one axis). The chosen pull has the least occluded undercut area. Scores within max(2% of the part area, 25 mm²) of that best are tied; box axes and large planar normals win the tie over an icosphere sample, and drafted area breaks the rest. Fit is still good (0 undercut regions), fixable (1 to 4), or not_a_fit (5 or more), plus undercutCount, undercutArea, draftedArea, pull, and pullSource. Pass pull [x, y, z] to score that axis instead and keep its sign. The same result includes wall: a local thickness per triangle, nominal (mode, or the median when no thickness dominates the interior band), max, min, mean, median, and thin and thick regions. Thickness below 0.6× nominal is thin and above 1.5× nominal is thick. Wall thickness follows the geometric normal of each triangle. A stamp only flips that side when it points the other way, so one stamp on a curved face does not steer every facet. A triangle whose own normal is within 0.5° of perpendicular to the pull is not an undercut, and an undercut needs another triangle covering that point. A geometric check for later molding slices, not a supplier DFM. parting on the same result classifies every face as core or cavity by complete visibility (core along +pull, cavity along -pull). A wall within 0.5° of vertical takes the role of the labelled neighbour it can reach. There is no zero-draft class. One outer parting loop is kept. Stamped edges keep their names. On the same result, sideActions lists each block: a slide, a lifter, or an unresolved undercut. A block is one piece of steel that forms a connected set of trapped faces and withdraws along one direction. Every trapped feature that shares a direction on one connected surface is one block, whatever the gap between the features, so two holes on one wall are one slide. Each block carries pull (its withdraw direction, never the main pull axis), area (the block face it forms, which includes untrapped surface inside its window), trappedArea, window, span along the main pull, features (the stamped blocks it carries) and frees (the stamped faces it forms). A slide withdraws in the parting plane. A lifter withdraws tilted 15° to 25° into the core, and only when that tilt leaves the part without entering material. An unresolved undercut has no straight direction that frees it (a slot whose ends narrow toward the outer face); it needs a modelling change or a special mechanism. count is every block, slides, lifters and unresolved undercuts, and is what the report prices. A wall within 0.5° of vertical is not a side action. Undercuts are first refined to analysis cells of about 1.5 mm so a trapped footprint is the shadow of the feature, not the whole modelling triangle. count, slideCount, lifterCount and unresolvedCount are the numbers the mold report reads. moldDraft on the same result classifies every face, including fillets, by signed draft against that pull. The angle is the geometric normal of each triangle, so a stamp on a curved face does not drop it. Positive draft means the face normal points along the pull (the inside walls of a tray, the flange top). Negative draft means it points against the pull (the outside walls of a tray, the bottom). A face drafted at exactly the threshold passes (0.01° tolerance), and a planar stamped face takes one angle for the whole face. At the default 1° threshold each face is positive, negative, or below. Classified area is the whole mesh. below keeps a positive or negative sign. A vertical wall is below and its sign stays positive. There is no zero-draft class. It does not edit CAD draft.',
     result: { type: 'object', additionalProperties: true },
@@ -1312,7 +1318,8 @@ const INSERT_BLEND_META = {
 
 /** Guide pointers appended to the tool descriptions (surfcad-mcp 0.3.6 §3E). */
 const MOLDING_GUIDE_LINK = ' Molding rules: guide { topic: "molding" }.';
-const SHELL_ORDER_LINK = ' Order: shell first, then concave fillets, then convex fillets (guide { topic: "modeling" }).';
+const SHELL_ORDER_LINK = ' Order (required): shell first, then concave fillets and chamfers, then convex ones. After a shell or a concave blend pick the edges by name (select_edges { names } or a face pick, then use_selection: true); the no-selection default is for a plain block and fails there (guide { topic: "modeling" }).';
+const SHELL_OPENING_LINK = ' Order (required): shell before any fillet or chamfer; blending every convex edge first leaves several bodies. openScope opens every face that faces that way (default "z"): when a post, boss or flange stands on such a face, open the other side ("-z") or use "none". status.bodyCount must be 1 straight after the shell (guide { topic: "modeling" }).';
 const REUSE_LINK = ' Prefer this over rebuilding geometry by hand (guide { topic: "modeling" }).';
 export const GUIDE_LINKS = Object.freeze({
   mold_fit: MOLDING_GUIDE_LINK,
@@ -1325,8 +1332,9 @@ export const GUIDE_LINKS = Object.freeze({
   mold_quote: MOLDING_GUIDE_LINK,
   insert_boss: MOLDING_GUIDE_LINK,
   insert_add_draft: MOLDING_GUIDE_LINK,
-  insert_shell: SHELL_ORDER_LINK,
+  insert_shell: SHELL_OPENING_LINK,
   insert_fillet_edges: SHELL_ORDER_LINK,
+  insert_chamfer_edges: SHELL_ORDER_LINK,
   insert_mirror: REUSE_LINK,
   insert_hole_pattern: REUSE_LINK,
   insert_polar_array: REUSE_LINK,
@@ -1345,8 +1353,20 @@ function withEmit(name, meta) {
   return { ...meta, description: `${meta.description}${GUIDE_LINKS[name] || ''}${emitNote(name)}` };
 }
 
+/**
+ * The mold analyses that can outlast one tool call. Their description says
+ * what a heartbeat looks like, so an agent does not read one as the result
+ * (mcp-modeling-bugs-2026-11-05 §8).
+ */
+export const MOLD_RUNNING_NOTE = ' Long runs: an analysis still going after about 30 s answers { status: "running", stillRunning: true, jobId, command, phase?, percent?, elapsedSec, etaSec? } instead of the result. That is a heartbeat, not the result. Call mold_status { job_id } (it waits up to about 30 s each time) until it answers the result; the analysis keeps running in the tab and is not restarted.';
+const MOLD_BUDGETED = new Set(['mold_fit', 'mold_dfm', 'mold_quote', 'mold_parting', 'mold_side_actions', 'mold_draft', 'mold_wall_map', 'mold_pull']);
+
+function withMoldRunning(name, meta) {
+  return MOLD_BUDGETED.has(name) ? { ...meta, description: `${meta.description}${MOLD_RUNNING_NOTE}` } : meta;
+}
+
 export function metaForCommand(name) {
-  if (COMMAND_META[name]) return withGuideLink(name, COMMAND_META[name]);
+  if (COMMAND_META[name]) return withMoldRunning(name, withGuideLink(name, COMMAND_META[name]));
   if (name === 'insert_move') return withEmit(name, INSERT_MOVE_META);
   if (name === 'insert_rotate') return withEmit(name, INSERT_ROTATE_META);
   if (name === 'insert_mirror') return withEmit(name, INSERT_MIRROR_META);

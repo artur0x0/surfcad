@@ -115,9 +115,19 @@ history. A session note from the paired agent (`agent.message`, no prompt id)
 is its own agent bubble. The text is plain text. On a phone the open chat
 grows a small obtuse tail (`data-agent-prompt-tail`) from its bottom edge,
 aimed at the Bot button in the stage pill and stopping just short of it.
-The outline runs around the tail on the same glass fill. If the tail cannot
-be placed, that fill, shadow, and stroke stay as a rounded rectangle
-(`data-agent-prompt-tail-shape="box"`). Desktop has no tail.
+The pane itself (`data-agent-prompt-bubble`) is a CSS box: glass fill,
+shadow, and a 1px border in `--agent-prompt-outline`, on screen before any
+measurement. Once the tail is measured, one outline path
+(`data-agent-prompt-outline`) runs around the box and the tail and the CSS
+border goes transparent, so no line crosses the tail base. If the tail cannot
+be placed, the pane stays a bordered rounded rectangle
+(`data-agent-prompt-tail-shape="box"`). The pane has a visible border in
+every state, including with the keyboard up. Desktop has no tail.
+The open chat stacks at `--agent-prompt-z` (35): above the feature strip,
+the rails, the mode chips and cards (`z-10` / `z-20`) and the toasts and
+stage pill (`z-30`), so a chat the keyboard lifts over the feature strip is
+not painted under it; under the cross-section popup (`z-40`) and modals
+(`z-50`).
 **Two agent states** (`data-agent-prompt-state`, from `state` on the MCP
 status message, `src/agent/agentPromptTyping.js`): **typing** (the agent called
 it responding) keeps the chat open with bouncing dots and a normal input;
@@ -135,7 +145,12 @@ leaves Stop available.
 paired agent is doing when no prompt from this chat is pending, such as a
 build it started from its MCP host, or a prompt read by an earlier one-shot
 `surfcad-mcp` process. It lives in the tab, so a fresh process per tool call
-keeps nothing and still shows. Inputs: a bridge command this tab runs that
+keeps nothing and still shows. On the server relay only one window of an
+account, the agent window (the one Connect agent was pressed in, or the one
+the user last sent a prompt from), receives the agent's status, progress,
+replies and commands; another open window or device stays on idle with an
+empty chat (see the server relay paragraph in
+[architecture.md](./architecture.md)). Inputs: a bridge command this tab runs that
 changes the model (`mutates` in the catalog) enters or refreshes `working`; a
 read never does. `agent.status` (an explicit `set_status`, or the process
 entering building) sets the state at once, with or without a prompt id.
@@ -151,7 +166,7 @@ keeps the chat open with the dots. DEV
 `?agentPromptDemo=1&agentPromptState=session-working` pins it.
 **Fold (desktop):** there is no X. A chevron-down (`data-agent-prompt-fold`,
 "Hide agent prompt") hangs from the prompt's bottom edge as a 44 × 28 pill tab,
-centred, drawn behind the prompt (`z-index` 19 under the prompt's 20) with its
+centred, drawn behind the prompt (one `z-index` step under it) with its
 top tucked 8 px under the border so the corner radius occludes it, in every
 state; it slides the prompt away. A chevron-up (`data-agent-prompt-unfold`,
 "Show agent prompt"), the same pill, then sits centred at the
@@ -852,7 +867,7 @@ All of these are absolutely positioned inside the shell at
 | bottom of the pane (`data-feature-card`). On a phone the stage switcher hides and the card sits on that switcher's bottom edge. Desktop stays 10px off the pane | On desktop the sheet metal picker, feature edit, contour, the edge card, and the helper card sit 10px to the right of the mounted left rail, or 10px from the pane when that rail is not mounted. On a phone they stay centered in the gap between both rails. Refuse's footer says OK. Sheet metal Confirm is 44px. Boolean stays `z-20`, under the section rail. The view-snap flyout (`z-40`) may cover a `fullLeft` card's right end and stays above it. Hidden in game. Game keeps the old helper sheet | `FeatureSheet.jsx`, `ContourModeChip.jsx`, `FilletModeChip.jsx`, `ShellModeChip.jsx`, `DraftModeChip.jsx`, `MoveFaceModeChip.jsx`, `DeleteFaceModeChip.jsx`, `CutModeChip.jsx`, `BooleanModeChip.jsx`, `MoveModeChip.jsx`, `RotateModeChip.jsx`, `MirrorModeChip.jsx`, `PaintModeChip.jsx`, `MeasureModeChip.jsx`, `fea/FeaStudyChip.jsx`, `fea/FeaStudySheet.jsx`, `HelperParamModal.jsx`, `HoleCard.jsx`, `sheetMetal/SmControls.jsx` | Viewport |
 | top-16 center, portaled `z-50` | toasts: edge-mode, contour, fillet-scrap, fillet, shell — same `ErrorPopup` card | `ErrorPopup.jsx` | Viewport |
 | bottom of the pane (`data-feature-card`, `data-measure-mode`). On desktop the left edge is 10px right of the left rail. On a phone the stage switcher hides. Hidden in game | Measure: sticky point / edge / face / part picks, distance, angle, radius, diameter, ΔX ΔY ΔZ. Header mm\|in is the global `surfcad.displayUnit`. Joint distance and the contour loft offset read it too. Scripts stay mm. Length captions end with mm or in. Clear drops the picks. No Confirm. X closes and restores the camera. Characteristic length feeds the feature-card length sliders and does not change this card | `MeasureModeChip.jsx` | Viewport |
-| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. The field is full width; camera and Send are a right-aligned row under it, at least 44px, and the field grows to about five lines then scrolls. Touch focus lifts it with the feature-card keyboard path. Hidden until an agent is paired (or DEV `?agentPromptDemo=1`). Not mounted in game. A green 3s toast announces Agent connected (Disconnect) and Agent disconnected (Reconnect); a reload grace does not flash the second. Camera toggle attaches a viewer-only PNG to the next send. Slides down while any feature card is open and slides back when it closes. Agent replies are left-aligned `surface-dark` bubbles. A session note (`agent.message`, no prompt id) is that same text bubble. Working collapses the chat, replaces the hint with a spinner and "Agent is working...", and turns Send into Stop; responding (typing) keeps the chat open with the dots. Desktop: a chevron-down on the bottom edge folds the prompt behind a chevron-up at the bottom of the pane (`data-agent-prompt-fold` / `data-agent-prompt-unfold`, badge for the state) | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
+| bottom center of the viewer pane, between the rails (`data-agent-prompt`). Desktop bottom 48px / max 640px; phone bottom 56px / rail-capped. The field is full width; camera and Send are a right-aligned row under it, at least 44px, and the field grows to about five lines then scrolls. Touch focus lifts it with the feature-card keyboard path. Hidden until an agent is paired (or DEV `?agentPromptDemo=1`). Not mounted in game. A green 3s toast announces Agent connected (Disconnect) and Agent disconnected (Reconnect); a reload grace does not flash the second. Camera toggle (`data-agent-prompt-screenshot`, `data-agent-prompt-shot-on`) attaches a viewer-only PNG to the next send: engaged it is a filled green button (`surface-success`) with the light icon and the "Screenshot attached" row, a second tap drops the image, and Send while it is off is text only. A capture that fails says "Could not capture the view. Try again." Camera, Send and Stop act once per tap: the click that follows a tap already handled on pointerup, in the same task or a later one, is ignored (`agentPromptPress.js`). Slides down while any feature card is open and slides back when it closes. Agent replies are left-aligned `surface-dark` bubbles. A session note (`agent.message`, no prompt id) is that same text bubble. Working collapses the chat, replaces the hint with a spinner and "Agent is working...", and turns Send into Stop; responding (typing) keeps the chat open with the dots. Desktop: a chevron-down on the bottom edge folds the prompt behind a chevron-up at the bottom of the pane (`data-agent-prompt-fold` / `data-agent-prompt-unfold`, badge for the state) | floating agent prompt | `PromptInput.jsx` | App (sibling of Viewport, both shells) |
 | fills the pane | WebGL canvas | `<canvas ref={canvasRef}>` | `:15817` |
 
 Unpainted faces are one off-white, `DEFAULT_PART_COLOR` (`#ECEAE4`, `src/utils/partMaterial.js`). Face paint, the stress skin, selection and hover, and piece-preview colors draw over it. The canvas draws a face-color skin on top of a part when that assembly has `colors` (`src/utils/faceColorSkin.js`). The skin is under crease lines and pick highlights. `?debugFaces=1` or `localStorage` key `surfcad.debugFaces` = `1` paints each face patch a different color. The flag is off unless set, and it is not a rail button. The right rail has no patch-colour toggle.
@@ -1140,7 +1155,8 @@ Import `src/utils/importModel.js` (STEP is converted in the browser by
 - **Responsive insets** are written `left-2 lg:left-4` / `right-2 lg:right-4`
   (phone-tight, desktop-roomy). Match this rather than inventing values.
 - **z-index ladder:** overlays `z-10`; edge chip, feature card, and success banner `z-20`;
-  toasts + mobile stage pill `z-30`; **cross-section panel/popup `z-40`** (above
+  toasts + mobile stage pill `z-30`; the open agent chat `35` (`--agent-prompt-z`,
+  above all of those, its fold tab one step under it); **cross-section panel/popup `z-40`** (above
   the CAD↔Script home-indicator so expanded options win); modals and error
   banners `z-50`. Error cards (`ErrorPopup`) are the glass `rounded-lg` chip
   from [docs/ui-style-guide.md](./ui-style-guide.md#error-toasts), not a rounded pill. They are portaled to `document.body`

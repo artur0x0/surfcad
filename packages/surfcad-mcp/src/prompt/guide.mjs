@@ -12,7 +12,18 @@
  * topic under 1,500 words.
  */
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from './buildGuidance.mjs';
-import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, PROMPT_TURN_GUIDANCE } from './promptTools.mjs';
+import {
+  BUILDING_STATUS_GUIDANCE,
+  CLOSING_REPLY_GUIDANCE,
+  LONG_POLL_GUIDANCE,
+  PROMPT_ONBOARDING_ASK,
+  PROMPT_SERVER_INSTRUCTIONS,
+  PROMPT_TURN_GUIDANCE,
+  READ_MESSAGES_MAX_WAIT_MS,
+  READ_MESSAGES_POLL_MS,
+  WEBHOOK_REQUIRED_GUIDANCE,
+} from './promptTools.mjs';
+import { agentPromptStallMinutes } from './promptStall.mjs';
 import {
   ERROR_TOPIC_CODES,
   ERROR_TOPIC_PREFIX,
@@ -32,14 +43,15 @@ export const INSTRUCTIONS_MAX_BYTES = 2048;
 const START = `${BUILD_GUIDANCE}
 
 Quick start, three calls after pair:
-1. create_part { name: "Hub" } then insert_tube { outerRadius: 20, innerRadius: 14, height: 40 }. The part is active when create_part returns; its result carries the opaque partId. Numbers are mm.
+1. create_assembly { name: "Hub", part_name: "Hub" } then insert_tube { outerRadius: 20, innerRadius: 14, height: 40 }. create_assembly's result partId is the first part, already active: build on it and never call create_part for it (create_part { name } adds the second part onward, and its result carries that part's opaque partId). Numbers are mm.
 2. list_faces { filter: { kind: "planar", normalWithin: { n: [0, 0, 1], deg: 5 } } } → select_faces { keys: [<that row's key>] } → insert_tap_drill_hole { use_selection: true, size: "M5", u: 0, v: 0 } (or insert_hole). The pick is consumed by this one insert.
 3. paint_open {} → paint_set_color { color: "#2f6fdb" } → paint_part {} (or paint_faces { keys }) → paint_confirm {}.
 Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: true } and show the user.
 
 Reading results: every model-changing tool answers { ok, errors, status } with return "status" by default over MCP (no script echo; get_script reads it, get_script { range: { fromFeature, toFeature } } reads one span). status.runState is not_run_yet | ok | failed; errors rows are feature_failed with the viewport's text and a detail reason.
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
-Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" }; list_helpers { names } documents any script helper.
+Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" | "chat" }; list_helpers { names } documents any script helper.
+In-viewer chat is a required workflow, not a tip: read guide { topic: "chat" } after every pair and follow it for every prompt the user sends from the SurfCAD chat box (register_webhook after every pair, ack first, the ${READ_MESSAGES_POLL_MS / 1000} second read_messages long-poll while connected).
 
 In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} Be interactive: post_progress while you work, especially during long reasoning. A fresh surfcad-mcp process per tool call is normal and stays present. A long-lived process is optional and nothing depends on it. Call close_session once when you are done. close_session is not sent on process exit. state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting (not a prompt id, one per second). After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {} and on a remote session. An idle session that has not received a prompt has recent: [].
 
@@ -132,13 +144,24 @@ Saving. Working-copy tools never commit. git_save { message } is the one vault w
 
 const MODELING = `3D modeling guidelines. Follow these on every part; for a part that will be injection molded also read guide { topic: "molding" }.
 
-First part. create_assembly already made the first part and made it active; its result partId is that part. rename_part it and build on it. Do not call create_part for the first part; create_part is for the second part onward.
+First part (rule). create_assembly already made the first part: an empty seed part, already active. Its result partId (the same id as activeId) is that part. Build the first part on that id: name it with create_assembly { part_name } or rename_part { part_id, name }, then insert_*. Do not call create_part for the first part; create_part is for the second part onward. After the first body the assembly has exactly one part (parts {} lists one row) and no empty "Part (1)" beside it.
 
-Order of operations.
+Order of operations (required technique).
 - Block out with primitives, then Build and Shape, then Polish, then pattern and place (the ribbon order in guide { topic: "start" }).
-- Shell before fillets: insert_shell first, then fillet the concave (inside) edges, then the convex (outside) edges. Filleting every convex edge before the shell can leave the shell as several bodies; shell-first keeps one body and an even wall. Check status.bodyCount is 1 after each step.
-- Draft (insert_add_draft) goes before the shell, so the inside walls inherit it.
-- Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the fillet selection: select the faces whose edges you want with select_faces, then insert_fillet_edges { use_selection: true }.
+- Polish order: draft (insert_add_draft, if any), then shell (insert_shell), then concave fillets and chamfers, then convex fillets and chamfers. Concave before convex holds for fillets and for chamfers alike. Blending every convex edge before the shell, or before the concave edges, is how a one-piece part turns into several bodies.
+- Draft goes before the shell, so the inside walls inherit it.
+- Shell opening. insert_shell opens every face that faces openScope (default "z", the +Z faces). When a post, boss or flange stands on a face that faces that way, the shell removes that face and cuts the feature loose (2 bodies). Open the other side (openScope: "-z") or use "none" for a closed hollow. status.bodyCount must be 1 straight after the shell, before any blend.
+- Pick blend edges by name once the part has a shell or a concave blend. list_feature_edges names each edge by its two faces; "cylinder1.top~cylinder2.side" is the concave edge where a post meets its base. select_edges { names: [...] } then insert_fillet_edges or insert_chamfer_edges { use_selection: true }. A face pick (select_faces { names }, then use_selection: true) blends that one face's convex edges.
+- The no-selection default (every convex edge) is for a plain block with no shell and no concave blend. After a shell or a concave blend it fails and the part stays as it was: the fillet answers feature_failed "filletEdges: edge is concave", the chamfer "chamferEdges: edge N split the solid into 2 bodies".
+- A chamfer leg or fillet radius on a shelled part stays below the wall thickness, one named rim at a time. A rim-face pick takes the inner and the outer rim together, and a leg at or above the wall cuts through.
+- Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the selection.
+- Check status.bodyCount is 1 after the shell and after every blend. If it is not, undo that step and fix the order or the opening; do not union the pieces back together.
+
+Playtest cases. Each failing sequence was reproduced in the app on 2026-11-06; reproduce it, then confirm the order above avoids it.
+- A. Disc base with a vertical post, one body (insert_cylinder { radius: 30, height: 8 }, then insert_cylinder { radius: 8, height: 40, z: 4, combine: "add" }). Fails: insert_fillet_edges { radius: 2 } on every convex edge (with or without sphericalCorners), then insert_shell { wall: 1.5 }: bodyCount 2. Also fails: insert_shell with the default opening: 2 bodies, the post is cut off its base. Works: insert_shell { wall: 1.5, openScope: "-z" }: 1 body; the concave edge "cylinder1.top~cylinder2.side" by name, radius 2: 1 body; the convex edges by name, radius 1: 1 body.
+- B. Post with a sphere tip (ring holder). Shell first, opening away from the tip; then the post-to-sphere concave edge by name; then the convex edges by name. The no-selection convex fillet after that concave fillet fails ("edge is concave").
+- C. Flanged box (a box block plus a flange block, one body). Fails: insert_fillet_edges on every convex edge (sphericalCorners or not), then insert_shell { wall: 2 }: 9 or more bodies. Works: insert_shell first: 1 body when the opening does not face the flange's top face (2 when it does); then concave, then convex, by name.
+- D. Shelled cup or tube, then a large chamfer over the rim face (top and inner rim as one pick). insert_chamfer_edges answers feature_failed "chamferEdges: edge N split the solid into 2 bodies" and the part stays as it was. Works: one named rim ("cylinder1.side~cylinder1.top") with a leg below the wall (0.8 on a 2 mm wall). Do not shell a tube: it is already hollow, and shelling it leaves the top face in pieces and the inner wall as unnamed facets.
 
 Reuse instead of rebuilding.
 - Repeated parts: one part, many instances. insert_part { part_id, instance: true } or a pattern, never a second copy rebuilt by hand. Hardware is one part per unique fastener type, patterned to every place it goes.
@@ -155,6 +178,42 @@ Assemblies and joints.
 - Pick joint faces by stamped name (list_faces, then face_id) rather than by position, so the joint survives later edits; and add joints as soon as two parts mate, not at the end.
 
 Check your work. After each stage: status (runState ok, bodyCount 1 for a one-piece part), screenshot { save_to } from iso plus one useful view, and show the user.`;
+
+/**
+ * The in-viewer chat workflow, as a requirement. One normative sequence
+ * shared by the tab (what the user sees at each step) and the agent (which
+ * tool causes it). The webhook step and the long-poll fallback are part of
+ * it: without one of them a per-call agent misses the next message.
+ */
+const CHAT = `In-viewer chat: the required workflow. Everything here is a requirement, not a tip. Follow it after every pair and for every prompt the user sends from the SurfCAD chat box.
+
+A. After every pair or login, before you wait for a prompt (required)
+1. ${WEBHOOK_REQUIRED_GUIDANCE} status.webhookRegistered is then true until this process exits.
+2. The URL and bearer are held in this process's memory only: never logged, never written to disk, never returned, never sent to the tab. Unpair, a new pair, and a new process all start with no webhook, so register again every time.
+3. No webhook URL yet: ask the user once, in these words: "${PROMPT_ONBOARDING_ASK}"
+4. The user declines, or your host cannot receive callbacks: the long-poll in section C is the required fallback. Never run with neither a webhook nor the poll.
+
+B. Every prompt, in this order (required)
+1. The user's message appears in the chat box. It reaches you as a webhook POST or as a read_messages item with its id.
+2. Ack. Your first tool call after you receive the prompt is set_status { state: "responding", id: <prompt id> }. The chat shows the jumping dots. No modeling, no list_*, no screenshot, no other tool before this. set_status responding is the ack; there is no separate ack tool.
+3. Acknowledge in words, once: reply_to_user { in_reply_to: <id>, text: "Got it. Starting on <one-line plan>.", final: false }. Keep it short. Send it when work will follow.
+4. The tab keeps that reply on screen for about 10 seconds. That is the tab's timer. Do not sleep and do not wait for it.
+5. When you start geometry work: set_status { state: "building", id: <id> }, or post_progress. The chat folds and the spinner shows on the Bot control of the window that paired you. A building, post_progress, or model-changing call made during the 10 second hold takes effect when the hold ends. Do not call building for list_*, status, or read_messages.
+6. Do the work. Call post_progress occasionally while you are connected, especially during long reasoning.
+7. Close: reply_to_user { in_reply_to: <id>, text, final: true }. The spinner stops, the chat opens again with your confirmation, and you are idle. Say what changed. On failure or partial completion say what was done, what failed and why, and what is left.
+8. The user dismisses the chat and reviews the model. Go back to waiting (section C).
+A question that needs no geometry: step 2, then the answer as the final reply (step 7). A cancel item { "type": "cancel", "id" } means the user pressed Stop: stop work on that id and send no reply and no set_status for it.
+
+C. While connected: the ${READ_MESSAGES_POLL_MS / 1000} second long-poll (required)
+1. ${LONG_POLL_GUIDANCE}
+2. read_messages { wait_ms: ${READ_MESSAGES_POLL_MS} } answers as soon as a prompt or a cancel arrives, or with an empty list after ${READ_MESSAGES_POLL_MS / 1000} seconds. Call it again at once. If your host uses shorter waits, leave at most ${READ_MESSAGES_POLL_MS / 1000} seconds between polls. wait_ms may be up to ${READ_MESSAGES_MAX_WAIT_MS}.
+3. Keep the loop running after a final reply. The next message can arrive seconds later, and a second message sent within a minute of your final reply must reach you without a webhook.
+4. A registered webhook does not replace the loop: a failed POST puts the prompt in the queue for read_messages.
+5. An empty immediate read_messages {} does not mean the user never sent. status.queued can be above 0 while a fresh per-call process has not been offered the prompt yet. Use wait_ms.
+6. Polling is not activity. A poll keeps the session connected, and nothing more: it does not restart the "No activity from the agent for ${agentPromptStallMinutes()} min" stall window and it does not show the working state. Activity is set_status, a model-changing tool, post_progress, and reply_to_user. Do not poll to look busy; post_progress while you really work.
+
+D. One window
+The dots, the fold, the spinner, and your replies show only in the SurfCAD window that paired you (or, after the user sends a prompt from another window of the same account, that window). Your tool calls run in that window. Other windows of the account stay quiet.`;
 
 /**
  * Design guidelines for high pressure injection molding. The numbers that
@@ -199,7 +258,8 @@ What mold_fit checks.
 - Parting: core and cavity by visibility, with one outer parting loop.
 - sideActions: slides, lifters, and unresolved undercuts. Their count is what the report prices.
 - Ejector pin candidate spots: place ejectors on flat, thick, cored-out areas, not on cosmetic faces.
-- It is a geometric check, not a supplier DFM. It can run up to 120 s on a real part; keep the tab in the foreground.
+- It is a geometric check, not a supplier DFM. It can run a minute or more on a real part; keep the tab in the foreground.
+- Long runs answer a heartbeat. A mold_* analysis still going after about 30 s answers { status: "running", stillRunning: true, jobId, command, phase, percent, elapsedSec, etaSec } instead of the result. That is not the result and not a failure. Call mold_status { job_id }: it waits up to about 30 s and answers the next heartbeat or the final result. Repeat until status is no longer running. Do not call mold_fit again while a job is running; that starts a second analysis.
 
 Edges.
 - Avoid sharp edges. Fillet edges and corners everywhere except along the parting line, which must stay sharp so the mold halves shut off cleanly, and at the base of ribs, where the rib-to-wall junction must stay sharp to reduce sink. Do not fillet a rib base.
@@ -217,7 +277,7 @@ SurfCAD examples (from the flanged-box side-action playtests).
 
 /** Topic name → one-line summary and the text. Order is the listing order. */
 export const GUIDE_TOPICS = Object.freeze({
-  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt', text: START },
+  start: { summary: 'How to build in SurfCAD (block, build, polish, place), a three-call example, how to read results, and the closing reply for an in-viewer prompt (the required chat workflow is the chat topic)', text: START },
   dialect: { summary: DIALECT_SUMMARY, text: renderDialectTopic() },
   features: { summary: 'Marker blocks, feature ids, edit / delete / rollback / undo, script snippets, sketches', text: FEATURES },
   selection: { summary: 'Face and edge keys, list_faces filters, single-use picks, no_selection, fillet edge sets', text: SELECTION },
@@ -225,8 +285,9 @@ export const GUIDE_TOPICS = Object.freeze({
   limits: { summary: 'The 30 s kernel budget, what is slow, worker restarts and stale status, result sizes, pairing errors', text: LIMITS },
   camera: { summary: 'Which side each named view looks from, explicit poses, select_clear before a screenshot, screenshot to file', text: CAMERA },
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
-  modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part, shell before fillets, draft before shell, reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
+  modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part (never create_part for the first part); required blend order draft, shell, concave, then convex fillets and chamfers, edges picked by name; the shell opening; shell-after-fillet playtest cases A to D; reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
+  chat: { summary: 'REQUIRED in-viewer chat workflow: register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -307,14 +368,14 @@ export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
   `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
-  'Flow: create_part then insert_cube / insert_cylinder / insert_tube, then insert_hole, insert_cut, insert_shell, insert_fillet_edges. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
+  'Flow: first part = create_assembly\'s partId (create_part: later parts only); insert_cube / insert_cylinder / insert_tube, insert_hole, insert_cut, insert_shell, then blends, concave before convex. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');
 
 export function guideToolDefinition() {
   return {
     name: GUIDE_TOOL_NAME,
-    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}. Error recoveries: errors.<code> for the code an error payload carries (its see field names the topic), e.g. ${ERROR_GUIDE_TOPIC_NAMES.slice(0, 3).join(', ')}. The same texts are the ${GUIDE_RESOURCE_SCHEME}<topic> resources.`,
+    description: `SurfCAD agent guide, plain text. guide { topic } returns one topic; guide {} lists them. Read "start" before the first model call, and "chat" (the required in-viewer chat workflow) after every pair. Topics: ${GUIDE_TOPIC_NAMES.map((n) => `${n} (${GUIDE_TOPICS[n].summary})`).join('; ')}. Error recoveries: errors.<code> for the code an error payload carries (its see field names the topic), e.g. ${ERROR_GUIDE_TOPIC_NAMES.slice(0, 3).join(', ')}. The same texts are the ${GUIDE_RESOURCE_SCHEME}<topic> resources.`,
     inputSchema: {
       type: 'object',
       additionalProperties: false,

@@ -149,7 +149,8 @@ test('stdio pair note, queued status, and bearer webhook POST', async () => {
     assert.match(pairedText, /key is the bearer argument/);
     assert.match(pairedText, /Save the URL and key in your own config or memory/);
     assert.match(pairedText, /call register_webhook again after every pair/);
-    assert.match(pairedText, /If the user declines, poll read_messages/);
+    assert.match(pairedText, /If the user declines, long-poll read_messages \{ wait_ms: 10000 \} in a loop while connected/);
+    assert.match(pairedText, /guide \{ topic: "chat" \} is the required in-viewer chat workflow/);
     assert.equal(parseFirst(paired).webhookRegistered, false);
 
     const fresh = await client.callTool({ name: 'status', arguments: {} });

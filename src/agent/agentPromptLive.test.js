@@ -160,6 +160,8 @@ test('rate-limited ack is a friendly failed notice; queued is waiting', () => {
   assert.equal(ackNotice({ delivery: 'webhook' }), null);
   assert.equal(ackNotice({ delivery: 'failed', error: 'timeout' }).text, 'Message was not delivered. Try again.');
   assert.equal(ackNotice({ delivery: 'failed', error: 'send_failed' }).text, 'Could not send. Try again.');
+  // The screenshot button did not engage: say why, not "Agent not listening".
+  assert.equal(ackNotice({ delivery: 'failed', error: 'capture_failed' }).text, 'Could not capture the view. Try again.');
   assert.equal(ackNotice({ delivery: 'failed', error: 'too_long' }).text, 'Message is too long.');
   assert.equal(AGENT_PROMPT_STALL_MS, 15 * 60 * 1000);
   assert.equal(

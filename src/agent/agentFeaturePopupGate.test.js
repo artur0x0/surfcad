@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   allowAgentWorkSurface,
   allowFeaturePopup,
+  featurePopupOwner,
   registerFeaturePopupDismiss,
   resetAgentFeaturePopupGateForTests,
   setAgentPromptWorking,
@@ -95,14 +96,40 @@ test('the agent\'s sketch and slot card open while the session is working; a use
     });
     assert.equal(surface, true, 'sketch_begin / slot_open get their card');
     assert.equal(popup, false, 'a side-effect feature card is still held');
-    // The card is agent-owned: a new prompt starting to work dismisses it.
+    assert.equal(featurePopupOwner(), 'agent-surface');
+    // No agent on the stack: the same call is a user tap.
+    setAgentPromptWorking(false);
+    assert.equal(allowAgentWorkSurface(), true);
+    assert.equal(featurePopupOwner(), 'user');
+  } finally {
+    resetAgentFeaturePopupGateForTests();
+  }
+});
+
+test('the agent\'s open sketch survives the session going back to working (sketch_begin, then post_progress, then sketch_add)', async () => {
+  resetAgentFeaturePopupGateForTests();
+  try {
     let dismissed = 0;
     registerFeaturePopupDismiss(() => { dismissed += 1; });
+    // The session is idle (60 s since the last model change, or a build the
+    // agent starts itself). sketch_begin opens the sketch.
+    await withAgentDrivenChange(() => { assert.equal(allowAgentWorkSurface(), true); });
+    // post_progress, set_status building, or the next model change: working starts.
+    setAgentPromptWorking(true);
+    assert.equal(dismissed, 0, 'the sketch the agent is drawing in is not dismissed');
+    // Idle again after 60 s, then working again: still open.
     setAgentPromptWorking(false);
     setAgentPromptWorking(true);
+    assert.equal(dismissed, 0);
+    assert.equal(featurePopupOwner(), 'agent-surface');
+
+    // A feature card an agent command popped as a side effect is still
+    // dismissed when working starts.
+    setAgentPromptWorking(false);
+    await withAgentDrivenChange(() => { assert.equal(allowFeaturePopup(), true); });
+    assert.equal(featurePopupOwner(), 'agent');
+    setAgentPromptWorking(true);
     assert.equal(dismissed, 1);
-    // No agent on the stack: the same call is a user tap.
-    assert.equal(allowAgentWorkSurface(), true);
   } finally {
     resetAgentFeaturePopupGateForTests();
   }

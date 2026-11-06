@@ -5,7 +5,16 @@
  * and the prompt slides away instead.
  *
  * `popupOwner` records who opened the card that is up. When working flips
- * on, only an agent-owned card is dismissed. A user-owned card stays.
+ * on, only a card an agent command popped as a side effect (`agent`) is
+ * dismissed. A user-owned card stays, and so does the agent's own work
+ * surface (`agent-surface`: the contour sketch and the feature slot card).
+ *
+ * Working flips on far more often than "a new prompt started": the
+ * session-level state returns to idle 60 s after the last model change and
+ * goes back to working on the next one, on `post_progress`, and on
+ * `set_status building`. Dismissing the work surface on that edge closed the
+ * sketch `sketch_begin` had just opened, so the next `sketch_add` (a later
+ * tool call, often a later process) answered `no_sketch`.
  */
 
 let promptWorking = false;
@@ -41,16 +50,22 @@ export function allowFeaturePopup() {
  * The agent's own work surfaces: the contour sketch (`sketch_begin`) and a
  * feature slot card (`slot_open`, `insert_make_extrude`). They are how an
  * agent builds, so a working session does not hold them the way it holds
- * the feature cards an agent command would pop as a side effect. An agent
- * call takes the card as agent-owned (dismissed when a new prompt starts
- * working); a user tap goes through `allowFeaturePopup` as before.
+ * the feature cards an agent command would pop as a side effect, and it
+ * does not dismiss them when working starts again: the surface stays open
+ * across tool calls until the agent commits or cancels it (or the user
+ * closes it). A user tap goes through `allowFeaturePopup` as before.
  */
 export function allowAgentWorkSurface() {
   if (agentDepth > 0) {
-    popupOwner = 'agent';
+    popupOwner = 'agent-surface';
     return true;
   }
   return allowFeaturePopup();
+}
+
+/** Who opened the card that is up: 'user', 'agent', 'agent-surface', or null. For tests and hosts that report it. */
+export function featurePopupOwner() {
+  return popupOwner;
 }
 
 /** An in-flight feature-edit launch may mount after the agent command returns. */

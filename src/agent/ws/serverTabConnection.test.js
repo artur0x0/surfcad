@@ -126,3 +126,108 @@ test('closing the tab socket is not an agent leaving', () => {
   ]);
   conn.disconnect();
 });
+
+function memoryClaimStore(initial = null) {
+  let value = initial;
+  return {
+    read: () => value,
+    write: (claim) => { value = claim; },
+    clear: () => { value = null; },
+  };
+}
+
+const frame = (payload) => ({ data: JSON.stringify(payload) });
+const claims = (socket) => socket.sent.filter((msg) => msg.type === 'tab.claim');
+
+test('Connect agent in this window claims the agent window, and the claim is kept for a reload', () => {
+  const factory = fakeSocketFactory();
+  const store = memoryClaimStore();
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+    claimStore: store,
+  });
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  socket.fire('message', frame({ type: 'registered', v: 1, tabId: 't1', agentConnected: false }));
+  // A window nobody paired in says nothing: it must not take the agent.
+  assert.deepEqual(claims(socket), []);
+
+  conn.claim();
+  assert.deepEqual(claims(socket), [{ type: 'tab.claim', v: 1 }]);
+  socket.fire('message', frame({ type: 'tab.claimed', v: 1, claim: 'c-1' }));
+  assert.equal(store.read(), 'c-1');
+
+  // The socket drops and comes back: a new tab id on the server, the same claim.
+  socket.fire('close');
+  conn.connect();
+  const again = factory.latest();
+  assert.notEqual(again, socket);
+  again.fire('open');
+  again.fire('message', frame({ type: 'registered', v: 1, tabId: 't2', agentConnected: true }));
+  assert.deepEqual(claims(again), [{ type: 'tab.claim', v: 1, claim: 'c-1' }]);
+  conn.disconnect();
+  assert.equal(store.read(), 'c-1', 'a reload (the connection going away) keeps the claim');
+});
+
+test('a claim made before the socket registered is sent with the registration', () => {
+  const factory = fakeSocketFactory();
+  const store = memoryClaimStore('stale');
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+    claimStore: store,
+  });
+  conn.claim();
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  assert.deepEqual(claims(socket), [], 'nothing before the server knows the tab');
+  socket.fire('message', frame({ type: 'registered', v: 1, tabId: 't1', agentConnected: false }));
+  // The user asked now: a fresh claim, not the stored one.
+  assert.deepEqual(claims(socket), [{ type: 'tab.claim', v: 1 }]);
+  socket.fire('message', frame({ type: 'tab.claimed', v: 1, claim: 'c-2' }));
+  assert.equal(store.read(), 'c-2');
+  conn.disconnect();
+});
+
+test('a refused resume forgets the claim; Disconnect releases it; neither reaches the prompt listeners', () => {
+  const factory = fakeSocketFactory();
+  const store = memoryClaimStore('old-claim');
+  const conn = createServerTabConnection({
+    url: 'ws://localhost/agent',
+    call: async () => ({ ok: true }),
+    createSocket: factory.create,
+    reconnectDelaysMs: [5000],
+    claimStore: store,
+  });
+  const heard = [];
+  conn.subscribe((msg) => heard.push(msg));
+  conn.connect();
+  const socket = factory.latest();
+  socket.fire('open');
+  socket.fire('message', frame({ type: 'registered', v: 1, tabId: 't1', agentConnected: true }));
+  assert.deepEqual(claims(socket), [{ type: 'tab.claim', v: 1, claim: 'old-claim' }]);
+  // Another window paired since: the server keeps the agent there.
+  socket.fire('message', frame({ type: 'tab.claimed', v: 1, claim: null }));
+  assert.equal(store.read(), null);
+  assert.deepEqual(heard, [], 'claim frames are not chat frames');
+
+  conn.claim();
+  socket.fire('message', frame({ type: 'tab.claimed', v: 1, claim: 'c-3' }));
+  assert.equal(store.read(), 'c-3');
+  conn.release();
+  assert.equal(store.read(), null);
+  socket.fire('close');
+  conn.connect();
+  const again = factory.latest();
+  again.fire('open');
+  again.fire('message', frame({ type: 'registered', v: 1, tabId: 't2', agentConnected: true }));
+  assert.deepEqual(claims(again), [], 'after Disconnect the window does not take the agent back');
+  conn.disconnect();
+});
