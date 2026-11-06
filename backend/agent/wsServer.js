@@ -22,7 +22,15 @@ import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
 import { sessionMessageProblem } from './sessionMessage.js';
-import { deliverTabAgentFrame, TAB_CLAIM, TAB_CLAIM_MAX, TAB_CLAIMED } from './tabPrompt.js';
+import { revokeOneAgentToken } from './revokeToken.js';
+import {
+  deliverTabAgentFrame,
+  TAB_CLAIM,
+  TAB_CLAIM_MAX,
+  TAB_CLAIMED,
+  TAB_DISCONNECT,
+  TAB_DISCONNECTED,
+} from './tabPrompt.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
 /**
@@ -577,7 +585,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
     return;
   }
   if (msg?.type === 'agent.progress') {
-    relay.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true });
+    relay.registry.forwardToTabs(auth.userId, { type: 'agent.progress', v: 1, working: true }, auth.id);
     return;
   }
   if (msg?.type === 'agent.prompt.taken') {
@@ -597,7 +605,7 @@ async function handleAgentMessage(ws, auth, relay, data, isBinary, ready) {
     }
   }
   if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
-    relay.registry.forwardToTabs(auth.userId, msg);
+    relay.registry.forwardToTabs(auth.userId, msg, auth.id);
     return;
   }
   const frame = readCommandRequest(msg);
@@ -731,6 +739,23 @@ function bindTab(ws, user, relay, req) {
         : undefined;
       const claim = relay.registry.claimAgentWindow(user.id, tabId, resume);
       sendJson(ws, { type: TAB_CLAIMED, v: 1, claim: claim || null });
+      return;
+    }
+    if (msg?.type === TAB_DISCONNECT) {
+      // The user chose Disconnect here. The agent that last worked in this
+      // window loses its login and needs a new pairing. Other agents of the
+      // account, and windows they work in, keep theirs.
+      const tokenId = relay.registry.agentTokenForTab(user.id, tabId);
+      const done = (revoked) => {
+        if (revoked) logRelay({ event: 'token-revoke', userId: String(user.id), reason: 'disconnect' });
+        if (ws.readyState === WebSocket.OPEN) sendJson(ws, { type: TAB_DISCONNECTED, v: 1, revoked });
+      };
+      if (!tokenId) {
+        done(false);
+        return;
+      }
+      revokeOneAgentToken(relay, user.id, tokenId, { heldPrompts: 'account', dropPresence: true })
+        .then((revoked) => done(revoked === true), () => done(false));
       return;
     }
     if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {

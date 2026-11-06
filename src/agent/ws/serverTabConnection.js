@@ -8,7 +8,7 @@ import { attachCommandDispatch } from '../transport/commandDispatch.js';
 import { createLocalhostRelayTransport } from '../transport/localhostRelayTransport.js';
 import { createAgentPromptTransport } from '../agentPromptTransport.js';
 import { PAIR_MSG } from './relayMessages.js';
-import { TAB_CLAIMED, claimFrameOnRegister, createAgentWindowClaimStore } from './agentWindowClaim.js';
+import { TAB_CLAIMED, TAB_DISCONNECT, claimFrameOnRegister, createAgentWindowClaimStore } from './agentWindowClaim.js';
 
 const PROMPT_TYPES = new Set([
   PAIR_MSG.AGENT_PROMPT,
@@ -183,6 +183,18 @@ export function createServerTabConnection(opts) {
     claimStore.clear();
   }
 
+  /**
+   * The user chose Disconnect: ask the server to revoke the agent that last
+   * worked in this window. Call it before `disconnect()`; a WebSocket sends
+   * what is queued before it closes. Only an explicit Disconnect calls this.
+   * @returns {boolean} true when the frame went out
+   */
+  function revokeAgent() {
+    if (!registered || transport.status() !== 'open') return false;
+    transport.send({ type: TAB_DISCONNECT, v: 1 });
+    return true;
+  }
+
   function subscribePrompt(cb) {
     promptListeners.add(cb);
     return () => { promptListeners.delete(cb); };
@@ -213,6 +225,7 @@ export function createServerTabConnection(opts) {
     approvePair() {},
     rejectPair() {},
     claim,
+    revokeAgent,
     release,
     send: sendPrompt,
     subscribe: subscribePrompt,

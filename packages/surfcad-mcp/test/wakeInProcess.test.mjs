@@ -209,3 +209,39 @@ test('isQueued follows a prompt from the queue to read', async () => {
   assert.equal(s.prompts.isQueued(pid(7)), false);
   assert.equal(s.prompts.isQueued('nope'), false);
 });
+
+test('a login the server revoked is forgotten here, but never a newer login', async () => {
+  const { forgetLoginIfToken, readSavedLogin, saveLogin } = await import('../src/remote/tokenStore.mjs');
+  const env = await tempEnv();
+  await saveLogin({ token: 'tok_old', server: 'https://surfcad.test' }, env);
+  // Another process logged in again while this one still held the old token.
+  await saveLogin({ token: 'tok_new', server: 'https://surfcad.test' }, env);
+  assert.equal(await forgetLoginIfToken('tok_old', env), false);
+  assert.equal((await readSavedLogin(env)).token, 'tok_new');
+  assert.equal(await forgetLoginIfToken('tok_new', env), true);
+  assert.equal(await readSavedLogin(env), null);
+  assert.equal(await forgetLoginIfToken('tok_new', env), false);
+  assert.equal(await forgetLoginIfToken('', env), false);
+});
+
+test('token_revoked or expired on a tool call: the saved login and the webhook go; other errors change nothing', async () => {
+  const { forgetDeadLogin, _setLiveLogin } = await import('../src/server.mjs');
+  const { readSavedLogin, saveLogin } = await import('../src/remote/tokenStore.mjs');
+  for (const code of ['token_revoked', 'expired']) {
+    const env = await tempEnv();
+    await saveLogin({ token: 'tok_live', server: 'https://surfcad.test' }, env);
+    let cleared = 0;
+    _setLiveLogin({ token: 'tok_live', env, clear: () => { cleared += 1; } });
+    assert.equal(await forgetDeadLogin('tab_asleep'), false);
+    assert.equal(await forgetDeadLogin('not_paired'), false);
+    assert.equal((await readSavedLogin(env)).token, 'tok_live');
+    assert.equal(cleared, 0);
+    assert.equal(await forgetDeadLogin(code), true, code);
+    assert.equal(await readSavedLogin(env), null);
+    assert.equal(cleared, 1, 'the in-memory webhook is unregistered');
+    // Once: a second dead-token error has nothing left to do.
+    assert.equal(await forgetDeadLogin(code), false);
+    assert.equal(cleared, 1);
+  }
+  _setLiveLogin(null);
+});

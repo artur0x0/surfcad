@@ -92,6 +92,26 @@ export async function deleteSavedLogin(env = process.env) {
 }
 
 /**
+ * The server said this token is revoked or expired: delete the saved login,
+ * but only when the file still holds that token. A newer login written by
+ * another process must survive an old process finding out it is dead.
+ * @param {string} token
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {Promise<boolean>} true when the file was deleted
+ */
+export async function forgetLoginIfToken(token, env = process.env) {
+  if (typeof token !== 'string' || !token) return false;
+  try {
+    const saved = await readSavedLogin(env);
+    if (!saved || saved.token !== token) return false;
+    await deleteSavedLogin(env);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Status text. Never includes the token.
  * @param {SavedLogin | null} saved
  * @param {string} serverUrl effective server (flag or env may override the saved one)
