@@ -16,7 +16,6 @@ import {
   BUILDING_STATUS_GUIDANCE,
   CLOSING_REPLY_GUIDANCE,
   LONG_POLL_GUIDANCE,
-  PROMPT_ONBOARDING_ASK,
   PROMPT_SERVER_INSTRUCTIONS,
   PROMPT_TURN_GUIDANCE,
   READ_MESSAGES_MAX_WAIT_MS,
@@ -191,10 +190,11 @@ const CHAT = `In-viewer chat: the required workflow. Everything here is a requir
 ${WAKE_GUIDE_SECTION}
 
 A2. After every pair or login, before you wait for a prompt (required)
+0. Read the pair result's note. It says whether idle wake is ready, and whether you greet the user yourself. Do what it says first.
 1. ${WEBHOOK_REQUIRED_GUIDANCE} status.webhookRegistered is then true until this process exits.
 2. The URL and bearer are held in this process's memory only: never logged, never written to disk, never returned, never sent to the tab. Unpair, a new pair, and a new process all start with no webhook, so register again every time.
-3. No webhook URL yet: ask the user once, in these words: "${PROMPT_ONBOARDING_ASK}"
-4. The user declines, or your host cannot receive callbacks: the long-poll in section C is the required fallback. Never run with neither a webhook nor the poll.
+3. Never ask the user for a webhook URL or key. If the user offers one, register it: the key is the bearer argument.
+4. Your host cannot receive callbacks: the long-poll in section C is the required fallback. Never run with neither a webhook nor the poll.
 
 B. Every prompt, in this order (required)
 1. The user's message appears in the chat box. It reaches you as a webhook POST or as a read_messages item with its id.
@@ -290,7 +290,7 @@ export const GUIDE_TOPICS = Object.freeze({
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
   modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part (never create_part for the first part); required blend order draft, shell, concave, then convex fillets and chamfers, edges picked by name; the shell opening; shell-after-fillet playtest cases A to D; reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
-  chat: { summary: 'REQUIRED in-viewer chat workflow: the wake setup at install (so the user can message you while you are idle), register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
+  chat: { summary: 'REQUIRED in-viewer chat workflow: idle wake (automatic at pair where the host provides it; the pair note says if it is ready), register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -371,7 +371,7 @@ export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
   // The wake pointer is here because every host shows these lines first. The cap is 2048 bytes.
-  `Install: set up the wake, guide chat A. Pair, then guide { topic: "start" } before the first model call; guide {} topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
+  `After pair, do what its idle-wake note says. Then guide { topic: "start" } before the first model call; guide {} topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
   'Flow: first part = create_assembly\'s partId (create_part: later parts only); insert_cube / insert_cylinder / insert_tube, insert_hole, insert_cut, insert_shell, then blends, concave before convex. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');

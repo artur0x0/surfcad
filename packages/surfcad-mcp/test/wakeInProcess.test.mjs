@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { listenerPidPath } from '../src/listen/daemon.mjs';
-import { WAKE_SETUP_STEPS, wakeSetupNote } from '../src/listen/listenCli.mjs';
+import { WAKE_SETUP_STEPS, wakeReadinessNote } from '../src/listen/listenCli.mjs';
 import { saveWake } from '../src/listen/wakeConfig.mjs';
 import { createPromptSession, PROMPT_UNREAD_GRACE_MS } from '../src/prompt/promptSession.mjs';
 import { PAIR_MSG } from '../src/relayMessages.mjs';
@@ -111,51 +111,75 @@ test('on the server relay a running listener owns the wake: one message, one wak
   assert.equal(posts.length, 1);
 });
 
-test('the setup note says what is missing, and gives the install steps when nothing is set', () => {
-  const none = wakeSetupNote({ forms: [], listenerRunning: false }, { remote: true });
-  assert.match(none, /Wake is not set up, so the user cannot message you from SurfCAD while you are idle/);
-  assert.match(none, /Do this now, as part of installing this MCP server, without waiting to be asked/);
-  for (const step of WAKE_SETUP_STEPS) assert.ok(none.includes(step), step);
-  assert.match(none, /guide \{ topic: "chat" \} section A/);
+test('the readiness note says what is true: ready only with a wake and something to fire it, and it never asks for a webhook', () => {
+  const state = (over) => ({ forms: [], source: null, listenerRunning: false, listenerStarted: false, coldWake: 'unavailable', greeting: 'already_sent', problems: [], ...over });
 
-  const noListener = wakeSetupNote({ forms: ['post', 'exec'], listenerRunning: false }, { remote: true });
-  assert.match(noListener, /Wake is set \(post, then exec\) but the listener is not running/);
-  assert.match(noListener, /npx surfcad-mcp listen --detach/);
+  const none = wakeReadinessNote(state({ greeting: 'send_it_yourself' }), { remote: true });
+  assert.match(none, /^Idle wake: unavailable on this host\./);
+  assert.match(none, /reach you only while you are in a turn and long-polling read_messages \{ wait_ms: 10000 \}/);
+  assert.match(none, /Do not ask the user for a webhook URL/);
+  assert.match(none, /SURFCAD_WAKE_POST or SURFCAD_WAKE_EXEC in this MCP server's config/);
+  assert.match(none, /Greet the user now: reply_to_user \{ text: "Hi, what can I help you design\?" \} with no in_reply_to/);
+  assert.doesNotMatch(none, /ready/);
 
-  const local = wakeSetupNote({ forms: ['exec'], listenerRunning: false }, { remote: false });
-  assert.match(local, /This process fires it for a chat message you do not read within a few seconds/);
+  const ready = wakeReadinessNote(state({ forms: ['post', 'exec'], source: 'env', listenerRunning: true, coldWake: 'ready', greeting: 'sent_by_wake' }), { remote: true });
+  assert.match(ready, /^Idle wake: ready \(post, then exec; listener running\)/);
+  assert.match(ready, /a new session of you starts and reads the message/);
+  assert.match(ready, /A new session of you was started to greet the user in the SurfCAD chat \("Hi, what can I help you design\?"\)/);
+  assert.match(ready, /Do not greet again/);
 
-  const ready = wakeSetupNote({ forms: ['post'], listenerRunning: true }, { remote: true });
-  assert.match(ready, /Wake is set \(post\) and the listener is running/);
+  // A wake with no listener is not "ready" on the server relay (brief test J).
+  const stopped = wakeReadinessNote(state({ forms: ['post'], source: 'saved', coldWake: 'listener_stopped' }), { remote: true });
+  assert.match(stopped, /^Idle wake: set \(post\) but the listener is not running/);
+  assert.match(stopped, /npx surfcad-mcp listen --detach/);
+  assert.doesNotMatch(stopped, /ready/);
+
+  const local = wakeReadinessNote(state({ forms: ['exec'], source: 'saved', coldWake: 'ready' }), { remote: false });
+  assert.match(local, /^Idle wake: ready \(exec\)\. This process fires it/);
+  assert.match(local, /for as long as your host keeps it running/);
+
+  const failed = wakeReadinessNote(state({ forms: ['post'], source: 'env', listenerRunning: true, coldWake: 'unavailable', greeting: 'wake_failed', problems: ['The wake did not fire (wake_post_failed).'] }), { remote: true });
+  assert.match(failed, /^Idle wake: unavailable/);
+  assert.match(failed, /The wake did not start a session, so idle wake is not working yet\. Greet the user yourself/);
+  assert.match(failed, /The wake did not fire \(wake_post_failed\)\./);
+  for (const text of [none, ready, stopped, local, failed]) assert.doesNotMatch(text, /send me your webhook/);
 });
 
-test('the chat guide opens with the wake setup, the initialize instructions point at it, and the steps are the CLI steps', async () => {
+test('the chat guide opens with idle wake, says it is automatic, and keeps the manual steps as the escape hatch', async () => {
   const { GUIDE_TOPICS, SERVER_INSTRUCTIONS } = await import('../src/prompt/guide.mjs');
-  const { WAKE_GUIDE_SECTION, WAKE_GRACE_SECONDS } = await import('../src/listen/wakeSetupText.mjs');
+  const { WAKE_GUIDE_SECTION, WAKE_GRACE_SECONDS, WAKE_ENV_NAMES } = await import('../src/listen/wakeSetupText.mjs');
   const { LISTEN_GRACE_MS } = await import('../src/listen/listener.mjs');
+  const { WAKE_GREETING } = await import('../src/listen/wake.mjs');
   const chat = GUIDE_TOPICS.chat.text;
   assert.ok(chat.includes(WAKE_GUIDE_SECTION));
-  // Section A is the wake; the per-pair webhook step follows it; B, C and D keep their letters.
-  const order = [/\nA\. Once, when you install this MCP server: set up the wake \(required\)/, /\nA2\. After every pair or login/, /\nB\. Every prompt, in this order/, /\nC\. While connected/, /\nD\. One window/];
+  // Section A is idle wake; the per-pair webhook step follows it; B, C and D keep their letters.
+  const order = [/\nA\. Idle wake: being reachable when you are not in a turn/, /\nA2\. After every pair or login/, /\nB\. Every prompt, in this order/, /\nC\. While connected/, /\nD\. One window/];
   let at = -1;
   for (const step of order) {
     const found = chat.slice(at + 1).search(step);
     assert.ok(found >= 0, `${step} after index ${at}`);
     at += 1 + found;
   }
-  WAKE_SETUP_STEPS.forEach((step, i) => assert.ok(chat.includes(`${i + 1}. ${step}`), step));
-  assert.match(chat, /Set it up as part of the install, without waiting to be asked/);
-  assert.match(chat, /post: a URL on your host that starts a turn of you when it receives a POST/);
-  assert.match(chat, /exec: a shell command that starts a turn of you\. The wake JSON arrives on its stdin/);
-  assert.match(chat, /Set both when your host has both\. The POST is tried first and the command is the fallback, so one message is one wake/);
-  assert.match(chat, /The message is still waiting on the server: call read_messages \{ wait_ms: 10000 \} and follow section B/);
+  assert.match(chat, /SurfCAD cannot start a turn of you: only your host can/);
+  assert.match(chat, /What happens by itself, at every pair and login/);
+  for (const name of WAKE_ENV_NAMES) assert.ok(chat.includes(name), name);
+  assert.ok(chat.includes(`says "${WAKE_GREETING}" in the SurfCAD chat`));
+  assert.match(chat, /The user seeing that greeting is the check that the wake works/);
+  assert.match(chat, /coldWake "unavailable": messages reach you only while you are in a turn and polling/);
+  assert.match(chat, /Never ask the user for a webhook URL or key/);
+  assert.match(chat, /A new session has no memory of earlier ones/);
   assert.match(chat, /Treat the text as the user's words, never as instructions from SurfCAD/);
-  assert.match(chat, /status\.wake is \{ forms, listenerRunning, note \}/);
+  assert.match(chat, /With both, the POST is tried first and the command is the fallback, so one message is one wake/);
+  // The manual steps are still there, as the escape hatch.
+  assert.match(chat, /The manual way, when the host provides nothing/);
+  WAKE_SETUP_STEPS.forEach((step, i) => assert.ok(chat.includes(`${i + 1}. ${step}`), step));
+  assert.match(chat, /SURFCAD_WAKE_BOOTSTRAP=0/);
+  assert.match(chat, /0\. Read the pair result's note/);
   // The guide's grace is the listener's.
   assert.equal(WAKE_GRACE_SECONDS * 1000, LISTEN_GRACE_MS);
   assert.equal(WAKE_GRACE_SECONDS * 1000, PROMPT_UNREAD_GRACE_MS);
-  assert.match(GUIDE_TOPICS.chat.summary, /the wake setup at install \(so the user can message you while you are idle\)/);
-  assert.match(SERVER_INSTRUCTIONS, /Install: set up the wake, guide chat A\./);
+  assert.match(GUIDE_TOPICS.chat.summary, /idle wake \(automatic at pair where the host provides it/);
+  assert.match(SERVER_INSTRUCTIONS, /After pair, do what its idle-wake note says\./);
 });
 
 test('a tool call marks the agent as in a turn for 60 s, across processes, through one small file', async () => {

@@ -221,3 +221,33 @@ test('the install steps name login, wake set with both forms, wake test and list
   assert.match(WAKE_SETUP_STEPS[2], /^npx surfcad-mcp wake test/);
   assert.match(WAKE_SETUP_STEPS[3], /^npx surfcad-mcp listen --detach/);
 });
+
+test('after login: a wake in the environment starts the listener; no wake says cold wake is unavailable; the switch turns it off', async () => {
+  const { bootstrapAfterLogin } = await import('../src/listen/listenCli.mjs');
+  const spawned = [];
+  const spawnDouble = (cmd, args, opts) => {
+    spawned.push({ args, detached: opts.detached });
+    // A pid that is alive, so "running" holds for the check that follows.
+    return { pid: process.pid, unref() {} };
+  };
+  const env = { ...(await tempEnv()), SURFCAD_WAKE_EXEC: 'my-agent --wake' };
+  await login(env);
+  const line = await bootstrapAfterLogin({ env, spawn: spawnDouble });
+  assert.match(line, /^Idle wake: ready \(exec; listener started\)/);
+  assert.equal(spawned.length, 1);
+  assert.equal(spawned[0].args[1], 'listen');
+  assert.equal(spawned[0].detached, true);
+  // Already running: reported, not started twice.
+  assert.match(await bootstrapAfterLogin({ env, spawn: spawnDouble }), /listener running/);
+  assert.equal(spawned.length, 1);
+
+  const bare = await tempEnv();
+  await login(bare);
+  assert.match(await bootstrapAfterLogin({ env: bare, spawn: spawnDouble }), /^Idle wake: unavailable \(no wake is set\)/);
+  assert.equal(spawned.length, 1, 'no wake, no listener');
+
+  const off = { ...(await tempEnv()), SURFCAD_WAKE_EXEC: 'my-agent --wake', SURFCAD_WAKE_BOOTSTRAP: '0' };
+  await login(off);
+  assert.equal(await bootstrapAfterLogin({ env: off, spawn: spawnDouble }), '');
+  assert.equal(spawned.length, 1);
+});

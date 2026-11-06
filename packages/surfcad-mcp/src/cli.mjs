@@ -9,7 +9,13 @@ import { resolveAgentName, resolveServerUrl, selectRelayMode } from './remote/co
 import { loginDevice, loginWithCode } from './remote/login.mjs';
 import { logoutDevice } from './remote/logout.mjs';
 import { formatLoginStatus, readSavedLogin } from './remote/tokenStore.mjs';
-import { runListenCommand, runWakeCommand, wakeStatusText, WAKE_SETUP_STEPS } from './listen/listenCli.mjs';
+import {
+  bootstrapAfterLogin,
+  runListenCommand,
+  runWakeCommand,
+  wakeStatusText,
+  WAKE_SETUP_STEPS,
+} from './listen/listenCli.mjs';
 
 const HELP = `surfcad-mcp
 
@@ -27,8 +33,12 @@ const HELP = `surfcad-mcp
   npx surfcad-mcp status
       The saved login, the wake setup, and whether the listener is running.
 
-  Wake: start a turn of the agent when the user sends a chat message from
-  SurfCAD and no agent process is reading. Set it up once, at install:
+  Wake: start a session of the agent when the user sends a chat message from
+  SurfCAD and no agent process is reading. A host provides its wake in this
+  server's environment (SURFCAD_WAKE_POST with SURFCAD_WAKE_BEARER, and/or
+  SURFCAD_WAKE_EXEC); login and pair then start the listener by themselves
+  and the agent greets the user. SURFCAD_WAKE_BOOTSTRAP=0 turns that off.
+  The manual way, when the host provides nothing:
 ${WAKE_SETUP_STEPS.map((step, i) => `      ${i + 1}. ${step}`).join('\n')}
   npx surfcad-mcp wake set [--post URL [--bearer KEY]] [--exec COMMAND]
       Save how to wake the agent on this machine. --post: the wake JSON is
@@ -236,6 +246,7 @@ export async function runCli(argv, options = {}) {
           fetch: options.fetch,
         });
         io.stdout('Logged in. The token is saved on this machine and is not printed.\n');
+        io.stdout(await bootstrapAfterLogin({ env, spawn: options.spawn }));
         return { action: 'exit', code: 0 };
       }
       await loginDevice({
@@ -249,6 +260,7 @@ export async function runCli(argv, options = {}) {
         },
       });
       io.stdout('Logged in. The token is saved on this machine and is not printed.\n');
+      io.stdout(await bootstrapAfterLogin({ env, spawn: options.spawn }));
       return { action: 'exit', code: 0 };
     }
     if (parsed.command === 'logout') {

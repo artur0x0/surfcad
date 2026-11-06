@@ -30,7 +30,6 @@ import { augmentScreenshotTool, callPairedBridgeTool } from './screenshotFile.mj
 import {
   callPromptTool,
   isPromptTool,
-  PROMPT_ONBOARDING_NOTE,
   PROMPT_SERVER_INSTRUCTIONS,
   PROMPT_WEBHOOK_ACTIVE,
   promptToolDefinitions,
@@ -48,7 +47,8 @@ import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition 
 import { mergeRegisteredIntoListCommands } from './listCommandsMerge.mjs';
 import { agentAwake, stampAwake } from './listen/awake.mjs';
 import { readListenerPid } from './listen/daemon.mjs';
-import { wakeSetupNote, wakeSetupState } from './listen/listenCli.mjs';
+import { bootstrapWake } from './listen/bootstrap.mjs';
+import { wakeReadinessNote } from './listen/listenCli.mjs';
 import { createWaker, wakePayload } from './listen/wake.mjs';
 import { readWake } from './listen/wakeConfig.mjs';
 import { tabAdvertisesTool } from './unlistedTools.mjs';
@@ -56,7 +56,7 @@ import { tabAdvertisesTool } from './unlistedTools.mjs';
 const PAIR_TOOL_NAME = 'pair';
 
 /** One line in the pair result; the guidance itself is guide { topic: "start" } and guide { topic: "chat" }. */
-const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts). guide { topic: "chat" } is the required in-viewer chat workflow: the wake setup at install, ack first, and the 10 second read_messages long-poll while connected. guide {} lists every topic.';
+const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts). guide { topic: "chat" } is the required in-viewer chat workflow: idle wake (section A), ack first, and the 10 second read_messages long-poll while connected. guide {} lists every topic.';
 
 /**
  * Prompt tools that do not count as agent activity when called. set_status,
@@ -65,7 +65,7 @@ const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "sta
  */
 const PROMPT_TOOLS_WITHOUT_ACTIVITY = new Set(['set_status', 'post_progress', 'close_session', 'read_messages']);
 
-const STATUS_WAKE_NOTE = ' It also adds wake ({ forms, listenerRunning, note }): how this machine starts a turn of you when the user sends a chat message while you are idle. forms is empty until you run the wake setup (guide { topic: "chat" } section A).';
+const STATUS_WAKE_NOTE = ' It also adds wake ({ coldWake, forms, source, listenerRunning, note }): whether a chat message can start a session of you while you are idle. coldWake is "ready", "listener_stopped" or "unavailable"; with "unavailable" messages reach you only while you are in a turn and polling (guide { topic: "chat" } section A).';
 
 const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
@@ -181,7 +181,10 @@ function mutatingTool(name) {
 
 function pairToolResult(result, prompts, wake) {
   const webhookRegistered = prompts.webhookRegistered() === true;
-  const note = webhookRegistered ? PROMPT_WEBHOOK_ACTIVE : PROMPT_ONBOARDING_NOTE;
+  // The note is what is true about reaching this agent while it is idle. It
+  // used to be "ask the user for a webhook URL and key"; an agent relayed
+  // that to the user on every pair. The user is never asked now.
+  const note = [wake?.note, webhookRegistered ? PROMPT_WEBHOOK_ACTIVE : ''].filter(Boolean).join(' ');
   const payload = {
     ...(result && typeof result === 'object' ? result : {}),
     webhookRegistered,
@@ -191,9 +194,7 @@ function pairToolResult(result, prompts, wake) {
   return {
     content: [
       { type: 'text', text: JSON.stringify(payload, null, 2) },
-      { type: 'text', text: note },
-      // The install step an agent must not skip: without it the user cannot reach an idle agent.
-      ...(wake?.note ? [{ type: 'text', text: wake.note }] : []),
+      ...(note ? [{ type: 'text', text: note }] : []),
       // The build guidance lives in the guide tool; one pointer here, for every client.
       { type: 'text', text: PAIR_GUIDE_POINTER },
     ],
@@ -205,15 +206,32 @@ function pairToolResult(result, prompts, wake) {
  * The wake setup on this machine, for the pair and status results.
  * @param {{ status?: () => { remote?: boolean } }} session
  */
-async function wakeStatus(session) {
-  const state = await wakeSetupState(process.env);
+async function wakeStatus(session, opts = {}) {
   let remote = false;
   try {
     remote = session?.status?.()?.remote === true;
   } catch {
     remote = false;
   }
-  return { ...state, note: wakeSetupNote(state, { remote }) };
+  const env = process.env;
+  // A test run must never start a listener or wake an agent on the machine
+  // it runs on. SURFCAD_WAKE_BOOTSTRAP=0 turns the bootstrap off for anyone.
+  const enabled = env.SURFCAD_WAKE_BOOTSTRAP === '1'
+    || (env.SURFCAD_WAKE_BOOTSTRAP !== '0' && !env.NODE_TEST_CONTEXT);
+  const state = await bootstrapWake({
+    env,
+    remote,
+    greet: enabled && opts.greet === true,
+    selfGreet: opts.selfGreet !== false,
+    autoListen: enabled,
+  });
+  return {
+    coldWake: state.coldWake,
+    forms: state.forms,
+    source: state.source,
+    listenerRunning: state.listenerRunning,
+    note: wakeReadinessNote(state, { remote }),
+  };
 }
 
 /**
@@ -379,7 +397,7 @@ export async function createSurfcadMcpServer(options = {}) {
       }
       try {
         const result = await waitForPairing(session.pair(code), PAIR_TOOL_WAIT_MS);
-        return pairToolResult(result, session.prompts, await wakeStatus(session));
+        return pairToolResult(result, session.prompts, await wakeStatus(session, { greet: true }));
       } catch (err) {
         return errorResult(toolErrorPayload(err), name);
       }
@@ -547,14 +565,23 @@ async function runRemoteMcpServer(options) {
   });
   remoteWake.attach(remote.prompts);
   const { server, session } = await createSurfcadMcpServer({ session: remote });
+  // A logged-in agent may never call `pair`. Once connected, start the
+  // listener and let the wake greet (once per login). With no wake there is
+  // nobody to tell here, so that greeting waits for the next pair.
+  let bootstrapped = false;
+  const bootstrapOnce = () => {
+    if (bootstrapped) return;
+    bootstrapped = true;
+    void wakeStatus(remote, { greet: true, selfGreet: false }).catch(() => {});
+  };
   server.oninitialized = () => {
     remote.applyClientInfo(server.getClientVersion());
-    void remote.connect().catch((err) => {
+    void remote.connect().then(bootstrapOnce, (err) => {
       console.error(`${new Date().toISOString()} [surfcad-mcp] ${err?.message || 'remote connect failed'}`);
     });
   };
   if (!remote.needsClientName()) {
-    void remote.connect().catch((err) => {
+    void remote.connect().then(bootstrapOnce, (err) => {
       console.error(`${new Date().toISOString()} [surfcad-mcp] ${err?.message || 'remote connect failed'}`);
     });
   }

@@ -23,8 +23,6 @@ import {
   BUILDING_STATUS_GUIDANCE,
   CLOSING_REPLY_GUIDANCE,
   LONG_POLL_GUIDANCE,
-  PROMPT_ONBOARDING_ASK,
-  PROMPT_ONBOARDING_NOTE,
   PROMPT_SERVER_INSTRUCTIONS,
   PROMPT_TURN_GUIDANCE,
   READ_MESSAGES_MAX_WAIT_MS,
@@ -155,7 +153,9 @@ test('guide chat is the required in-viewer workflow: the full sequence, the webh
   assert.match(WEBHOOK_REQUIRED_GUIDANCE, /again in every new process/);
   assert.match(chat, /status\.webhookRegistered is then true until this process exits/);
   assert.match(chat, /never logged, never written to disk, never returned/);
-  assert.ok(chat.includes(PROMPT_ONBOARDING_ASK), 'the onboarding ask stays');
+  // Brief 2026-11-06 (wake bootstrap): the user is never asked to paste a webhook.
+  assert.match(chat, /Never ask the user for a webhook URL or key\. If the user offers one, register it/);
+  assert.doesNotMatch(chat, /send me your webhook URL and key/);
   assert.match(chat, /Never run with neither a webhook nor the poll/);
 
   // Long-poll (§6): required, 10 s, and not activity.
@@ -198,8 +198,6 @@ test('start, the instructions, the pair note, and the tool descriptions point at
   assert.ok(defs.register_webhook.description.includes(LONG_POLL_GUIDANCE));
   assert.match(defs.register_webhook.description, /required fallback is the long-poll, not silence/);
   assert.match(defs.set_status.description, /a read_messages poll is not/);
-  assert.match(PROMPT_ONBOARDING_NOTE, /call register_webhook again after every pair/);
-  assert.match(PROMPT_ONBOARDING_NOTE, /If the user declines, long-poll read_messages \{ wait_ms: 10000 \} in a loop while connected: that fallback is required, never neither/);
 });
 
 test('the topics are the planned set, each under 1,500 words, and start carries the build guidance verbatim', () => {

@@ -19,21 +19,35 @@ export const WAKE_POST_TIMEOUT_MS = 10_000;
 export const WAKE_POST_ATTEMPTS = 2;
 
 /** What the woken agent should do. Short, and the same for every host. */
-export const WAKE_INSTRUCTION = 'A SurfCAD user sent you a chat message. On the surfcad MCP server call read_messages { wait_ms: 10000 }, then follow guide { topic: "chat" }: set_status responding first, then reply_to_user.';
+export const WAKE_INSTRUCTION = 'A SurfCAD user sent you a chat message and this is a new session started to answer it. On the surfcad MCP server call read_messages { wait_ms: 10000 }, then follow guide { topic: "chat" }: set_status responding first, then reply_to_user. You have no memory of earlier sessions: the message is in "prompts", status gives the open part, and guide { topic: "start" } says how to build.';
+
+/** What the agent says when it is first connected. Artur's wording, 2026-11-06. */
+export const WAKE_GREETING = 'Hi, what can I help you design?';
+
+/**
+ * The greeting wake. It fires once per login, right after pairing, and it is
+ * the check that the wake works: the session it starts says hello in the
+ * SurfCAD chat, where the user sees it.
+ */
+export const WAKE_GREET_INSTRUCTION = `You were just connected to SurfCAD and this is a new session started to greet the user. On the surfcad MCP server call reply_to_user { text: "${WAKE_GREETING}" } with no in_reply_to. Then follow guide { topic: "chat" }: wait for their message with read_messages { wait_ms: 10000 }. Read guide { topic: "start" } before the first model call.`;
+
+const WAKE_TEST_INSTRUCTION = 'This is a test of the SurfCAD wake setup. No user message is waiting.';
 
 /**
  * @param {Array<{ id: string, text?: string, ts?: string, screenshot?: unknown }>} prompts
- * @param {{ reason?: 'prompt' | 'test' }} [opts]
+ * @param {{ reason?: 'prompt' | 'test' | 'greet' }} [opts]
  */
 export function wakePayload(prompts, opts = {}) {
-  const reason = opts.reason === 'test' ? 'test' : 'prompt';
+  const reason = opts.reason === 'test' || opts.reason === 'greet' ? opts.reason : 'prompt';
+  let instruction = WAKE_INSTRUCTION;
+  if (reason === 'test') instruction = WAKE_TEST_INSTRUCTION;
+  if (reason === 'greet') instruction = WAKE_GREET_INSTRUCTION;
   return {
     type: 'surfcad.wake',
     v: 1,
     reason,
-    instruction: reason === 'test'
-      ? 'This is a test of the SurfCAD wake setup. No user message is waiting.'
-      : WAKE_INSTRUCTION,
+    instruction,
+    ...(reason === 'greet' ? { greeting: WAKE_GREETING } : {}),
     prompts: (Array.isArray(prompts) ? prompts : []).map((p) => ({
       id: String(p.id),
       ...(typeof p.text === 'string' ? { text: p.text } : {}),
