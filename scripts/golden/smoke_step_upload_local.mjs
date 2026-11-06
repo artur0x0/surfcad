@@ -3,8 +3,9 @@
  * Upload a STEP file from the Parts ribbon. The file is converted in the
  * browser by the Open CASCADE wasm module: it becomes a new part, the wasm is
  * fetched from the app's own origin, and no request reaches the server
- * convert route or carries the file anywhere. A file that is not STEP shows
- * the unreadable toast.
+ * convert route or carries the file anywhere. While it converts, the
+ * Importing toast shows a spinner and the open-source notices link. A file
+ * that is not STEP shows the unreadable toast.
  *
  * The session is mocked only so a seeded local assembly opens, as in
  * smoke_mesh_upload_reload.mjs. The import itself does not use it; every
@@ -14,7 +15,7 @@
  * dist/, after `npm run build`) instead of the dev server, to check that the
  * build emits the worker and the wasm as separate files that load.
  */
-/* global document, indexedDB, localStorage */
+/* global document, indexedDB, localStorage, window, MutationObserver */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -248,8 +249,40 @@ try {
     await page.waitForSelector('[data-part-row]', { timeout: 20000 });
     const before = (await rowNames(page)).length;
 
+    // A small file converts in well under a second, so the toast is recorded
+    // the moment it is attached instead of being polled for.
+    await page.evaluate(() => {
+      window.__stepToast = null;
+      const read = () => {
+        const el = document.querySelector('[data-step-importing]');
+        if (!el || window.__stepToast) return;
+        const link = el.querySelector('[data-step-notices-link]');
+        window.__stepToast = {
+          text: (el.textContent || '').replace(/\s+/g, ' ').trim(),
+          href: link?.getAttribute('href') || '',
+          linkText: (link?.textContent || '').trim(),
+          spinner: !!el.querySelector('.animate-spin'),
+        };
+      };
+      new MutationObserver(read).observe(document.body, { childList: true, subtree: true });
+    });
+
     const cylinder = await uploadAndWait(page, cylinderPath, 'cylinder', logs);
+    const toastSeen = await page.evaluate(() => window.__stepToast);
+    check(`${vp.name} the Importing toast showed a spinner while the file converted`,
+      !!toastSeen && toastSeen.spinner && /Importing…/.test(toastSeen.text) && /Open CASCADE Technology/.test(toastSeen.text),
+      JSON.stringify(toastSeen));
+    check(`${vp.name} the toast links to the open-source notices`,
+      !!toastSeen && toastSeen.href === '/THIRD_PARTY_NOTICES.txt' && toastSeen.linkText === 'Open-source notices',
+      JSON.stringify(toastSeen));
+    const notices = await fetch(`${APP_URL}THIRD_PARTY_NOTICES.txt`).then(async (res) => ({ ok: res.ok, text: await res.text() }));
+    check(`${vp.name} the notices file is served and names Open CASCADE and the LGPL`,
+      notices.ok && /Open CASCADE Technology/.test(notices.text) && /GNU LESSER GENERAL PUBLIC LICENSE/.test(notices.text));
     if (cylinder) {
+      // The row appears before the import handler finishes saving the part.
+      const gone = await page.waitForSelector('[data-step-importing]', { state: 'detached', timeout: 20000 })
+        .then(() => true, () => false);
+      check(`${vp.name} the Importing toast leaves when the import settles`, gone);
       check(`${vp.name} STEP upload created a part`, (await rowNames(page)).length === before + 1,
         JSON.stringify(await rowNames(page)));
       const done = logs.map((line) => line.match(/STEP import complete in [\d.]+s \(volume: ([\d.]+) mm/)).find(Boolean);

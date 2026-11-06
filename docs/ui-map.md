@@ -405,7 +405,9 @@ Desktop specifics:
   left cluster is folder, **+**, then Upload (`data-part-upload`) and
   Download (`data-part-download`, agent `export_part` / `export_download`).
   Upload adds a new part from STL, OBJ,
-  3MF, or STEP. Download saves the selected part as 3MF (agent may also
+  3MF, or STEP. While a STEP file converts, an Importing… toast
+  (`StepImportToast.jsx`, `data-step-importing`) shows a spinner and a link
+  to `/THIRD_PARTY_NOTICES.txt` (`data-step-notices-link`). Download saves the selected part as 3MF (agent may also
   request STL or STEP bytes). Each row's Order
   button (`data-part-order`) opens a quote for that part. Add to cart
   (`data-quote-add`) stores the locked options, server unit price, and

@@ -12,7 +12,7 @@ OCCT is LGPL-2.1-only with the Open CASCADE exception 1.0. That exception lets o
 
 | Requirement | How |
 | --- | --- |
-| Notice that OCCT is used, and the licence text | `public/THIRD_PARTY_NOTICES.txt` says so in its introduction and carries the LGPL-2.1 and the exception in full. |
+| Notice that OCCT is used, and the licence text | The Importing toast shown while a STEP file converts (`src/components/StepImportToast.jsx`) names Open CASCADE Technology and links to `public/THIRD_PARTY_NOTICES.txt`. That file says so in its introduction and carries the LGPL-2.1 and the exception in full. |
 | Source of the library | The upstream tag `V8_0_1` (`b8f597c677811d1f9f4d8a97f5ae2825c0353a42`), compiled without patches. The build script refuses a checkout that is another commit or has local changes. |
 | Source of the work that is linked with it | The wrapper `src/api.cpp` is in this repository, which is public, under the same terms as OCCT. It is the only application code in the wasm. |
 | Build scripts | `CMakeLists.txt` here and `scripts/step/build-step-wasm.mjs`. CI rebuilds the committed wasm byte for byte. |

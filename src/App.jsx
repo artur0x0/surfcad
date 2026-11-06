@@ -30,6 +30,7 @@ import { failedPartIdsFor } from './utils/failedPartOutline';
 import { bodyCountOfWorkerMesh } from './utils/meshBodyComponents';
 import ErrorPopup from './components/ErrorPopup';
 import GitBehindToast from './components/GitBehindToast';
+import StepImportToast from './components/StepImportToast';
 import AssemblyOpenSpinner, { AssemblyOpenFailureToast } from './components/AssemblyOpenSpinner';
 import { landingMobileStage, linkedMobileStage } from './utils/mobileStage';
 import {
@@ -53,7 +54,7 @@ import CartDrop from './components/CartDrop';
 import CheckoutPage from './components/checkout/CheckoutPage';
 import SiteFooter from './components/SiteFooter';
 import { track, trackFeatureCommits, trackPaletteFeature } from './utils/analytics';
-import { importFile } from './utils/importModel';
+import { importFile, isStepFormat } from './utils/importModel';
 import {
   downloadMeshExport,
   downloadModelFromMesh,
@@ -1153,6 +1154,8 @@ const App = () => {
   cartCheckoutRef.current = cartCheckout;
   const onCartCheckoutRef = useRef(() => {});
   const [isUploading, setIsUploading] = useState(false);
+  // True while a STEP file converts in the browser. Drives the Importing toast.
+  const [stepImporting, setStepImporting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [uploadNotice, setUploadNotice] = useState(null);
@@ -10173,6 +10176,7 @@ const App = () => {
     }
 
     setIsUploading(true);
+    setStepImporting(isStepFormat(file.name));
     setUploadError(null);
     setUploadNotice(null);
 
@@ -10301,6 +10305,7 @@ const App = () => {
       setUploadError(error.message || 'Failed to import file');
     } finally {
       setIsUploading(false);
+      setStepImporting(false);
     }
   };
 
@@ -13256,6 +13261,7 @@ const App = () => {
               </ErrorPopup>
             </div>
           )}
+          {stepImporting && !uploadError && <StepImportToast />}
           {uploadError && (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-upload-toast="" data-upload-toast-kind="error">
               <ErrorPopup
@@ -13619,6 +13625,7 @@ const App = () => {
               </ErrorPopup>
             </div>
           )}
+        {stepImporting && !uploadError && <StepImportToast />}
         {uploadError && (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 max-w-md" data-upload-toast="" data-upload-toast-kind="error">
               <ErrorPopup
