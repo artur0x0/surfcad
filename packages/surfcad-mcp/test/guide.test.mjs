@@ -19,7 +19,7 @@ import {
   SERVER_INSTRUCTIONS,
 } from '../src/prompt/guide.mjs';
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from '../src/prompt/buildGuidance.mjs';
-import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, SESSION_PRESENCE_GUIDANCE, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
+import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, PROMPT_TURN_GUIDANCE, SESSION_PRESENCE_GUIDANCE, promptToolDefinitions } from '../src/prompt/promptTools.mjs';
 import { AGENT_PROMPT_STALL_MS, agentPromptStallMinutes } from '../src/prompt/promptStall.mjs';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -86,6 +86,26 @@ test('reply_to_user and the guide start topic require a closing reply, including
   assert.match(GUIDE_TOPICS.start.text, /long-lived process is optional and nothing depends on it/);
   assert.ok(defs.set_status.description.includes(BUILDING_STATUS_GUIDANCE));
   assert.match(PROMPT_SERVER_INSTRUCTIONS, /failure or partial completion/);
+});
+
+test('instructions and read_messages require the ack-first order and a long-poll', () => {
+  const defs = Object.fromEntries(promptToolDefinitions().map((tool) => [tool.name, tool]));
+  const read = defs.read_messages.description;
+  const phrases = [
+    /set_status \{ state: "responding", id/,
+    /before any other tool/,
+    /wait_ms: 25000/,
+    /register_webhook/,
+    /empty immediate read does not mean the user never sent/,
+    /10 seconds/,
+  ];
+  for (const text of [PROMPT_SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS, read, GUIDE_TOPICS.start.text, PROMPT_TURN_GUIDANCE]) {
+    for (const phrase of phrases) assert.match(text, phrase, phrase.toString());
+  }
+  assert.match(read, /set_status responding is the ack/);
+  assert.match(GUIDE_TOPICS.start.text, /no separate ack tool/);
+  assert.match(defs.set_status.description, /before any other tool/);
+  assert.match(defs.read_messages.inputSchema.properties.wait_ms.description, /empty immediate read does not mean the user never sent/);
 });
 
 test('the topics are the planned set, each under 1,500 words, and start carries the build guidance verbatim', () => {

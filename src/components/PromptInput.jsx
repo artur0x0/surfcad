@@ -17,6 +17,13 @@ import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { pendingShown, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
 import {
+  autoFoldTarget,
+  initialPromptFlow,
+  promptFlowView,
+  scheduleAckHold,
+  stepPromptFlow,
+} from '../agent/agentPromptFlow.js';
+import {
   AGENT_SESSION_IDLE_MS,
   sessionBusy,
   sessionIdleAt,
@@ -178,6 +185,7 @@ export default function PromptInput({
     link,
     promptTransport,
     agentChatOpen = false,
+    openAgentChat,
     closeAgentChat,
     chatHold = null,
     agentGone = false,
@@ -266,9 +274,9 @@ export default function PromptInput({
   const sessionWorks = sessionOnly && sessionWorking(session);
   const sessionReplies = sessionOnly && sessionReplying(session);
   const effectiveMode = pending ? mode : sessionPromptMode(session);
-  const working = workingShown(typing) || sessionWorks;
-  // Folded (desktop): the prompt slides away and a chevron at the bottom
-  // brings it back as it was. Remembered per agent session.
+  const modeWorking = workingShown(typing) || sessionWorks;
+  // The chevron is desktop-only. Auto-fold after the ack hold is shared:
+  // phone closes onto the Bot spinner, desktop uses this fold path.
   const foldable = !isMobile;
   const foldedInitially = (seed.folded === true)
     || (foldable && (chatHold != null ? chatHold.open !== true : readFolded()));
@@ -286,6 +294,19 @@ export default function PromptInput({
     if (agentChatOpen) dispatchChat({ type: 'show' });
   }, [agentChatOpen]);
   const [ack, setAck] = useState(null);
+  const flowRef = useRef(initialPromptFlow());
+  const [flow, setFlow] = useState(flowRef.current);
+  const dispatchFlow = useCallback((event) => {
+    const next = stepPromptFlow(flowRef.current, event);
+    if (next === flowRef.current) return;
+    flowRef.current = next;
+    setFlow(next);
+  }, []);
+  const live = promptFlowView(flow);
+  // During the 10s ack hold the reply stays up. Working chrome waits.
+  const working = modeWorking && !live.holdActive;
+  const holdRef = useRef(false);
+  holdRef.current = live.holdActive;
   const paneRef = useRef(null);
   // Follow new messages unless the user scrolled up to read.
   const stuckRef = useRef(true);
@@ -359,6 +380,7 @@ export default function PromptInput({
         // A reply is activity. A final one closes; a partial one restarts the deadline.
         dispatchTyping({ type: 'reply', id: msg.id, final: msg.final === true });
         dispatchSession({ type: 'reply', final: msg.final === true });
+        dispatchFlow({ type: 'reply', final: msg.final === true });
         if (msg.final === true) {
           if (foldedRef.current) setUnread(true);
           setAnnounce('Agent replied');
@@ -372,12 +394,18 @@ export default function PromptInput({
             else dispatchTyping({ type: 'state', state: event?.mode });
             // With or without a prompt id: an explicit set_status, or the
             // process entering building on a model change, is the session state.
-            if (!event?.stalled) dispatchSession({ type: 'status', state: event?.mode });
+            if (!event?.stalled) {
+              dispatchSession({ type: 'status', state: event?.mode });
+              if (event?.mode === 'typing' || event?.mode === 'working') {
+                dispatchFlow({ type: 'status', state: event.mode });
+              }
+            }
           },
         }
         : {
           onWorking(on) {
             dispatchTyping({ type: 'working', on: on === true });
+            dispatchFlow({ type: 'status', state: on === true ? 'working' : 'idle' });
           },
         }),
       onAck(event) {
@@ -397,6 +425,7 @@ export default function PromptInput({
         applyPromptEffect(stepped);
         setAck(event);
         dispatchTyping({ type: 'ack', id: event.id, delivery: event.delivery });
+        dispatchFlow({ type: 'delivery', delivery: event.delivery });
       },
       onActivity(event) {
         if (event?.hold === true) dispatchTyping({ type: 'hold', on: true });
@@ -404,10 +433,13 @@ export default function PromptInput({
         else dispatchTyping({ type: 'activity' });
         // A bridge call this tab is running that changes the model: the
         // agent is working, prompt or not. A read is not a state change.
-        if (event?.hold === true && event.mutates === true) dispatchSession({ type: 'command', mutates: true });
+        if (event?.hold === true && event.mutates === true) {
+          dispatchSession({ type: 'command', mutates: true });
+          dispatchFlow({ type: 'work' });
+        }
       },
     });
-  }, [applyPromptEffect, commitFlight, dispatchSession, dispatchTyping, transport, visible]);
+  }, [applyPromptEffect, commitFlight, dispatchFlow, dispatchSession, dispatchTyping, transport, visible]);
 
   useEffect(() => {
     const open = shouldOpenAgentChatOnConnect(wasLiveRef.current, liveSession);
@@ -451,6 +483,7 @@ export default function PromptInput({
     if (holding || agentGone || !sawLiveRef.current) return undefined;
     dispatchTyping({ type: 'disconnect' });
     dispatchSession({ type: 'disconnect' });
+    dispatchFlow({ type: 'disconnect' });
     dispatchChat({ type: 'disconnect' });
     setAck(null);
     commitFlight(stepPromptFlight(flightRef.current, { type: 'disconnect' }).flight);
@@ -460,16 +493,18 @@ export default function PromptInput({
     setFoldSettled(false);
     setUnread(false);
     return undefined;
-  }, [agentGone, commitFlight, dispatchSession, dispatchTyping, holding, visible]);
+  }, [agentGone, commitFlight, dispatchFlow, dispatchSession, dispatchTyping, holding, visible]);
 
   // A progress frame is the working signal. The text on that frame is never read.
+  // During the ack hold the pane stays up; the fold runs when the hold ends.
   useEffect(() => {
     if (typeof transport?.onProgress !== 'function') return undefined;
     return transport.onProgress(() => {
       dispatchSession({ type: 'progress' });
-      if (mobileChatHideReason({ isMobile, progressEdge: true })) closeAgentChat?.();
+      dispatchFlow({ type: 'work' });
+      if (mobileChatHideReason({ isMobile, progressEdge: true, hold: holdRef.current })) closeAgentChat?.();
     });
-  }, [closeAgentChat, dispatchSession, isMobile, transport]);
+  }, [closeAgentChat, dispatchFlow, dispatchSession, isMobile, transport]);
   // One timer for the session window: no activity for AGENT_SESSION_IDLE_MS is idle.
   useEffect(() => {
     const due = sessionIdleAt(session, AGENT_SESSION_IDLE_MS);
@@ -477,21 +512,44 @@ export default function PromptInput({
     const timer = setTimeout(() => dispatchSession({ type: 'tick' }), Math.max(0, due - Date.now()));
     return () => clearTimeout(timer);
   }, [dispatchSession, session]);
-  const wasPendingRef = useRef(false);
-  useEffect(() => {
-    const started = pending === true && wasPendingRef.current !== true;
-    wasPendingRef.current = pending === true;
-    if (mobileChatHideReason({ isMobile, promptStarted: started })) closeAgentChat?.();
-  }, [closeAgentChat, isMobile, pending]);
-  // The phone chat also hides when the session enters working: the agent
-  // started changing the model, prompt or not.
+  // A just-sent prompt stays open so the user message is readable. Auto-fold
+  // waits for the ack-reply hold (agentPromptFlow.js), on phone and desktop.
   const wasSessionWorkingRef = useRef(false);
   useEffect(() => {
     const on = sessionWorking(session);
     const started = on && !wasSessionWorkingRef.current;
     wasSessionWorkingRef.current = on;
-    if (mobileChatHideReason({ isMobile, workingEdge: started })) closeAgentChat?.();
+    if (mobileChatHideReason({ isMobile, workingEdge: started, hold: holdRef.current })) closeAgentChat?.();
   }, [closeAgentChat, isMobile, session]);
+  // The 10s hold, then the shared auto-fold, then reopen on the final reply.
+  const appliedFold = useRef(0);
+  const appliedExpand = useRef(0);
+  useEffect(() => scheduleAckHold(flow.holdUntil, Date.now(), () => dispatchFlow({ type: 'tick' })), [dispatchFlow, flow.holdUntil]);
+  useEffect(() => {
+    if (flow.foldEpoch === appliedFold.current) return undefined;
+    appliedFold.current = flow.foldEpoch;
+    if (!flow.foldEpoch) return undefined;
+    if (autoFoldTarget(isMobile) === 'bot') {
+      closeAgentChat?.();
+      return undefined;
+    }
+    setFolded(true);
+    writeFolded(true);
+    rememberChatOpen?.(false);
+    return undefined;
+  }, [closeAgentChat, flow.foldEpoch, isMobile, rememberChatOpen]);
+  useEffect(() => {
+    if (flow.expandEpoch === appliedExpand.current) return undefined;
+    appliedExpand.current = flow.expandEpoch;
+    if (!flow.expandEpoch) return undefined;
+    setFolded(false);
+    setFoldSettled(false);
+    setUnread(false);
+    writeFolded(false);
+    if (autoFoldTarget(isMobile) === 'bot') openAgentChat?.();
+    else rememberChatOpen?.(true);
+    return undefined;
+  }, [flow.expandEpoch, isMobile, openAgentChat, rememberChatOpen]);
 
   // Agent-owned feature cards stay closed for the whole run, in either mode.
   // A busy session without a prompt uses the same spinner as a prompt in flight.
@@ -637,6 +695,7 @@ export default function PromptInput({
       type: 'sent', id: sent.id, text: trimmed, shot,
     }).flight);
     dispatchTyping({ type: 'sent', id: sent.id });
+    dispatchFlow({ type: 'sent' });
     dispatchChat({
       type: 'sent',
       id: sent.id,
@@ -660,7 +719,7 @@ export default function PromptInput({
       void transport?.cancel?.(sentId);
     }, AGENT_PROMPT_SEND_TIMEOUT_MS);
     return sent;
-  }, [applyPromptEffect, clearSendTimer, commitFlight, discardShot, dispatchTyping, input, promptContext, shot, transport, working]);
+  }, [applyPromptEffect, clearSendTimer, commitFlight, discardShot, dispatchFlow, dispatchTyping, input, promptContext, shot, transport, working]);
 
   const stopAgent = useCallback(() => {
     const id = pendingIdRef.current;
@@ -668,9 +727,10 @@ export default function PromptInput({
     setAgentPromptWorking(false);
     dispatchTyping({ type: 'stop' });
     dispatchSession({ type: 'stop' });
+    dispatchFlow({ type: 'stop' });
     setAnnounce('');
     return { ok: true };
-  }, [dispatchSession, dispatchTyping, transport]);
+  }, [dispatchFlow, dispatchSession, dispatchTyping, transport]);
 
   // Dismiss: on desktop it folds the prompt (the history stays); on mobile,
   // where the fold has not landed, it hides the pane as before.
@@ -733,7 +793,7 @@ export default function PromptInput({
     });
   }, [dismissReply, foldPrompt, sendText, stopAgent, toggleShot, unfoldPrompt, visible]);
 
-  const responding = typingShown(typing) || sessionReplies;
+  const responding = !live.waiting && (live.dots || typingShown(typing) || sessionReplies);
   // Working collapses the chat so the viewport is visible; typing keeps it.
   const showReply = shown && !working && (responding || (!chat.hidden && chat.messages.length > 0));
   const lastKey = chat.messages.length ? chat.messages[chat.messages.length - 1].key : '';
@@ -863,7 +923,7 @@ export default function PromptInput({
               row.role === 'user' ? (
                 <div
                   key={row.key}
-                  className="agent-prompt-msg agent-prompt-msg--user surface-quiet text-ui text-on-dark"
+                  className="agent-prompt-msg agent-prompt-msg--user surface-panel text-ui text-on-dark"
                   data-agent-msg="user"
                 >
                   {row.thumb ? (
@@ -913,7 +973,7 @@ export default function PromptInput({
         </p>
       ) : null}
 
-      {notice?.kind === 'queued' && !working ? (
+      {notice?.kind === 'queued' && live.waiting ? (
         <p className="agent-prompt-ack text-ui-xs text-muted-on-dark" data-agent-prompt-ack="queued">
           Waiting for agent
         </p>

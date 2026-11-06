@@ -12,7 +12,7 @@
  * topic under 1,500 words.
  */
 import { BUILD_GUIDANCE, JOINT_PLACEMENT_GUIDANCE } from './buildGuidance.mjs';
-import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS } from './promptTools.mjs';
+import { BUILDING_STATUS_GUIDANCE, CLOSING_REPLY_GUIDANCE, PROMPT_SERVER_INSTRUCTIONS, PROMPT_TURN_GUIDANCE } from './promptTools.mjs';
 import {
   ERROR_TOPIC_CODES,
   ERROR_TOPIC_PREFIX,
@@ -41,7 +41,9 @@ Reading results: every model-changing tool answers { ok, errors, status } with r
 Ids are opaque surf ids from parts, list_assemblies, create_part, create_assembly; never a path or a display name.
 Topics: guide { topic: "dialect" | "features" | "selection" | "paint" | "limits" | "camera" | "assembly" | "modeling" | "molding" }; list_helpers { names } documents any script helper.
 
-In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} Be interactive: post_progress while you work, especially during long reasoning. A fresh surfcad-mcp process per tool call is normal and stays present. A long-lived process is optional and nothing depends on it. Call close_session once when you are done. close_session is not sent on process exit. state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting (not a prompt id, one per second). After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {} and on a remote session. An idle session that has not received a prompt has recent: [].`;
+In-viewer prompt pane. ${CLOSING_REPLY_GUIDANCE} set_status is for progress and does not close the task. ${BUILDING_STATUS_GUIDANCE} Be interactive: post_progress while you work, especially during long reasoning. A fresh surfcad-mcp process per tool call is normal and stays present. A long-lived process is optional and nothing depends on it. Call close_session once when you are done. close_session is not sent on process exit. state "responding" (alias typing) is the bouncing dots after the user sends. Listing parts, faces, edges, or transforms, status, and read_messages never start building. Building stays until the closing reply. reply_to_user takes an in_reply_to that this session actually received; any other id is unknown_prompt and is not shown in the chat. Omit in_reply_to to post one plain-text message to this paired session when no prompt is waiting (not a prompt id, one per second). After read_messages acks a prompt, that id stays in the response's recent list (the last 50 prompts in this session, oldest first, each { id, state }), including on a later empty read_messages {} and on a remote session. An idle session that has not received a prompt has recent: [].
+
+${PROMPT_TURN_GUIDANCE}`;
 
 const FEATURES = `Feature blocks. The script of a part is plain JavaScript over the SurfCAD helpers, and the feature strip reads it from marker comments. Every insert_* writes one block:
 
@@ -305,11 +307,8 @@ export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
   `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
-  'Flow: 1 Block create_part then insert_cube / insert_cylinder / insert_tube, screenshot. 2 Build insert_hole, insert_cut, insert_shell, insert_make_extrude / revolve / sweep / loft. 3 Polish insert_fillet_edges, insert_chamfer_edges. 4 Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
-  'Rules that bite: helper names (cut, hole, shell, ...) are reserved, never redeclare them; set_script needs the active part\'s id (set_active_part first) and only rewrites a whole part, insert_code_snippet { gap, why, script } is the one-operation fallback; use_selection is single use: pick, insert once, pick again (nothing selected is no_selection).',
-  'Verify: select_clear → camera_set { view } → screenshot { save_to: true }. right puts the camera on +X, front on -Y, top on +Z.',
-  'Save only when the user asks: git_save { message } answers consent_pending until the user clicks Allow; retry the same call.',
-  'Small results: tools default to return: "status" (no script echo; get_script reads it), list_faces { filter, page }, list_commands { group }.',
+  'Flow: create_part then insert_cube / insert_cylinder / insert_tube, then insert_hole, insert_cut, insert_shell, insert_fillet_edges. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
+  'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');
 
 export function guideToolDefinition() {

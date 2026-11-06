@@ -82,7 +82,7 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /useModalViewport\(/);
   assert.match(SRC, /data-agent-prompt-actions=""/);
   assert.match(SRC, /dispatchTyping\(\{ type: 'disconnect' \}\)/);
-  assert.match(SRC, /const responding = typingShown\(typing\) \|\| sessionReplies;/);
+  assert.match(SRC, /const responding = !live\.waiting && \(live\.dots \|\| typingShown\(typing\) \|\| sessionReplies\);/);
   // Session-level state (no prompt needed): the tab's own model-changing
   // calls, status and progress frames, and one idle timer.
   assert.match(SRC, /sessionReducer\(sessionRef\.current, \{ at: Date\.now\(\), \.\.\.event \}\)/);
@@ -91,7 +91,10 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /dispatchSession\(\{ type: 'status', state: event\?\.mode \}\)/);
   assert.match(SRC, /dispatchSession\(\{ type: 'tick' \}\)/);
   assert.match(SRC, /sessionIdleAt\(session, AGENT_SESSION_IDLE_MS\)/);
-  assert.match(SRC, /mobileChatHideReason\(\{ isMobile, workingEdge: started \}\)/);
+  assert.match(SRC, /mobileChatHideReason\(\{ isMobile, workingEdge: started, hold: holdRef\.current \}\)/);
+  assert.match(SRC, /autoFoldTarget\(isMobile\)/);
+  assert.match(SRC, /scheduleAckHold\(/);
+  assert.doesNotMatch(SRC, /promptStarted: started/);
   assert.match(SRC, /const agentBusy = pending \|\| sessionBusy\(session\);/);
   assert.doesNotMatch(SRC, /progressUntil/);
   assert.doesNotMatch(SRC, /setWorking\(/);
@@ -213,7 +216,7 @@ test('the pane reads like a chat: both senders in order, user bubbles right with
   assert.deepEqual(roles, ['user', 'agent', 'user', 'agent']);
   assert.ok(chat.indexOf('Did you get the reference photo') < chat.indexOf('Yes, I got it.'));
   assert.ok(chat.indexOf('Yes, I got it.') < chat.indexOf('Rebuild the bike'));
-  assert.match(chat, /agent-prompt-msg--user surface-quiet/);
+  assert.match(chat, /agent-prompt-msg--user surface-panel/);
   assert.match(chat, /agent-prompt-msg--agent agent-prompt-reply-body surface-dark text-ui text-on-dark/);
   assert.match(chat, /data-agent-msg-thumb=""/);
   assert.match(chat, /data-agent-chat-count="4"/);
