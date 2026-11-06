@@ -199,6 +199,37 @@ Each one is a scar. Changing it reintroduces a shipped bug.
   stays flush. B6 (0.375 mm wings on a 10 mm edge across a 10.75 mm plate) and
   B7 / follow-up 4 (a nub where the segment meets a rounded corner) were the
   pad escaping. Table: `references/kernel-internals.md` §4.
+- **A concave run is seated inside its walls, as one offset, never knot by
+  knot.** The path is resampled onto a fitted arc, and an arc is not on the
+  facets of a tessellated wall: up to 9.6 µm in the air on a 64-facet post.
+  A filler that starts there stands proud of the wall and ends in a micro
+  ledge (159 real convex edges on that post), and the next no-selection blend
+  failed on them ("edge is concave" from `filletEdges`, "split the solid"
+  from `chamferEdges`). `_s23SeatConcaveKnots` moves the whole run by the
+  largest proudness per wall. Do not snap each knot to its own facet: that
+  rebuilds the polygon, its 5.6° corners clear `_S23_RUN_CORNER_DEG`, and the
+  run splits into a tube per facet group with a 90° step at each split.
+  Convex runs are never moved. `references/kernel-internals.md` §4.
+- **The seat never adds a corner and never costs more than a tenth of the
+  fill.** The resample leaves 4.93° turns under a 5° run gate, so any jitter
+  in the offset direction splits the run (20 tubes where a post meets a
+  sphere). The direction field is smoothed until the offset path has no new
+  corner, else the run is not moved. A lift over a tenth of the fill's
+  thickness `r(1/sin(θ/2) − 1)` is not applied: 18 µm in a 95 µm crescent
+  halved that fillet.
+- **A closed loop is fitted through thirds of the loop when its samples are
+  off the first / middle / last circle.** The last sample of a loop is the
+  first one's neighbour, so that fit hung the plane on one chord. A crease
+  cut by a boolean wobbles, and the circle tilted 4.4°: knots 0.5 mm off the
+  crease. An exact rim (off by under 1 µm) keeps the old fit bit for bit.
+  Do not pin a run's ends to noisy samples on such a loop either: a sample
+  30 µm off next to a 0.5 mm chord is an 8.7° kink.
+- **Seam dust is not a body, in the chamfer too.** `chamferEdges` counts
+  components to catch a cut-through. A component of volume ≤ `_SEAM_DUST_MM3`
+  (1e-8, the same limit as the fillet's closed-path rule) is dropped and not
+  counted. Without it every rim-face chamfer on a shelled cup was refused as
+  "split the solid into 2 bodies" at any leg, over specks of 1e-11 mm³.
+  Two pieces with volume still throw.
 - **A folded sliver is not the surface.** `signedFeatureEdges` skips a fold
   pair's shared edge and lets a sliver wound against its face borrow the
   largest coplanar neighbour's normal (`_c6UnfoldedNormal`). Without it a
@@ -231,7 +262,7 @@ The viewport scrap banner is **delta-based** (pre-Accept degenerate-tri count vi
 
 | File | Role |
 | --- | --- |
-| `src/utils/filletAlongPath.js` | pure profile/area/frame math shared by UI, worker, goldens |
+| `src/utils/filletAlongPath.js` | pure profile/area/frame math shared by UI, worker, goldens; the arc resample and its circle fit (`densifySweepArcTurns`, `_arcFit`) |
 | `src/utils/filletEdgeClass.js` | easy/hard classification + `countDegenerateTriangles` |
 | `src/utils/filletKernelSpike.js` | kernel choice + `FILLET_HARD_KERNEL_TRIAL` |
 | `src/utils/filletMode.js` | in-mode state, validation, live preview, `composeFilletCommit` |

@@ -200,6 +200,120 @@ could pass on a mixed chain while both halves were wrong.
 Unpolished: where a chain changes sign the cutter and filler overlap at the
 corner (net +6.4 on a mixed L chain where ideal is ~0).
 
+**Seating a concave run** (`_s23SeatConcaveKnots`, run right after the knot
+probe and before `buildVariableProfileFrames`). A filler's section starts at
+the knot and its legs run along the two walls, so a knot in the air beside a
+wall carries the leg out with it: the filler stands proud and ends at the
+tangency in a flat ledge as wide as the knot was proud. A cutter does not
+care, its legs are meant to be in the air.
+
+The knots get into the air on every tessellated curve, because
+`densifySweepArcTurns` resamples the path onto a fitted arc:
+
+| Crease | Fitted circle | In the air by |
+| --- | --- | --- |
+| 64-facet post r 8 on a plate | through the vertices, r 8 | 9.6 µm at each facet middle (the full sag) |
+| 64-facet blind bore r 10, wall to floor | r 9.9907 | 9.2 µm at each facet corner |
+| planar pair (box, L) | on the crease | 0, not moved |
+
+Measured on the post with a 2 mm fillet before the fix: 159 convex edges of
+88° in a ring at the tangency, each a step a few µm wide. They are real
+edges, so `convexEdges` listed them, and the next no-selection blend failed:
+`filletEdges` threw "edge is concave" (its ball probe reads a micron step as
+flat) and `chamferEdges` cut through. After: 0 ledge triangles, the convex
+and concave edge counts of the part are what they were minus the filleted
+crease, and the default fillet and chamfer remove the same volume as on the
+plain post (90.773 and 210.398 mm³).
+
+The rule:
+
+1. Wall planes come from the two **triangles** of the mesh edge each segment
+   matched (`segmentEdges` from `_s23ProbeKnotNormals`). A face-group normal
+   is an average and is no plane on a curved group. A sliver triangle has no
+   usable normal and borrows the group's. Wall A and wall B are told apart
+   along the run by continuity, because n0 / n1 order is arbitrary per edge.
+2. A knot is measured only against an edge it projects onto
+   (`_s23KnotOverEdge`). A segment is matched at its midpoint, so a knot at
+   its end can sit past the end of that edge, over the next facet. On a bore
+   the plane of the facet it left then read 22 µm, more than twice the truth.
+3. `lift[w]` is the largest proudness of any knot over wall `w`. Under
+   `_S23_SEAT_MIN_MM` (0.1 µm) it is 0, which covers every path that lies on
+   its crease. Over a tenth (`_S23_SEAT_MAX_FRAC`) of the fill's thickness at
+   the crease, `r(1/sin(θ/2) − 1)` for the thinnest segment of the run, it is
+   0 too: sinking the section that far buys a clean edge with a fillet
+   visibly smaller than asked for, or means the path is off its crease
+   altogether. At θ 90° and r 2 the cap is 83 µm against 9.6 µm of sag.
+4. Every knot whose segments are all concave moves by `−lift[w] · n` for each
+   wall, with `n` its own local wall normal. That is an offset of the curve:
+   no turn angle changes, so the run stays one tube. Knots of a mixed-sign
+   chain that touch a convex segment do not move.
+5. The seat never adds a corner. `_s23PathCorners` counts the knots that turn
+   past `_S23_RUN_CORNER_DEG` before and after. If the offset path has more,
+   the direction field is smoothed along the run (`_s23SmoothDirs`, weights
+   1 2 1, renormalised) with 2, 8, then 32 passes, and if it still has more
+   the run is not moved. No smoothing is tried first, so an even field (a
+   post, a bore) is offset exactly as rule 4 says.
+
+Rule 5 and the cap came from one part, a 64-facet post (r 6) under a sphere
+(r 9), fillet r 1, θ 131.8°, fill 95 µm thick:
+
+| Seat | Runs | Added mm³ (ideal about 1.0) | Convex / concave edges after |
+| --- | --- | --- | --- |
+| none | 1 | 1.070 | 298 / 446 |
+| per-knot normals, lift up to r | 20 | 0.526 | 727 / 929 |
+| smoothed, lift up to r | 1 | 0.529 | 97 / 57 |
+| smoothed, lift capped (shipped): one wall at 7.3 µm, the other (18 µm) refused | 1 | 0.890 | 183 / 253 |
+
+The facets under that crease are cut by the boolean and point every way, so
+the per-knot normals jitter; 18 µm along them took a 4.93° path past the 5°
+gate.
+
+**What the seat does not fix: a wall that curves along the leg.** The legs
+of the section lie in the plane of the facet at the crease. A sphere bends
+away from that plane (r 9: 11 µm over a 0.45 mm leg, more with the next row
+of facets), so the far end of the leg stands proud whatever the knot does.
+After the fillet above, 33 convex edges remain on the sphere side and the
+no-selection `filletEdges` still throws "edge is concave". Edges there are
+picked by name. Seating the leg end against the real surface needs a
+point-to-mesh query per knot and is not built.
+
+**The path under the seat** (`densifySweepArcTurns`, `_arcFit` in
+`src/utils/filletAlongPath.js`). The same part showed the path was wrong
+before any seat: a closed loop was fitted through its first, middle and last
+sample, and the last sample of a loop is the first one's neighbour. The plane
+hung on that one chord. The crease wobbles by 31 µm in z, the circle tilted
+4.4°, and the knots ran from z 36.85 to 37.80 around a crease at 37.31. Main
+built the filler there and passed every guard (added 0.945 mm³, 215 convex
+and 760 concave edges after). Two rules now:
+
+- `_arcFit`: when a run wraps (its ends are closer than half its
+  first-to-middle span) and its samples are more than `ARC_FIT_NOISE_MM`
+  (1 µm) off the first / middle / last circle, thirds of the run are tried
+  and the closer circle wins. An exact rim never gets there, so its knots
+  are what they were, bit for bit.
+- A closed loop whose samples are all within max(0.05, 0.01·R) of one circle
+  and which has no designed corner (no turn over 50°) is resampled as that
+  whole circle, whichever of its vertices passed the arc test. Uneven chords
+  (0.2 to 1.6 mm on that crease) leave some vertices under the turn limit,
+  the loop came out as one run with raw samples between its ends, and the
+  ends stay on their samples: 30 µm off next to a 0.5 mm chord is an 8.7°
+  kink and the fillet was cut as 24 tubes.
+
+Tests: `src/utils/filletArcFit.test.js` (the two noisy-loop tests fail on
+the old fit; an exact rim and a rounded rectangle are unchanged).
+
+Per-knot snapping (each proud knot onto its own facet) was tried first and is
+wrong. It turns the arc back into the polygon; the 5.6° corners of a 64-gon
+clear `_S23_RUN_CORNER_DEG` (5°), the run splits there, and the fillet comes
+out as 14 tubes with a radial 90° step at every split.
+
+What the offset costs: a knot that was on the wall ends up inside it by the
+sag, so the arc meets the wall just below its tangency in a shallow concave
+crease (5.6° on the 64-facet post), under `FEATURE_EDGE_MIN_DEG`. The fill is
+under the ideal Pappus volume by 0.8% at 96 facets, 1.7% at 64, 3.8% at 32.
+The meta (`__filletVariableProfileMeta`) carries `seatedKnots` and
+`seatMaxMm`. Tests: `src/lib/surfcad/concaveFilletSeat.test.js`.
+
 **Open ends of a concave run** (`_s23ExtendConcaveOpenEnds`). Every concave
 open end is padded by the cutter-expand length so the filler cap is not
 coplanar with the face the edge ends on, and the pad is then taken back:
@@ -416,6 +530,17 @@ In execution order. Every one throws; none degrade silently.
 | oversize | `removed > 8 · expectVol` |
 | scrap components | `decompose()` > 1: closed paths keep the largest when every other component is seam dust (volume ≤ 1e-8); two components with volume still hard-fail. Open paths keep the largest only if scrap ≤ 5% of it and ≤ 1e-2 |
 | degenerate tris | `isFilletSliverDirty(tiny, nTri)` — tiny > 80 **and** > 6% of tris |
+
+**`chamferEdges` has one guard of this family**: after each edge's cut it
+counts bodies and throws "split the solid into N bodies" when the count grew.
+It counts through `_chamferBodies`, which drops components of volume ≤
+`_SEAM_DUST_MM3` (1e-8 mm³, shared with the closed-path rule above) and
+continues from the cleaned solid. The specks are zero thick and come from a
+cutter closing a loop: 7e-11 mm³ on the top rim of a 64-facet post, six of
+5e-11 to 3.5e-15 mm³ on the rim face of a shelled cup (128 edges, 2 mm wall).
+Before the rule that cup's rim chamfer was refused at every leg length. A
+real cut-through (a 2 mm chamfer on a 1 x 1 neck between two blocks) still
+throws.
 
 `expectVol` uses the **dihedral** removed area when the per-segment cutter ran
 (`expectVolOverride`), never a 90°-only figure: a 90° expectation false-trips an

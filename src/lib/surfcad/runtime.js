@@ -4540,16 +4540,70 @@ function cskHole(part, frame, u, v, diaThru, diaCsk, cskDepth, span) {
   );
 }
 
-function _chamferComponents(solid) {
-  if (!solid || typeof solid.decompose !== 'function') return 1;
+/**
+ * A boolean that closes a loop can leave a zero-thickness speck beside the
+ * solid: a component with no volume. It is not a body. filletAlongPath's
+ * closed-path scrap rule and chamferEdges' split guard share this one limit.
+ */
+const _SEAM_DUST_MM3 = 1e-8;
+
+/**
+ * The bodies of a solid that have real volume, and that solid without its
+ * seam dust.
+ *
+ * chamferEdges counted every component, so the speck the last cutter of a
+ * closed rim can leave (measured 7e-11 mm³, zero thick, on the top rim of a
+ * 64-segment post once the part carried a concave fillet) read as "split
+ * the solid into 2 bodies" and the whole chamfer was refused. Dust is
+ * dropped and not counted; a second piece with volume is still a split.
+ *
+ * `clean` is `solid` itself when there was no dust to drop.
+ * @returns {{ count: number, clean: object }}
+ */
+function _chamferBodies(solid) {
+  const same = { count: 1, clean: solid };
+  if (!solid || typeof solid.decompose !== 'function') return same;
   let parts = null;
-  try { parts = solid.decompose(); } catch { return 1; }
-  if (!Array.isArray(parts) || parts.length === 0) return 1;
-  const n = parts.length;
+  try { parts = solid.decompose(); } catch { return same; }
+  if (!Array.isArray(parts) || parts.length === 0) return same;
+  const free = (list) => {
+    for (const piece of list) {
+      if (piece && piece !== solid) _safeDeleteManifold(piece);
+    }
+  };
+  const real = [];
+  const dust = [];
   for (const piece of parts) {
-    if (piece && piece !== solid) _safeDeleteManifold(piece);
+    let v = 0;
+    try { v = piece.volume(); } catch { v = 0; }
+    if (v > _SEAM_DUST_MM3) real.push(piece);
+    else dust.push(piece);
   }
-  return n;
+  // Nothing to drop, or nothing but dust (not this guard's case): as it was.
+  if (!dust.length || !real.length) {
+    free(parts);
+    return { count: parts.length, clean: solid };
+  }
+  let clean = null;
+  try {
+    clean = real.length === 1 ? real[0] : manifoldModule.Manifold.compose(real);
+  } catch {
+    clean = null;
+  }
+  if (!clean || _c4StatusError(clean)) {
+    free(parts);
+    return { count: real.length, clean: solid };
+  }
+  free(dust);
+  if (real.length > 1) free(real);
+  return { count: real.length, clean };
+}
+
+/** How many bodies with real volume a solid has (seam dust is not a body). */
+function _chamferComponents(solid) {
+  const bodies = _chamferBodies(solid);
+  if (bodies.clean !== solid) _safeDeleteManifold(bodies.clean);
+  return bodies.count;
 }
 
 /**
@@ -4579,7 +4633,8 @@ function _chamferComponents(solid) {
  * Cost: n differences instead of 1 — fine for the edge counts these parts
  * actually use (≤ ~30); the C8 timeout guard catches anything pathological.
  * A chamfer that splits the solid into more bodies than it started with
- * throws. The pieces are not returned.
+ * throws. The pieces are not returned. A component with no volume
+ * (`_SEAM_DUST_MM3`) is seam dust, not a body: it is dropped and not counted.
  */
 function chamferEdges(part, edges, c) {
   _c4RequirePositive('chamferEdges', 'c (leg length)', c);
@@ -4628,15 +4683,18 @@ function chamferEdges(part, edges, c) {
     const seNext = _c4StatusError(next);
     if (seNext)
       throw new Error(`chamferEdges: edge ${ei} — boolean failed (${seNext}); the cutter geometry is degenerate at this edge (common at triple-junction rib-base edges)`);
-    const pieces = _chamferComponents(next);
-    if (pieces > started) {
+    const bodies = _chamferBodies(next);
+    if (bodies.count > started) {
+      if (bodies.clean !== next) _safeDeleteManifold(bodies.clean);
       _safeDeleteManifold(next);
       throw new Error(
-        `chamferEdges: edge ${ei} split the solid into ${pieces} bodies (was ${started}). `
+        `chamferEdges: edge ${ei} split the solid into ${bodies.count} bodies (was ${started}). `
         + 'The chamfer cut through the part. Use the boundary edges of one face, or a smaller leg length.',
       );
     }
-    out = next;
+    // Seam dust is dropped here, so it is neither a body of the result nor
+    // something the next edge's cutter has to cut around.
+    out = bodies.clean;
   }
   return out;
 }
@@ -8047,6 +8105,9 @@ function _s23ProbeKnotNormals(part, points, closed, carried = null) {
   const segCount = closed ? n : n - 1;
   const segmentNormals = new Array(segCount).fill(null);
   const segmentConvex = new Array(segCount).fill(null);
+  // The mesh edge each segment matched (null when it only carries a
+  // neighbour's normals). _s23SeatConcaveKnots reads the wall facets from it.
+  const segmentEdges = new Array(segCount).fill(null);
   let seedNormals = null;
   const matchedIdx = [];
 
@@ -8082,6 +8143,7 @@ function _s23ProbeKnotNormals(part, points, closed, carried = null) {
     // Per-knot sign. C3.3 and earlier sampled convexity ONCE per path, so a
     // chain that changed sign mid-way was cut as whatever its first segment was.
     segmentConvex[i] = best.convex !== false;
+    segmentEdges[i] = best;
     matchedIdx.push(i);
     if (!seedNormals) seedNormals = nr;
   }
@@ -8110,7 +8172,290 @@ function _s23ProbeKnotNormals(part, points, closed, carried = null) {
     segmentConvex[i] = segmentConvex[bestJ];
   }
 
-  return { segmentNormals, seedNormals, segmentConvex };
+  return { segmentNormals, seedNormals, segmentConvex, segmentEdges };
+}
+
+/**
+ * A run proud of a wall by less than this is left where it is: the 2.5 µm
+ * setback nudge already puts the filler's tangency inside the wall, and a
+ * path that lies on the crease (every planar pair) must not move at all.
+ */
+const _S23_SEAT_MIN_MM = 1e-4;
+
+/**
+ * The most a seat may cost, as a share of the fill's own thickness at the
+ * crease, r·(1/sin(θ/2) − 1) for the empty-side angle θ. Sinking the section
+ * by more buys a clean edge with a fillet visibly smaller than asked for,
+ * or buries it: measured on a post under a sphere (θ 132°, r 1, fill 95 µm
+ * thick), a seat of 18 µm halved the added volume. Past the cap the run is
+ * left where it is. Tessellation sag on a 64-facet post is 9.6 µm against
+ * 83 µm allowed at r 2.
+ */
+const _S23_SEAT_MAX_FRAC = 0.1;
+
+/** Does the knot project onto the mesh edge a→b itself (ends included), not past one of its ends? */
+function _s23KnotOverEdge(pt, a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  const ab = _c4Sub(b, a);
+  const L2 = _c4Dot(ab, ab);
+  if (!(L2 > 1e-18)) return false;
+  const u = _c4Dot(_c4Sub(pt, a), ab) / L2;
+  const slack = 1e-3 / Math.sqrt(L2);
+  return u >= -slack && u <= 1 + slack;
+}
+
+/**
+ * Seat a concave run inside its walls.
+ *
+ * A concave fillet ADDS material: the filler's section starts at the knot
+ * and its legs run along the two walls. A knot that sits in the air beside a
+ * wall carries the whole leg out with it, so the filler stands proud of
+ * that wall and ends at the tangency in a flat ledge as wide as the knot was
+ * proud. The knots get there on any tessellated curve: the sweep path is
+ * resampled onto the fitted arc (`densifySweepArcTurns`), and an arc is not
+ * on the facets. On a 64-facet post the circle through the vertices is up to
+ * 9.6 µm outside the facets at their middles. In a 64-facet bore (r 10) the
+ * fitted circle came out at r 9.9907, in the air by 9.2 µm at every facet
+ * corner. Measured on the post (r 8, fillet 2): a ring of 159 edges at the
+ * tangency, each a real 88° convex step a few microns wide. `convexEdges`
+ * reports them, as it should, and the next no-selection blend then fails:
+ * `filletEdges` throws "edge is concave" (its ball probe reads a micron
+ * step as flat) and `chamferEdges` cuts through.
+ *
+ * A convex cutter has no such problem. Its legs are meant to be in the air,
+ * and a knot off the crease only moves the cut by that much.
+ *
+ * The cure keeps the path smooth. Dropping each proud knot onto its own
+ * facet was tried first and is wrong: it turns the resampled arc back into
+ * the polygon, the 5.6° corners clear `_S23_RUN_CORNER_DEG`, the run splits
+ * into a tube per facet group, and the fillet comes out with a 90° step at
+ * every split (measured: 14 of them around the post).
+ *
+ * So the whole run moves, by one distance per wall: the largest amount any
+ * of its knots is proud of that wall. Every knot goes that far against its
+ * own local wall normal, which is an offset of the curve (the circle through
+ * the vertices becomes the circle inside the facets), so no turn angle
+ * changes and the run stays one tube. A knot that was on the wall ends up
+ * inside it by the sag, and the arc then meets the wall a little below its
+ * tangency in a shallow concave crease (5.6° on that post), well under the
+ * feature gate.
+ *
+ * Only knots whose segments are all concave move. A run that is proud by
+ * less than `_S23_SEAT_MIN_MM` (every path that lies on its crease, so every
+ * planar pair) does not move at all. A run proud by more than a tenth of
+ * the fill's own thickness (`_S23_SEAT_MAX_FRAC`) is not seated: the cure
+ * would cost more of the fillet than the ledge is worth, or the path is off
+ * its crease altogether.
+ *
+ * The seat never adds a corner: the direction field is smoothed along the
+ * run until the offset path has none the path did not have, and a run that
+ * cannot be offset without one is not moved (`_S23_SEAT_SMOOTH_PASSES`).
+ *
+ * Triangle normals, not face-group normals, give the wall planes: a group
+ * normal is an average and is no plane on a curved group. The two walls are
+ * told apart along the run by continuity, because a mesh edge's n0 / n1
+ * order is arbitrary from one edge to the next.
+ *
+ * @returns {{ points: number[][], seated: number, maxMm: number, smoothPasses?: number }}
+ */
+function _s23SeatConcaveKnots(part, points, closed, segmentConvex, segmentEdges, radius) {
+  const n = Array.isArray(points) ? points.length : 0;
+  const idle = { points, seated: 0, maxMm: 0 };
+  if (n < 2 || !Array.isArray(segmentEdges) || !Array.isArray(segmentConvex)) return idle;
+  const segCount = closed ? n : n - 1;
+  let any = false;
+  for (let i = 0; i < segCount; i++) {
+    if (segmentConvex[i] === false && segmentEdges[i]) { any = true; break; }
+  }
+  if (!any) return idle;
+  const info = _c6BuildMeshInfo(part);
+
+  // Per segment: the two wall planes of its matched edge, as [wallA, wallB].
+  // Each is { q, n } (a point on the plane and its outward unit normal).
+  const segWalls = new Array(segCount).fill(null);
+  let prev = null;
+  let thinnest = Infinity;
+  for (let i = 0; i < segCount; i++) {
+    const e = segmentEdges[i];
+    if (segmentConvex[i] !== false || !e || !Array.isArray(e.tris) || e.tris.length !== 2 || !Array.isArray(e.va)) continue;
+    const eLen = Array.isArray(e.vb) ? _c4Len(_c4Sub(e.vb, e.va)) : 0;
+    const group = [e.n0, e.n1];
+    const sides = [];
+    for (let k = 0; k < 2; k++) {
+      const tri = info.tris[e.tris[k]];
+      // A sliver has no usable normal: its face-group normal stands in.
+      const ok = tri && _c4TriArea(tri) > 1e-6 * eLen * eLen;
+      const nn = ok ? tri.n : (group[k] && _c4Len(group[k]) > 0.5 ? _c4Norm(group[k]) : null);
+      sides.push(nn ? { q: e.va, n: nn, a: e.va, b: e.vb } : null);
+    }
+    if (!sides[0] || !sides[1]) continue;
+    let pair = sides;
+    if (prev) {
+      const keep = _c4Dot(prev[0].n, sides[0].n) + _c4Dot(prev[1].n, sides[1].n);
+      const swap = _c4Dot(prev[0].n, sides[1].n) + _c4Dot(prev[1].n, sides[0].n);
+      if (swap > keep) pair = [sides[1], sides[0]];
+    }
+    segWalls[i] = pair;
+    prev = pair;
+    // Thinnest fill along the run: outward normals at angle φ leave an
+    // empty-side angle θ = π − φ between the walls.
+    const cosPhi = Math.max(-1, Math.min(1, _c4Dot(pair[0].n, pair[1].n)));
+    const half = (Math.PI - Math.acos(cosPhi)) / 2;
+    const sinHalf = Math.sin(half);
+    if (sinHalf > 1e-6) thinnest = Math.min(thinnest, (Number(radius) || 0) * (1 / sinHalf - 1));
+  }
+
+  // Per knot: the segments that meet there, and whether it may move.
+  const adjOf = (k) => {
+    const adj = [];
+    if (k < segCount) adj.push(k);
+    if (closed) adj.push((k - 1 + segCount) % segCount);
+    else if (k > 0) adj.push(k - 1);
+    return adj;
+  };
+  const movable = new Array(n).fill(false);
+  for (let k = 0; k < n; k++) {
+    const adj = adjOf(k);
+    movable[k] = adj.length > 0 && adj.every((j) => segmentConvex[j] === false);
+  }
+
+  // How far the run is proud of each wall, and each knot's normal on it.
+  const lift = [0, 0];
+  const normals = [new Array(n).fill(null), new Array(n).fill(null)];
+  for (let k = 0; k < n; k++) {
+    if (!movable[k]) continue;
+    const pt = points[k];
+    for (let w = 0; w < 2; w++) {
+      let sum = null;
+      for (const j of adjOf(k)) {
+        const wall = segWalls[j] && segWalls[j][w];
+        if (!wall) continue;
+        sum = sum ? _c4Add(sum, wall.n) : [wall.n[0], wall.n[1], wall.n[2]];
+        // Measure the knot against the facet it lies on, not its neighbour.
+        // A segment's edge was matched at the segment's midpoint, so a knot
+        // at its end can sit past the end of that edge, over the next
+        // facet. On a wall that curves toward the air (a bore) the plane of
+        // the facet it left then reads it as proud, by up to the knot
+        // spacing times the facet turn (22 µm measured on a 64-facet bore).
+        if (!_s23KnotOverEdge(pt, wall.a, wall.b)) continue;
+        const d = (pt[0] - wall.q[0]) * wall.n[0] + (pt[1] - wall.q[1]) * wall.n[1] + (pt[2] - wall.q[2]) * wall.n[2];
+        if (d > lift[w]) lift[w] = d;
+      }
+      if (sum && _c4Len(sum) > 1e-9) normals[w][k] = _c4Norm(sum);
+    }
+  }
+  const cap = Math.max(_S23_SEAT_MAX_FRAC * (Number.isFinite(thinnest) ? thinnest : 0), _S23_SEAT_MIN_MM);
+  for (let w = 0; w < 2; w++) {
+    if (!(lift[w] > _S23_SEAT_MIN_MM) || lift[w] > cap) lift[w] = 0;
+  }
+  if (!(lift[0] > 0) && !(lift[1] > 0)) return idle;
+
+  // A knot whose segments matched no edge carries the nearest matched knot's normal.
+  const carried = (w, k) => {
+    if (normals[w][k]) return normals[w][k];
+    for (let step = 1; step < n; step++) {
+      const fwd = closed ? (k + step) % n : k + step;
+      const back = closed ? (k - step + n) % n : k - step;
+      if (fwd < n && fwd >= 0 && normals[w][fwd]) return normals[w][fwd];
+      if (back < n && back >= 0 && normals[w][back]) return normals[w][back];
+    }
+    return null;
+  };
+  const field = [0, 1].map((w) => points.map((_, k) => (movable[k] && lift[w] > 0 ? carried(w, k) : null)));
+  const offset = (dirs) => {
+    const out = points.map((p) => [p[0], p[1], p[2]]);
+    let seated = 0;
+    for (let k = 0; k < n; k++) {
+      let pt = out[k];
+      let moved = false;
+      for (let w = 0; w < 2; w++) {
+        const nn = dirs[w][k];
+        if (!nn) continue;
+        pt = [pt[0] - lift[w] * nn[0], pt[1] - lift[w] * nn[1], pt[2] - lift[w] * nn[2]];
+        moved = true;
+      }
+      if (moved) { out[k] = pt; seated += 1; }
+    }
+    return { out, seated };
+  };
+
+  // The seat never adds a corner. On a post the wall normals turn evenly
+  // and the offset is a smaller circle. Where a post meets a sphere the
+  // facets under the crease point every way (a boolean cut them), the
+  // per-knot normals jitter, and 18 µm along them kinked a 4.93° path past
+  // the 5° run gate: 20 tubes and half the fill. So the direction field is
+  // smoothed along the run, more each try, until the offset path has no
+  // corner the path did not have. If none does, the run is not moved.
+  const corners = _s23PathCorners(points, closed);
+  for (const passes of _S23_SEAT_SMOOTH_PASSES) {
+    const dirs = field.map((f) => _s23SmoothDirs(f, closed, passes));
+    const { out, seated } = offset(dirs);
+    if (!seated) return idle;
+    if (_s23PathCorners(out, closed) > corners) continue;
+    return { points: out, seated, maxMm: Math.max(lift[0], lift[1]), smoothPasses: passes };
+  }
+  return idle;
+}
+
+/** Smoothing tried by the seat, in order: none first, so an even field (a post, a bore) is offset exactly. */
+const _S23_SEAT_SMOOTH_PASSES = [0, 2, 8, 32];
+
+/** How many knots of a path turn by more than the run-split gate. */
+function _s23PathCorners(points, closed) {
+  const n = points.length;
+  if (n < 3) return 0;
+  const cosGate = Math.cos((_S23_RUN_CORNER_DEG * Math.PI) / 180);
+  const dir = (a, b) => {
+    const d = _c4Sub(b, a);
+    const L = _c4Len(d);
+    return L > 1e-12 ? [d[0] / L, d[1] / L, d[2] / L] : null;
+  };
+  let count = 0;
+  const first = closed ? 0 : 1;
+  const last = closed ? n - 1 : n - 2;
+  for (let k = first; k <= last; k++) {
+    const a = dir(points[(k - 1 + n) % n], points[k]);
+    const b = dir(points[k], points[(k + 1) % n]);
+    if (a && b && _c4Dot(a, b) < cosGate) count += 1;
+  }
+  return count;
+}
+
+/**
+ * A unit direction per knot (null where the knot does not move), averaged
+ * with its two neighbours `passes` times (weights 1 2 1) and renormalised.
+ * A null neighbour, or the end of an open path, counts as the knot itself.
+ */
+function _s23SmoothDirs(dirs, closed, passes) {
+  const n = dirs.length;
+  let cur = dirs;
+  for (let pass = 0; pass < passes; pass++) {
+    const next = new Array(n).fill(null);
+    for (let k = 0; k < n; k++) {
+      const v = cur[k];
+      if (!v) continue;
+      const ia = closed ? (k - 1 + n) % n : k - 1;
+      const ib = closed ? (k + 1) % n : k + 1;
+      const a = (ia >= 0 && cur[ia]) || v;
+      const b = (ib < n && cur[ib]) || v;
+      const sum = [a[0] + 2 * v[0] + b[0], a[1] + 2 * v[1] + b[1], a[2] + 2 * v[2] + b[2]];
+      next[k] = _c4Len(sum) > 1e-9 ? _c4Norm(sum) : v;
+    }
+    cur = next;
+  }
+  return cur;
+}
+
+/**
+ * The knot probe, then the seat: a filler's knots sit inside their walls,
+ * never in the air beside them (`_s23SeatConcaveKnots`). Convex runs and
+ * knots already on the crease are not moved, so nothing changes for a cutter
+ * or for a planar pair. `seat.points` is the path to frame.
+ */
+function _s23ProbeSeated(part, points, closed, carried, radius) {
+  const probe = _s23ProbeKnotNormals(part, points, closed, carried);
+  const seat = _s23SeatConcaveKnots(part, points, closed, probe.segmentConvex, probe.segmentEdges, radius);
+  return { ...probe, seat };
 }
 
 /**
@@ -9090,7 +9435,8 @@ function _s23ExtendOpenRunEnds(part, segs, radius, profileKind, arcSegs, skip = 
 function _s23BuildVariableProfileCutter(
   M, CrossSection, part, points, closed, radius, profileKind, arcSegs, testScale, rawSegCount, junction, carried = null,
 ) {
-  const { segmentNormals, seedNormals, segmentConvex } = _s23ProbeKnotNormals(part, points, closed, carried);
+  const { segmentNormals, seedNormals, segmentConvex, seat } = _s23ProbeSeated(part, points, closed, carried, radius);
+  points = seat.points;
   const built = buildVariableProfileFrames(points, closed, {
     radius,
     segmentNormals,
@@ -9164,6 +9510,8 @@ function _s23BuildVariableProfileCutter(
     runCount: cut.runCount,
     thetaRunCount: cut.thetaRunCount,
     endExtend: cut.endExtend || 0,
+    seatedKnots: seat.seated,
+    seatMaxMm: seat.maxMm,
   });
   cut.openEndBBox = openEnd ? openEnd.bb : null;
   cut.openEndGrow = openEnd ? openEnd.grow : null;
@@ -10294,7 +10642,7 @@ function filletAlongPath(part, path, radius, opts = {}) {
   // keep-largest of a real split. Corner arcs are split upstream
   // (planFilletSweepPath mode:'runs' → independent semi-arc subtracts).
   // No sphere-cap post-pass (#107 bulges).
-  const CLOSED_SEAM_DUST_MM3 = 1e-8;
+  const CLOSED_SEAM_DUST_MM3 = _SEAM_DUST_MM3;
   out = _filletJoinOwnedPieces(M, out);
   try {
     if (typeof out.decompose === 'function') {

@@ -353,15 +353,24 @@ export function stampedNameForTriangles(table, tris) {
     counts.set(f, (counts.get(f) || 0) + w);
   }
   if (!counts.size) return null;
+  // The first face stands until one outweighs it. With `best` starting at -1
+  // a pick whose triangles all have no area (what is left of a face a
+  // chamfer consumed) never beat the zero it started from, and
+  // `table.faces[-1].name` threw after the kernel had already succeeded.
   let best = -1;
   let bestN = 0;
   for (const [f, n] of counts) {
-    if (n > bestN || (n === bestN && f < best)) { best = f; bestN = n; }
+    if (best < 0 || n > bestN || (n === bestN && f < best)) { best = f; bestN = n; }
   }
-  const face = table.faces[best];
+  const face = table.faces?.[best];
+  if (!face) return null;
   const out = { name: face.name, feature: face.feature, role: face.role, record: face.record };
   if (counts.size > 1) {
-    out.names = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a - b).map((f) => table.faces[f].name);
+    const names = [...counts.keys()]
+      .sort((a, b) => counts.get(b) - counts.get(a) || a - b)
+      .map((f) => table.faces[f]?.name)
+      .filter(Boolean);
+    if (names.length > 1) out.names = names;
   }
   return out;
 }
