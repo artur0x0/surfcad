@@ -50,8 +50,15 @@ import { tabAdvertisesTool } from './unlistedTools.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
-/** One line in the pair result; the guidance itself is guide { topic: "start" }. */
-const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts); guide {} lists every topic.';
+/** One line in the pair result; the guidance itself is guide { topic: "start" } and guide { topic: "chat" }. */
+const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts). guide { topic: "chat" } is the required in-viewer chat workflow: register_webhook after every pair, ack first, and the 10 second read_messages long-poll while connected. guide {} lists every topic.';
+
+/**
+ * Prompt tools that do not count as agent activity when called. set_status,
+ * post_progress, and close_session send their own frame; read_messages is a
+ * poll and must not restart the stall window.
+ */
+const PROMPT_TOOLS_WITHOUT_ACTIVITY = new Set(['set_status', 'post_progress', 'close_session', 'read_messages']);
 
 const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
@@ -257,7 +264,10 @@ export async function createSurfcadMcpServer(options = {}) {
     }
 
     if (isPromptTool(name)) {
-      if (name !== 'set_status' && name !== 'post_progress' && name !== 'close_session') session.noteAgentToolCall();
+      // set_status, post_progress, and replies drive the tab state themselves.
+      // read_messages is a poll: it is not agent activity, so it must not
+      // restart the stall window (a long-poll loop would otherwise hide a stall).
+      if (!PROMPT_TOOLS_WITHOUT_ACTIVITY.has(name)) session.noteAgentToolCall();
       try {
         const out = await callPromptTool(session.prompts, name, args);
         if (out.isError) return errorResult(out.error, name);
