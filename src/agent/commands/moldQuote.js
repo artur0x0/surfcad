@@ -3,6 +3,7 @@
  * The viewport handler reads the active part. `on: false` closes the panel.
  * It does not paint a skin and it does not place an order.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 const SCHEMA = Object.freeze({
   type: 'object',
@@ -47,8 +48,8 @@ export const moldQuoteCommand = Object.freeze({
       cavityCount: args?.cavityCount,
       grade: args?.grade,
     });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_quote', out, ctx);
   },
 });

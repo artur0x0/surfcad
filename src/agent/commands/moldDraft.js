@@ -11,6 +11,7 @@
  * its sign. A wall at 0° is Below T and its sign stays positive.
  * There is no zero-draft flag.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 const SCHEMA = Object.freeze({
   type: 'object',
@@ -39,8 +40,8 @@ export const moldDraftCommand = Object.freeze({
       return { error: { code: 'internal', message: 'moldDraft handler is missing' } };
     }
     const out = show({ on: args?.on, threshold: args?.threshold });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_draft', out, ctx);
   },
 });

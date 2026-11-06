@@ -2,6 +2,7 @@
  * Read-only moldability fit. The viewport handler scores the part mesh
  * (`moldFitFromGeometry`); this command only checks args and forwards them.
  */
+import { packMoldOutcome } from './moldJob.js';
 
 function pullError(pull) {
   if (!Array.isArray(pull) || pull.length !== 3 || pull.some((n) => typeof n !== 'number' || !Number.isFinite(n))) {
@@ -44,8 +45,8 @@ export const moldFitCommand = Object.freeze({
       return { error: { code: 'internal', message: 'moldFit handler is missing' } };
     }
     const out = score({ partId: args?.part_id, pull: args?.pull });
-    const pack = (value) => (value?.error ? { error: value.error } : { result: value });
-    if (out && typeof out.then === 'function') return out.then(pack);
-    return pack(out);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    return packMoldOutcome('mold_fit', out, ctx);
   },
 });
