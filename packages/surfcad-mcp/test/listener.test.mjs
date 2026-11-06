@@ -212,3 +212,39 @@ test('a network failure is retried and the message still wakes the agent', async
   assert.ok(h.logs.some((line) => /cannot reach/.test(line)));
   await h.stop();
 });
+
+test('an agent in a turn is not woken; the message wakes it once it has gone idle unread', async () => {
+  const relay = fakeRelay();
+  let awake = true;
+  const h = harness(relay, { options: { isAwake: () => awake } });
+  relay.send('p1');
+  await h.settle();
+  h.advance(4000);
+  await h.settle();
+  assert.equal(h.wakes.length, 0);
+  assert.ok(h.logs.some((line) => /p1 is unread but the agent is in a turn/.test(line)), h.logs.join('\n'));
+  h.advance(15000);
+  await h.settle();
+  assert.equal(h.wakes.length, 0, 'still in a turn');
+  assert.equal(h.logs.filter((line) => /in a turn/.test(line)).length, 1, 'said once');
+  awake = false;
+  h.advance(15000);
+  await h.settle();
+  assert.equal(h.wakes.length, 1);
+  await h.stop();
+});
+
+test('an agent in a turn that reads the message is never woken', async () => {
+  const relay = fakeRelay();
+  const h = harness(relay, { options: { isAwake: () => true } });
+  relay.send('p1');
+  await h.settle();
+  h.advance(4000);
+  await h.settle();
+  relay.take('p1');
+  h.advance(15000);
+  await h.settle();
+  assert.equal(h.wakes.length, 0);
+  assert.ok(h.logs.some((line) => /p1 was read/.test(line)));
+  await h.stop();
+});

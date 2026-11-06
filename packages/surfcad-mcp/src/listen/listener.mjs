@@ -23,6 +23,10 @@
  * then looked for again from a fresh pull session: the server offers every
  * prompt it still holds to a session that has not seen it. Still there
  * means nobody took it, and that is when the wake fires.
+ *
+ * One more case: the agent is in a turn but between polls. It made a tool
+ * call in the last minute (./awake.mjs), so it is not woken; the prompt is
+ * looked at again every 15 s until the agent reads it or goes idle.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -70,6 +74,7 @@ export function promptFromFrame(frame) {
  *   rewakeMs?: number,
  *   backoffMs?: readonly number[],
  *   waker?: ReturnType<typeof createWaker>,
+ *   isAwake?: () => Promise<boolean> | boolean,
  *   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>,
  *   now?: () => number,
  *   signal?: AbortSignal,
@@ -85,6 +90,7 @@ export async function runListener(options) {
   const rewakeMs = options.rewakeMs ?? LISTEN_REWAKE_MS;
   const backoff = options.backoffMs || LISTEN_BACKOFF_MS;
   const waker = options.waker || createWaker(options.wake);
+  const isAwake = options.isAwake || (() => false);
   const now = options.now || (() => Date.now());
   const signal = options.signal;
   const sleep = options.sleep || ((ms, sig) => new Promise((resolve) => {
@@ -184,6 +190,16 @@ export async function runListener(options) {
     // Anything else still held that this loop has not met is new to it.
     note([...held.values()].map((p) => ({ type: 'agent.prompt', ...p })));
     if (!unread.length) return;
+    // An agent in a turn is not woken: it reads the message at its next
+    // read_messages, and a wake would start a second turn beside the first.
+    if (await isAwake()) {
+      for (const row of unread) {
+        if (!row.deferred) log(`message ${row.prompt.id} is unread but the agent is in a turn; waiting for it to read the message or go idle`);
+        row.deferred = true;
+        row.due = now() + LISTEN_BUSY_RETRY_MS;
+      }
+      return;
+    }
     const outcome = await waker.wake(wakePayload(unread.map((row) => row.prompt)));
     if (outcome.ok) {
       log(`woke the agent by ${outcome.form} for ${unread.length} message${unread.length === 1 ? '' : 's'}`);

@@ -13,6 +13,7 @@ import {
   stopListener,
   writeListenerPid,
 } from './daemon.mjs';
+import { agentAwake } from './awake.mjs';
 import { runListener } from './listener.mjs';
 import { createWaker, wakePayload } from './wake.mjs';
 import {
@@ -171,6 +172,7 @@ export async function runListenCommand(parsed, ctx) {
       log,
       signal: ac.signal,
       waker: createWaker(wake, { fetch: ctx.fetch, spawn: ctx.spawn, env }),
+      isAwake: () => agentAwake(env),
     });
     return out.reason === 'stopped' ? 0 : 2;
   } finally {

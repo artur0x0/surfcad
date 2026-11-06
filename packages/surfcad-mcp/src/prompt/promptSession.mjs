@@ -971,6 +971,10 @@ export function createPromptSession(options) {
     registerWebhook,
     unregisterWebhook,
     deliveryStatus,
+    /** Still waiting for read_messages (not read, not cancelled, not dropped). */
+    isQueued(id) {
+      return states.get(id) === 'queued';
+    },
     clear,
     webhookRegistered() {
       return webhook != null;

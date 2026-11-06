@@ -46,6 +46,7 @@ import {
 import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
 import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition } from './helpers.mjs';
 import { mergeRegisteredIntoListCommands } from './listCommandsMerge.mjs';
+import { agentAwake, stampAwake } from './listen/awake.mjs';
 import { readListenerPid } from './listen/daemon.mjs';
 import { wakeSetupNote, wakeSetupState } from './listen/listenCli.mjs';
 import { createWaker, wakePayload } from './listen/wake.mjs';
@@ -220,16 +221,43 @@ async function wakeStatus(session) {
  * its queue unread. With the server relay and a running listener, the
  * listener owns the wake and this does nothing, so one message is one wake.
  * The setup is read each time, so `wake set` takes effect without a restart.
- * @param {{ remote: boolean, env?: NodeJS.ProcessEnv, log?: (line: string) => void, deps?: object }} options
+ * An agent that made a tool call in the last minute is in a turn and is not
+ * woken: the prompt is looked at again every 15 s until it is read or the
+ * agent goes idle (`attach` gives it the session to ask).
+ * @param {{
+ *   remote: boolean,
+ *   env?: NodeJS.ProcessEnv,
+ *   log?: (line: string) => void,
+ *   deps?: object,
+ *   isAwake?: () => Promise<boolean> | boolean,
+ *   retryMs?: number,
+ *   sleep?: (ms: number) => Promise<void>,
+ * }} options
  */
 export function createInProcessWake(options) {
   const env = options.env || process.env;
   const log = options.log || ((line) => console.error(`${new Date().toISOString()} [surfcad-mcp] ${line}`));
+  const isAwake = options.isAwake || (() => agentAwake(env));
+  const retryMs = options.retryMs ?? 15_000;
+  const sleep = options.sleep || ((ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (typeof timer.unref === 'function') timer.unref();
+  }));
   let waker = null;
   let wakerKey = '';
-  return async (prompts) => {
+  /** @type {((id: string) => boolean) | null} */
+  let isQueued = null;
+  const wake = async (prompts) => {
     try {
       if (options.remote && await readListenerPid(env)) return { ok: false, skipped: 'listener' };
+      let pending = Array.isArray(prompts) ? prompts : [];
+      // Up to ten minutes of an agent that keeps working without reading.
+      for (let tries = 0; tries < 40 && await isAwake(); tries += 1) {
+        await sleep(retryMs);
+        if (isQueued) pending = pending.filter((p) => isQueued(p.id));
+        if (!pending.length) return { ok: false, skipped: 'read' };
+      }
+      prompts = pending;
       const config = await readWake(env);
       if (!config) return { ok: false, skipped: 'not_set' };
       const key = JSON.stringify(config);
@@ -244,6 +272,11 @@ export function createInProcessWake(options) {
       return { ok: false, error: 'wake_failed' };
     }
   };
+  /** @param {{ isQueued?: (id: string) => boolean } | null | undefined} prompts */
+  wake.attach = (prompts) => {
+    isQueued = prompts && typeof prompts.isQueued === 'function' ? (id) => prompts.isQueued(id) : null;
+  };
+  return wake;
 }
 
 function toolErrorPayload(err) {
@@ -305,6 +338,8 @@ export async function createSurfcadMcpServer(options = {}) {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    // A tool call means the agent is in a turn: the wake leaves it alone.
+    void stampAwake(process.env);
     const name = request.params.name;
     const args = request.params.arguments && typeof request.params.arguments === 'object'
       ? request.params.arguments
@@ -471,9 +506,11 @@ export async function runSurfcadMcpServer(options = {}) {
   };
   process.stdin.once('end', onStdinClosed);
 
+  const localWake = createInProcessWake({ remote: false });
   const { server, session } = await createSurfcadMcpServer({
-    session: new RelaySession({ ensureRelay: takeOverRelay, onUnread: createInProcessWake({ remote: false }) }),
+    session: new RelaySession({ ensureRelay: takeOverRelay, onUnread: localWake }),
   });
+  localWake.attach(session.prompts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
@@ -500,13 +537,15 @@ async function runRemoteMcpServer(options) {
   }
   const serverUrl = resolveServerUrl({ flag: options.server, env, saved });
   const pinned = resolveAgentName({ name: options.name, savedName: saved.name, env });
+  const remoteWake = createInProcessWake({ remote: true, env });
   const remote = new RemoteSession({
     serverUrl,
     token: saved.token,
     name: pinned,
     fillNameFromClient: !pinned,
-    onUnread: createInProcessWake({ remote: true, env }),
+    onUnread: remoteWake,
   });
+  remoteWake.attach(remote.prompts);
   const { server, session } = await createSurfcadMcpServer({ session: remote });
   server.oninitialized = () => {
     remote.applyClientInfo(server.getClientVersion());

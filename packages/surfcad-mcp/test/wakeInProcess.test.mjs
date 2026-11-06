@@ -157,3 +157,55 @@ test('the chat guide opens with the wake setup, the initialize instructions poin
   assert.match(GUIDE_TOPICS.chat.summary, /the wake setup at install \(so the user can message you while you are idle\)/);
   assert.match(SERVER_INSTRUCTIONS, /Install: set up the wake, guide chat A\./);
 });
+
+test('a tool call marks the agent as in a turn for 60 s, across processes, through one small file', async () => {
+  const { AWAKE_MS, agentAwake, awakePath, lastAwakeAt, stampAwake } = await import('../src/listen/awake.mjs');
+  const env = await tempEnv();
+  assert.equal(await lastAwakeAt(env), 0);
+  assert.equal(await agentAwake(env, 1_000_000), false);
+  await stampAwake(env, 1_000_000);
+  assert.equal(await lastAwakeAt(env), 1_000_000);
+  assert.equal(await agentAwake(env, 1_000_000 + AWAKE_MS - 1), true);
+  assert.equal(await agentAwake(env, 1_000_000 + AWAKE_MS), false);
+  // Throttled: a second call inside 5 s does not rewrite the stamp.
+  await stampAwake(env, 1_002_000);
+  assert.equal(await lastAwakeAt(env), 1_000_000);
+  await stampAwake(env, 1_006_000);
+  assert.equal(await lastAwakeAt(env), 1_006_000);
+  assert.equal(AWAKE_MS, 60_000);
+  assert.match(awakePath(env), /awake$/);
+});
+
+test('in process: an agent in a turn is not woken; it is woken once it goes idle with the prompt still unread', async () => {
+  const env = await tempEnv();
+  await saveWake({ post: { url: 'http://127.0.0.1:8644/wake' } }, env);
+  const posts = [];
+  const deps = { fetch: async (url, init) => { posts.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }); } };
+  // Busy for two looks, then idle.
+  let looks = 0;
+  const wake = createInProcessWake({ remote: false, env, log: () => {}, deps, isAwake: () => { looks += 1; return looks <= 2; }, sleep: async () => {} });
+  const queued = new Set(['a', 'b']);
+  wake.attach({ isQueued: (id) => queued.has(id) });
+  const waiting = wake([{ id: 'a', text: 'x', ts: 't' }, { id: 'b', text: 'y', ts: 't' }]);
+  // The agent reads one of them while it works.
+  queued.delete('a');
+  assert.deepEqual(await waiting, { ok: true, form: 'post' });
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].prompts.map((p) => p.id), ['b']);
+
+  // It reads everything before it goes idle: no wake at all.
+  posts.length = 0;
+  const busy = createInProcessWake({ remote: false, env, log: () => {}, deps, isAwake: () => true, sleep: async () => {} });
+  busy.attach({ isQueued: () => false });
+  assert.deepEqual(await busy([{ id: 'c', text: 'x', ts: 't' }]), { ok: false, skipped: 'read' });
+  assert.equal(posts.length, 0);
+});
+
+test('isQueued follows a prompt from the queue to read', async () => {
+  const s = session();
+  await s.prompts.acceptPrompt(frame(7));
+  assert.equal(s.prompts.isQueued(pid(7)), true);
+  s.prompts.readMessages();
+  assert.equal(s.prompts.isQueued(pid(7)), false);
+  assert.equal(s.prompts.isQueued('nope'), false);
+});
