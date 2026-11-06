@@ -202,7 +202,7 @@ check(
 await page.evaluate(() => {
   const button = document.querySelector('[data-agent-chat-open]');
   if (button) button.style.display = 'none';
-  window.dispatchEvent(new Event('resize'));
+  window.dispatchEvent(new window.Event('resize'));
 });
 await page.waitForFunction(() => {
   const tail = document.querySelector('[data-agent-prompt-tail]');
