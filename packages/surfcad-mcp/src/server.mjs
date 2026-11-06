@@ -215,9 +215,11 @@ async function wakeStatus(session, opts = {}) {
   }
   const env = process.env;
   // A test run must never start a listener or wake an agent on the machine
-  // it runs on. SURFCAD_WAKE_BOOTSTRAP=0 turns the bootstrap off for anyone.
+  // it runs on: off under node --test and NODE_ENV=test, and every harness
+  // that spawns this server sets SURFCAD_WAKE_BOOTSTRAP=0. That switch
+  // turns the bootstrap off for anyone; =1 turns it on inside a test.
   const enabled = env.SURFCAD_WAKE_BOOTSTRAP === '1'
-    || (env.SURFCAD_WAKE_BOOTSTRAP !== '0' && !env.NODE_TEST_CONTEXT);
+    || (env.SURFCAD_WAKE_BOOTSTRAP !== '0' && !env.NODE_TEST_CONTEXT && env.NODE_ENV !== 'test');
   const state = await bootstrapWake({
     env,
     remote,

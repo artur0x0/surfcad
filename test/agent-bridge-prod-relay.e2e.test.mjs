@@ -58,6 +58,8 @@ async function runBrowserE2E(t, browserType, executablePath) {
 
   const { stop } = startPreviewServer(httpPort, {
     SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+    // A harness never starts a listener or wakes an agent on the machine it runs on.
+    SURFCAD_WAKE_BOOTSTRAP: '0',
     SURFCAD_MCP_START_RELAY: '0',
   });
 
@@ -98,6 +100,8 @@ async function runBrowserE2E(t, browserType, executablePath) {
       env: {
         ...process.env,
         SURFCAD_MCP_START_RELAY: '0',
+        // A harness never starts a listener or wakes an agent on the machine it runs on.
+        SURFCAD_WAKE_BOOTSTRAP: '0',
         SURFCAD_AGENT_BRIDGE_WS_URL: relayUrl,
         SURFCAD_PAIRING_CODE: token,
       },

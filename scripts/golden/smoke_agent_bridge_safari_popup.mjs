@@ -142,6 +142,8 @@ async function startMcp(relayPort) {
     env: {
       ...process.env,
       SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+      // A harness never starts a listener or wakes an agent on the machine it runs on.
+      SURFCAD_WAKE_BOOTSTRAP: '0',
       SURFCAD_AGENT_BRIDGE_WS_URL: `ws://127.0.0.1:${relayPort}`,
       SURFCAD_PAIRING_CODE: '',
     },
