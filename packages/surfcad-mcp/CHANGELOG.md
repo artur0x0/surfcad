@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.9 - 2026-11-06
+
+The user pairs once and messages the agent from SurfCAD, with nothing pasted. (In 0.3.8 the `pair` result led with "Ask the user for a webhook URL and key"; agents relayed that to the user and never set a wake up.)
+
+- **The wake comes from the host.** SurfCAD cannot start a turn of an agent; only its host can. A host provides its wake in this MCP server's environment: `SURFCAD_WAKE_POST` (with `SURFCAD_WAKE_BEARER`, sent as an `Authorization: Bearer` header) and/or `SURFCAD_WAKE_EXEC`. Same rules as `wake set`; the environment wins over a saved wake and is written to `wake.json` for the listener.
+- **A host with routines provides it itself.** When cold wake is unavailable, the pair note tells an agent whose host has routines or automations with a webhook trigger (Grok Bot, Cursor) to create one named "SurfCAD wake" whose instructions are to follow the `instruction` field of the JSON it receives, run `npx surfcad-mcp wake set --post <URL> --bearer <KEY>` on the machine where `surfcad-mcp` runs, and call `pair` again. The user never sees the URL or the key.
+- **Pair and login bootstrap.** With a wake, the listener is started and the wake is fired once per login with `reason: "greet"`. The session it starts says "Hi, what can I help you design?" in the SurfCAD chat. That greeting is the check that the path works. With no wake the pairing session greets the user itself. `status` also starts a stopped listener again.
+- **Honest state.** `status.wake` and the pair result carry `coldWake`: `ready`, `listener_stopped` or `unavailable`, with `source` (`env` or `saved`). "Unavailable" says messages reach the agent only while it is in a turn and polling, and tells the agent not to ask the user for a webhook. The chat guide's section A, `docs/agent/SKILL.md` and the README say the same; the old onboarding ask is gone everywhere.
+- **A new session per wake.** The wake's `instruction` tells the session it has no memory of earlier ones, that the message is in `prompts`, that `status` gives the open part, and where the guide is.
+- `status` adds `host` (`{ name, version }`): what the MCP client calls itself.
+- `wake show` and `status` print a wake URL's origin only, never its path, since a routine webhook keeps its secret there. The bearer was never printed.
+- A test run never starts a listener or fires a wake on the machine it runs on. `SURFCAD_WAKE_BOOTSTRAP=0` turns the automatic listener and greeting off for anyone.
+- **Disconnect** in SurfCAD (server relay) revokes the login of the agent that last worked in that window. This package deletes its saved login and unregisters the webhook when a call answers `token_revoked` or `expired`, and `surfcad-mcp listen` stops and does the same. A new `surfcad-mcp login` is the only way back. The saved wake is kept. (Server side: SurfCAD app from 2026-11-06.)
+- The in-a-turn rule from 0.3.8 is unchanged: an agent that made a tool call in the last 60 s is not woken.
+
 ## 0.3.8 - 2026-11-06
 
 The user can message a paired agent from the SurfCAD chat box while the agent is idle.

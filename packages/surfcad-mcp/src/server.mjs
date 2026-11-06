@@ -65,7 +65,7 @@ const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "sta
  */
 const PROMPT_TOOLS_WITHOUT_ACTIVITY = new Set(['set_status', 'post_progress', 'close_session', 'read_messages']);
 
-const STATUS_WAKE_NOTE = ' It also adds wake ({ coldWake, forms, source, listenerRunning, note }): whether a chat message can start a session of you while you are idle. coldWake is "ready", "listener_stopped" or "unavailable"; with "unavailable" messages reach you only while you are in a turn and polling (guide { topic: "chat" } section A).';
+const STATUS_WAKE_NOTE = ' It also adds host ({ name, version }: what your MCP client calls itself, null when it did not say) and wake ({ coldWake, forms, source, listenerRunning, note }): whether a chat message can start a session of you while you are idle. coldWake is "ready", "listener_stopped" or "unavailable"; with "unavailable" messages reach you only while you are in a turn and polling (guide { topic: "chat" } section A).';
 
 const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
@@ -234,6 +234,23 @@ async function wakeStatus(session, opts = {}) {
     listenerRunning: state.listenerRunning,
     note: wakeReadinessNote(state, { remote }),
   };
+}
+
+/**
+ * The MCP client's own name and version, for `status`: what the host calls
+ * itself, so wording can be keyed to it once a playtest has shown it.
+ * @param {{ getClientVersion?: () => { name?: string, version?: string } | undefined }} server
+ */
+function hostInfo(server) {
+  try {
+    const info = server?.getClientVersion?.();
+    if (!info || typeof info !== 'object') return null;
+    const name = typeof info.name === 'string' ? info.name.slice(0, 120) : '';
+    const version = typeof info.version === 'string' ? info.version.slice(0, 40) : '';
+    return name || version ? { name, version } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -476,7 +493,7 @@ export async function createSurfcadMcpServer(options = {}) {
         session.holdAgentWork(false);
       }
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
-        return textResult({ ...out.value, ...session.prompts.deliveryStatus(), wake: await wakeStatus(session) });
+        return textResult({ ...out.value, ...session.prompts.deliveryStatus(), wake: await wakeStatus(session), host: hostInfo(server) });
       }
       if (name === 'list_commands' && out.isError !== true) {
         out = {

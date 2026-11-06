@@ -54,7 +54,9 @@ test('wake set saves both forms, show and status describe them without the key, 
   let outcome = await runCli(['wake', 'set', '--post', 'http://127.0.0.1:8644/wake', '--bearer', 'k_secret_1', '--exec', 'my-agent --wake'], { env, io: a.io });
   assert.deepEqual(outcome, { action: 'exit', code: 0 });
   assert.match(a.out.stdout, /Wake saved on this machine/);
-  assert.match(a.out.stdout, /wake post: http:\/\/127\.0\.0\.1:8644\/wake \(with a bearer key\)/);
+  // The path of a wake URL is never printed: a routine webhook keeps its secret there.
+  assert.match(a.out.stdout, /wake post: http:\/\/127\.0\.0\.1:8644\/… \(with a bearer key\)/);
+  assert.ok(!a.out.stdout.includes('/wake'));
   assert.match(a.out.stdout, /wake exec: my-agent --wake/);
   assert.match(a.out.stdout, /Next: npx surfcad-mcp wake test, then npx surfcad-mcp listen --detach/);
   assert.ok(!a.out.stdout.includes('k_secret_1'));
@@ -64,7 +66,7 @@ test('wake set saves both forms, show and status describe them without the key, 
   outcome = await runCli(['status'], { env, io: b.io });
   assert.equal(outcome.code, 0);
   assert.match(b.out.stdout, /not logged in/);
-  assert.match(b.out.stdout, /wake post: http:\/\/127\.0\.0\.1:8644\/wake/);
+  assert.match(b.out.stdout, /wake post: http:\/\/127\.0\.0\.1:8644\/…/);
   assert.match(b.out.stdout, /listener: not running/);
   assert.ok(!b.out.stdout.includes('k_secret_1'));
 

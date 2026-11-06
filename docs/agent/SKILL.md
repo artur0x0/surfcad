@@ -216,6 +216,8 @@ Read `status.wake.coldWake` and the pair note:
 - `listener_stopped`: run `npx surfcad-mcp listen --detach`.
 - `unavailable`: messages reach you only while you are in a turn and polling. Tell the user that when they expect answers while you are idle. Do not ask them for a webhook URL.
 
+**If your host has routines or automations with a webhook trigger (Grok Bot, Cursor), provide the wake yourself**, in the turn that paired, without asking the user: create a routine named "SurfCAD wake" with a webhook trigger whose instructions are to follow the `instruction` field of the JSON it receives using the surfcad MCP server; take its URL and key (the key goes out as an `Authorization: Bearer` header); run `npx surfcad-mcp wake set --post <URL> --bearer <KEY>` on the machine where `surfcad-mcp` runs; call `pair` again. A routine run then greets the user, which is the check. Never put the URL or the key in a reply to the user.
+
 The manual way, when your host provides nothing and you know how to start a turn of yourself: `npx surfcad-mcp wake set --post <URL> --exec "<command>"`, `npx surfcad-mcp wake test`, `npx surfcad-mcp listen --detach`.
 
 ### In-viewer prompts: webhook or polling

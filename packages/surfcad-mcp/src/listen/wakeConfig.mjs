@@ -187,13 +187,28 @@ export function wakeForms(config) {
 }
 
 /**
- * Status text. Never includes the bearer.
+ * A wake URL as it may be shown: the origin only. A routine webhook (Grok
+ * Bot, Cursor) carries its secret in the path, so the path is never printed.
+ * @param {string} url
+ */
+export function wakeUrlForDisplay(url) {
+  try {
+    const parsed = new URL(url);
+    const rest = `${parsed.pathname}${parsed.search}`;
+    return rest && rest !== '/' ? `${parsed.origin}/…` : parsed.origin;
+  } catch {
+    return '(a URL)';
+  }
+}
+
+/**
+ * Status text. Never includes the bearer, nor the path of the URL.
  * @param {WakeConfig | null} config
  */
 export function formatWake(config) {
   if (!config) return 'wake: not set\n';
   const lines = [];
-  if (config.post) lines.push(`wake post: ${config.post.url}${config.post.bearer ? ' (with a bearer key)' : ''}`);
+  if (config.post) lines.push(`wake post: ${wakeUrlForDisplay(config.post.url)}${config.post.bearer ? ' (with a bearer key)' : ''}`);
   if (config.exec) lines.push(`wake exec: ${config.exec}`);
   return `${lines.join('\n')}\n`;
 }

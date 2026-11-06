@@ -41,7 +41,8 @@ test('the wake setup is saved 0600, read back, described without the key, and cl
   assert.equal(back.post.bearer, 'k_secret_1');
   assert.equal(back.exec, 'my-agent --wake');
   const text = formatWake(back);
-  assert.match(text, /wake post: http:\/\/127\.0\.0\.1:8644\/wake \(with a bearer key\)/);
+  assert.match(text, /wake post: http:\/\/127\.0\.0\.1:8644\/… \(with a bearer key\)/);
+  assert.ok(!text.includes('8644/wake'), 'the path of the URL is not printed');
   assert.match(text, /wake exec: my-agent --wake/);
   assert.ok(!text.includes('k_secret_1'));
   await clearWake(env);
