@@ -248,8 +248,11 @@ test('modeling: the blend order is required for fillets and chamfers, edges are 
   assert.match(text, /Pick blend edges by name once the part has a shell or a concave blend/);
   assert.match(text, /select_edges \{ names: \[\.\.\.\] \} then insert_fillet_edges or insert_chamfer_edges \{ use_selection: true \}/);
   assert.match(text, /no-selection default \(every convex edge\) is for a plain block with no shell and no concave blend/);
+  // True on either app build: the default can fail after a concave blend, and always on a doubly curved face.
+  assert.match(text, /After a concave blend it can fail and leave the part as it was \(always when the blend runs onto a sphere or another doubly curved face\)/);
   assert.match(text, /filletEdges: edge is concave/);
   assert.match(text, /split the solid into 2 bodies/);
+  assert.match(text, /a leg at or above the wall removes the rim face and leaves a ridge/);
   assert.match(text, /stays below the wall thickness, one named rim at a time/);
   assert.match(text, /do not union the pieces back together/);
   // §4: the failing sequences, as playtests, each with the order that avoids it.
@@ -258,7 +261,7 @@ test('modeling: the blend order is required for fillets and chamfers, edges are 
     /- A\. Disc base with a vertical post[^\n]*then insert_shell \{ wall: 1\.5 \}: bodyCount 2[^\n]*Works: insert_shell \{ wall: 1\.5, openScope: "-z" \}: 1 body[^\n]*"cylinder1\.top~cylinder2\.side" by name/,
     /- B\. Post with a sphere tip \(ring holder\)[^\n]*Shell first[^\n]*concave edge by name[^\n]*convex edges by name/,
     /- C\. Flanged box[^\n]*then insert_shell \{ wall: 2 \}: 9 or more bodies[^\n]*Works: insert_shell first: 1 body/,
-    /- D\. Shelled cup or tube, then a large chamfer over the rim face[^\n]*split the solid into 2 bodies[^\n]*one named rim[^\n]*leg below the wall/,
+    /- D\. Shelled cup or tube, then a chamfer over the rim face[^\n]*An older app build refuses the rim-face pick at any leg[^\n]*split the solid into 2 bodies[^\n]*Works on every build: one named rim[^\n]*leg below the wall/,
   ];
   let at = -1;
   for (const one of cases) {
