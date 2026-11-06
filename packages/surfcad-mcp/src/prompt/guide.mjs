@@ -258,7 +258,8 @@ What mold_fit checks.
 - Parting: core and cavity by visibility, with one outer parting loop.
 - sideActions: slides, lifters, and unresolved undercuts. Their count is what the report prices.
 - Ejector pin candidate spots: place ejectors on flat, thick, cored-out areas, not on cosmetic faces.
-- It is a geometric check, not a supplier DFM. It can run up to 120 s on a real part; keep the tab in the foreground.
+- It is a geometric check, not a supplier DFM. It can run a minute or more on a real part; keep the tab in the foreground.
+- Long runs answer a heartbeat. A mold_* analysis still going after about 30 s answers { status: "running", stillRunning: true, jobId, command, phase, percent, elapsedSec, etaSec } instead of the result. That is not the result and not a failure. Call mold_status { job_id }: it waits up to about 30 s and answers the next heartbeat or the final result. Repeat until status is no longer running. Do not call mold_fit again while a job is running; that starts a second analysis.
 
 Edges.
 - Avoid sharp edges. Fillet edges and corners everywhere except along the parting line, which must stay sharp so the mold halves shut off cleanly, and at the base of ribs, where the rib-to-wall junction must stay sharp to reduce sink. Do not fillet a rib base.

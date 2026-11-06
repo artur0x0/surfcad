@@ -4,6 +4,7 @@
  * counts. `on: false` does not hide that colouring; the result names
  * mold_parting.
  */
+import { moldWithBudget } from './moldJob.js';
 
 const SCHEMA = Object.freeze({
   type: 'object',
@@ -63,7 +64,11 @@ export const moldSideActionsCommand = Object.freeze({
         },
       };
     };
-    if (out && typeof out.then === 'function') return out.then(pack);
+    // A long analysis answers a heartbeat (status running) and is finished
+    // by mold_status; a quick one answers its result here (moldJob.js).
+    if (out && typeof out.then === 'function') {
+      return moldWithBudget('mold_side_actions', out.then(pack), typeof ctx.moldProgress === 'function' ? ctx.moldProgress : null);
+    }
     return pack(out);
   },
 });
