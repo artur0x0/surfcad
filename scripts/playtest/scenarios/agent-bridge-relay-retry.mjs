@@ -34,6 +34,8 @@ function spawnMcpRelay(port) {
     env: {
       ...process.env,
       SURFCAD_MCP_START_RELAY: '1',
+      // A harness never starts a listener or wakes an agent on the machine it runs on.
+      SURFCAD_WAKE_BOOTSTRAP: '0',
       SURFCAD_AGENT_BRIDGE_WS_PORT: String(port),
     },
     stdio: ['pipe', 'ignore', 'pipe'],
@@ -255,6 +257,8 @@ export async function run(ctx) {
 
   const { stop } = startPreviewServer(ctx.port, {
     SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+    // A harness never starts a listener or wakes an agent on the machine it runs on.
+    SURFCAD_WAKE_BOOTSTRAP: '0',
     // Preview must not bind this port; the MCP child owns the relay.
     SURFCAD_MCP_START_RELAY: '0',
   });

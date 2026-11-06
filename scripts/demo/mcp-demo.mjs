@@ -139,6 +139,8 @@ assertLocalhost(baseUrl);
 
 const { stop } = startPreviewServer(PORT, {
   SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+  // A harness never starts a listener or wakes an agent on the machine it runs on.
+  SURFCAD_WAKE_BOOTSTRAP: '0',
 });
 
 let browser;
@@ -180,6 +182,8 @@ try {
     env: {
       ...process.env,
       SURFCAD_AGENT_BRIDGE_WS_URL: relayUrl,
+      // A harness never starts a listener or wakes an agent on the machine it runs on.
+      SURFCAD_WAKE_BOOTSTRAP: '0',
       SURFCAD_PAIRING_CODE: '',
     },
   });

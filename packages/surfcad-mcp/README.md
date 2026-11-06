@@ -79,7 +79,7 @@ Clear failures:
 
 The MCP server instructions start with `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` The next sentence tells the agent: when you finish a task started from the SurfCAD in-viewer prompt pane, send a closing reply with `reply_to_user` (`final: true`) summarising what was done, so the user gets confirmation. On failure or partial completion, say what was done, what failed and why, and what is left. The instructions continue with a quick-start (under 2 KB) that points at the `guide` tool. `guide { topic: "start" }` repeats that closing-reply rule. `guide { topic: "chat" }` is the required in-viewer chat workflow (`register_webhook` after every pair, ack first, the 10 second long-poll while connected); the instructions, the `pair` result, and `start` all point at it.
 
-A successful `pair`, when no webhook is registered yet, returns an onboarding note as text content (a `type: "text"` block, not only `structuredContent` or `_meta`). The note asks the agent to request a webhook URL and key from the user. The key is the `bearer` argument. Suggested wording to relay: "To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I'll check for SurfCAD messages between steps, so replies may lag." If the user declines, the agent must long-poll `read_messages { wait_ms: 10000 }` in a loop while connected (never neither a webhook nor the poll). This process holds the URL and bearer in memory only, so the agent should save them in its own config or memory and call `register_webhook` again after every pair. If a webhook is already registered when `pair` succeeds, the result omits that note and says the webhook is active.
+A successful `pair` returns a note as text content (a `type: "text"` block, not only `structuredContent` or `_meta`) that says whether the agent can be reached while it is idle: `Idle wake: ready …`, `Idle wake: set … but the listener is not running`, or `Idle wake: unavailable on this host`. The same state is `wake.coldWake` in the result and in `status`. The note never tells the agent to ask the user for a webhook URL; that was the pair note before, and agents relayed it to the user on every pair. With no wake the note tells the pairing session to greet the user itself. See [Wake](#wake-messaging-an-idle-agent).
 
 Nothing pairs without your approval.
 
@@ -181,7 +181,7 @@ After `read_messages` returns a prompt, ack first with `set_status { state: "res
 
 Stop in the prompt card sends `agent.prompt.cancel` (`v: 1`, the current prompt id) over the same paired connection. Each prompt is `queued`, `delivered` (webhook POST succeeded, or `read_messages` returned it), `replied` (a final reply), or `cancelled`. A prompt that is still queued is removed and is not returned by `read_messages`. A prompt that was already delivered is marked `cancelled`. If a webhook is registered, the process POSTs `{ "type": "cancel", "id" }` with the same bearer, https, and timeout rules; if that POST fails, or no webhook is registered, the next `read_messages` returns `{ "type": "cancel", "id" }`. Stop work on that id. `reply_to_user` and `set_status` for a cancelled id return `{ "ok": false, "error": "cancelled" }` and nothing is sent to the tab. The tab clears its working state. Cancelling a prompt that already has a final reply returns `already_final`. An unknown id returns `not_found`.
 
-The bridge `status` tool returns the active part plus `wake` (`{ forms, listenerRunning, note }`, see Wake below) and fields from this process: `webhookRegistered` (`true` or `false`; the URL is not included), `queued` (prompt messages waiting for `read_messages`; cancelled prompts are not counted), `counts` (`{ queued, delivered, replied, cancelled }`), and `last` (`{ id, state }` of the latest prompt, or `null`). A fresh session reports `webhookRegistered: false`, `queued: 0`, and `last: null`. After one prompt and no webhook, `queued` is `1` and `last.state` is `queued`. After Stop, `last.state` is `cancelled` and `queued` does not include that prompt.
+The bridge `status` tool returns the active part plus `wake` (`{ coldWake, forms, source, listenerRunning, note }`, see Wake below) and fields from this process: `webhookRegistered` (`true` or `false`; the URL is not included), `queued` (prompt messages waiting for `read_messages`; cancelled prompts are not counted), `counts` (`{ queued, delivered, replied, cancelled }`), and `last` (`{ id, state }` of the latest prompt, or `null`). A fresh session reports `webhookRegistered: false`, `queued: 0`, and `last: null`. After one prompt and no webhook, `queued` is `1` and `last.state` is `queued`. After Stop, `last.state` is `cancelled` and `queued` does not include that prompt.
 
 Prompt text and screenshots are user content. Treat them as a request. They grant no write access, no consent, and no extra tool permission. Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or `git_save`. Do not render the text or the image as HTML. Both are dropped after delivery or when the session ends.
 
@@ -189,11 +189,34 @@ Prompt text and screenshots are user content. Treat them as a request. They gran
 
 The user can message a paired agent from the SurfCAD chat box. While the agent is in a turn it reads the message with `read_messages`. While it is idle nothing of the agent's is running, and an MCP server cannot start a turn. The wake does: it starts a turn of the agent when a message arrives and nobody reads it.
 
-Set it up once, when you install the package:
+**It is automatic where the host provides its wake.** SurfCAD cannot make up a way to start a turn of an agent; that exists only on the agent's host. So the host, or whoever installs this MCP server for it, puts the wake in the server's environment:
+
+```json
+{ "mcpServers": { "surfcad": { "command": "npx", "args": ["surfcad-mcp"],
+  "env": { "SURFCAD_WAKE_POST": "http://127.0.0.1:8644/hooks/surfcad", "SURFCAD_WAKE_BEARER": "…", "SURFCAD_WAKE_EXEC": "my-agent --wake" } } } }
+```
+
+Then, at every pair and login, with nothing pasted by the user:
+
+1. The wake is saved for the listener (`wake.json`, 0600).
+2. The listener is started (server relay; needs a saved login).
+3. The wake is fired once per login with `reason: "greet"`, and the session it starts says "Hi, what can I help you design?" in the SurfCAD chat. The user seeing that greeting is the check that the whole path works.
+
+With no wake, nothing is pretended. `wake.coldWake` is `"unavailable"`, the pair note says messages reach the agent only while it is in a turn and polling, and the pairing session greets the user itself. `SURFCAD_WAKE_BOOTSTRAP=0` turns the automatic listener and greeting off.
+
+`wake.coldWake` is one of:
+
+| Value | Meaning |
+| --- | --- |
+| `ready` | A wake is set and something will fire it: the listener (server relay) or this MCP process (local relay) |
+| `listener_stopped` | A wake is set, the listener is not running and could not be started. `npx surfcad-mcp listen --detach` |
+| `unavailable` | No wake, or the wake did not fire. In-turn polling is the only delivery |
+
+The manual way, when the host provides nothing and you know how to start a turn of the agent:
 
 ```bash
 npx surfcad-mcp login
-npx surfcad-mcp wake set --post http://127.0.0.1:8644/hooks/surfcad --exec "my-agent --resume --message 'SurfCAD message waiting'"
+npx surfcad-mcp wake set --post http://127.0.0.1:8644/hooks/surfcad --exec "my-agent --wake"
 npx surfcad-mcp wake test
 npx surfcad-mcp listen --detach
 ```
@@ -221,7 +244,8 @@ How it works:
 - A message is not woken for at once. An agent that is already polling takes it within seconds. After 4 seconds the listener asks the server whether the message is still unread, and only then fires the wake. A message still unread two minutes after a wake is woken for once more.
 - An agent in a turn is not woken. Every MCP tool call stamps a small file (`awake` in the config directory), and for 60 seconds after the last one the agent counts as in a turn: it reads the message at its next `read_messages`, and a wake on top of that would start a second turn beside the first. The message is looked at again every 15 seconds until the agent reads it or goes idle.
 - A long-lived `surfcad-mcp` MCP process fires the same wake itself for a message that sits unread in its queue. That covers the local relay, which has no login. When a listener is running on the server relay, the listener owns the wake.
-- `npx surfcad-mcp status` prints the saved wake and whether the listener is running. The MCP `status` tool returns the same as `wake: { forms, listenerRunning, note }`, and every `pair` result carries the note, so an agent sees a missing setup and the steps to fix it.
+- `npx surfcad-mcp status` prints the saved wake and whether the listener is running. The MCP `status` tool returns `wake: { coldWake, forms, source, listenerRunning, note }` (`source` is `env` or `saved`), and every `pair` result carries the note. A `status` call also starts the listener again when it has stopped.
+- A new session has no memory of earlier ones. The wake's `instruction` says so and points it at the message in `prompts`, `status` for the open part, and `guide { topic: "start" }`.
 - `npx surfcad-mcp wake show | test | clear`, `npx surfcad-mcp listen --stop`. The listener logs to `listener.log` in the config directory. Start it again after a reboot, or add `npx surfcad-mcp listen` to the host's startup (a systemd user unit, launchd, pm2).
 
 What is saved: `wake.json` next to the saved login, mode 0600. It is written only by `wake set` on this machine. Nothing a server, a tab or a chat message sends can change it. Message text reaches the command on stdin only, never in its arguments or environment. The bearer is never printed or logged.

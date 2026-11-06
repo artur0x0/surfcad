@@ -103,6 +103,11 @@ export async function startDetachedListener(options = {}) {
       windowsHide: true,
     });
     child.unref?.();
+    // The listener writes this itself once it is up. Writing it here too
+    // means "running" is true the moment --detach returns, with no gap in
+    // which a second start or a status read sees nothing. A child that dies
+    // at once leaves a dead pid, and readListenerPid removes those.
+    if (Number.isInteger(child.pid) && child.pid > 0) await writeListenerPid(child.pid, env);
     return { pid: child.pid, log };
   } finally {
     closeSync(fd);

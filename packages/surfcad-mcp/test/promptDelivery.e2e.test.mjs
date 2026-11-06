@@ -126,6 +126,8 @@ test('stdio pair note, queued status, and bearer webhook POST', async () => {
         SURFCAD_AGENT_BRIDGE_WS_URL: relay.url,
         SURFCAD_PAIRING_CODE: '',
         SURFCAD_WEBHOOK_TLS_INSECURE: '1',
+        // Its own config directory: no wake, no login, nothing of this machine's.
+        SURFCAD_MCP_CONFIG_DIR: dir,
         NODE_ENV: 'test',
       },
       stderr: 'pipe',
@@ -145,11 +147,14 @@ test('stdio pair note, queued status, and bearer webhook POST', async () => {
     assert.equal(paired.isError, false);
     assert.equal(paired.structuredContent, undefined);
     assert.ok((paired.content || []).every((block) => block.type === 'text'));
-    assert.ok(pairedText.includes(ASK), pairedText.slice(0, 400));
-    assert.match(pairedText, /key is the bearer argument/);
-    assert.match(pairedText, /Save the URL and key in your own config or memory/);
-    assert.match(pairedText, /call register_webhook again after every pair/);
-    assert.match(pairedText, /If the user declines, long-poll read_messages \{ wait_ms: 10000 \} in a loop while connected/);
+    // The pair note says what is true about idle wake. It used to tell the
+    // agent to ask the user for a webhook URL and key, and agents did.
+    assert.equal(pairedText.includes(ASK), false, pairedText.slice(0, 400));
+    assert.doesNotMatch(pairedText, /Ask the user for a webhook/);
+    assert.match(pairedText, /Idle wake: unavailable on this host/);
+    assert.match(pairedText, /only while you are in a turn and long-polling read_messages \{ wait_ms: 10000 \}/);
+    assert.match(pairedText, /Do not ask the user for a webhook URL/);
+    assert.match(pairedText, /"coldWake": "unavailable"/);
     assert.match(pairedText, /guide \{ topic: "chat" \} is the required in-viewer chat workflow/);
     assert.equal(parseFirst(paired).webhookRegistered, false);
 

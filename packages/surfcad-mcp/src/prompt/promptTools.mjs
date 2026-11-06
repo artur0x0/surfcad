@@ -80,15 +80,6 @@ This order, the webhook step after every pair, and the long-poll are required, n
  */
 export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE} ${SESSION_PRESENCE_GUIDANCE} ${PROMPT_TURN_BRIEF}`;
 
-/** Exact wording the agent should relay when asking the user for a webhook. */
-export const PROMPT_ONBOARDING_ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.';
-
-/**
- * Pair-result text when no webhook is registered. Generic: not tied to a bot product.
- * The URL and bearer are process memory only, so the agent must keep its own copy.
- */
-export const PROMPT_ONBOARDING_NOTE = `Ask the user for a webhook URL and key. The key is the bearer argument of register_webhook. This process holds the URL and bearer in memory only. Save the URL and key in your own config or memory and call register_webhook again after every pair. Suggested wording to relay: "${PROMPT_ONBOARDING_ASK}" If the user declines, long-poll read_messages { wait_ms: ${READ_MESSAGES_POLL_MS} } in a loop while connected: that fallback is required, never neither (${CHAT_GUIDE_POINTER}).`;
-
 /** Pair-result text when a webhook is already registered. No onboarding note. */
 export const PROMPT_WEBHOOK_ACTIVE = 'Webhook is active.';
 

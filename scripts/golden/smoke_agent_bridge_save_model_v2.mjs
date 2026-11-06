@@ -138,6 +138,8 @@ const appUrl = `${origin}/?agent=1&agentBridgeWs=${encodeURIComponent(relayUrl)}
 
 const { stop: stopPreview } = startPreviewServer(PORT, {
   SURFCAD_MCP_START_RELAY: '0',
+  // A harness never starts a listener or wakes an agent on the machine it runs on.
+  SURFCAD_WAKE_BOOTSTRAP: '0',
 });
 const transport = new StdioClientTransport({
   command: process.execPath,

@@ -14,8 +14,9 @@ import {
   writeListenerPid,
 } from './daemon.mjs';
 import { agentAwake } from './awake.mjs';
+import { bootstrapWake } from './bootstrap.mjs';
 import { runListener } from './listener.mjs';
-import { createWaker, wakePayload } from './wake.mjs';
+import { createWaker, WAKE_GREETING, wakePayload } from './wake.mjs';
 import {
   clearWake,
   formatWake,
@@ -31,21 +32,33 @@ import { WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS } from './wakeSetupText.mjs';
 export { WAKE_GUIDE_POINTER, WAKE_SETUP_STEPS };
 
 /**
- * The note on every pair result and on status, by what is still missing.
- * @param {{ forms: string[], listenerRunning: boolean }} state
- * @param {{ remote?: boolean }} [opts] remote: this process uses the server relay
+ * What an agent is told about being reachable while idle. It says what is
+ * true and nothing more: "ready" only when a wake is set and something will
+ * fire it. It never tells the agent to ask the user for a webhook URL.
+ * @param {import('./bootstrap.mjs').WakeBootstrap} state
+ * @param {{ remote?: boolean }} [opts] remote: this process is on the server relay
  */
-export function wakeSetupNote(state, opts = {}) {
+export function wakeReadinessNote(state, opts = {}) {
   const forms = Array.isArray(state?.forms) ? state.forms : [];
-  if (!forms.length) {
-    return `Wake is not set up, so the user cannot message you from SurfCAD while you are idle. Do this now, as part of installing this MCP server, without waiting to be asked: ${WAKE_SETUP_STEPS.map((step, i) => `${i + 1}) ${step}`).join(' ')} Details: ${WAKE_GUIDE_POINTER}.`;
+  const lines = [];
+  if (state?.coldWake === 'ready') {
+    lines.push(opts.remote === false
+      ? `Idle wake: ready (${forms.join(', then ')}). This process fires it for a chat message you do not read within a few seconds, for as long as your host keeps it running.`
+      : `Idle wake: ready (${forms.join(', then ')}; listener running). When the user messages you from SurfCAD while you are idle, a new session of you starts and reads the message.`);
+  } else if (state?.coldWake === 'listener_stopped') {
+    lines.push(`Idle wake: set (${forms.join(', then ')}) but the listener is not running, so a message sent while you are idle will not start a session. Run: npx surfcad-mcp listen --detach`);
+  } else {
+    lines.push(`Idle wake: unavailable on this host. Nothing here can start a session of you, so the user's messages reach you only while you are in a turn and long-polling read_messages { wait_ms: 10000 }. Tell the user that if they expect answers while you are idle. Do not ask the user for a webhook URL. A host that can start a turn sets SURFCAD_WAKE_POST or SURFCAD_WAKE_EXEC in this MCP server's config; ${WAKE_GUIDE_POINTER} has the manual way.`);
   }
-  if (!state.listenerRunning) {
-    return opts.remote === false
-      ? `Wake is set (${forms.join(', then ')}). This process fires it for a chat message you do not read within a few seconds, for as long as your host keeps it running. With a saved login, npx surfcad-mcp listen --detach keeps watching when it is not.`
-      : `Wake is set (${forms.join(', then ')}) but the listener is not running, so a message sent while no surfcad-mcp process is up will not wake you. Start it: npx surfcad-mcp listen --detach.`;
+  if (state?.greeting === 'sent_by_wake') {
+    lines.push(`A new session of you was started to greet the user in the SurfCAD chat ("${WAKE_GREETING}"). That greeting is the check that the wake works. Do not greet again.`);
+  } else if (state?.greeting === 'send_it_yourself') {
+    lines.push(`Greet the user now: reply_to_user { text: "${WAKE_GREETING}" } with no in_reply_to.`);
+  } else if (state?.greeting === 'wake_failed') {
+    lines.push(`The wake did not start a session, so idle wake is not working yet. Greet the user yourself: reply_to_user { text: "${WAKE_GREETING}" } with no in_reply_to.`);
   }
-  return `Wake is set (${forms.join(', then ')}) and the listener is running: a chat message you do not read within a few seconds starts a turn of you.`;
+  for (const problem of state?.problems || []) lines.push(problem);
+  return lines.join(' ');
 }
 
 function noWakeMessage() {
@@ -140,8 +153,11 @@ export async function runListenCommand(parsed, ctx) {
     io.stderr(noWakeMessage());
     return 1;
   }
+  const pid = ctx.pid ?? process.pid;
   const running = await readListenerPid(env);
-  if (running) {
+  // In the foreground, the pid file may already name this very process:
+  // --detach writes it before the listener it starts is up.
+  if (running && (parsed.detach || running !== pid)) {
     io.stdout(`A listener is already running (pid ${running}).\n`);
     return 0;
   }
@@ -151,7 +167,6 @@ export async function runListenCommand(parsed, ctx) {
     return 0;
   }
   const serverUrl = resolveServerUrl({ flag: parsed.server, env, saved });
-  const pid = ctx.pid ?? process.pid;
   await writeListenerPid(pid, env);
   const ac = new AbortController();
   const stop = () => ac.abort();
@@ -182,6 +197,26 @@ export async function runListenCommand(parsed, ctx) {
   } finally {
     await clearListenerPid(pid, env);
   }
+}
+
+/**
+ * After `surfcad-mcp login`: with a wake (from the environment or saved),
+ * start the listener, so the agent is reachable while idle from the first
+ * login on. No greeting from here: the tab may not be open yet, and the
+ * next pair greets. Returns the line to print.
+ * @param {{ env: NodeJS.ProcessEnv, spawn?: any }} ctx
+ */
+export async function bootstrapAfterLogin(ctx) {
+  const env = ctx.env;
+  if (env.SURFCAD_WAKE_BOOTSTRAP === '0') return '';
+  const state = await bootstrapWake({ env, remote: true, greet: false, spawn: ctx.spawn });
+  if (state.coldWake === 'ready') {
+    return `Idle wake: ready (${state.forms.join(', then ')}; listener ${state.listenerStarted ? 'started' : 'running'}). A SurfCAD chat message starts a session of the agent while it is idle.\n`;
+  }
+  if (state.coldWake === 'listener_stopped') {
+    return `Idle wake: set (${state.forms.join(', then ')}) but the listener is not running. Run: npx surfcad-mcp listen --detach\n`;
+  }
+  return 'Idle wake: unavailable (no wake is set). Chat messages reach the agent only while it is in a turn. See: npx surfcad-mcp --help, Wake.\n';
 }
 
 /**

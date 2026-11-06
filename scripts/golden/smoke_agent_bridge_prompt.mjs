@@ -294,6 +294,8 @@ try {
     env: {
       ...env,
       SURFCAD_AGENT_BRIDGE_WS_PORT: String(relayPort),
+      // A harness never starts a listener or wakes an agent on the machine it runs on.
+      SURFCAD_WAKE_BOOTSTRAP: '0',
       SURFCAD_AGENT_BRIDGE_WS_URL: `ws://127.0.0.1:${relayPort}`,
       SURFCAD_PAIRING_CODE: '',
       NODE_ENV: 'test',
@@ -381,10 +383,11 @@ try {
   await approve.click();
   const paired = await pairPromise;
   check('MCP pair succeeds after Allow', paired.isError !== true, toolTexts(paired).join(' ').slice(0, 240));
-  check(
-    'pair onboarding note is text content',
-    toolTexts(paired).join('\n').includes('To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.'),
-  );
+  // The pair note says whether the agent can be reached while idle. It used
+  // to tell the agent to ask the user for a webhook URL and key.
+  const pairText = toolTexts(paired).join('\n');
+  check('pair note is text content and states idle wake', /Idle wake: (ready|set|unavailable)/.test(pairText), pairText.slice(0, 240));
+  check('pair note does not ask the user for a webhook', !/send me your webhook URL and key|Ask the user for a webhook/.test(pairText));
   await page.waitForFunction(
     () => window.surfcadAgentPrompt?.getBridge?.().getState?.() === 'paired',
     { timeout: 10000 },
