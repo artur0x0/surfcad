@@ -197,6 +197,45 @@ check(
   JSON.stringify(m && { gap: m.gap }),
 );
 
+// The tail cannot be placed (no Bot button). The glass fill must stay as
+// a rounded rectangle. This is the phone bug where the text floated.
+await page.evaluate(() => {
+  const button = document.querySelector('[data-agent-chat-open]');
+  if (button) button.style.display = 'none';
+  window.dispatchEvent(new Event('resize'));
+});
+await page.waitForFunction(() => {
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  return tail?.getAttribute('data-agent-prompt-tail-shape') === 'box'
+    && tail.getAttribute('data-agent-prompt-tail-ready') === '1';
+}, null, { timeout: 5000 });
+const box = await page.evaluate(() => {
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  const fill = tail?.querySelector('.agent-prompt-bubble-fill');
+  const path = tail?.querySelector('path')?.getAttribute('d') || '';
+  const user = document.querySelector('.agent-prompt-msg--user');
+  return {
+    shape: tail?.getAttribute('data-agent-prompt-tail-shape') || '',
+    ready: tail?.getAttribute('data-agent-prompt-tail-ready') || '',
+    visibility: tail ? getComputedStyle(tail).visibility : '',
+    fill: fill ? getComputedStyle(fill).backgroundColor : '',
+    pathDetour: /H [\d.]+ L [\d.]+ [\d.]+ L [\d.]+/.test(path),
+    userClass: user?.className || '',
+    userFill: user ? getComputedStyle(user).backgroundColor : '',
+  };
+});
+const opaque = (color) => typeof color === 'string' && color.length > 0 && !/rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/.test(color);
+check(
+  'no button: rectangular glass fill stays',
+  box && box.shape === 'box' && box.ready === '1' && box.visibility !== 'hidden' && opaque(box.fill) && box.pathDetour === false,
+  JSON.stringify(box),
+);
+check(
+  'user row keeps a surface fill',
+  box && /surface-panel/.test(box.userClass) && opaque(box.userFill),
+  JSON.stringify(box),
+);
+
 const desktop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 desktop.on('pageerror', (err) => pageErrors.push(err.message));
 await desktop.route('**/api/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: false }) }));

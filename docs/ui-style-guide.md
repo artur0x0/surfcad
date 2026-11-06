@@ -173,9 +173,15 @@ the button so the bubble reads as floating. The outline is a single path
 around the box and the tail: `surface-glass` fills both, and the stroke
 is `--agent-prompt-border`. There is no hairline across the tail base.
 The tail's horizontal place is measured from that button, including after
-a resize, a rotation, and when the keyboard lifts the field. Desktop has
-no tail. Those are the same tokens in light and dark. Do not paint the
-tail with its own hex or a Tailwind colour utility.
+a resize, a rotation, and when the keyboard lifts the field. When the tail
+cannot be placed (the gap under the box is under 4px, the box is too narrow,
+or the button is not measured yet), the same `surface-glass` fill, shadow,
+and stroke stay as a rounded rectangle. The tail is added only when it fits.
+The layer is never hidden, so the text does not float with no pane. User
+rows in that pane use `surface-panel` with `text-on-dark` so they stay
+readable over the glass. Agent rows stay `surface-dark`. Desktop has no
+tail. Those are the same tokens in light and dark. Do not paint the tail
+with its own hex or a Tailwind colour utility.
 
 **Focused fields and selects.** A focused text field or select stays
 readable, and iOS Safari does not zoom the page.

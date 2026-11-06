@@ -91,7 +91,47 @@ test('the tip stays on the button centre at phone widths, after a lift, and when
     prompt: { left: 76, top: 400, bottom: 520, width: 238, height: 120, visualWidth: 238, visualHeight: 120 },
     button: { left: 167, top: 522, width: 56 },
   });
-  assert.equal(touching, null);
+  assert.ok(touching, 'a gap too small for the tail still paints the box');
+  assert.equal(touching.hasTail, false);
+  assert.equal(touching.tailH, 0);
+  assert.equal(touching.totalHeight, touching.height);
+  const boxPath = agentPromptBubblePath(touching);
+  assert.equal(boxPath.includes(`L ${touching.tipX}`), false);
+  assert.match(boxPath, /^M /);
+  assert.match(boxPath, /Z$/);
+});
+
+test('when the tail cannot be placed the rectangular fill stays', () => {
+  const prompt = { left: 10, top: 40, bottom: 180, width: 220, height: 140, visualWidth: 220, visualHeight: 140 };
+  const missing = agentPromptTailLayout({ prompt, button: null });
+  assert.equal(missing.hasTail, false);
+  assert.equal(missing.tailH, 0);
+  assert.ok(agentPromptBubblePath(missing).length > 10);
+
+  const narrow = agentPromptTailLayout({
+    prompt: { ...prompt, width: 40, visualWidth: 40 },
+    button: { left: 0, top: 220, width: 40 },
+  });
+  assert.equal(narrow.hasTail, false);
+  assert.equal(narrow.tailH, 0);
+  assert.equal(agentPromptBubblePath(narrow).includes(' L '), false);
+
+  const zero = agentPromptTailLayout({
+    prompt: { left: 0, top: 0, bottom: 0, width: 0, height: 0 },
+    button: { left: 0, top: 20, width: 40 },
+  });
+  assert.equal(zero, null);
+
+  const tail = readFileSync(join(root, 'src/components/AgentPromptTail.jsx'), 'utf8');
+  const css = readFileSync(join(root, 'src/index.css'), 'utf8');
+  assert.match(tail, /layout\.hasTail \? 'tail' : 'box'/);
+  assert.match(tail, /surface-glass/);
+  assert.match(css, /\.agent-prompt-tail \{[^}]*height: 100%;/s);
+  assert.doesNotMatch(
+    css,
+    /\.agent-prompt-tail\[data-agent-prompt-tail-ready="0"\] \{\s*visibility:\s*hidden/,
+  );
+  assert.match(css, /data-agent-prompt-tail-ready="0"\] \.agent-prompt-bubble-fill/);
 });
 
 test('the tail is phone-only and uses the glass fill, not a new colour', () => {

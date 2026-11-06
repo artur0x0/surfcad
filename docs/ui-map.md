@@ -96,7 +96,7 @@ out-of-order `working: true` for a closed prompt is ignored, so the dots cannot
 stay on next to a finished reply.
 The pane above the input is the conversation for this connection
 (`src/agent/agentPromptConversation.js`): the user's messages right-aligned in a
-`surface-quiet` bubble (with a thumbnail when a screenshot went along), the
+`surface-panel` bubble (with a thumbnail when a screenshot went along), the
 agent's replies left-aligned in a `surface-dark` bubble, the dots at the bottom
 while a prompt is in progress. It grows to `--agent-prompt-max-reply` (200px desktop, 160px phone,
 about six lines of reply) and scrolls inside. The composer is a full-width
@@ -115,7 +115,9 @@ history. A session note from the paired agent (`agent.message`, no prompt id)
 is its own agent bubble. The text is plain text. On a phone the open chat
 grows a small obtuse tail (`data-agent-prompt-tail`) from its bottom edge,
 aimed at the Bot button in the stage pill and stopping just short of it.
-The outline runs around the tail on the same glass fill. Desktop has no tail.
+The outline runs around the tail on the same glass fill. If the tail cannot
+be placed, that fill, shadow, and stroke stay as a rounded rectangle
+(`data-agent-prompt-tail-shape="box"`). Desktop has no tail.
 **Two agent states** (`data-agent-prompt-state`, from `state` on the MCP
 status message, `src/agent/agentPromptTyping.js`): **typing** (the agent called
 it responding) keeps the chat open with bouncing dots and a normal input;
@@ -163,9 +165,16 @@ has focus; both chevrons are focusable and Enter toggles; a polite live region
 localStorage (`surfcadAgentPromptFolded`, `src/agent/agentPromptFold.js`) and
 cleared on disconnect. `agent_prompt { action: "fold" | "unfold" }` drives it;
 `dismiss` folds on desktop. On the phone the compact prompt keeps the X that
-hides the pane. While a prompt is in flight, or when progress arrives, that
-same hide runs and the middle bot button uses its existing spinner. A later
-tap can open the chat again until the next progress update. Nothing else is stored.
+hides the pane. A just-sent prompt stays open. "Waiting for agent" shows
+only while the send is still queued and the agent has not acked.
+`set_status { state: "responding" }` is that ack: the waiting line goes and
+the bouncing dots show. The first non-final reply stays visible for 10
+seconds (`AGENT_PROMPT_ACK_HOLD_MS` in `src/agent/agentPromptFlow.js`).
+Building, `post_progress`, or a model-changing tool during that hold waits,
+then the chat auto-folds on phone and desktop. Desktop slides the prompt
+away (the fold chevron). Phone closes the pane and the Bot button spins
+(`MobileStageToggle`). `reply_to_user` with `final: true` stops the spinner
+and reopens the chat on both. The chevron itself stays desktop-only. Nothing else is stored.
 A production build with no paired agent stays hidden and never uses the echo
 stub. The stub and `?agentPromptDemo=1` are DEV-only (DEV with no pairing may
 still echo). The camera toggle (`data-agent-prompt-screenshot`) captures the

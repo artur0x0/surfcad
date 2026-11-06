@@ -26,42 +26,12 @@ export default function AgentPromptTail({ rootRef }) {
     let watchedButton = null;
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => schedule()) : null;
 
-    const apply = () => {
-      const button = document.querySelector('[data-agent-chat-open]');
-      if (!button || !fillRef.current || !shadowRef.current || !pathRef.current || !tipRef.current) {
+    const paint = (layout) => {
+      if (!layout || !fillRef.current || !shadowRef.current || !pathRef.current || !tipRef.current) {
+        // No box yet. The tail layer stays at height 100% so the glass
+        // fill still covers the prompt instead of disappearing.
         wrap.dataset.agentPromptTailReady = '0';
-        if (tries < 40) {
-          tries += 1;
-          frame = requestAnimationFrame(apply);
-        }
-        return;
-      }
-      tries = 0;
-      if (button !== watchedButton) {
-        if (watchedButton) ro?.unobserve(watchedButton);
-        ro?.observe(button);
-        watchedButton = button;
-      }
-      const rect = root.getBoundingClientRect();
-      const btn = button.getBoundingClientRect();
-      const layout = agentPromptTailLayout({
-        prompt: {
-          left: rect.left,
-          top: rect.top,
-          bottom: rect.bottom,
-          width: root.offsetWidth,
-          height: root.offsetHeight,
-          visualWidth: rect.width,
-          visualHeight: rect.height,
-        },
-        button: {
-          left: btn.left,
-          top: btn.top,
-          width: btn.width,
-        },
-      });
-      if (!layout) {
-        wrap.dataset.agentPromptTailReady = '0';
+        wrap.dataset.agentPromptTailShape = 'box';
         return;
       }
       const d = agentPromptBubblePath(layout);
@@ -77,6 +47,49 @@ export default function AgentPromptTail({ rootRef }) {
       tipRef.current.style.left = `${layout.tipX}px`;
       tipRef.current.style.top = `${layout.tipY}px`;
       wrap.dataset.agentPromptTailReady = '1';
+      wrap.dataset.agentPromptTailShape = layout.hasTail ? 'tail' : 'box';
+    };
+
+    const apply = () => {
+      const button = document.querySelector('[data-agent-chat-open]');
+      if (!fillRef.current || !shadowRef.current || !pathRef.current || !tipRef.current) {
+        wrap.dataset.agentPromptTailReady = '0';
+        return;
+      }
+      const rect = root.getBoundingClientRect();
+      const btn = button ? button.getBoundingClientRect() : null;
+      const layout = agentPromptTailLayout({
+        prompt: {
+          left: rect.left,
+          top: rect.top,
+          bottom: rect.bottom,
+          width: root.offsetWidth,
+          height: root.offsetHeight,
+          visualWidth: rect.width,
+          visualHeight: rect.height,
+        },
+        button: btn && btn.width > 0 ? {
+          left: btn.left,
+          top: btn.top,
+          width: btn.width,
+        } : null,
+      });
+      paint(layout);
+      if (button && button !== watchedButton) {
+        if (watchedButton) ro?.unobserve(watchedButton);
+        ro?.observe(button);
+        watchedButton = button;
+      }
+      // The button can mount a frame later, or the gap can open. Keep
+      // looking, then add the tail. A box with no tail is already painted.
+      if (button && layout?.hasTail) {
+        tries = 0;
+        return;
+      }
+      if (tries < 40) {
+        tries += 1;
+        frame = requestAnimationFrame(apply);
+      }
     };
 
     // Measure in the listener. A hidden or headless document does not flush

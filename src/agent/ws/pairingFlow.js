@@ -153,17 +153,19 @@ export function agentDisconnectToastCopy(reason, fallback = AGENT_DISCONNECTED_T
 }
 
 /**
- * Phone chat hides on a prompt that just started, on each progress update,
- * and when the session state enters working (the agent started changing
- * the model, with or without a prompt). Desktop fold is separate.
- * @param {{ isMobile?: boolean, promptStarted?: boolean, progressEdge?: boolean, workingEdge?: boolean }} [input]
- * @returns {'prompt' | 'progress' | 'working' | null}
+ * Phone chat hides when work starts (a progress frame, or the session
+ * enters working). A prompt that just started stays open so the user
+ * message stays readable. Auto-fold after the ack-reply hold is shared
+ * with desktop (`agentPromptFlow.js`). `hold` true means that hold is
+ * running, so this hide waits.
+ * @param {{ isMobile?: boolean, promptStarted?: boolean, progressEdge?: boolean, workingEdge?: boolean, hold?: boolean }} [input]
+ * @returns {'progress' | 'working' | null}
  */
 export function mobileChatHideReason(input = {}) {
   if (input.isMobile !== true) return null;
+  if (input.hold === true) return null;
   if (input.progressEdge === true) return 'progress';
   if (input.workingEdge === true) return 'working';
-  if (input.promptStarted === true) return 'prompt';
   return null;
 }
 

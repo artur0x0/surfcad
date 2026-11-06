@@ -263,14 +263,18 @@ for (const [state, badge] of [['agent-typing', 'typing'], ['agent-working', 'wor
   const during = await snapshot(page);
   check('fold during a run: folded with a typing or working badge', during.folded === '1' && (during.badge === 'typing' || during.badge === 'working'), JSON.stringify({ badge: during.badge }));
   await page.evaluate(() => window.__surfcadAgentPromptStub.releaseReply());
-  await page.waitForFunction(() => document.querySelector('[data-agent-prompt-unfold]')?.getAttribute('data-agent-prompt-badge') === 'unread', { timeout: 10000 });
+  // A final reply reopens the chat (desktop and phone) instead of leaving
+  // an unread dot on the chevron. The draft survives that reopen.
+  await page.waitForFunction(() => {
+    const prompt = document.querySelector('[data-agent-prompt]');
+    const open = prompt?.getAttribute('data-agent-prompt-folded') === '0';
+    const text = document.querySelector('[data-agent-reply]')?.textContent || '';
+    return open && text.includes('Echo: Make the plate 3 mm thicker') && prompt?.getAttribute('data-agent-prompt-state') === 'idle';
+  }, { timeout: 10000 });
   const replied = await snapshot(page);
-  check('the reply landed while folded: unread badge', replied.badge === 'unread' && /new reply/.test(replied.unfoldLabel || ''), JSON.stringify({ badge: replied.badge }));
-  await page.click('[data-agent-prompt-unfold]');
-  await page.waitForTimeout(300);
-  const restored = await snapshot(page);
-  check('unfolding restores the latest reply and the draft text', restored.pane && restored.inputValue === 'draft kept' && restored.state === 'idle', JSON.stringify({ input: restored.inputValue, pane: restored.pane, state: restored.state }));
-  check('the live region announced the reply', /replied/i.test(restored.live), restored.live);
+  check('a final reply reopens the chat with the confirmation', replied.folded === '0' && replied.pane && replied.state === 'idle' && !replied.spinner, JSON.stringify({ folded: replied.folded, state: replied.state, pane: replied.pane }));
+  check('reopening keeps the draft', replied.inputValue === 'draft kept', replied.inputValue);
+  check('the live region announced the reply', /replied/i.test(replied.live), replied.live);
   await page.close();
 }
 

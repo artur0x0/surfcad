@@ -880,10 +880,19 @@ textarea {
     left: 0;
     top: 0;
     width: 100%;
+    height: 100%;
     overflow: visible;
     pointer-events: none;
   }
-  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] {
+  /* Not ready yet (no measured box): the glass fill still covers the
+     prompt as a rounded rectangle. Never hide the layer — that is the
+     phone bug where the text floats with no pane. The tail path replaces
+     this once it fits. The empty stroke stays hidden until that path exists. */
+  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-bubble-fill {
+    border-radius: var(--agent-prompt-radius);
+  }
+  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-bubble-stroke,
+  .agent-prompt-tail[data-agent-prompt-tail-ready="0"] .agent-prompt-tail-tip {
     visibility: hidden;
   }
   .agent-prompt-bubble-shadow,

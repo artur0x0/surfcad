@@ -32,10 +32,29 @@ export const BUILDING_STATUS_GUIDANCE = 'Call set_status { state: "building" } o
 export const SESSION_PRESENCE_GUIDANCE = 'Be interactive: post_progress while working, especially during long reasoning. A fresh process per tool call is normal and stays present. A long-lived process is optional, never required. Call close_session when done, never on exit.';
 
 /**
+ * Short form of the in-viewer turn, for the initialize instructions (hosts
+ * truncate past 2 KB). The full order is PROMPT_TURN_GUIDANCE.
+ */
+export const PROMPT_TURN_BRIEF = 'After read_messages returns a user prompt, ack first with set_status { state: "responding", id: <prompt id> } before any other tool. That shows the bouncing dots. Then one short reply_to_user { in_reply_to, final: false }. The tab holds that reply for 10 seconds, then folds the chat and shows the working spinner. Poll with read_messages { wait_ms: 25000 } or register_webhook. An empty immediate read does not mean the user never sent.';
+
+/**
+ * Required order after read_messages returns a prompt. set_status responding
+ * is the ack. There is no separate ack tool. The 10 second hold is the tab's
+ * timer, not the agent's.
+ */
+export const PROMPT_TURN_GUIDANCE = `In-viewer prompt — required order after read_messages returns a user prompt:
+1. Ack immediately: set_status { state: "responding", id: <prompt id> }. That shows the bouncing dots. Do this before any other tool. set_status responding is the ack; there is no separate ack tool.
+2. Reply once, non-final: reply_to_user { in_reply_to: <id>, text: "Got it — starting on <one-line plan>.", final: false }. Keep that reply short. The tab holds that reply visible for 10 seconds.
+3. Only when you are about to create or edit geometry: set_status { state: "building", id }. After the 10 second hold the tab folds the chat and shows the working spinner (on a phone, the Bot button). A building, post_progress, or model-changing call during the hold waits until it ends. Do not call building for list, status, or read_messages.
+4. While modeling, call post_progress occasionally so the session stays present.
+5. When done or failed: reply_to_user { in_reply_to: <id>, text: <what changed, what failed, what remains>, final: true }. That stops the spinner, reopens the chat with the confirmation, and idles.
+Poll with read_messages { wait_ms: 25000 } (or register_webhook) so a per-call process still catches prompts the server is holding. An empty immediate read does not mean the user never sent.`;
+
+/**
  * First paragraph of the MCP initialize `instructions`.
  * Goldens pin the webhook sentence as the prefix.
  */
-export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE} ${SESSION_PRESENCE_GUIDANCE}`;
+export const PROMPT_SERVER_INSTRUCTIONS = `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages. ${CLOSING_REPLY_GUIDANCE} ${BUILDING_STATUS_GUIDANCE} ${SESSION_PRESENCE_GUIDANCE} ${PROMPT_TURN_BRIEF}`;
 
 /** Exact wording the agent should relay when asking the user for a webhook. */
 export const PROMPT_ONBOARDING_ASK = 'To get SurfCAD messages instantly, send me your webhook URL and key. This only needs to be done once. Otherwise I\'ll check for SurfCAD messages between steps, so replies may lag.';
@@ -102,7 +121,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'read_messages',
-      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. Every response includes recent: the last ${PROMPT_QUEUE_CAP} prompts this session received, oldest first, each { id, state } (queued, delivered, replied, or cancelled), held in memory only. A remote session returns that same recent list; an idle session that has not received a prompt has recent: []. acked is only the ids this call removed. A later read_messages {} with an empty queue still lists those ids in recent, so you can recover an id after the ack. status.last is only the newest id. ${USER_CONTENT} Do not render the text or the image as HTML. When you finish the task from a prompt you received here, close that chat: ${CLOSING_REPLY_GUIDANCE}`,
+      description: `Read queued user prompts, oldest first, and remove them from the in-memory queue (this acks them). Each prompt is plain text. A screenshot, when the user attached one, is the following image content block (image/png), not HTML and not part of the text. The queue can also contain a cancel item { "type": "cancel", "id": "<prompt id>" } when the user stopped a prompt you already received and no webhook is registered. Stop work on that id. Do not call reply_to_user or set_status for it. Every response includes recent: the last ${PROMPT_QUEUE_CAP} prompts this session received, oldest first, each { id, state } (queued, delivered, replied, or cancelled), held in memory only. A remote session returns that same recent list; an idle session that has not received a prompt has recent: []. acked is only the ids this call removed. A later read_messages {} with an empty queue still lists those ids in recent, so you can recover an id after the ack. status.last is only the newest id. ${USER_CONTENT} Do not render the text or the image as HTML. When you finish the task from a prompt you received here, close that chat: ${CLOSING_REPLY_GUIDANCE} ${PROMPT_TURN_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -117,7 +136,7 @@ export function promptToolDefinitions() {
             type: 'integer',
             minimum: 0,
             maximum: READ_MESSAGES_MAX_WAIT_MS,
-            description: `Long-poll: when the queue is empty, wait up to this many milliseconds (at most ${READ_MESSAGES_MAX_WAIT_MS}) for a prompt or cancel to arrive before answering, instead of returning an empty list at once. Cuts idle polling between steps; omit or 0 to return immediately.`,
+            description: `Long-poll: when the queue is empty, wait up to this many milliseconds (at most ${READ_MESSAGES_MAX_WAIT_MS}) for a prompt or cancel to arrive before answering, instead of returning an empty list at once. Poll with ${READ_MESSAGES_MAX_WAIT_MS} or register_webhook. An empty immediate read does not mean the user never sent. Omit or 0 to return immediately.`,
           },
         },
       },
@@ -147,7 +166,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'set_status',
-      description: `Tell the SurfCAD tab which phase the user's prompt is in. responding (alias typing): you are reading or writing an answer; the chat stays open with bouncing dots. building (alias working): you are creating or editing geometry; the chat collapses and the field shows "Agent is working...". ${BUILDING_STATUS_GUIDANCE} Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. set_status is for progress and does not close the task. A partial reply does not leave building; the final reply, Stop, or a disconnect does. No activity for ${agentPromptStallMinutes()} minutes, while responding or building, shows the stall notice and leaves Stop up. The result state is the tab value (responding and typing are typing; building and working are working). Without id it targets the latest prompt. With no prompt at all (a build you started yourself, or a prompt an earlier one-shot process read) the tab still shows the state: it keeps a session-level state fed by this call, by every model-changing tool you call, and by post_progress, and it returns to idle 60 s after the last of those. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
+      description: `Tell the SurfCAD tab which phase the user's prompt is in. responding (alias typing) is the ack: call set_status { state: "responding", id } first after read_messages returns a prompt, before any other tool. The chat stays open with bouncing dots. Then one short non-final reply_to_user. The tab holds that reply for 10 seconds. building (alias working): you are creating or editing geometry. A building call, post_progress, or model-changing tool during that hold waits, then the chat folds and the field shows "Agent is working..." (on a phone, the Bot button spins). ${BUILDING_STATUS_GUIDANCE} Do not call building to list parts, faces, edges, or transforms, or for status or read_messages. A model-changing tool also enters building if you skip this call. A read never does. set_status is for progress and does not close the task. A partial reply does not leave building; the final reply, Stop, or a disconnect does. reply_to_user { final: true } stops the spinner, reopens the chat, and idles. No activity for ${agentPromptStallMinutes()} minutes, while responding or building, shows the stall notice and leaves Stop up. The result state is the tab value (responding and typing are typing; building and working are working). Without id it targets the latest prompt. With no prompt at all (a build you started yourself, or a prompt an earlier one-shot process read) the tab still shows the state: it keeps a session-level state fed by this call, by every model-changing tool you call, and by post_progress, and it returns to idle 60 s after the last of those. A cancelled id returns { ok: false, error: cancelled }. ${CLOSING_REPLY_GUIDANCE}`,
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -175,7 +194,7 @@ export function promptToolDefinitions() {
     },
     {
       name: 'post_progress',
-      description: 'Tell SurfCAD you are working, without showing thinking text. Call it while you work, especially during long reasoning, so the phone folds the chat and the bot button spins. Optional text is accepted and discarded; it is never shown. This also keeps the session present. It does not close the task.',
+      description: 'Tell SurfCAD you are working, without showing thinking text. Call it while you work, especially during long reasoning, so the chat folds and the spinner shows (on a phone, the Bot button). A non-final ack reply stays visible for 10 seconds first; a post_progress during that hold waits until it ends. Optional text is accepted and discarded; it is never shown. This also keeps the session present. It does not close the task.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
