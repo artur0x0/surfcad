@@ -23,6 +23,7 @@ import {
   READ_MESSAGES_POLL_MS,
   WEBHOOK_REQUIRED_GUIDANCE,
 } from './promptTools.mjs';
+import { WAKE_GUIDE_SECTION } from '../listen/wakeSetupText.mjs';
 import { agentPromptStallMinutes } from './promptStall.mjs';
 import {
   ERROR_TOPIC_CODES,
@@ -187,7 +188,9 @@ Check your work. After each stage: status (runState ok, bodyCount 1 for a one-pi
  */
 const CHAT = `In-viewer chat: the required workflow. Everything here is a requirement, not a tip. Follow it after every pair and for every prompt the user sends from the SurfCAD chat box.
 
-A. After every pair or login, before you wait for a prompt (required)
+${WAKE_GUIDE_SECTION}
+
+A2. After every pair or login, before you wait for a prompt (required)
 1. ${WEBHOOK_REQUIRED_GUIDANCE} status.webhookRegistered is then true until this process exits.
 2. The URL and bearer are held in this process's memory only: never logged, never written to disk, never returned, never sent to the tab. Unpair, a new pair, and a new process all start with no webhook, so register again every time.
 3. No webhook URL yet: ask the user once, in these words: "${PROMPT_ONBOARDING_ASK}"
@@ -286,7 +289,7 @@ export const GUIDE_TOPICS = Object.freeze({
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
   modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part (never create_part for the first part); required blend order draft, shell, concave, then convex fillets and chamfers, edges picked by name; the shell opening; shell-after-fillet playtest cases A to D; reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
-  chat: { summary: 'REQUIRED in-viewer chat workflow: register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
+  chat: { summary: 'REQUIRED in-viewer chat workflow: the wake setup at install (so the user can message you while you are idle), register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
 
 /** The core topics, in listing order (the error topics are listed on one line after them). */
@@ -366,7 +369,8 @@ export function guideResourceContents(uri, version = loadPackageVersion()) {
 export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
-  `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
+  // The wake pointer is here because every host shows these lines first. The cap is 2048 bytes.
+  `Install: set up the wake, guide chat A. Pair, then guide { topic: "start" } before the first model call; guide {} topics: ${GUIDE_TOPIC_NAMES.join(', ')}.`,
   'Flow: first part = create_assembly\'s partId (create_part: later parts only); insert_cube / insert_cylinder / insert_tube, insert_hole, insert_cut, insert_shell, then blends, concave before convex. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');

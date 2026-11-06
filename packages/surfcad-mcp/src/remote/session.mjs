@@ -211,6 +211,7 @@ export class RemoteSession {
           .then(() => this.#sendToTab({ type: PAIR_MSG.AGENT_PROMPT_TAKEN, v: 1, ids }))
           .catch(() => { /* advisory; the next hello or pull offers them again */ });
       },
+      onUnread: options.onUnread,
     });
   }
 

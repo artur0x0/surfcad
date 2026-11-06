@@ -204,6 +204,19 @@ These live in the `surfcad-mcp` process. They are not in `commands.json` or rela
 
 The same topics are MCP resources: `resources/list` returns one row per topic (`surfcad://guide/<topic>`, `text/plain`, `_meta.version` = the `surfcad-mcp` package version) and `resources/read { uri }` returns the topic text, so a host that pre-loads or pins resources can carry the guide without a tool call. `guide { topic }` and the resource share one source.
 
+### Wake: so the user can message you while you are idle
+
+Required at install. `guide { topic: "chat" }` section A is the normative text.
+
+1. `npx surfcad-mcp login` (once; the listener uses the saved login).
+2. `npx surfcad-mcp wake set --post <URL your host accepts a POST on> --exec "<command that starts a turn of you>"`. Set both when your host has both; one is enough. The POST is tried first, the command is the fallback.
+3. `npx surfcad-mcp wake test`. It fires the wake once with `reason: "test"`. Confirm a turn of you started.
+4. `npx surfcad-mcp listen --detach`. Start it again after a reboot, or add it to your host's startup.
+
+A message the user sends from the chat box while no `surfcad-mcp` process reads it starts a turn of you within a few seconds. The wake JSON carries the prompt ids and a preview of the text; the message is still on the server, so call `read_messages { wait_ms: 10000 }` and follow the prompt order below. While you are already polling you take the message first and no wake fires.
+
+`status.wake` is `{ forms, listenerRunning, note }` and every `pair` result carries the same note. If `forms` is empty, do steps 2 to 4 without waiting to be asked.
+
 ### In-viewer prompts: webhook or polling
 
 The server's initialize instructions start with: `call register_webhook { url, bearer? } if you can receive https webhooks, otherwise poll read_messages.` The next sentence is: When you finish a task started from the SurfCAD in-viewer prompt pane, send a closing reply with reply_to_user (final: true) summarising what was done, so the user gets confirmation. On failure or partial completion, say what was done, what failed and why, and what is left. The sentence after that is: Call set_status { state: "building" } only once you have everything you need and are actually creating or editing geometry. The sentence after that is: Be interactive: post_progress while working, especially during long reasoning. A fresh process per tool call is normal and stays present. A long-lived process is optional, never required. Call close_session when done, never on exit. The sentence after that is the in-viewer turn, required after every in-viewer prompt (it names `guide { topic: "chat" }` for the full order): ack first with `set_status { state: "responding", id: <prompt id> }` before any other tool (that shows the bouncing dots; there is no separate ack tool), then one short non-final `reply_to_user`. The tab holds that reply for 10 seconds, then folds the chat and shows the working spinner. Required after every pair: `register_webhook` again (process memory only). With no webhook, loop `read_messages { wait_ms: 10000 }` while connected; polling is not activity. An empty immediate read does not mean the user never sent. The rest is a quick-start under 2 KB that points at `guide { topic: "start" }`, which repeats that closing reply, the building sentence, the session sentence, and the full turn order. set_status is for progress and does not close the task. `post_progress` is the working signal and does not show thinking text. `close_session` ends the session and is not sent on process exit.

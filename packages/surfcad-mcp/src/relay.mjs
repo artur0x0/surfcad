@@ -105,6 +105,7 @@ export class RelaySession {
     this.#prompts = options.promptSession || createPromptSession({
       send: (payload) => this.#sendToTab(payload),
       postWebhook: options.postWebhook,
+      onUnread: options.onUnread,
       testWebhookOverride: options.testWebhookOverride,
       resolveHost: options.resolveHost,
       now: options.now,

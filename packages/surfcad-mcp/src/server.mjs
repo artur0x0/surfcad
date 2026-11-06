@@ -46,12 +46,16 @@ import {
 import { withErrorHint, withRowHints } from './prompt/errorHints.mjs';
 import { callListHelpersTool, LIST_HELPERS_TOOL_NAME, listHelpersToolDefinition } from './helpers.mjs';
 import { mergeRegisteredIntoListCommands } from './listCommandsMerge.mjs';
+import { readListenerPid } from './listen/daemon.mjs';
+import { wakeSetupNote, wakeSetupState } from './listen/listenCli.mjs';
+import { createWaker, wakePayload } from './listen/wake.mjs';
+import { readWake } from './listen/wakeConfig.mjs';
 import { tabAdvertisesTool } from './unlistedTools.mjs';
 
 const PAIR_TOOL_NAME = 'pair';
 
 /** One line in the pair result; the guidance itself is guide { topic: "start" } and guide { topic: "chat" }. */
-const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts). guide { topic: "chat" } is the required in-viewer chat workflow: register_webhook after every pair, ack first, and the 10 second read_messages long-poll while connected. guide {} lists every topic.';
+const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "start" } (how to build in SurfCAD: block out first, features first, hardware as patterned parts). guide { topic: "chat" } is the required in-viewer chat workflow: the wake setup at install, ack first, and the 10 second read_messages long-poll while connected. guide {} lists every topic.';
 
 /**
  * Prompt tools that do not count as agent activity when called. set_status,
@@ -59,6 +63,8 @@ const PAIR_GUIDE_POINTER = 'Before the first model call read guide { topic: "sta
  * poll and must not restart the stall window.
  */
 const PROMPT_TOOLS_WITHOUT_ACTIVITY = new Set(['set_status', 'post_progress', 'close_session', 'read_messages']);
+
+const STATUS_WAKE_NOTE = ' It also adds wake ({ forms, listenerRunning, note }): how this machine starts a turn of you when the user sends a chat message while you are idle. forms is empty until you run the wake setup (guide { topic: "chat" } section A).';
 
 const STATUS_PROMPT_NOTE = ' This process also adds webhookRegistered (true when a prompt webhook is registered; the URL and any bearer are not included), queued (prompt messages waiting for read_messages; cancelled prompts are not counted), counts ({ queued, delivered, replied, cancelled }), and last ({ id, state } of the latest prompt, or null).';
 
@@ -70,7 +76,7 @@ function augmentStatusTool(tool) {
   if (!tool || tool.name !== 'status') return tool;
   return {
     ...tool,
-    description: `${tool.description || ''}${STATUS_PROMPT_NOTE}`,
+    description: `${tool.description || ''}${STATUS_PROMPT_NOTE}${STATUS_WAKE_NOTE}`,
   };
 }
 
@@ -172,22 +178,71 @@ function mutatingTool(name) {
   return /^(set_script|run|insert_|invoke_helper|confirm_feature|delete_feature|rollback_to|undo|redo|create_|delete_|rename_|part_set_transform|insert_part|open_|paint_confirm|paint$|joint_commit|sheet_commit|sheet_set_params|sheet_edit|sketch_commit|slot_commit|hole_commit|git_|export_|edit_feature|pick_done|select_)/.test(name);
 }
 
-function pairToolResult(result, prompts) {
+function pairToolResult(result, prompts, wake) {
   const webhookRegistered = prompts.webhookRegistered() === true;
   const note = webhookRegistered ? PROMPT_WEBHOOK_ACTIVE : PROMPT_ONBOARDING_NOTE;
   const payload = {
     ...(result && typeof result === 'object' ? result : {}),
     webhookRegistered,
     note,
+    ...(wake ? { wake } : {}),
   };
   return {
     content: [
       { type: 'text', text: JSON.stringify(payload, null, 2) },
       { type: 'text', text: note },
+      // The install step an agent must not skip: without it the user cannot reach an idle agent.
+      ...(wake?.note ? [{ type: 'text', text: wake.note }] : []),
       // The build guidance lives in the guide tool; one pointer here, for every client.
       { type: 'text', text: PAIR_GUIDE_POINTER },
     ],
     isError: false,
+  };
+}
+
+/**
+ * The wake setup on this machine, for the pair and status results.
+ * @param {{ status?: () => { remote?: boolean } }} session
+ */
+async function wakeStatus(session) {
+  const state = await wakeSetupState(process.env);
+  let remote = false;
+  try {
+    remote = session?.status?.()?.remote === true;
+  } catch {
+    remote = false;
+  }
+  return { ...state, note: wakeSetupNote(state, { remote }) };
+}
+
+/**
+ * The wake a long-lived MCP process fires itself, for a prompt that sat in
+ * its queue unread. With the server relay and a running listener, the
+ * listener owns the wake and this does nothing, so one message is one wake.
+ * The setup is read each time, so `wake set` takes effect without a restart.
+ * @param {{ remote: boolean, env?: NodeJS.ProcessEnv, log?: (line: string) => void, deps?: object }} options
+ */
+export function createInProcessWake(options) {
+  const env = options.env || process.env;
+  const log = options.log || ((line) => console.error(`${new Date().toISOString()} [surfcad-mcp] ${line}`));
+  let waker = null;
+  let wakerKey = '';
+  return async (prompts) => {
+    try {
+      if (options.remote && await readListenerPid(env)) return { ok: false, skipped: 'listener' };
+      const config = await readWake(env);
+      if (!config) return { ok: false, skipped: 'not_set' };
+      const key = JSON.stringify(config);
+      if (!waker || key !== wakerKey) {
+        waker = createWaker(config, { env, ...(options.deps || {}) });
+        wakerKey = key;
+      }
+      const outcome = await waker.wake(wakePayload(prompts));
+      log(outcome.ok ? `woke the agent by ${outcome.form} for an unread chat message` : `wake failed (${outcome.error})`);
+      return outcome;
+    } catch {
+      return { ok: false, error: 'wake_failed' };
+    }
   };
 }
 
@@ -289,7 +344,7 @@ export async function createSurfcadMcpServer(options = {}) {
       }
       try {
         const result = await waitForPairing(session.pair(code), PAIR_TOOL_WAIT_MS);
-        return pairToolResult(result, session.prompts);
+        return pairToolResult(result, session.prompts, await wakeStatus(session));
       } catch (err) {
         return errorResult(toolErrorPayload(err), name);
       }
@@ -335,7 +390,7 @@ export async function createSurfcadMcpServer(options = {}) {
         session.holdAgentWork(false);
       }
       if (name === 'status' && out.isError !== true && out.value && typeof out.value === 'object' && !Array.isArray(out.value)) {
-        return textResult({ ...out.value, ...session.prompts.deliveryStatus() });
+        return textResult({ ...out.value, ...session.prompts.deliveryStatus(), wake: await wakeStatus(session) });
       }
       if (name === 'list_commands' && out.isError !== true) {
         out = {
@@ -417,7 +472,7 @@ export async function runSurfcadMcpServer(options = {}) {
   process.stdin.once('end', onStdinClosed);
 
   const { server, session } = await createSurfcadMcpServer({
-    session: new RelaySession({ ensureRelay: takeOverRelay }),
+    session: new RelaySession({ ensureRelay: takeOverRelay, onUnread: createInProcessWake({ remote: false }) }),
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -450,6 +505,7 @@ async function runRemoteMcpServer(options) {
     token: saved.token,
     name: pinned,
     fillNameFromClient: !pinned,
+    onUnread: createInProcessWake({ remote: true, env }),
   });
   const { server, session } = await createSurfcadMcpServer({ session: remote });
   server.oninitialized = () => {

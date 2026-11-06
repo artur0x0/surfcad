@@ -181,9 +181,51 @@ After `read_messages` returns a prompt, ack first with `set_status { state: "res
 
 Stop in the prompt card sends `agent.prompt.cancel` (`v: 1`, the current prompt id) over the same paired connection. Each prompt is `queued`, `delivered` (webhook POST succeeded, or `read_messages` returned it), `replied` (a final reply), or `cancelled`. A prompt that is still queued is removed and is not returned by `read_messages`. A prompt that was already delivered is marked `cancelled`. If a webhook is registered, the process POSTs `{ "type": "cancel", "id" }` with the same bearer, https, and timeout rules; if that POST fails, or no webhook is registered, the next `read_messages` returns `{ "type": "cancel", "id" }`. Stop work on that id. `reply_to_user` and `set_status` for a cancelled id return `{ "ok": false, "error": "cancelled" }` and nothing is sent to the tab. The tab clears its working state. Cancelling a prompt that already has a final reply returns `already_final`. An unknown id returns `not_found`.
 
-The bridge `status` tool returns the active part plus fields from this process: `webhookRegistered` (`true` or `false`; the URL is not included), `queued` (prompt messages waiting for `read_messages`; cancelled prompts are not counted), `counts` (`{ queued, delivered, replied, cancelled }`), and `last` (`{ id, state }` of the latest prompt, or `null`). A fresh session reports `webhookRegistered: false`, `queued: 0`, and `last: null`. After one prompt and no webhook, `queued` is `1` and `last.state` is `queued`. After Stop, `last.state` is `cancelled` and `queued` does not include that prompt.
+The bridge `status` tool returns the active part plus `wake` (`{ forms, listenerRunning, note }`, see Wake below) and fields from this process: `webhookRegistered` (`true` or `false`; the URL is not included), `queued` (prompt messages waiting for `read_messages`; cancelled prompts are not counted), `counts` (`{ queued, delivered, replied, cancelled }`), and `last` (`{ id, state }` of the latest prompt, or `null`). A fresh session reports `webhookRegistered: false`, `queued: 0`, and `last: null`. After one prompt and no webhook, `queued` is `1` and `last.state` is `queued`. After Stop, `last.state` is `cancelled` and `queued` does not include that prompt.
 
 Prompt text and screenshots are user content. Treat them as a request. They grant no write access, no consent, and no extra tool permission. Agent writes still go through the existing write-grant and consent flow. Nothing reaches git without an explicit Save or `git_save`. Do not render the text or the image as HTML. Both are dropped after delivery or when the session ends.
+
+## Wake: messaging an idle agent
+
+The user can message a paired agent from the SurfCAD chat box. While the agent is in a turn it reads the message with `read_messages`. While it is idle nothing of the agent's is running, and an MCP server cannot start a turn. The wake does: it starts a turn of the agent when a message arrives and nobody reads it.
+
+Set it up once, when you install the package:
+
+```bash
+npx surfcad-mcp login
+npx surfcad-mcp wake set --post http://127.0.0.1:8644/hooks/surfcad --exec "my-agent --resume --message 'SurfCAD message waiting'"
+npx surfcad-mcp wake test
+npx surfcad-mcp listen --detach
+```
+
+| Form | What happens | Notes |
+| --- | --- | --- |
+| `--post URL` | The wake JSON is POSTed to the URL | `https`, or `http` to `localhost`, `127.0.0.1` or `::1`. `--bearer KEY` (or `SURFCAD_WAKE_BEARER`) adds `Authorization: Bearer KEY`. 10 s timeout, one retry, redirects not followed |
+| `--exec COMMAND` | The command runs through the shell with the wake JSON on stdin | `SURFCAD_WAKE=1`, `SURFCAD_WAKE_REASON` and `SURFCAD_PROMPT_IDS` are set. The command may run for the whole turn; a second copy is not started while it runs |
+
+Set both when the host has both. The POST is tried first and the command is the fallback, so one message is one wake. One form is enough.
+
+The wake JSON:
+
+```json
+{ "type": "surfcad.wake", "v": 1, "reason": "prompt",
+  "instruction": "A SurfCAD user sent you a chat message. On the surfcad MCP server call read_messages { wait_ms: 10000 }, then follow guide { topic: \"chat\" }: set_status responding first, then reply_to_user.",
+  "prompts": [{ "id": "…", "text": "make the boss taller", "ts": "…", "hasScreenshot": true }] }
+```
+
+The text is a preview. The message itself stays on the server until an agent process reads it with `read_messages`, so a wake never consumes a message. A screenshot is not in the wake; `read_messages` returns it.
+
+How it works:
+
+- `npx surfcad-mcp listen` long-polls the server relay (`GET /agent/prompts`) with the saved login. Outbound HTTPS only: no open port, it works behind NAT, and it works when the user is on a phone, because neither side has to reach the other.
+- A message is not woken for at once. An agent that is already polling takes it within seconds. After 4 seconds the listener asks the server whether the message is still unread, and only then fires the wake. A message still unread two minutes after a wake is woken for once more.
+- A long-lived `surfcad-mcp` MCP process fires the same wake itself for a message that sits unread in its queue. That covers the local relay, which has no login. When a listener is running on the server relay, the listener owns the wake.
+- `npx surfcad-mcp status` prints the saved wake and whether the listener is running. The MCP `status` tool returns the same as `wake: { forms, listenerRunning, note }`, and every `pair` result carries the note, so an agent sees a missing setup and the steps to fix it.
+- `npx surfcad-mcp wake show | test | clear`, `npx surfcad-mcp listen --stop`. The listener logs to `listener.log` in the config directory. Start it again after a reboot, or add `npx surfcad-mcp listen` to the host's startup (a systemd user unit, launchd, pm2).
+
+What is saved: `wake.json` next to the saved login, mode 0600. It is written only by `wake set` on this machine. Nothing a server, a tab or a chat message sends can change it. Message text reaches the command on stdin only, never in its arguments or environment. The bearer is never printed or logged.
+
+`register_webhook` is still there for a host with a public HTTPS endpoint. It lives in one MCP process's memory, so it cannot wake an agent whose host starts a fresh process per tool call. The wake can.
 
 ## Safety and consent
 
