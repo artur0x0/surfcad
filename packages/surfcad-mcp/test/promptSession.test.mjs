@@ -366,7 +366,68 @@ test('responding and building stall after the same quiet window', async () => {
   }
 });
 
-test('tool calls, read_messages, set_status, and replies refresh the idle window; a held call does not stall', async () => {
+test('a read_messages poll is not activity: it does not restart the stall window or tell the tab; set_status, a reply, post_progress, and a tool call do', async () => {
+  const time = clock();
+  const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
+  await session.acceptPrompt(prompt(1));
+  session.readMessages();
+  session.setStatus({ state: 'building', id: pid(1) });
+  assert.equal(sent.at(-1).state, 'working');
+
+  // Only long-polling, 10 s at a time: every poll lands inside the window,
+  // nothing reaches the tab, and the stall still fires on time.
+  const frames = sent.length;
+  const step = 10_000;
+  let waited = 0;
+  while (waited + step < AGENT_PROMPT_STALL_MS) {
+    const poll = callPromptTool(session, 'read_messages', { wait_ms: step });
+    time.advance(step);
+    waited += step;
+    const out = await poll;
+    assert.deepEqual(JSON.parse(out.content[0].text).messages, []);
+    session.readMessages();
+  }
+  assert.equal(sent.length, frames, 'a poll sends nothing to the tab');
+  assert.equal(sent.some((msg) => msg.type === PAIR_MSG.AGENT_ACTIVITY), false);
+  assert.equal(sent.some((msg) => msg.stalled === true), false);
+  time.advance(AGENT_PROMPT_STALL_MS - waited);
+  assert.equal(sent.at(-1).stalled, true, 'the window ran from the last real activity, not the last poll');
+  assert.equal(sent.at(-1).state, 'working');
+
+  // A poll does not clear the stall notice either. Real activity does.
+  const noticeAt = sent.length;
+  session.readMessages();
+  await callPromptTool(session, 'read_messages', {});
+  assert.equal(sent.length, noticeAt);
+  await session.postProgress({});
+  assert.equal(sent.at(-1).type, PAIR_MSG.AGENT_STATUS);
+  assert.equal(sent.at(-1).stalled, undefined, 'post_progress replaces the stall notice with the live state');
+  assert.equal(sent.at(-1).state, 'working');
+
+  // Each real activity restarts the window; the polls in between do not.
+  const mark = sent.length;
+  const gap = Math.floor(AGENT_PROMPT_STALL_MS * 0.6);
+  const real = [
+    () => session.postProgress({}),
+    () => session.setStatus({ state: 'building', id: pid(1) }),
+    () => session.reply({ in_reply_to: pid(1), text: 'still on it', final: false }),
+    () => session.noteToolCall({ mutates: true }),
+    () => session.noteToolCall(),
+  ];
+  for (const act of real) {
+    time.advance(gap);
+    session.readMessages();
+    await act();
+  }
+  time.advance(gap);
+  assert.ok((real.length + 1) * gap > AGENT_PROMPT_STALL_MS);
+  assert.equal(sent.slice(mark).some((msg) => msg.stalled === true), false, 'real activity inside each window keeps working');
+  session.readMessages();
+  time.advance(gap);
+  assert.equal(sent.at(-1).stalled, true, 'quiet again, with a poll in between: it stalls');
+});
+
+test('tool calls, set_status, and replies refresh the idle window; a held call does not stall', async () => {
   const time = clock();
   const { session, sent } = harness({ clock: time, rateLimitMs: 0 });
   await session.acceptPrompt(prompt(1));
@@ -377,7 +438,7 @@ test('tool calls, read_messages, set_status, and replies refresh the idle window
   time.advance(gap);
   session.noteToolCall({ mutates: true });
   time.advance(gap);
-  session.readMessages();
+  session.noteToolCall();
   time.advance(gap);
   session.setStatus({ state: 'working', id: pid(1) });
   time.advance(gap);

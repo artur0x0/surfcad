@@ -203,3 +203,87 @@ test('typing, working, and idle reach the tab as state, explicitly and implicitl
     await stopAgentBridgeRelay(relay);
   }
 });
+
+test('over stdio: a read_messages poll sends the tab nothing; a bridge read and post_progress are activity', async () => {
+  const token = createPairingToken(6);
+  const relay = await startAgentBridgeRelay({ port: 0 });
+  const port = relay.server.address().port;
+  const url = `ws://127.0.0.1:${port}`;
+  const tab = new WebSocket(url);
+  await waitOpen(tab);
+  tab.send(JSON.stringify({ type: PAIR_MSG.REGISTER_TAB, token }));
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [SERVER_BIN],
+    env: { ...process.env, SURFCAD_MCP_START_RELAY: '0', SURFCAD_AGENT_BRIDGE_WS_URL: url, SURFCAD_PAIRING_CODE: token },
+  });
+  const client = new Client({ name: 'surfcad-mcp-test', version: '1.0.0' });
+  await client.connect(transport);
+  /** Every agent.* frame the tab hears, in order. */
+  const frames = [];
+  const waiters = [];
+  tab.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(String(raw)); } catch { return; }
+    if (typeof msg.type === 'string' && msg.type.startsWith('agent.')) {
+      frames.push(msg);
+      for (const w of waiters.splice(0)) w();
+      return;
+    }
+    if (typeof msg.command === 'string') {
+      tab.send(JSON.stringify({ id: msg.id, ok: true, result: { partId: 'p1', runState: 'ok' } }));
+    }
+  });
+  const waitUntil = (pred, what) => new Promise((resolve, reject) => {
+    if (pred()) { resolve(); return; }
+    const timer = setTimeout(() => reject(new Error(`no ${what} in time`)), 5000);
+    const tick = () => { if (pred()) { clearTimeout(timer); resolve(); } else waiters.push(tick); };
+    waiters.push(tick);
+  });
+  const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+  const count = (type) => frames.filter((msg) => msg.type === type).length;
+
+  try {
+    const pairing = client.callTool({ name: 'pair', arguments: { code: token } });
+    const pairRequest = await onceJson(tab);
+    assert.equal(pairRequest.type, PAIR_MSG.PAIR_REQUEST);
+    tab.send(JSON.stringify({ type: PAIR_MSG.PAIR_APPROVE }));
+    assert.equal((await pairing).isError, false);
+
+    const promptId = '55555555-5555-4555-8555-555555555555';
+    tab.send(JSON.stringify({ type: PAIR_MSG.AGENT_PROMPT, v: 1, id: promptId, text: 'Add a boss', ts: new Date().toISOString() }));
+    await waitUntil(() => frames.some((msg) => msg.type === PAIR_MSG.AGENT_PROMPT_ACK && msg.id === promptId), 'prompt ack');
+    await client.callTool({ name: 'read_messages', arguments: {} });
+    await client.callTool({ name: 'set_status', arguments: { state: 'building', id: promptId } });
+    await waitUntil(() => frames.some((msg) => msg.type === PAIR_MSG.AGENT_STATUS && msg.state === 'working'), 'building');
+    await settle();
+
+    // A phase is open. Polls, immediate and long, reach the tab as nothing at all.
+    const before = frames.length;
+    for (let i = 0; i < 3; i += 1) {
+      const empty = await client.callTool({ name: 'read_messages', arguments: {} });
+      assert.equal(empty.isError, false);
+      const waited = await client.callTool({ name: 'read_messages', arguments: { wait_ms: 120 } });
+      assert.equal(waited.isError, false);
+      assert.deepEqual(JSON.parse(waited.content[0].text).messages, []);
+    }
+    await settle();
+    assert.deepEqual(frames.slice(before), [], 'read_messages sent the tab no activity, status, or progress frame');
+
+    // A bridge read while building is the agent at work: one activity frame.
+    const activity = count(PAIR_MSG.AGENT_ACTIVITY);
+    await client.callTool({ name: 'status', arguments: {} });
+    await waitUntil(() => count(PAIR_MSG.AGENT_ACTIVITY) > activity, 'activity after a bridge read');
+
+    // post_progress is activity too, and the progress frame still goes out.
+    const progress = count(PAIR_MSG.AGENT_PROGRESS);
+    const afterRead = count(PAIR_MSG.AGENT_ACTIVITY);
+    await client.callTool({ name: 'post_progress', arguments: {} });
+    await waitUntil(() => count(PAIR_MSG.AGENT_PROGRESS) > progress && count(PAIR_MSG.AGENT_ACTIVITY) > afterRead, 'progress and activity');
+  } finally {
+    await client.close().catch(() => {});
+    tab.close();
+    await stopAgentBridgeRelay(relay);
+  }
+});
