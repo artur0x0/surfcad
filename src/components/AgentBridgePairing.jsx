@@ -149,6 +149,8 @@ export default function AgentBridgePairing({
   const pollerRef = useRef(null);
   const transportRef = useRef(null);
   const flowOpenRef = useRef(flowOpen);
+  /** The user pressed Connect agent in this window (the agent window claim). */
+  const claimWindowRef = useRef(false);
   const relayReachableRef = useRef(relayReachable);
   const stateRef = useRef(state);
   const issueRef = useRef(issue);
@@ -250,6 +252,10 @@ export default function AgentBridgePairing({
       link: linkVisibleRef.current,
     });
     forgetAgentChatSession();
+    // This window is no longer where the agent works: a reload must not
+    // take the role back from another window.
+    claimWindowRef.current = false;
+    connRef.current?.release?.();
     userStoppedRef.current = true;
     serverModeRef.current = false;
     serverAttemptRef.current = false;
@@ -496,6 +502,10 @@ export default function AgentBridgePairing({
 
   const beginConnectFlow = useCallback(() => {
     onBeginFlow?.();
+    // Connect agent in this window makes it the agent window on the server
+    // relay: activity and commands come here, not to another open window.
+    claimWindowRef.current = true;
+    if (serverModeRef.current) connRef.current?.claim?.();
     if (forcedServerRef.current) {
       userStoppedRef.current = false;
       if (!serverModeRef.current) setServerKick((n) => n + 1);
@@ -759,6 +769,8 @@ export default function AgentBridgePairing({
         },
       });
       connRef.current = conn;
+      // Connect agent was pressed before this socket existed.
+      if (claimWindowRef.current) conn.claim();
       conn.connect();
       if (pending.giveUp) clearTimeout(pending.giveUp);
       pending.giveUp = setTimeout(() => {

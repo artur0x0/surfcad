@@ -22,7 +22,7 @@ import { logRelay } from './log.js';
 import { isAllowedBrowserOrigin } from './origins.js';
 import { readBearer } from './router.js';
 import { sessionMessageProblem } from './sessionMessage.js';
-import { deliverTabAgentFrame } from './tabPrompt.js';
+import { deliverTabAgentFrame, TAB_CLAIM, TAB_CLAIM_MAX, TAB_CLAIMED } from './tabPrompt.js';
 import { TAB_SESSION_ENDED_CODE, TAB_SESSION_ENDED_REASON } from './tabSockets.js';
 
 /**
@@ -723,10 +723,20 @@ function bindTab(ws, user, relay, req) {
     } catch {
       return;
     }
+    if (msg?.type === TAB_CLAIM) {
+      // The user started pairing in this tab (or it is back from a reload
+      // with the claim it held): it is the agent window.
+      const resume = typeof msg.claim === 'string' && msg.claim && msg.claim.length <= TAB_CLAIM_MAX
+        ? msg.claim
+        : undefined;
+      const claim = relay.registry.claimAgentWindow(user.id, tabId, resume);
+      sendJson(ws, { type: TAB_CLAIMED, v: 1, claim: claim || null });
+      return;
+    }
     if (typeof msg?.type === 'string' && msg.type.startsWith('agent.')) {
       deliverTabAgentFrame(relay.registry, user.id, msg, (frame) => {
         if (ws.readyState === WebSocket.OPEN) sendJson(ws, frame);
-      });
+      }, tabId);
       return;
     }
     const parsed = readCommandResponse(msg);
