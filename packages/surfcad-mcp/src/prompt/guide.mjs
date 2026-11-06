@@ -43,7 +43,7 @@ export const INSTRUCTIONS_MAX_BYTES = 2048;
 const START = `${BUILD_GUIDANCE}
 
 Quick start, three calls after pair:
-1. create_part { name: "Hub" } then insert_tube { outerRadius: 20, innerRadius: 14, height: 40 }. The part is active when create_part returns; its result carries the opaque partId. Numbers are mm.
+1. create_assembly { name: "Hub", part_name: "Hub" } then insert_tube { outerRadius: 20, innerRadius: 14, height: 40 }. create_assembly's result partId is the first part, already active: build on it and never call create_part for it (create_part { name } adds the second part onward, and its result carries that part's opaque partId). Numbers are mm.
 2. list_faces { filter: { kind: "planar", normalWithin: { n: [0, 0, 1], deg: 5 } } } → select_faces { keys: [<that row's key>] } → insert_tap_drill_hole { use_selection: true, size: "M5", u: 0, v: 0 } (or insert_hole). The pick is consumed by this one insert.
 3. paint_open {} → paint_set_color { color: "#2f6fdb" } → paint_part {} (or paint_faces { keys }) → paint_confirm {}.
 Then select_clear {} → camera_set { view: "iso" } → screenshot { save_to: true } and show the user.
@@ -144,13 +144,24 @@ Saving. Working-copy tools never commit. git_save { message } is the one vault w
 
 const MODELING = `3D modeling guidelines. Follow these on every part; for a part that will be injection molded also read guide { topic: "molding" }.
 
-First part. create_assembly already made the first part and made it active; its result partId is that part. rename_part it and build on it. Do not call create_part for the first part; create_part is for the second part onward.
+First part (rule). create_assembly already made the first part: an empty seed part, already active. Its result partId (the same id as activeId) is that part. Build the first part on that id: name it with create_assembly { part_name } or rename_part { part_id, name }, then insert_*. Do not call create_part for the first part; create_part is for the second part onward. After the first body the assembly has exactly one part (parts {} lists one row) and no empty "Part (1)" beside it.
 
-Order of operations.
+Order of operations (required technique).
 - Block out with primitives, then Build and Shape, then Polish, then pattern and place (the ribbon order in guide { topic: "start" }).
-- Shell before fillets: insert_shell first, then fillet the concave (inside) edges, then the convex (outside) edges. Filleting every convex edge before the shell can leave the shell as several bodies; shell-first keeps one body and an even wall. Check status.bodyCount is 1 after each step.
-- Draft (insert_add_draft) goes before the shell, so the inside walls inherit it.
-- Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the fillet selection: select the faces whose edges you want with select_faces, then insert_fillet_edges { use_selection: true }.
+- Polish order: draft (insert_add_draft, if any), then shell (insert_shell), then concave fillets and chamfers, then convex fillets and chamfers. Concave before convex holds for fillets and for chamfers alike. Blending every convex edge before the shell, or before the concave edges, is how a one-piece part turns into several bodies.
+- Draft goes before the shell, so the inside walls inherit it.
+- Shell opening. insert_shell opens every face that faces openScope (default "z", the +Z faces). When a post, boss or flange stands on a face that faces that way, the shell removes that face and cuts the feature loose (2 bodies). Open the other side (openScope: "-z") or use "none" for a closed hollow. status.bodyCount must be 1 straight after the shell, before any blend.
+- Pick blend edges by name once the part has a shell or a concave blend. list_feature_edges names each edge by its two faces; "cylinder1.top~cylinder2.side" is the concave edge where a post meets its base. select_edges { names: [...] } then insert_fillet_edges or insert_chamfer_edges { use_selection: true }. A face pick (select_faces { names }, then use_selection: true) blends that one face's convex edges.
+- The no-selection default (every convex edge) is for a plain block with no shell and no concave blend. After a shell or a concave blend it fails and the part stays as it was: the fillet answers feature_failed "filletEdges: edge is concave", the chamfer "chamferEdges: edge N split the solid into 2 bodies".
+- A chamfer leg or fillet radius on a shelled part stays below the wall thickness, one named rim at a time. A rim-face pick takes the inner and the outer rim together, and a leg at or above the wall cuts through.
+- Keep edges that must stay sharp (a parting line, a rib base on a molded part) out of the selection.
+- Check status.bodyCount is 1 after the shell and after every blend. If it is not, undo that step and fix the order or the opening; do not union the pieces back together.
+
+Playtest cases. Each failing sequence was reproduced in the app on 2026-11-06; reproduce it, then confirm the order above avoids it.
+- A. Disc base with a vertical post, one body (insert_cylinder { radius: 30, height: 8 }, then insert_cylinder { radius: 8, height: 40, z: 4, combine: "add" }). Fails: insert_fillet_edges { radius: 2 } on every convex edge (with or without sphericalCorners), then insert_shell { wall: 1.5 }: bodyCount 2. Also fails: insert_shell with the default opening: 2 bodies, the post is cut off its base. Works: insert_shell { wall: 1.5, openScope: "-z" }: 1 body; the concave edge "cylinder1.top~cylinder2.side" by name, radius 2: 1 body; the convex edges by name, radius 1: 1 body.
+- B. Post with a sphere tip (ring holder). Shell first, opening away from the tip; then the post-to-sphere concave edge by name; then the convex edges by name. The no-selection convex fillet after that concave fillet fails ("edge is concave").
+- C. Flanged box (a box block plus a flange block, one body). Fails: insert_fillet_edges on every convex edge (sphericalCorners or not), then insert_shell { wall: 2 }: 9 or more bodies. Works: insert_shell first: 1 body when the opening does not face the flange's top face (2 when it does); then concave, then convex, by name.
+- D. Shelled cup or tube, then a large chamfer over the rim face (top and inner rim as one pick). insert_chamfer_edges answers feature_failed "chamferEdges: edge N split the solid into 2 bodies" and the part stays as it was. Works: one named rim ("cylinder1.side~cylinder1.top") with a leg below the wall (0.8 on a 2 mm wall). Do not shell a tube: it is already hollow, and shelling it leaves the top face in pieces and the inner wall as unnamed facets.
 
 Reuse instead of rebuilding.
 - Repeated parts: one part, many instances. insert_part { part_id, instance: true } or a pattern, never a second copy rebuilt by hand. Hardware is one part per unique fastener type, patterned to every place it goes.
@@ -273,7 +284,7 @@ export const GUIDE_TOPICS = Object.freeze({
   limits: { summary: 'The 30 s kernel budget, what is slow, worker restarts and stale status, result sizes, pairing errors', text: LIMITS },
   camera: { summary: 'Which side each named view looks from, explicit poses, select_clear before a screenshot, screenshot to file', text: CAMERA },
   assembly: { summary: 'Documents, create_part placement, insert by reference, part instances, joint_create as the default assembly path, hardware, git_save', text: ASSEMBLY },
-  modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part, shell before fillets, draft before shell, reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
+  modeling: { summary: '3D modeling guidelines: build on the create_assembly seed part (never create_part for the first part); required blend order draft, shell, concave, then convex fillets and chamfers, edges picked by name; the shell opening; shell-after-fillet playtest cases A to D; reuse (instances, mirror, patterns) over rebuilding, joints, check bodyCount', text: MODELING },
   molding: { summary: 'Injection molding design rules: draft 1° (0.5° vertical band), walls 1 to 6.35 mm with 0.6× / 1.5× thin and thick flags, ribs, ejector side, slides and lifters (15/20/25°), parting line and rib bases stay sharp, what mold_fit checks', text: MOLDING },
   chat: { summary: 'REQUIRED in-viewer chat workflow: register_webhook after every pair, ack first (set_status responding), one short non-final reply, building / post_progress, final reply, and the 10 second read_messages long-poll while connected (polling is not activity)', text: CHAT },
 });
@@ -356,7 +367,7 @@ export const SERVER_INSTRUCTIONS = [
   PROMPT_SERVER_INSTRUCTIONS,
   '',
   `SurfCAD quick start. Pair, then call guide { topic: "start" } before the first model call; guide {} lists the topics (${GUIDE_TOPIC_NAMES.join(', ')}).`,
-  'Flow: create_part then insert_cube / insert_cylinder / insert_tube, then insert_hole, insert_cut, insert_shell, insert_fillet_edges. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
+  'Flow: first part = create_assembly\'s partId (create_part: later parts only); insert_cube / insert_cylinder / insert_tube, insert_hole, insert_cut, insert_shell, then blends, concave before convex. Place: fix one base part with a fixed joint, then joint_create. part_set_transform only for parts that touch nothing.',
   'Rules: use_selection is single use (nothing selected is no_selection). git_save { message } answers consent_pending until Allow. Tools default to return: "status". list_faces { filter, page }. list_commands { group }.',
 ].join('\n');
 
