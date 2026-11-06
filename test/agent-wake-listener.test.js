@@ -8,13 +8,23 @@
  *   - a prompt an agent process takes inside the grace is not woken for;
  *   - a fresh pull session is offered what is still held (the "did anyone
  *     read it" probe).
+ *
+ * This file is in test/, not backend/test/: deploy.sh be-deploy walks every
+ * import under backend/ (tests included) and refuses to deploy when one
+ * leaves backend/ for a file that is not on its BE_SHARED list. A test in
+ * backend/ that imports the listener would put four MCP package files on
+ * the prod server's must-ship list. backend/test/external-imports.test.js
+ * pins that.
  */
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import { afterEach, test } from 'node:test';
-import express from 'express';
-import { createAgentRelay } from '../agent/createRelay.js';
-import { runListener } from '../../packages/surfcad-mcp/src/listen/listener.mjs';
+import { createAgentRelay } from '../backend/agent/createRelay.js';
+import { runListener } from '../packages/surfcad-mcp/src/listen/listener.mjs';
+
+// express is the backend's dependency, not the root's.
+const express = createRequire(new URL('../backend/package.json', import.meta.url))('express');
 
 /** @type {import('node:http').Server | null} */
 let server = null;
