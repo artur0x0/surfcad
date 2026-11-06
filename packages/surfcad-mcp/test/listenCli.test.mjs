@@ -153,16 +153,17 @@ test('listen runs until stopped, holds the pid file while it runs, and wakes for
   };
   const c = capture();
   const realNow = Date.now;
-  // Past the grace at once: the loop reads Date.now().
+  // The loop reads Date.now(). The clock is pushed past the grace again and
+  // again, so the test does not depend on when the first poll returned.
   let skew = 0;
   Date.now = () => realNow() + skew;
+  const tick = setInterval(() => { skew += 10_000; }, 20);
   try {
     const running = runCli(['listen'], { env, io: c.io, fetch: fetchDouble, onSignals: (fn) => { stop = fn; } });
-    await new Promise((r) => setTimeout(r, 30));
-    skew = 10_000;
     const outcome = await running;
     assert.deepEqual(outcome, { action: 'exit', code: 0 });
   } finally {
+    clearInterval(tick);
     Date.now = realNow;
   }
   assert.equal(wakes.length, 1);
