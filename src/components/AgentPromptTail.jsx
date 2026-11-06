@@ -1,17 +1,21 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
-import { agentPromptBubblePath, agentPromptTailLayout } from '../agent/agentPromptTail.js';
+import { agentPromptBubblePath, agentPromptTailFillPath, agentPromptTailLayout } from '../agent/agentPromptTail.js';
 
 const useClientLayoutEffect = typeof document !== 'undefined' ? useLayoutEffect : useEffect;
 
 /**
- * Phone-only speech-bubble tail. Measures the Bot button and paints one
- * clipped glass shape plus a stroke of the same path, so the outline runs
- * around the tail without a seam across the base.
+ * Phone-only speech bubble. The pane is plain CSS: a rounded glass box
+ * with a border and a shadow, so it is drawn before anything is measured
+ * and whether or not the tail fits. Once the Bot button is measured, one
+ * SVG path takes over the outline (the box plus the tail, so there is no
+ * seam across the tail base) and a small triangle fills the tail. Nothing
+ * here depends on a clip-path over a backdrop-filter, which Safari does
+ * not clip.
  */
 export default function AgentPromptTail({ rootRef }) {
   const wrapRef = useRef(null);
   const fillRef = useRef(null);
-  const shadowRef = useRef(null);
+  const tailRef = useRef(null);
   const pathRef = useRef(null);
   const tipRef = useRef(null);
 
@@ -27,23 +31,17 @@ export default function AgentPromptTail({ rootRef }) {
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => schedule()) : null;
 
     const paint = (layout) => {
-      if (!layout || !fillRef.current || !shadowRef.current || !pathRef.current || !tipRef.current) {
-        // No box yet. The tail layer stays at height 100% so the glass
-        // fill still covers the prompt instead of disappearing.
+      if (!layout || !fillRef.current || !tailRef.current || !pathRef.current || !tipRef.current) {
+        // No box yet. The CSS pane (fill, border, shadow) is already on
+        // screen as a rounded rectangle; only the measured outline waits.
         wrap.dataset.agentPromptTailReady = '0';
         wrap.dataset.agentPromptTailShape = 'box';
         return;
       }
-      const d = agentPromptBubblePath(layout);
-      const clip = `path('${d}')`;
-      wrap.style.height = `${layout.totalHeight}px`;
-      fillRef.current.style.clipPath = clip;
-      fillRef.current.style.webkitClipPath = clip;
-      shadowRef.current.style.clipPath = clip;
-      shadowRef.current.style.webkitClipPath = clip;
-      pathRef.current.setAttribute('d', d);
-      const svg = pathRef.current.ownerSVGElement;
-      svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.totalHeight}`);
+      // Local pixels, no viewBox: the SVG is the size of the prompt and
+      // draws the tail past its bottom edge (overflow: visible).
+      pathRef.current.setAttribute('d', agentPromptBubblePath(layout));
+      tailRef.current.setAttribute('d', agentPromptTailFillPath(layout));
       tipRef.current.style.left = `${layout.tipX}px`;
       tipRef.current.style.top = `${layout.tipY}px`;
       wrap.dataset.agentPromptTailReady = '1';
@@ -52,7 +50,7 @@ export default function AgentPromptTail({ rootRef }) {
 
     const apply = () => {
       const button = document.querySelector('[data-agent-chat-open]');
-      if (!fillRef.current || !shadowRef.current || !pathRef.current || !tipRef.current) {
+      if (!fillRef.current || !tailRef.current || !pathRef.current || !tipRef.current) {
         wrap.dataset.agentPromptTailReady = '0';
         return;
       }
@@ -138,10 +136,10 @@ export default function AgentPromptTail({ rootRef }) {
       data-agent-prompt-tail-ready="0"
       aria-hidden="true"
     >
-      <div ref={shadowRef} className="agent-prompt-bubble-shadow" />
-      <div ref={fillRef} className="agent-prompt-bubble-fill surface-glass" />
-      <svg className="agent-prompt-bubble-stroke" aria-hidden="true">
-        <path ref={pathRef} />
+      <div ref={fillRef} className="agent-prompt-bubble-fill surface-glass" data-agent-prompt-bubble="" />
+      <svg className="agent-prompt-bubble-stroke" aria-hidden="true" focusable="false">
+        <path ref={tailRef} className="agent-prompt-bubble-tail-fill" />
+        <path ref={pathRef} className="agent-prompt-bubble-outline" data-agent-prompt-outline="" />
       </svg>
       <span ref={tipRef} className="agent-prompt-tail-tip" data-agent-prompt-tail-tip="" />
     </div>

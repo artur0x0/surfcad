@@ -12,6 +12,7 @@ const SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), 'PromptInput.jsx'),
   'utf8',
 );
+const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8');
 
 test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + camera toggle', () => {
   assert.match(SRC, /data-ui-action="data-agent-prompt-send"/);
@@ -20,7 +21,19 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(SRC, /data-ui-action="data-agent-prompt-screenshot"/);
   assert.match(SRC, /<Camera /);
   assert.match(SRC, /<Send /);
-  assert.match(SRC, /shotCue \? 'text-success' : 'text-on-dark'/);
+  // Engaged: a filled success button with the light icon. Idle: the light icon alone.
+  assert.match(SRC, /agent-prompt-icon-btn agent-prompt-camera text-on-dark\$\{\s*shotCue \? ' surface-success' : ''\s*\}/);
+  assert.match(SRC, /data-agent-prompt-shot-on=\{shotCue \? '1' : '0'\}/);
+  assert.match(css, /\.agent-prompt-icon-btn\.surface-success \{\s*background-color: rgb\(var\(--agent-prompt-success\)\);/);
+  // One tap is one action: the click that follows a handled pointerup is its echo, however late.
+  assert.match(SRC, /createPressGate\(\)/);
+  assert.match(SRC, /cameraGateRef\.current\.press\(\);\s*toggleShot\(\);/);
+  assert.match(SRC, /if \(cameraGateRef\.current\.echo\(\)\) return;/);
+  assert.match(SRC, /event\?\.type === 'submit' && actionGateRef\.current\.echo\(\)/);
+  assert.doesNotMatch(SRC, /pressHandledRef|setTimeout\(\(\) => \{ pressHandled/);
+  // A capture in flight is not toggled again, and a failed capture says so.
+  assert.match(SRC, /if \(shotBusyRef\.current\) return \{ ok: false, reason: 'capture_busy'/);
+  assert.match(SRC, /setAck\(\{ delivery: 'failed', error: 'capture_failed' \}\)/);
   assert.match(SRC, /Screenshot attached/);
   assert.match(SRC, /discardShot\(\)/);
   assert.match(SRC, /sendAgentPromptText\(/);
@@ -100,8 +113,6 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.doesNotMatch(SRC, /setWorking\(/);
   assert.doesNotMatch(SRC, /setStreaming\(/);
 });
-
-const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../index.css'), 'utf8');
 
 test('prompt motion is CSS-only and respects reduced motion', () => {
   assert.match(css, /@keyframes agent-prompt-bounce/);
@@ -237,6 +248,17 @@ test('the pane reads like a chat: both senders in order, user bubbles right with
   assert.match(SRC, /dispatchChat\(\{ type: 'dismiss' \}\)/);
   assert.match(SRC, /stickToBottom\(el\)/);
   assert.match(SRC, /data-agent-prompt-jump=""/);
+});
+
+test('the open chat stacks above the viewer chrome and under the modal layer', () => {
+  // Feature strip, rails, mode chips and cards are z-10/20; toasts and the
+  // phone stage pill are z-30; the cross-section popup is z-40; modals z-50.
+  const z = Number(/--agent-prompt-z: (\d+);/.exec(css)?.[1]);
+  assert.ok(z > 30 && z < 40, `--agent-prompt-z is ${z}`);
+  assert.match(css, /\n {2}\.agent-prompt \{[^}]*z-index: var\(--agent-prompt-z\);/s);
+  // The fold tabs stay one step under the prompt they hang from.
+  assert.match(css, /\.agent-prompt-fold,\s*\.agent-prompt-unfold \{[^}]*z-index: calc\(var\(--agent-prompt-z\) - 1\);/s);
+  assert.doesNotMatch(css, /\.agent-prompt[\w-]* \{[^}]*z-index: (19|20);/s);
 });
 
 test('the composer is a full-width field with the buttons on a row below', () => {

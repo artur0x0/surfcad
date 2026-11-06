@@ -164,6 +164,9 @@ export function ackNotice(ack) {
     if (ack.error === 'too_long' || ack.error === 'prompt_too_long') {
       return { kind: 'failed', text: 'Message is too long.' };
     }
+    if (ack.error === 'capture_failed') {
+      return { kind: 'failed', text: 'Could not capture the view. Try again.' };
+    }
     return { kind: 'failed', text: 'Agent not listening' };
   }
   if (ack.delivery === 'queued') {

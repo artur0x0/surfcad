@@ -7,7 +7,7 @@
  * Runs the app on the Vite dev server with the DEV echo stub
  * (`?agentPromptDemo=1&agentPromptState=chat-long`). Chrome from CHROME_PATH or the usual paths.
  */
-/* global document, window */
+/* global document, window, getComputedStyle, PointerEvent, MouseEvent */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -211,6 +211,93 @@ async function run(page, label, { maxHeight }) {
       check('phone 390: a touch on Send clears the field and the agent receives it', true);
     }
   }
+
+  // The screenshot button. Engaged is a filled green button; Send while
+  // engaged attaches the image; disengaging drops it.
+  const SUCCESS = 'rgb(4, 120, 87)';
+  const cam = () => page.evaluate(() => {
+    const b = document.querySelector('[data-agent-prompt-screenshot]');
+    const cs = getComputedStyle(b);
+    return {
+      on: b.getAttribute('data-agent-prompt-shot-on'),
+      pressed: b.getAttribute('aria-pressed'),
+      label: b.getAttribute('aria-label'),
+      bg: cs.backgroundColor,
+      color: cs.color,
+      cue: !!document.querySelector('[data-agent-prompt-shot-cue]'),
+      thumb: !!document.querySelector('[data-agent-prompt-thumb]'),
+    };
+  });
+  const lastUser = () => page.evaluate(() => {
+    const rows = document.querySelectorAll('[data-agent-msg="user"]');
+    const last = rows[rows.length - 1];
+    return last ? { text: last.textContent, thumb: !!last.querySelector('[data-agent-msg-thumb]') } : null;
+  });
+  const chatCount = () => page.evaluate(() => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count') || 0));
+  // Move the pointer off the buttons so hover does not tint the reading.
+  await page.mouse.move(2, 2);
+  const idle = await cam();
+  check(`${label}: screenshot idle: light icon, no fill`, idle && idle.on === '0' && idle.pressed == null && idle.bg !== SUCCESS && idle.color === 'rgb(243, 244, 246)' && idle.cue === false, JSON.stringify(idle));
+
+  // A touch tap whose click arrives in a later task than its pointerup (a
+  // real phone). That late click used to toggle the screenshot back off.
+  const lateTap = (selector, delay) => page.evaluate(async ({ selector: sel, delay: ms }) => {
+    const b = document.querySelector(sel);
+    const init = { bubbles: true, cancelable: true, composed: true, pointerId: 7, pointerType: 'touch', isPrimary: true };
+    b.dispatchEvent(new PointerEvent('pointerdown', init));
+    b.dispatchEvent(new PointerEvent('pointerup', init));
+    await new Promise((r) => setTimeout(r, ms));
+    b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+  }, { selector, delay });
+  await lateTap('[data-agent-prompt-screenshot]', 80);
+  await page.waitForFunction(() => document.querySelector('[data-agent-prompt-screenshot]')?.getAttribute('data-agent-prompt-shot-on') === '1', null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const engaged = await cam();
+  check(`${label}: one tap with a late click engages the screenshot (it does not toggle twice)`, engaged && engaged.on === '1' && engaged.pressed === 'true' && engaged.cue === true && engaged.thumb === true, JSON.stringify(engaged));
+  check(`${label}: engaged is a filled green button with the light icon, not the idle look`, engaged && engaged.bg === SUCCESS && engaged.color === 'rgb(243, 244, 246)' && engaged.bg !== idle.bg && engaged.label === 'Discard screenshot', JSON.stringify(engaged));
+
+  // Send while engaged: the message carries the image, and the button goes idle.
+  let before = await chatCount();
+  await page.fill('[data-agent-prompt-input]', 'Here is what I see.');
+  await page.click('[data-agent-prompt-send]');
+  await page.waitForFunction((n) => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= n + 2, before, { timeout: 10000 });
+  let row = await lastUser();
+  await page.mouse.move(2, 2);
+  const afterSend = await cam();
+  check(`${label}: Send while engaged attaches the screenshot to that message`, row && row.thumb === true && /Here is what I see\./.test(row.text), JSON.stringify(row));
+  check(`${label}: after that Send the screenshot is off again`, afterSend && afterSend.on === '0' && afterSend.cue === false && afterSend.bg !== SUCCESS, JSON.stringify(afterSend));
+
+  // Not engaged: text only.
+  before = await chatCount();
+  await page.fill('[data-agent-prompt-input]', 'Text only this time.');
+  await page.click('[data-agent-prompt-send]');
+  await page.waitForFunction((n) => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= n + 2, before, { timeout: 10000 });
+  row = await lastUser();
+  check(`${label}: Send while not engaged is text only`, row && row.thumb === false && /Text only this time\./.test(row.text), JSON.stringify(row));
+
+  // Engage, then disengage: the pending image is dropped, so the next Send has none.
+  await lateTap('[data-agent-prompt-screenshot]', 80);
+  await page.waitForFunction(() => document.querySelector('[data-agent-prompt-screenshot]')?.getAttribute('data-agent-prompt-shot-on') === '1', null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  await lateTap('[data-agent-prompt-screenshot]', 80);
+  await page.waitForTimeout(200);
+  const off = await cam();
+  check(`${label}: a second tap disengages and clears the pending screenshot`, off && off.on === '0' && off.pressed == null && off.cue === false && off.thumb === false, JSON.stringify(off));
+  before = await chatCount();
+  await page.fill('[data-agent-prompt-input]', 'No stale image.');
+  await page.click('[data-agent-prompt-send]');
+  await page.waitForFunction((n) => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= n + 2, before, { timeout: 10000 });
+  row = await lastUser();
+  check(`${label}: Send after disengaging does not attach a stale image`, row && row.thumb === false, JSON.stringify(row));
+
+  // The same late click on Send must not turn into a Stop for the prompt
+  // it just sent: the message is delivered and answered.
+  before = await chatCount();
+  await page.fill('[data-agent-prompt-input]', 'Late click on Send.');
+  await lateTap('[data-agent-prompt-send]', 80);
+  const answered = await page.waitForFunction((n) => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= n + 2, before, { timeout: 10000 }).then(() => true, () => false);
+  row = await lastUser();
+  check(`${label}: a Send tap with a late click sends once and is not cancelled`, answered && row && /Late click on Send\./.test(row.text), JSON.stringify({ answered, row, count: await chatCount(), before }));
 }
 
 console.log('agent prompt chat golden');
