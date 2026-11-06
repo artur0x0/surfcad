@@ -660,6 +660,11 @@ export function createMemoryTabRegistry(opts = {}) {
     /**
      * @param {string} userId
      * @param {string | number} id
+     * A finished command's result can be read again until the retention
+     * window passes. The HTTPS fallback reads it over an event stream first
+     * and polls when that stream fails; the stream had already taken the
+     * result, so the poll found nothing and the agent was told "That
+     * command is no longer waiting" for a command the tab had run.
      * @param {number} timeoutMs
      * @param {string} [tokenId]
      * @returns {Promise<{ status: 'done', response: object } | { status: 'pending' } | { status: 'revoked' } | null>}
@@ -672,7 +677,6 @@ export function createMemoryTabRegistry(opts = {}) {
         if (done.userId !== String(userId) || !tokenMatches(done.tokenId, requested)) {
           return Promise.resolve(null);
         }
-        completed.delete(key);
         return Promise.resolve({ status: 'done', response: done.response });
       }
       const item = pending.get(key);
@@ -697,7 +701,6 @@ export function createMemoryTabRegistry(opts = {}) {
           if (settled) return;
           settled = true;
           clock.cancel(timeout);
-          completed.delete(key);
           resolve({ status: 'done', response });
         });
       });
