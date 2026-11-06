@@ -8,6 +8,7 @@ import { attachCommandDispatch } from '../transport/commandDispatch.js';
 import { createLocalhostRelayTransport } from '../transport/localhostRelayTransport.js';
 import { createAgentPromptTransport } from '../agentPromptTransport.js';
 import { PAIR_MSG } from './relayMessages.js';
+import { TAB_CLAIMED, claimFrameOnRegister, createAgentWindowClaimStore } from './agentWindowClaim.js';
 
 const PROMPT_TYPES = new Set([
   PAIR_MSG.AGENT_PROMPT,
@@ -30,6 +31,7 @@ const PROMPT_TYPES = new Set([
    *   onAgent?: (connected: boolean, info: { source: 'registered' | 'agent', was: boolean, reason: string | null }) => void,
  *   createSocket?: (url: string) => any,
  *   reconnectDelaysMs?: readonly number[],
+ *   claimStore?: { read: () => string | null, write: (claim: string) => void, clear: () => void },
  * }} opts
  */
 export function createServerTabConnection(opts) {
@@ -44,6 +46,11 @@ export function createServerTabConnection(opts) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let reconnectTimer = null;
   const promptListeners = new Set();
+  // The agent window claim (agentWindowClaim.js). `claimWanted` is a fresh
+  // claim the user asked for that the server has not answered yet.
+  const claimStore = opts.claimStore || createAgentWindowClaimStore();
+  let claimWanted = false;
+  let registered = false;
 
   function setState(next) {
     state = next;
@@ -64,6 +71,7 @@ export function createServerTabConnection(opts) {
       if (!sawAgent) setState('advertising');
     },
     onClose() {
+      registered = false;
       if (stopped) return;
       setState('reconnecting');
       if (sawAgent) setLink('reconnecting');
@@ -74,7 +82,18 @@ export function createServerTabConnection(opts) {
   transport.onMessage((msg) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'registered') {
+      registered = true;
+      // Every new socket is a new tab id on the server: say again that this
+      // is the agent window (a fresh claim, or the one held before a reload).
+      const frame = claimFrameOnRegister({ wanted: claimWanted, stored: claimStore.read() });
+      if (frame) transport.send(frame);
       applyAgent(msg.agentConnected === true, 'registered');
+      return;
+    }
+    if (msg.type === TAB_CLAIMED) {
+      claimWanted = false;
+      if (typeof msg.claim === 'string' && msg.claim) claimStore.write(msg.claim);
+      else claimStore.clear();
       return;
     }
     if (msg.type === 'agent') {
@@ -147,6 +166,23 @@ export function createServerTabConnection(opts) {
     return true;
   }
 
+  /**
+   * The user started pairing in this tab: it is the agent window. Sent now
+   * when the socket is registered, else with the next `registered`.
+   */
+  function claim() {
+    claimWanted = true;
+    if (registered && transport.status() === 'open') {
+      transport.send(claimFrameOnRegister({ wanted: true, stored: null }));
+    }
+  }
+
+  /** The user disconnected here: do not resume the role on the next socket. */
+  function release() {
+    claimWanted = false;
+    claimStore.clear();
+  }
+
   function subscribePrompt(cb) {
     promptListeners.add(cb);
     return () => { promptListeners.delete(cb); };
@@ -176,6 +212,8 @@ export function createServerTabConnection(opts) {
     disconnect,
     approvePair() {},
     rejectPair() {},
+    claim,
+    release,
     send: sendPrompt,
     subscribe: subscribePrompt,
   };
