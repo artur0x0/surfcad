@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Bot, Box, LayoutList, Loader2 } from 'lucide-react';
-import { subscribeAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
+import { subscribeAgentPromptBuilding } from '../agent/agentFeaturePopupGate.js';
 import { readAgentPromptDemo } from '../agent/agentPromptDemo.js';
 import { agentChatToggleAction, shouldShowAgentBridgeDisconnect } from '../agent/ws/pairingFlow.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
@@ -30,7 +30,9 @@ export default function MobileStageToggle({ stage = 'cad', onChange }) {
   const connected = shouldShowAgentBridgeDisconnect({ paired, link }) || demoOpen;
   const [working, setWorking] = useState(false);
 
-  useEffect(() => subscribeAgentPromptWorking(setWorking), []);
+  // Spins while the agent is building (the prompt's working indicator),
+  // not while a sent message is merely waiting for or receiving a reply.
+  useEffect(() => subscribeAgentPromptBuilding(setWorking), []);
 
   const goCad = () => onChange?.('cad');
   const goParts = () => onChange?.('parts');

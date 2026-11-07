@@ -12,6 +12,9 @@ import {
   setAgentPromptWorking,
   setAuthorizedFeatureEdit,
   withAgentDrivenChange,
+  setAgentPromptBuilding,
+  subscribeAgentPromptBuilding,
+  subscribeAgentPromptWorking,
 } from './agentFeaturePopupGate.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -142,4 +145,36 @@ test('the viewport routes the agent sketch and slot entries through the work-sur
   assert.match(view, /openFeatureSlots\(kind, null, \{ agentSurface: true \}\)/);
   assert.match(view, /code: 'sketch_blocked'/);
   assert.match(view, /code: 'slot_blocked'/);
+});
+
+test('the phone pill spinner follows building, not a prompt in flight', () => {
+  // Artur, 2026-11-07: the Bot button spun as soon as a message was sent.
+  // Busy (a sent prompt) keeps agent-opened cards closed; building is what
+  // the pill shows, and only the prompt's working indicator sets it.
+  resetAgentFeaturePopupGateForTests();
+  const busy = [];
+  const building = [];
+  const offBusy = subscribeAgentPromptWorking((on) => busy.push(on));
+  const offBuilding = subscribeAgentPromptBuilding((on) => building.push(on));
+  try {
+    setAgentPromptWorking(true);
+    assert.deepEqual(busy, [false, true]);
+    assert.deepEqual(building, [false], 'a sent prompt does not spin the pill');
+    setAgentPromptBuilding(true);
+    setAgentPromptBuilding(true);
+    assert.deepEqual(building, [false, true], 'one change, one notice');
+    setAgentPromptBuilding(false);
+    setAgentPromptWorking(false);
+    assert.deepEqual(building, [false, true, false]);
+    assert.deepEqual(busy, [false, true, false]);
+  } finally {
+    offBusy();
+    offBuilding();
+  }
+  const pill = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/MobileStageToggle.jsx'), 'utf8');
+  assert.match(pill, /subscribeAgentPromptBuilding\(setWorking\)/);
+  assert.doesNotMatch(pill, /subscribeAgentPromptWorking/);
+  const prompt = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/PromptInput.jsx'), 'utf8');
+  assert.match(prompt, /setAgentPromptBuilding\(working\);/);
+  assert.match(prompt, /setAgentPromptWorking\(agentBusy\);/);
 });

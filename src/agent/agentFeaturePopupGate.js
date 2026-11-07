@@ -23,6 +23,9 @@ let popupOwner = null;
 let authorizedEdit = false;
 const dismissers = new Set();
 const workingListeners = new Set();
+/** The agent is building: working mode on the prompt (set_status working, post_progress, a model-changing tool). Not a prompt merely in flight. */
+let promptBuilding = false;
+const buildingListeners = new Set();
 
 /**
  * Would `allowFeaturePopup` say yes right now? A peek with no side effect,
@@ -99,6 +102,33 @@ export function subscribeAgentPromptWorking(cb) {
   return () => { workingListeners.delete(cb); };
 }
 
+/**
+ * The prompt's working indicator, for chrome outside the prompt (the phone
+ * stage pill's spinner). True only while the agent reports work on the
+ * model, the same value that auto-folds the chat; a sent prompt the agent
+ * is still reading or answering is not building. Artur, 2026-11-07: the
+ * pill spun as soon as a message was sent.
+ */
+export function setAgentPromptBuilding(on) {
+  const next = on === true;
+  if (next === promptBuilding) return;
+  promptBuilding = next;
+  for (const fn of [...buildingListeners]) {
+    try { fn(promptBuilding); } catch { /* a listener must not block the rest */ }
+  }
+}
+
+/**
+ * @param {(building: boolean) => void} cb
+ * @returns {() => void}
+ */
+export function subscribeAgentPromptBuilding(cb) {
+  if (typeof cb !== 'function') return () => {};
+  buildingListeners.add(cb);
+  try { cb(promptBuilding); } catch { /* listener */ }
+  return () => { buildingListeners.delete(cb); };
+}
+
 export async function withAgentDrivenChange(fn) {
   agentDepth += 1;
   try {
@@ -121,4 +151,6 @@ export function resetAgentFeaturePopupGateForTests() {
   authorizedEdit = false;
   dismissers.clear();
   workingListeners.clear();
+  promptBuilding = false;
+  buildingListeners.clear();
 }

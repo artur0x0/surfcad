@@ -350,6 +350,24 @@ for (const [state, badge] of [['agent-typing', 'typing'], ['agent-working', 'wor
   await page.close();
 }
 
+// 10. The phone stage pill's Bot button spins only while the agent is
+// building (the prompt's working indicator), not while a sent prompt is
+// being read or answered. Artur, 2026-11-07: it spun on every send.
+for (const [state, spins] of [['typing', false], ['agent-typing', false], ['working', true], ['agent-working', true], ['chat', false]]) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.route('**/api/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: false }) }));
+  await page.route('**/api/config', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.goto(BASE + state, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !document.querySelector('[data-app-loading]') && !!document.querySelector('[data-agent-prompt]'), { timeout: 120000 });
+  await page.waitForTimeout(600);
+  const pill = await page.evaluate(() => {
+    const b = document.querySelector('[data-agent-chat-open]');
+    return b ? { label: b.getAttribute('aria-label'), spinner: !!b.querySelector('.animate-spin') } : null;
+  });
+  check(`phone pill in ${state}: ${spins ? 'spins' : 'does not spin'}`, pill && pill.spinner === spins && pill.label === (spins ? 'Agent working' : 'Agent chat'), JSON.stringify(pill));
+  await page.close();
+}
+
 await browser.close();
 stop();
 if (failed) {
