@@ -150,6 +150,12 @@ test('the pane always has a border: a CSS border until the outline path is measu
   assert.match(css, /--chrome-border-strong: 107 114 128;/);
   assert.match(css, /--agent-prompt-outline: var\(--chrome-border-strong\);/);
   assert.match(css, /\.agent-prompt-bubble-stroke \{[^}]*width: 100%;[^}]*height: 100%;[^}]*color: rgb\(var\(--agent-prompt-outline\)\);/s);
+  // The outline is its own compositing layer: iOS Safari let the scrolling
+  // conversation pane paint over it where a bubble met the pane edge, and
+  // the slide's end re-measures the tail (2026-11-07).
+  assert.match(css, /\.agent-prompt-bubble-stroke \{[^}]*z-index: 2;[^}]*transform: translateZ\(0\);/s);
+  assert.match(tail, /root\.addEventListener\('transitionend', onTransitionEnd\)/);
+  assert.match(tail, /root\.removeEventListener\('transitionend', onTransitionEnd\)/);
   // No clip-path over the glass, no viewBox scaling, no separate shadow layer.
   assert.doesNotMatch(tail, /\.clipPath|webkitClipPath|setAttribute\('viewBox'|bubble-shadow/);
   assert.doesNotMatch(css, /agent-prompt-bubble-shadow/);
