@@ -498,9 +498,24 @@ function failureSkipStamp(rows) {
   return rows.map((row) => `${row?.id || ''}:${row?.threw ? 1 : 0}:${row?.dependsOn || ''}`).join('|');
 }
 
+/** A shell swap's viewport refill is accepted within this window after the breakpoint change. */
+const SHELL_SWAP_RESTORE_WINDOW_MS = 10_000;
+
 const App = () => {
   const [currentScript, setCurrentScript] = useState('');
+  const currentScriptRef = useRef('');
+  currentScriptRef.current = currentScript;
   const [isMobile, setIsMobile] = useState(false);
+  // The responsive shells are two JSX trees. Crossing 768px (an iPhone
+  // rotation) swaps them, which remounts Viewport, CodeEditor and
+  // PromptInput. What the new instances need is kept here: the last
+  // placeAssembly payload (meshes and poses, no rerun) and the camera read
+  // just before the swap. The chat keeps its state in AgentBridgeHost.
+  // Brief: ios-rotation-chat-assembly, 2026-11-06.
+  const isMobileRef = useRef(false);
+  const lastPlacedRef = useRef(null);
+  const shellSwapRef = useRef(null);
+  const shellMountedRef = useRef(false);
   const [, setSelectedFace] = useState(null);
   const [currentFilename, setCurrentFilename] = useState(null);
   /** Assembly list. Scripts live beside it, never inside the document. */
@@ -2185,12 +2200,76 @@ const App = () => {
     }
   }, [appMode]);
 
+  // After a shell swap the new Viewport has an empty scene and a default
+  // camera. When its scene is ready (onSceneReady, not an effect of ours:
+  // DEV StrictMode inits the scene twice and an effect lands between), place
+  // the last assembly payload (no script rerun, no joint solve) and restore
+  // the camera read before the swap. The first scene of the page has
+  // nothing to restore.
+  const handleViewportSceneReady = useCallback(() => {
+    const swap = shellSwapRef.current;
+    if (!swap) return;
+    const placed = lastPlacedRef.current;
+    const placedAgain = placed ? viewportRef.current?.placeAssembly?.(placed) : null;
+    const camera = swap.camera;
+    let cameraSet = null;
+    if (camera && Array.isArray(camera.position) && Array.isArray(camera.target)) {
+      try {
+        cameraSet = agentHostRef.current?.setCamera?.({
+          position: camera.position,
+          target: camera.target,
+          ...(Number.isFinite(camera.fov) ? { fov: camera.fov } : {}),
+        }) ?? null;
+      } catch { cameraSet = false; }
+    }
+    // Bounded diagnostic for the rotation report: no script text, no ids.
+    // Counts the scenes the swap refilled (DEV StrictMode makes two).
+    if (typeof window !== 'undefined') {
+      const prev = window.__SURFCAD_SHELL_SWAP;
+      window.__SURFCAD_SHELL_SWAP = {
+        at: Date.now(),
+        width: window.innerWidth,
+        mobile: isMobileRef.current,
+        placed: placedAgain === true,
+        camera: !!camera,
+        scenes: (prev && prev.at === swap.at ? prev.scenes : 0) + 1,
+      };
+      swap.at = window.__SURFCAD_SHELL_SWAP.at;
+      if (cameraSet && typeof cameraSet.then === 'function') {
+        cameraSet.then(
+          (result) => { if (window.__SURFCAD_SHELL_SWAP) window.__SURFCAD_SHELL_SWAP.cameraSet = result; },
+          () => { if (window.__SURFCAD_SHELL_SWAP) window.__SURFCAD_SHELL_SWAP.cameraSet = false; },
+        );
+      }
+    }
+  }, []);
+  // A swap that mounted no new viewport (nothing to refill) is dropped on
+  // the next render after the breakpoint change so a later scene init (an
+  // assembly open) does not restore a stale camera.
+  useEffect(() => {
+    if (!shellMountedRef.current) {
+      shellMountedRef.current = true;
+      return undefined;
+    }
+    const timer = setTimeout(() => { shellSwapRef.current = null; }, SHELL_SWAP_RESTORE_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [isMobile]);
+
   // Check for mobile layout
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 768px)");
 
+    const swapShell = (next) => {
+      if (next === isMobileRef.current) return;
+      isMobileRef.current = next;
+      // Read the camera from the viewport that is about to unmount.
+      let camera = null;
+      try { camera = agentHostRef.current?.readCamera?.() || null; } catch { camera = null; }
+      shellSwapRef.current = { camera };
+      setIsMobile(next);
+    };
     const checkIsMobile = () => {
-        setIsMobile(mediaQuery.matches);
+        swapShell(mediaQuery.matches);
       };
 
     // Initial check
@@ -2198,7 +2277,7 @@ const App = () => {
 
     // Media query change (works well on desktop + some mobile scenarios)
     const onMediaChange = (e) => {
-      setIsMobile(e.matches);
+      swapShell(e.matches);
     };
     mediaQuery.addEventListener("change", onMediaChange);
 
@@ -2879,14 +2958,16 @@ const App = () => {
       const solids = composeViewportParts(placed, keptRuns);
       const leftovers = leftoverPickSolids(placed, keptRuns, partLeftoversRef.current);
       const activeOk = !!(viewId && keptRuns[viewId]?.ok === true && activeVisible);
-      viewportRef.current?.placeAssembly?.({
+      const placement = {
         solids,
         leftovers,
         activeId: viewId,
         blankActive: !activeOk,
         // Red outline in the viewer, same rule as the Parts feed's red row.
         failedIds: failedPartIdsFor(doc, keptRuns),
-      });
+      };
+      lastPlacedRef.current = placement;
+      viewportRef.current?.placeAssembly?.(placement);
       const runTiming = activeRan && typeof window !== 'undefined' ? window.__SURFCAD_RUN_TIMING : null;
       const placeUpload = typeof window !== 'undefined' ? window.__SURFCAD_PLACE_UPLOAD_MS : null;
       const assemblyTiming = {
@@ -9386,10 +9467,17 @@ const App = () => {
           : -1,
       };
     if (editorMountSeedsHistory(history)) return true;
-    // The live script is already committed. Mark the buffer real so the draft
-    // effect can save it, without running or recording the boot script.
+    // A remount (the responsive shells swapped at 768px, the drawer): the
+    // buffer seeded from the open-time script, which is stale once the part
+    // was edited or the active part changed. The live script is
+    // currentScript. Put that into the buffer; never write the seed into
+    // currentScript, which the draft autosave would then save to the
+    // active part (ios-rotation brief, 2026-11-06, path 3).
     editorLiveRef.current = true;
-    if (typeof script === 'string') setCurrentScript(script);
+    const live = currentScriptRef.current;
+    if (typeof live === 'string' && live !== script) {
+      codeEditorRef.current?.setTextOnly?.(live);
+    }
     return false;
   };
 
@@ -12916,6 +13004,7 @@ const App = () => {
               gamePuzzleTitle={currentPuzzle?.title}
               gameBestTimeMs={gameBestTimeMs}
               isMobile={isMobile}
+              onSceneReady={handleViewportSceneReady}
               onInsertHelper={handleInsertHelper}
               onFeatureOpen={handleFeatureOpen}
               onCommitContourProfile={handleCommitContourProfile}
@@ -13437,6 +13526,7 @@ const App = () => {
             gamePuzzleTitle={currentPuzzle?.title}
             gameBestTimeMs={gameBestTimeMs}
             isMobile={false}
+            onSceneReady={handleViewportSceneReady}
             onInsertHelper={handleInsertHelper}
             onFeatureOpen={handleFeatureOpen}
             onCommitContourProfile={handleCommitContourProfile}

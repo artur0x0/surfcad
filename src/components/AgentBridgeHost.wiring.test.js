@@ -114,3 +114,39 @@ test('ProfileChip offers the panel slot and does not own the socket', () => {
   assert.doesNotMatch(CHIP, /registerCloseMenu\?\.\(null\)/);
   assert.equal(CHIP.includes('<AgentBridgePairing'), false);
 });
+
+test('rotation across 768px: the chat resumes, the editor seeds from the live script, the viewport is refilled', () => {
+  // ios-rotation-chat-assembly brief, 2026-11-06. The shells swap trees at
+  // the breakpoint and remount PromptInput, CodeEditor and Viewport.
+  const PROMPT = readFileSync(join(dir, 'PromptInput.jsx'), 'utf8');
+  const VIEWPORT = readFileSync(join(dir, 'Viewport.jsx'), 'utf8');
+  // Path 1, chat: the host (above the split) keeps the prompt's state keyed
+  // by its transport; a disconnect (no transport) drops it.
+  assert.match(SRC, /const retainPrompt = useCallback\(\(transport, state\) => \{\s*retainedPromptRef\.current = transport && state \? \{ transport, state \} : null;/);
+  assert.match(SRC, /if \(!kept \|\| !transport \|\| kept\.transport !== transport\) return null;/);
+  assert.match(SRC, /retainPrompt, retainedPrompt,\n/);
+  // The prompt resumes from it at mount and writes it after every commit
+  // (the next instance renders before this one's cleanup).
+  assert.match(PROMPT, /retainedRef\.current = typeof retainedPrompt === 'function' \? \(retainedPrompt\(transport\) \|\| null\) : null;/);
+  assert.match(PROMPT, /useReducer\(conversationReducer, retained\?\.chat \?\? seed, retained\?\.chat \? undefined : conversationSeed\)/);
+  assert.match(PROMPT, /useState\(\(\) => retained\?\.typing \?\? typingSeed\(seed\)\)/);
+  assert.match(PROMPT, /useState\(\(\) => retained\?\.session \?\? sessionSeed\(seed\.session\)\)/);
+  assert.match(PROMPT, /const flightRef = useRef\(retained\?\.flight \?\? emptyPromptFlight\(\)\);/);
+  assert.match(PROMPT, /useEffect\(\(\) => \{ retainNow\(\); \}\);/);
+  assert.match(PROMPT, /useEffect\(\(\) => \(\) => retainNow\(\), \[retainNow\]\);/);
+  // The DEV echo stub is shared across mounts so its conversation resumes too.
+  assert.match(PROMPT, /stubRef\.current = sharedPromptStub\(promptEnv\);/);
+  // Path 3, editor: a remount puts the live script into the buffer and never
+  // writes the open-time seed into currentScript (the autosave would save it).
+  assert.match(APP, /const live = currentScriptRef\.current;\s*if \(typeof live === 'string' && live !== script\) \{\s*codeEditorRef\.current\?\.setTextOnly\?\.\(live\);\s*\}\s*return false;/);
+  assert.doesNotMatch(APP, /editorLiveRef\.current = true;\s*if \(typeof script === 'string'\) setCurrentScript\(script\);/);
+  // Path 2, viewport: the camera is read before the swap; the new scene says
+  // when it is ready and gets the last placement and that camera back.
+  assert.match(APP, /camera = agentHostRef\.current\?\.readCamera\?\.\(\) \|\| null;[\s\S]*?shellSwapRef\.current = \{ camera \};\s*setIsMobile\(next\);/);
+  assert.match(APP, /lastPlacedRef\.current = placement;\s*viewportRef\.current\?\.placeAssembly\?\.\(placement\);/);
+  assert.match(APP, /const handleViewportSceneReady = useCallback\(\(\) => \{\s*const swap = shellSwapRef\.current;\s*if \(!swap\) return;/);
+  assert.equal((APP.match(/onSceneReady=\{handleViewportSceneReady\}/g) || []).length, 2, 'both shells pass onSceneReady');
+  assert.match(VIEWPORT, /onSceneReadyRef\.current\(\);/);
+  assert.match(APP, /window\.__SURFCAD_SHELL_SWAP = \{/);
+  assert.doesNotMatch(APP, /__SURFCAD_SHELL_SWAP = \{[^}]*script/);
+});
