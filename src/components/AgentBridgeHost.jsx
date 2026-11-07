@@ -38,6 +38,8 @@ const AgentBridgeHostContext = createContext({
   chatHold: null,
   agentGone: false,
   rememberChatOpen: () => {},
+  retainPrompt: () => {},
+  retainedPrompt: () => null,
 });
 
 function readForcedServer() {
@@ -160,6 +162,21 @@ export default function AgentBridgeHost({ enabled = false, children }) {
   }, []);
   const livePrompt = shouldUseLiveAgentPrompt({ paired, link });
   const [promptTransport, setPromptTransport] = useState(null);
+  // PromptInput's conversation and in-flight state, kept here across a
+  // remount: the responsive shells swap trees at 768px (an iPhone
+  // rotation) and the prompt mounts again in the other tree. It is keyed
+  // by the transport the prompt used, so a disconnect (no transport) or a
+  // new pairing drops it: Disconnect still clears the history on purpose.
+  // Brief: ios-rotation-chat-assembly, 2026-11-06, path 1.
+  const retainedPromptRef = useRef(null);
+  const retainPrompt = useCallback((transport, state) => {
+    retainedPromptRef.current = transport && state ? { transport, state } : null;
+  }, []);
+  const retainedPrompt = useCallback((transport) => {
+    const kept = retainedPromptRef.current;
+    if (!kept || !transport || kept.transport !== transport) return null;
+    return kept.state;
+  }, []);
   useEffect(() => {
     if (!livePrompt) {
       setPromptTransport(null);
@@ -272,11 +289,12 @@ export default function AgentBridgeHost({ enabled = false, children }) {
       link, paired, promptTransport, offerSlot, registerCloseMenu,
       agentChatOpen, openAgentChat, closeAgentChat,
       chatHold, agentGone: gone, rememberChatOpen,
+      retainPrompt, retainedPrompt,
     }),
     [
       link, paired, promptTransport, offerSlot, registerCloseMenu,
       agentChatOpen, openAgentChat, closeAgentChat,
-      chatHold, gone, rememberChatOpen,
+      chatHold, gone, rememberChatOpen, retainPrompt, retainedPrompt,
     ],
   );
   const mount = shouldKeepAgentBridgeHostMounted({ agentBridgeLive: enabled });

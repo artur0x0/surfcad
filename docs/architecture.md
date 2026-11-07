@@ -26,6 +26,41 @@ flowchart TD
 3. **Mesh.** A successful run replaces the three.js geometry and stores `faceID` on it. `c4MeshData` is a separate worker graph, rebuilt on each helper call that needs faces or edges. It is not the viewport PartGraph. `edge` / `edgesBetween` use `indexBoundaryEdges`, cached in a WeakMap on that Manifold object. The worker serialises the mesh as typed arrays (`Float32Array` vertices, `Uint32Array` triangles, run tables and `faceID`) and posts the run result with their buffers in the transfer list, so the page gets them with no structured clone. On the page `src/utils/partSolidCache.js` builds one `BufferGeometry` per mesh and caches it per `(partId, mesh content hash)` (`src/utils/meshHash.js`): a run that returns the same mesh keeps the geometry it already shows and uploads nothing; a changed mesh builds one geometry and the old one is disposed on the next prune; a deleted part's geometry is disposed the same way. `geometry_workers` reports `gpu { builds, reuses, disposed, live }` and `window.__VIEWPORT__.gpuStats()` adds the renderer's geometry count (`golden:gpu-upload-cache`).
 4. **Viewport.** Pickers and paint read the three.js mesh. They do not read `c4MeshData`.
 
+## Responsive shells and the 768px swap
+
+`App.jsx` renders two JSX trees, desktop and phone, chosen by `isMobile`
+(`matchMedia('(max-width: 768px)')`). Crossing the breakpoint (an iPhone
+rotating from portrait to landscape) swaps the trees, which unmounts and
+remounts `Viewport`, `CodeEditor` and `PromptInput`. `AgentBridgeHost` sits
+once above the split, so the socket and the pairing survive. What the new
+instances need is kept and put back (brief: ios-rotation-chat-assembly,
+2026-11-06; golden `npm run golden:rotation-remount`):
+
+- **Chat.** `PromptInput` writes its conversation and in-flight state
+  (messages, typing, session, flow, flight, draft, ack, the attached image)
+  into `AgentBridgeHost` after every commit (`retainPrompt`), keyed by the
+  transport it uses, and a new instance resumes from it (`retainedPrompt`).
+  A disconnect has no transport, so it still clears the history. The DEV
+  echo stub is one per page so it resumes too.
+- **Editor.** `handleEditorSeed` on a remount (the part already has history)
+  puts the live `currentScript` into the Monaco buffer with `setTextOnly`
+  and never writes the open-time `editorInitialScript` back into
+  `currentScript`; before, the draft autosave then saved that stale script
+  to whichever part was active.
+- **Viewport.** The breakpoint listener reads the camera from the viewport
+  about to unmount (`readCamera` on the agent host) before `setIsMobile`.
+  `App` keeps the last `placeAssembly` payload. The new `Viewport` calls
+  `onSceneReady` once its scene, camera, renderer and controls exist, and
+  `App` places that payload again (meshes and poses, no script rerun, no
+  joint solve) and restores the camera. The restore waits for
+  `onSceneReady` rather than an effect of `App`'s: in DEV, StrictMode runs
+  the viewport's init effect twice, and an effect would land between the
+  two scenes. `window.__SURFCAD_SHELL_SWAP` is a bounded diagnostic (width,
+  mobile, placed, camera, scenes; no script text, no ids).
+
+A resize that stays on one side of 768px (390 to 700, a phone turning
+sideways short of the breakpoint) does not swap trees.
+
 ## Mesh shipping
 
 A part mesh stays on the page until the feature-memo key of its script prefix changes. `decideMeshShip` (`src/utils/meshShip.js`) reuses that mesh when the script is unchanged. When the only edit is a trailing whole-body Move or Rotate, it keeps the unmoved mesh and replaces `featureRigid`. The viewport composes that matrix into the part pose, so the edit does not re-run the kernel, re-transfer the mesh, or rebuild face and edge graphs. Export, overlap tests, and `liveManifold()` bake the matrix when they need the moved vertices. Face and edge catalogs stay on the unmoved mesh and are posed where a script or agent command reads part space.

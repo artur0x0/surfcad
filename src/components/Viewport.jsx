@@ -1187,6 +1187,8 @@ const Viewport = forwardRef(({
   gamePuzzleTitle = null,
   gameBestTimeMs = null,
   isMobile = false,
+  /** Scene, camera, renderer and controls are up: a remounted viewport can be refilled (App's shell swap). */
+  onSceneReady = null,
   /** CAD viewport only (not Parts or Script stages on a phone). */
   brandHeader = false,
   onInsertHelper = null,
@@ -1437,6 +1439,8 @@ const Viewport = forwardRef(({
   const commitFeatureEditRef = useRef(() => false);
   const cancelFeatureEditRef = useRef(() => {});
   const executeScriptRef = useRef(null);
+  const onSceneReadyRef = useRef(onSceneReady);
+  onSceneReadyRef.current = onSceneReady;
   const onCommitFeatureEditRef = useRef(onCommitFeatureEdit);
   onCommitFeatureEditRef.current = onCommitFeatureEdit;
   const onDeleteFeatureEditRef = useRef(onDeleteFeatureEdit);
@@ -12653,6 +12657,14 @@ const Viewport = forwardRef(({
       applyTriadAxisColors(axisHelper);
       axisHelper.visible = false;
       sceneRef.current.add(axisHelper);
+
+      // The scene is complete (camera, renderer, controls, result mesh).
+      // App refills a viewport that mounted in the other responsive shell
+      // from here, after this scene, not before it: an effect of App's
+      // runs between the two inits React StrictMode performs in DEV.
+      if (typeof onSceneReadyRef.current === 'function') {
+        try { onSceneReadyRef.current(); } catch { /* the host's business */ }
+      }
 
       const animate = () => {
         if (!loopAlive) return;

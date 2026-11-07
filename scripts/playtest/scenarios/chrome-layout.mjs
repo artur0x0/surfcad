@@ -263,6 +263,17 @@ export async function run(ctx) {
 
   await runner.runStep('git_move_to_repo then desktop branch in parts header', async () => {
     const moved = await agentCall(page, 'git_move_to_repo', { vault_name: VAULT });
+    // The move gives the parts repo ids. Look the seed and Blank up again by
+    // name, or the 390 cycle below switches to a part that no longer exists.
+    // (It used to pass anyway: a remount wrote the open-time editor seed into
+    // the live script, so the seed's chips showed while Blank stayed active.
+    // That write-back was the rotation bug and is gone.)
+    const after = await agentCall(page, 'parts', {});
+    const rows = Array.isArray(after.result?.parts) ? after.result.parts : [];
+    const blankRow = rows.find((row) => row.name === 'Blank');
+    const seedRow = rows.find((row) => row.name !== 'Blank');
+    if (blankRow?.id) blankId = blankRow.id;
+    if (seedRow?.id) seedId = seedRow.id;
     await page.waitForSelector('[data-parts-ribbon-branch]', { timeout: 15000 }).catch(() => {});
     const m = await metrics(page);
     let pane = false;

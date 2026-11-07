@@ -133,6 +133,20 @@ function AgentPromptFocusLift({ rootRef }) {
   return null;
 }
 
+/**
+ * One DEV echo stub per page and env, not one per mount: a remount (the
+ * responsive shells swap at 768px) keeps the same stub, so the retained
+ * conversation matches its transport and resumes, as it does for a live
+ * transport. Prod never creates one (createAgentPrompt returns null).
+ */
+const sharedStubs = new Map();
+const DEFAULT_STUB_ENV = Symbol('default prompt env');
+function sharedPromptStub(promptEnv) {
+  const key = promptEnv === undefined ? DEFAULT_STUB_ENV : promptEnv;
+  if (!sharedStubs.has(key)) sharedStubs.set(key, createAgentPrompt(undefined, promptEnv));
+  return sharedStubs.get(key);
+}
+
 const COUNTER_FROM = 7200;
 /** Matches `.agent-prompt--folded` transform duration. After this the
  *  component sets visibility:hidden; a 0s CSS visibility transition does not. */
@@ -209,6 +223,8 @@ export default function PromptInput({
     chatHold = null,
     agentGone = false,
     rememberChatOpen,
+    retainPrompt,
+    retainedPrompt,
   } = useAgentBridgeHost();
   const demoAllowed = agentPromptDemoAllowed(promptEnv);
   const demo = useMemo(
@@ -225,7 +241,7 @@ export default function PromptInput({
 
   const stubRef = useRef(undefined);
   if (stubRef.current === undefined) {
-    stubRef.current = createAgentPrompt(undefined, promptEnv);
+    stubRef.current = sharedPromptStub(promptEnv);
   }
   // Paired (or still-connected) sessions use the real transport in DEV and
   // prod. The echo stub is DEV-only and only when nothing is paired. A
@@ -250,9 +266,18 @@ export default function PromptInput({
   const visible = sessionVisible;
 
   const seed = demoSeed(demo?.state);
-  const [input, setInput] = useState(seed.input);
+  // A remount with the same transport (the shells swapped at 768px) resumes
+  // the state the previous instance left in AgentBridgeHost. Read once. The
+  // DEV demo keeps it too (its stub is shared), so the rotation golden can
+  // see a sent message survive the swap.
+  const retainedRef = useRef(undefined);
+  if (retainedRef.current === undefined) {
+    retainedRef.current = typeof retainedPrompt === 'function' ? (retainedPrompt(transport) || null) : null;
+  }
+  const retained = retainedRef.current;
+  const [input, setInput] = useState(retained?.input ?? seed.input);
   // One pending prompt drives the dots, Stop, and the working hint; see agentPromptTyping.js.
-  const [typing, setTyping] = useState(() => typingSeed(seed));
+  const [typing, setTyping] = useState(() => retained?.typing ?? typingSeed(seed));
   const typingRef = useRef(typing);
   typingRef.current = typing;
   const dispatchTypingRef = useRef(null);
@@ -273,7 +298,7 @@ export default function PromptInput({
   // (agentSessionState.js). Fed by the tab's own bridge calls, the agent's
   // status and progress frames, and one idle timer. It lives in the tab, so
   // a fresh MCP process per tool call and an agent-started build both show.
-  const [session, setSession] = useState(() => sessionSeed(seed.session));
+  const [session, setSession] = useState(() => retained?.session ?? sessionSeed(seed.session));
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const dispatchSession = useCallback((event) => {
@@ -308,12 +333,12 @@ export default function PromptInput({
   const [announce, setAnnounce] = useState('');
   const rootRef = useRef(null);
   // The conversation for this connection: user messages and agent replies in order.
-  const [chat, dispatchChat] = useReducer(conversationReducer, seed, conversationSeed);
+  const [chat, dispatchChat] = useReducer(conversationReducer, retained?.chat ?? seed, retained?.chat ? undefined : conversationSeed);
   useEffect(() => {
     if (agentChatOpen) dispatchChat({ type: 'show' });
   }, [agentChatOpen]);
-  const [ack, setAck] = useState(null);
-  const flowRef = useRef(initialPromptFlow());
+  const [ack, setAck] = useState(retained?.ack ?? null);
+  const flowRef = useRef(retained?.flow ?? initialPromptFlow());
   const [flow, setFlow] = useState(flowRef.current);
   const dispatchFlow = useCallback((event) => {
     const next = stepPromptFlow(flowRef.current, event);
@@ -330,10 +355,10 @@ export default function PromptInput({
   // Follow new messages unless the user scrolled up to read.
   const stuckRef = useRef(true);
   const [jump, setJump] = useState(false);
-  const [shot, setShot] = useState(null);
-  const [shotOn, setShotOn] = useState(seed.shotOn);
+  const [shot, setShot] = useState(retained?.shot ?? null);
+  const [shotOn, setShotOn] = useState(retained?.shotOn ?? seed.shotOn);
   // 'viewer' (a screenshot of the model) or 'photo' (from the device camera or library).
-  const [shotSource, setShotSource] = useState('viewer');
+  const [shotSource, setShotSource] = useState(retained?.shotSource ?? 'viewer');
   // The attach drawer under the field: Screenshot or Photo.
   const [attachOpen, setAttachOpen] = useState(false);
   const photoInputRef = useRef(null);
@@ -343,7 +368,7 @@ export default function PromptInput({
   const attachPhotoGateRef = useRef(null);
   if (attachPhotoGateRef.current == null) attachPhotoGateRef.current = createPressGate();
   const textareaRef = useRef(null);
-  const pendingIdRef = useRef(null);
+  const pendingIdRef = useRef(retained?.pendingId ?? null);
   const notice = ackNotice(ack);
 
   const composingRef = useRef(false);
@@ -351,7 +376,7 @@ export default function PromptInput({
   const pendingDraftRef = useRef(null);
   const sentTextRef = useRef(null);
   const sendTimerRef = useRef(null);
-  const flightRef = useRef(emptyPromptFlight());
+  const flightRef = useRef(retained?.flight ?? emptyPromptFlight());
   const commitFlight = useCallback((flight) => {
     flightRef.current = flight;
     pendingIdRef.current = flight.pendingId;
@@ -901,6 +926,25 @@ export default function PromptInput({
       return { error: { code: 'bad_args', message: 'Need text or action' } };
     });
   }, [dismissReply, foldPrompt, sendText, stopAgent, toggleShot, unfoldPrompt, visible]);
+
+  // What the next instance resumes from, written after every commit (the
+  // next instance renders, and reads it, before this one's unmount cleanup
+  // would run) and once more on unmount.
+  const retainLatestRef = useRef(null);
+  retainLatestRef.current = { chat, typing, session, input, ack, shot, shotOn, shotSource };
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
+  const retainNow = useCallback(() => {
+    if (typeof retainPrompt !== 'function') return;
+    retainPrompt(transportRef.current, {
+      ...retainLatestRef.current,
+      flow: flowRef.current,
+      flight: flightRef.current,
+      pendingId: pendingIdRef.current,
+    });
+  }, [retainPrompt]);
+  useEffect(() => { retainNow(); });
+  useEffect(() => () => retainNow(), [retainNow]);
 
   const responding = !live.waiting && (live.dots || typingShown(typing) || sessionReplies);
   // Working collapses the chat so the viewport is visible; typing keeps it.
