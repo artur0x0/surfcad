@@ -181,10 +181,18 @@ in the glass tint fills the tail. The pane always has one of the two
 borders. Do not clip the glass with `clip-path`: Safari does not clip a
 `backdrop-filter` to it, which is how the pane lost its shape there.
 The tail's horizontal place is measured from that button, including after
-a resize, a rotation, and when the keyboard lifts the field. When the tail
-cannot be placed (the gap under the box is under 4px, the box is too narrow,
-or the button is not measured yet), the pane stays a bordered rounded
-rectangle. The tail is added only when it fits.
+a resize and a rotation. When the tail cannot be placed (the gap under the
+box is under 4px, the box is too narrow, or the button is not measured
+yet), the pane stays a bordered rounded rectangle. The tail is added only
+when it fits. The bubble rests above the pill by the pill's own numbers
+(`--home-indicator-pill-pad` + `--home-indicator-pill-height` + 18px for
+the tail and its gap), so the tail still fits when the pad grows to the
+home-indicator safe area (Safari toolbar minimised, or the installed app).
+While the soft keyboard is up with the composer focused on a touch device
+(`data-agent-prompt-keyboard="1"`, set from the visual viewport, never from
+focus alone), the stage pill is hidden and the bubble sits
+`--agent-prompt-keyboard-bottom` (20px) above the keyboard as a plain box;
+the pill and the tail return when the keyboard goes.
 The layer is never hidden, so the text does not float with no pane. User
 rows in that pane use `surface-panel` with `text-on-dark` so they stay
 readable over the glass. Agent rows stay `surface-dark`. Desktop has no

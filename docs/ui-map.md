@@ -106,7 +106,11 @@ Camera and Send sit on a right-aligned row under it (`agent-prompt-actions`,
 about five lines (`--agent-prompt-max-input`) and then scrolls inside. On a
 touch device, focus lifts the prompt with `featureSheetEditLift` and
 `useModalViewport`, the same path as the feature card, so the keyboard does
-not cover it. A send clears the field when the transport accepts it. A failed
+not cover it. While the soft keyboard is up (the visual viewport over 80px
+short, `keyboardOpen`; focus alone does not count) the prompt carries
+`data-agent-prompt-keyboard="1"`, the stage pill is hidden, and the prompt
+rests `--agent-prompt-keyboard-bottom` (20px) above the keyboard instead of
+its pill margin. A send clears the field when the transport accepts it. A failed
 delivery, a throw, or no ack within 12s puts the text back and shows the
 error. It follows
 new messages unless the user scrolled up, then a sticky arrow
@@ -610,7 +614,11 @@ Mobile specifics:
 - **Stage toggle (Slice Mobile B):** `MobileStageToggle.jsx` is a bottom-centered
   iPhone Home Screen–style glass pill (`data-mobile-stage-home-indicator`,
   `data-home-indicator-pill`) with two Lucide icons: CAD (`Box`) and Parts
-  (`LayoutList`). There is no Script button. A part-row pencil opens the editor.
+  (`LayoutList`). Its height and the pad under it are the tokens
+  `--home-indicator-pill-height` (30px) and `--home-indicator-pill-pad`
+  (8px, or the home-indicator safe area); the phone chat and the consent
+  popup clear it by those. It is hidden while a feature card is open and
+  while the phone chat has the soft keyboard up. There is no Script button. A part-row pencil opens the editor.
   Desktop has no mode toggle. The parts list sits left of the CAD view. The script
   editor is closed until the pencil or Edit script opens the right-hand drawer.
   The Parts stage is the part list, including group rows and the thread

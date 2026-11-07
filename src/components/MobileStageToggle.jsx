@@ -44,11 +44,13 @@ export default function MobileStageToggle({ stage = 'cad', onChange }) {
       data-home-indicator=""
       role="group"
       aria-label="CAD or Parts"
-      style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))' }}
+      // The pad and the height are tokens: the phone chat rests above this
+      // pill (--agent-prompt-mobile-bottom) and the consent popup clears it.
+      style={{ paddingBottom: 'var(--home-indicator-pill-pad)' }}
     >
       <div
         className="relative flex items-center justify-center rounded-full shadow-lg border border-white/20 bg-chrome-surface/55 surface-glass-chip"
-        style={{ width: connected ? 168 : 112, height: 30 }}
+        style={{ width: connected ? 168 : 112, height: 'var(--home-indicator-pill-height)' }}
         data-home-indicator-pill=""
         data-agent-chat-toggle={connected ? 'on' : 'off'}
       >

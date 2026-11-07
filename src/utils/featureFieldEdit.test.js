@@ -6,6 +6,7 @@ import {
   fieldIsMultiline,
   isKeyboardField,
   isTouchEditDevice,
+  keyboardOpen,
   keyboardField,
   numberFieldLabelParts,
   readFieldLabel,
@@ -218,4 +219,17 @@ test('edit lift sits on the visual-viewport bottom, toolbar included', () => {
     vvHeight: 664,
     vvOffsetTop: 0,
   }), 0);
+});
+
+test('keyboard open: the visual viewport is over 80px shorter than the layout viewport', () => {
+  // The phone chat drops its pill margin on this, not on focus alone.
+  assert.equal(keyboardOpen({ layoutHeight: 844, vvHeight: 544, vvOffsetTop: 0 }), true);
+  assert.equal(keyboardOpen({ layoutHeight: 844, vvHeight: 500, vvOffsetTop: 44 }), true);
+  // The Safari toolbar alone, or no change at all.
+  assert.equal(keyboardOpen({ layoutHeight: 844, vvHeight: 780, vvOffsetTop: 0 }), false);
+  assert.equal(keyboardOpen({ layoutHeight: 844, vvHeight: 844, vvOffsetTop: 0 }), false);
+  // The viewport the offset explains is not a keyboard.
+  assert.equal(keyboardOpen({ layoutHeight: 844, vvHeight: 744, vvOffsetTop: 100 }), false);
+  assert.equal(keyboardOpen({ layoutHeight: 0, vvHeight: 544 }), false);
+  assert.equal(keyboardOpen(), false);
 });
