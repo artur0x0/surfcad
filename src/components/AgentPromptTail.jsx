@@ -115,6 +115,13 @@ export default function AgentPromptTail({ rootRef }) {
     const vv = window.visualViewport;
     vv?.addEventListener('resize', schedule);
     vv?.addEventListener('scroll', schedule);
+    // The prompt slides (transform, 220ms) when it folds, unfolds or moves
+    // away. The class change measures at the start of the slide, where the
+    // box is still far from the button; measure again where it lands.
+    const onTransitionEnd = (event) => {
+      if (event.target === root) schedule();
+    };
+    root.addEventListener('transitionend', onTransitionEnd);
 
     return () => {
       cancelAnimationFrame(frame);
@@ -125,6 +132,7 @@ export default function AgentPromptTail({ rootRef }) {
       window.removeEventListener('orientationchange', schedule);
       vv?.removeEventListener('resize', schedule);
       vv?.removeEventListener('scroll', schedule);
+      root.removeEventListener('transitionend', onTransitionEnd);
     };
   }, [rootRef]);
 

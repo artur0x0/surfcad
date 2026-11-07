@@ -953,6 +953,12 @@ textarea {
     overflow: visible;
     pointer-events: none;
     color: rgb(var(--agent-prompt-outline));
+    /* Its own compositing layer. iOS Safari paints the conversation pane
+       (a scrolling overflow box in the face) as a composited layer and
+       lets it cover a plain sibling whatever its z-index, so a bubble
+       cropped by the pane edge wiped the outline there (Artur,
+       2026-11-07, the "break-out"). A composited outline keeps z-index 2. */
+    transform: translateZ(0);
   }
   /* Same tint as surface-glass. The tail is too small to need the frost. */
   .agent-prompt-bubble-tail-fill {
