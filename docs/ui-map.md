@@ -101,8 +101,20 @@ agent's replies left-aligned in a `surface-dark` bubble, the dots at the bottom
 while a prompt is in progress. It grows to `--agent-prompt-max-reply` (200px desktop, 160px phone,
 about six lines of reply) and scrolls inside. The composer is a full-width
 field (`data-agent-prompt-input`, `text-ui-lg` at 16px so iOS does not zoom).
-Camera and Send sit on a right-aligned row under it (`agent-prompt-actions`,
-`data-agent-prompt-actions`), each at least 44px. The field grows upward to
+The image button and Send sit on a right-aligned row under it
+(`agent-prompt-actions`, `data-agent-prompt-actions`), each at least 44px.
+The image button (`data-agent-prompt-screenshot`, `ImagePlus`) opens the
+attach drawer (`data-agent-prompt-attach`) between the field and that row:
+**Screenshot** (`data-agent-prompt-attach-screenshot`, the viewer capture,
+the agent's `screenshot` action) and **Photo**
+(`data-agent-prompt-attach-photo`, a hidden `<input type="file"
+accept="image/*">`; on iOS that offers the camera and the library). A photo
+is decoded on the page, scaled to 1600px on its long side and encoded as
+PNG through the same 2 MB cap as a screenshot (`agentPromptPhoto.js`), so
+the transport, the relay and every surfcad-mcp carry it as the same
+`screenshot` payload. The cue row says "Screenshot attached" or "Photo
+attached"; with an image attached the button is filled green and pressing
+it discards the image. Escape and a tap elsewhere close the drawer. The field grows upward to
 about five lines (`--agent-prompt-max-input`) and then scrolls inside. On a
 touch device, focus lifts the prompt with `featureSheetEditLift` and
 `useModalViewport`, the same path as the feature card, so the keyboard does

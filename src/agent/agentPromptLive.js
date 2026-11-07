@@ -167,6 +167,15 @@ export function ackNotice(ack) {
     if (ack.error === 'capture_failed') {
       return { kind: 'failed', text: 'Could not capture the view. Try again.' };
     }
+    if (ack.error === 'photo_failed') {
+      return { kind: 'failed', text: 'Could not read that photo. Try another.' };
+    }
+    if (ack.error === 'photo_unsupported') {
+      return { kind: 'failed', text: 'That file is not an image.' };
+    }
+    if (ack.error === 'photo_too_large') {
+      return { kind: 'failed', text: 'That photo is too large.' };
+    }
     return { kind: 'failed', text: 'Agent not listening' };
   }
   if (ack.delivery === 'queued') {

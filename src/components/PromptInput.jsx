@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ArrowDown, Camera, ChevronDown, ChevronUp, Loader2, Send, Square, X } from 'lucide-react';
+import { ArrowDown, Camera, ChevronDown, ChevronUp, ImagePlus, Loader2, Monitor, Send, Square, X } from 'lucide-react';
 import { createAgentPrompt } from '../agent/createAgentPrompt.js';
 import { attachViewerShot } from '../agent/agentPromptCapture.js';
+import { AGENT_PROMPT_PHOTO_ACCEPT, photoFileToShot } from '../agent/agentPromptPhoto.js';
 import {
   AGENT_PROMPT_CHAT,
   AGENT_PROMPT_CHAT_LONG,
@@ -71,6 +72,11 @@ import { AgentPromptFrame } from './AgentPromptTail.jsx';
  *  echo and it does not run the action a second time. */
 function keepFieldFocus(event) {
   event.preventDefault();
+}
+
+/** An ack error raised by attaching an image, cleared by the next successful attach. */
+function isAttachError(error) {
+  return error === 'capture_failed' || error === 'photo_failed' || error === 'photo_unsupported' || error === 'photo_too_large';
 }
 
 /**
@@ -326,6 +332,16 @@ export default function PromptInput({
   const [jump, setJump] = useState(false);
   const [shot, setShot] = useState(null);
   const [shotOn, setShotOn] = useState(seed.shotOn);
+  // 'viewer' (a screenshot of the model) or 'photo' (from the device camera or library).
+  const [shotSource, setShotSource] = useState('viewer');
+  // The attach drawer under the field: Screenshot or Photo.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const photoInputRef = useRef(null);
+  const photoBusyRef = useRef(false);
+  const attachShotGateRef = useRef(null);
+  if (attachShotGateRef.current == null) attachShotGateRef.current = createPressGate();
+  const attachPhotoGateRef = useRef(null);
+  if (attachPhotoGateRef.current == null) attachPhotoGateRef.current = createPressGate();
   const textareaRef = useRef(null);
   const pendingIdRef = useRef(null);
   const notice = ackNotice(ack);
@@ -662,6 +678,7 @@ export default function PromptInput({
   const discardShot = useCallback(() => {
     setShot(null);
     setShotOn(false);
+    setShotSource('viewer');
   }, []);
 
   const clearSendTimer = useCallback(() => {
@@ -796,11 +813,59 @@ export default function PromptInput({
       setAck({ delivery: 'failed', error: 'capture_failed' });
       return attached;
     }
-    setAck((prev) => (prev?.error === 'capture_failed' ? null : prev));
+    setAck((prev) => (isAttachError(prev?.error) ? null : prev));
     setShot(attached.shot);
     setShotOn(true);
+    setShotSource('viewer');
+    setAttachOpen(false);
     return { ok: true, attached: true };
   }, [captureViewer, discardShot, shot, shotOn]);
+
+  // A photo from the device. The file input is opened from the drawer;
+  // the picked file becomes the same PNG payload as a viewer screenshot.
+  const attachPhotoFile = useCallback(async (file) => {
+    if (!file) return { ok: false, reason: 'photo_unsupported', attached: false };
+    if (photoBusyRef.current) return { ok: false, reason: 'capture_busy', attached: false };
+    photoBusyRef.current = true;
+    let out;
+    try {
+      out = await photoFileToShot(file);
+    } finally {
+      photoBusyRef.current = false;
+    }
+    if (!out.ok) {
+      setAck({ delivery: 'failed', error: out.reason });
+      return out;
+    }
+    setAck((prev) => (isAttachError(prev?.error) ? null : prev));
+    setShot(out.shot);
+    setShotOn(true);
+    setShotSource('photo');
+    setAttachOpen(false);
+    return { ok: true, attached: true };
+  }, []);
+
+  const onPhotoChange = (event) => {
+    const input = event.target;
+    const file = input?.files?.[0] || null;
+    // Reset so the same file can be picked again after a discard.
+    if (input) input.value = '';
+    void attachPhotoFile(file);
+  };
+
+  // The drawer closes on a tap elsewhere and on Escape (onRootKeyDown).
+  useEffect(() => {
+    if (!attachOpen) return undefined;
+    const onDown = (event) => {
+      const t = event.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('[data-agent-prompt-attach]') || t.closest('[data-agent-prompt-screenshot]')) return;
+      setAttachOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, [attachOpen]);
+
 
   useEffect(() => {
     if (!visible) {
@@ -872,18 +937,56 @@ export default function PromptInput({
     onSubmit(event);
   };
 
+  // The image button: with an image attached it discards it; otherwise it
+  // opens the drawer (Screenshot or Photo). The agent's `screenshot`
+  // action still toggles the viewer capture directly (toggleShot).
+  const onAttachPress = () => {
+    if (shotOn || shot) {
+      discardShot();
+      return;
+    }
+    setAttachOpen((open) => !open);
+  };
   const onCameraPointerUp = () => {
     cameraGateRef.current.press();
-    toggleShot();
+    onAttachPress();
   };
 
   const onCameraClick = () => {
     // The click of the tap pointerup already handled, however late it comes.
     if (cameraGateRef.current.echo()) return;
-    toggleShot();
+    onAttachPress();
+  };
+
+  const onAttachShotPointerUp = () => {
+    attachShotGateRef.current.press();
+    if (!shotOn && !shot) toggleShot();
+    else setAttachOpen(false);
+  };
+  const onAttachShotClick = () => {
+    if (attachShotGateRef.current.echo()) return;
+    if (!shotOn && !shot) toggleShot();
+    else setAttachOpen(false);
+  };
+  const openPhotoPicker = () => {
+    setAttachOpen(false);
+    photoInputRef.current?.click?.();
+  };
+  const onAttachPhotoPointerUp = () => {
+    attachPhotoGateRef.current.press();
+    openPhotoPicker();
+  };
+  const onAttachPhotoClick = () => {
+    if (attachPhotoGateRef.current.echo()) return;
+    openPhotoPicker();
   };
 
   const onRootKeyDown = (event) => {
+    if (event.key === 'Escape' && attachOpen) {
+      event.preventDefault();
+      setAttachOpen(false);
+      return;
+    }
     if (event.key === 'Escape' && foldable && !folded) {
       event.preventDefault();
       foldPrompt();
@@ -1021,7 +1124,9 @@ export default function PromptInput({
           ) : (
             <span className="agent-prompt-thumb agent-prompt-thumb--empty" aria-hidden />
           )}
-          <span className="text-ui-xs text-muted-on-dark">Screenshot attached</span>
+          <span className="text-ui-xs text-muted-on-dark" data-agent-prompt-shot-source={shotSource}>
+            {shotSource === 'photo' ? 'Photo attached' : 'Screenshot attached'}
+          </span>
         </div>
       ) : null}
 
@@ -1064,6 +1169,52 @@ export default function PromptInput({
             </span>
           ) : null}
         </div>
+        {attachOpen ? (
+          <div
+            className="agent-prompt-attach"
+            data-agent-prompt-attach=""
+            role="group"
+            aria-label="Attach an image"
+          >
+            <button
+              type="button"
+              className="agent-prompt-attach-btn surface-quiet text-on-dark text-ui-sm font-ui"
+              onPointerDown={keepFieldFocus}
+              onMouseDown={keepFieldFocus}
+              onPointerUp={onAttachShotPointerUp}
+              onClick={onAttachShotClick}
+              data-ui-action="data-agent-prompt-attach-screenshot"
+              data-agent-prompt-attach-screenshot=""
+              disabled={!canCapture}
+            >
+              <Monitor size={16} aria-hidden />
+              <span>Screenshot</span>
+            </button>
+            <button
+              type="button"
+              className="agent-prompt-attach-btn surface-quiet text-on-dark text-ui-sm font-ui"
+              onPointerDown={keepFieldFocus}
+              onMouseDown={keepFieldFocus}
+              onPointerUp={onAttachPhotoPointerUp}
+              onClick={onAttachPhotoClick}
+              data-ui-action="data-agent-prompt-attach-photo"
+              data-agent-prompt-attach-photo=""
+            >
+              <Camera size={16} aria-hidden />
+              <span>Photo</span>
+            </button>
+          </div>
+        ) : null}
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept={AGENT_PROMPT_PHOTO_ACCEPT}
+          className="agent-prompt-photo-input"
+          data-agent-prompt-photo-input=""
+          onChange={onPhotoChange}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
         <div className="agent-prompt-actions" data-agent-prompt-actions="">
           {nearLimit ? (
             <span
@@ -1085,11 +1236,12 @@ export default function PromptInput({
             data-ui-action="data-agent-prompt-screenshot"
             data-agent-prompt-screenshot=""
             data-agent-prompt-shot-on={shotCue ? '1' : '0'}
-            aria-label={shotCue ? 'Discard screenshot' : 'Attach screenshot'}
+            data-agent-prompt-attach-open={attachOpen ? '1' : '0'}
+            aria-label={shotCue ? (shotSource === 'photo' ? 'Discard photo' : 'Discard screenshot') : 'Attach an image'}
             aria-pressed={shotCue}
-            disabled={!canCapture && !shotCue}
+            aria-expanded={shotCue ? undefined : attachOpen}
           >
-            <Camera size={18} aria-hidden />
+            <ImagePlus size={18} aria-hidden />
           </button>
           {pending ? (
             <button

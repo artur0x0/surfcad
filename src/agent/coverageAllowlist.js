@@ -47,6 +47,7 @@ export const COVERAGE_ALLOWLIST = Object.freeze([
   Object.freeze({ id: 'data-joints-row-scroll-prev', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),
   Object.freeze({ id: 'data-joints-row-scroll-next', reason: 'Joints row overflow chevron: scrolls the row (reader chrome; agents read list_joints / joint_select).' }),
   Object.freeze({ id: 'data-agent-prompt-jump', reason: 'Agent prompt chat pane scroll-to-newest arrow (reader chrome only, no agent equivalent).' }),
+  Object.freeze({ id: 'data-agent-prompt-attach-photo', reason: 'Agent prompt attach drawer Photo: opens the native file or camera picker, which only the user can drive. Agents attach the viewer with action screenshot.' }),
   Object.freeze({ id: 'data-agent-relay-auto', reason: 'Account relay preference: try the localhost relay, then the server.' }),
   Object.freeze({ id: 'data-agent-relay-local', reason: 'Account relay preference: localhost relay only.' }),
   Object.freeze({ id: 'data-agent-relay-server', reason: 'Account relay preference: server relay only.' }),

@@ -9,6 +9,7 @@ export const agentPromptCommand = Object.freeze({
     'data-agent-prompt-fold',
     'data-agent-prompt-unfold',
     'data-agent-prompt-screenshot',
+    'data-agent-prompt-attach-screenshot',
   ],
   schema: {
     type: 'object',

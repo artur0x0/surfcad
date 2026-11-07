@@ -1238,6 +1238,39 @@ textarea {
   .agent-prompt-input::placeholder {
     color: rgb(var(--agent-prompt-muted));
   }
+  /* Attach drawer: the image button opens it under the field. Two pills,
+     Screenshot (of the model) and Photo (device camera or library), each a
+     full touch target. No motion: it is a row that appears, so there is
+     nothing for reduced motion to switch off. */
+  .agent-prompt-attach {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+  }
+  .agent-prompt-attach-btn {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--agent-prompt-btn);
+    padding: 0 12px;
+    border: 1px solid rgb(var(--agent-prompt-border));
+    border-radius: 8px;
+  }
+  .agent-prompt-attach-btn:disabled {
+    opacity: 0.4;
+  }
+  /* The photo file input is driven from the drawer; it is never shown. */
+  .agent-prompt-photo-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
   .agent-prompt-counter {
     flex: none;
     margin-right: auto;

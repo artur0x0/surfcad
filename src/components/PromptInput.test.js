@@ -27,14 +27,35 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.match(css, /\.agent-prompt-icon-btn\.surface-success \{\s*background-color: rgb\(var\(--agent-prompt-success\)\);/);
   // One tap is one action: the click that follows a handled pointerup is its echo, however late.
   assert.match(SRC, /createPressGate\(\)/);
-  assert.match(SRC, /cameraGateRef\.current\.press\(\);\s*toggleShot\(\);/);
+  // The image button: nothing attached opens the drawer; an attached image is discarded.
+  assert.match(SRC, /cameraGateRef\.current\.press\(\);\s*onAttachPress\(\);/);
+  assert.match(SRC, /const onAttachPress = \(\) => \{\s*if \(shotOn \|\| shot\) \{\s*discardShot\(\);\s*return;\s*\}\s*setAttachOpen\(\(open\) => !open\);/);
+  assert.match(SRC, /<ImagePlus /);
+  // The drawer: Screenshot (the viewer capture, the agent's `screenshot` action) and Photo (the device picker).
+  assert.match(SRC, /data-ui-action="data-agent-prompt-attach-screenshot"/);
+  assert.match(SRC, /data-ui-action="data-agent-prompt-attach-photo"/);
+  assert.match(SRC, /<Monitor /);
+  assert.match(SRC, /attachShotGateRef\.current\.press\(\);\s*if \(!shotOn && !shot\) toggleShot\(\);/);
+  assert.match(SRC, /attachPhotoGateRef\.current\.press\(\);\s*openPhotoPicker\(\);/);
+  assert.match(SRC, /photoInputRef\.current\?\.click\?\.\(\);/);
+  assert.match(SRC, /type="file"\s*accept=\{AGENT_PROMPT_PHOTO_ACCEPT\}/);
+  assert.match(SRC, /data-agent-prompt-photo-input=""/);
+  assert.match(SRC, /if \(input\) input\.value = '';/);
+  assert.match(SRC, /out = await photoFileToShot\(file\);/);
+  assert.match(SRC, /setShotSource\('photo'\)/);
+  assert.match(SRC, /if \(action === 'screenshot'\) return toggleShot\(\);/);
+  // The drawer closes on Escape and on a tap elsewhere.
+  assert.match(SRC, /if \(event\.key === 'Escape' && attachOpen\)/);
+  assert.match(SRC, /document\.addEventListener\('pointerdown', onDown, true\)/);
+  assert.match(css, /\.agent-prompt-attach \{/);
+  assert.match(css, /\.agent-prompt-photo-input \{/);
   assert.match(SRC, /if \(cameraGateRef\.current\.echo\(\)\) return;/);
   assert.match(SRC, /event\?\.type === 'submit' && actionGateRef\.current\.echo\(\)/);
   assert.doesNotMatch(SRC, /pressHandledRef|setTimeout\(\(\) => \{ pressHandled/);
   // A capture in flight is not toggled again, and a failed capture says so.
   assert.match(SRC, /if \(shotBusyRef\.current\) return \{ ok: false, reason: 'capture_busy'/);
   assert.match(SRC, /setAck\(\{ delivery: 'failed', error: 'capture_failed' \}\)/);
-  assert.match(SRC, /Screenshot attached/);
+  assert.match(SRC, /shotSource === 'photo' \? 'Photo attached' : 'Screenshot attached'/);
   assert.match(SRC, /discardShot\(\)/);
   assert.match(SRC, /sendAgentPromptText\(/);
   assert.match(SRC, /reason: 'no_transport'/);
@@ -49,7 +70,10 @@ test('PromptInput tags send/stop/dismiss/screenshot and uses the outline send + 
   assert.doesNotMatch(SRC, /data: '',/);
   assert.doesNotMatch(SRC, /innerHTML/);
   assert.doesNotMatch(SRC, /dangerouslySetInnerHTML/);
-  assert.match(SRC, /disabled=\{!canCapture && !shotCue\}/);
+  // The image button always opens (a photo needs no viewer capture); only
+  // the drawer's Screenshot option waits on the capture function.
+  assert.doesNotMatch(SRC, /disabled=\{!canCapture && !shotCue\}/);
+  assert.match(SRC, /data-agent-prompt-attach-screenshot=""\s*disabled=\{!canCapture\}/);
   assert.match(SRC, /shouldShowAgentPrompt/);
   assert.match(SRC, /shouldShowAgentBridgeDisconnect/);
   assert.match(SRC, /demoAllowed/);
@@ -69,7 +93,8 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /data-agent-prompt-ack="failed"/);
   assert.match(SRC, /data-agent-prompt-ack="queued"/);
   assert.match(SRC, /aria-pressed=\{shotCue\}/);
-  assert.match(SRC, /aria-label=\{shotCue \? 'Discard screenshot' : 'Attach screenshot'\}/);
+  assert.match(SRC, /aria-label=\{shotCue \? \(shotSource === 'photo' \? 'Discard photo' : 'Discard screenshot'\) : 'Attach an image'\}/);
+  assert.match(SRC, /aria-expanded=\{shotCue \? undefined : attachOpen\}/);
   assert.match(SRC, /Agent is working\.\.\./);
   assert.match(SRC, /agent-prompt-spinner/);
   assert.match(SRC, /data-agent-reply-dots/);
