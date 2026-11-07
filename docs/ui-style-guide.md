@@ -163,8 +163,10 @@ tracking-wide`, value `text-[13px]`, note `text-xs`. Prefer those
 tokens inside feature popups. Parts inputs use
 `PARTS_TEXT_INPUT_*` (≥16px). The agent prompt field uses `text-ui-lg` and,
 while focused on a touch device, `featureSheetEditLift` plus `useModalViewport`
-(the feature-card keyboard lift) so the field stays on screen. Camera and Send
-are at least 44px on the row under the field.
+(the feature-card keyboard lift) so the field stays on screen. The image
+button and Send are at least 44px on the row under the field; the attach
+drawer it opens (Screenshot, Photo) is two `surface-quiet` pills of the same
+height in `text-ui-sm`.
 
 **Phone agent chat tail.** On a phone the open agent chat is one speech
 bubble. A small obtuse triangle (`data-agent-prompt-tail`) sits on the

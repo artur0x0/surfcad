@@ -212,22 +212,36 @@ async function run(page, label, { maxHeight }) {
     }
   }
 
-  // The screenshot button. Engaged is a filled green button; Send while
-  // engaged attaches the image; disengaging drops it.
+  // The image button. Idle it opens the attach drawer (Screenshot or
+  // Photo); engaged it is a filled green button and the next Send carries
+  // the image; pressing it again drops the image.
   const SUCCESS = 'rgb(4, 120, 87)';
   const cam = () => page.evaluate(() => {
     const b = document.querySelector('[data-agent-prompt-screenshot]');
     const cs = getComputedStyle(b);
+    const source = document.querySelector('[data-agent-prompt-shot-source]');
     return {
       on: b.getAttribute('data-agent-prompt-shot-on'),
       pressed: b.getAttribute('aria-pressed'),
+      expanded: b.getAttribute('aria-expanded'),
       label: b.getAttribute('aria-label'),
       bg: cs.backgroundColor,
       color: cs.color,
+      drawer: !!document.querySelector('[data-agent-prompt-attach]'),
+      options: Array.from(document.querySelectorAll('[data-agent-prompt-attach] button')).map((el) => el.textContent.trim()),
       cue: !!document.querySelector('[data-agent-prompt-shot-cue]'),
+      cueText: document.querySelector('[data-agent-prompt-shot-source]')?.textContent.trim() || '',
+      source: source?.getAttribute('data-agent-prompt-shot-source') || '',
       thumb: !!document.querySelector('[data-agent-prompt-thumb]'),
     };
   });
+  // Open the drawer and take the viewer screenshot, each with a late click.
+  const engageScreenshot = async () => {
+    await lateTap('[data-agent-prompt-screenshot]', 80);
+    await page.waitForSelector('[data-agent-prompt-attach-screenshot]', { timeout: 5000 });
+    await lateTap('[data-agent-prompt-attach-screenshot]', 80);
+    await page.waitForFunction(() => document.querySelector('[data-agent-prompt-screenshot]')?.getAttribute('data-agent-prompt-shot-on') === '1', null, { timeout: 5000 }).catch(() => {});
+  };
   const lastUser = () => page.evaluate(() => {
     const rows = document.querySelectorAll('[data-agent-msg="user"]');
     const last = rows[rows.length - 1];
@@ -250,9 +264,22 @@ async function run(page, label, { maxHeight }) {
     b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
   }, { selector, delay });
   await lateTap('[data-agent-prompt-screenshot]', 80);
+  await page.waitForSelector('[data-agent-prompt-attach]', { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const opened = await cam();
+  check(`${label}: one tap with a late click opens the attach drawer (it does not toggle twice)`, opened && opened.on === '0' && opened.drawer === true && opened.expanded === 'true' && opened.cue === false, JSON.stringify(opened));
+  check(`${label}: the drawer offers Screenshot and Photo`, opened && opened.options.join(',') === 'Screenshot,Photo', JSON.stringify(opened?.options));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  const escaped = await cam();
+  check(`${label}: Escape closes the drawer`, escaped && escaped.drawer === false && escaped.expanded === 'false', JSON.stringify(escaped));
+  await lateTap('[data-agent-prompt-screenshot]', 80);
+  await page.waitForSelector('[data-agent-prompt-attach-screenshot]', { timeout: 5000 });
+  await lateTap('[data-agent-prompt-attach-screenshot]', 80);
   await page.waitForFunction(() => document.querySelector('[data-agent-prompt-screenshot]')?.getAttribute('data-agent-prompt-shot-on') === '1', null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(200);
   const engaged = await cam();
+  check(`${label}: Screenshot in the drawer engages the viewer capture and closes the drawer`, engaged && engaged.drawer === false && engaged.source === 'viewer' && engaged.cueText === 'Screenshot attached', JSON.stringify(engaged));
   check(`${label}: one tap with a late click engages the screenshot (it does not toggle twice)`, engaged && engaged.on === '1' && engaged.pressed === 'true' && engaged.cue === true && engaged.thumb === true, JSON.stringify(engaged));
   check(`${label}: engaged is a filled green button with the light icon, not the idle look`, engaged && engaged.bg === SUCCESS && engaged.color === 'rgb(243, 244, 246)' && engaged.bg !== idle.bg && engaged.label === 'Discard screenshot', JSON.stringify(engaged));
 
@@ -275,9 +302,51 @@ async function run(page, label, { maxHeight }) {
   row = await lastUser();
   check(`${label}: Send while not engaged is text only`, row && row.thumb === false && /Text only this time\./.test(row.text), JSON.stringify(row));
 
-  // Engage, then disengage: the pending image is dropped, so the next Send has none.
+  // Photo: the drawer's Photo opens the device picker (one chooser for the
+  // tap and its late click); the picked file is attached as a PNG payload
+  // and the cue says so. Send carries it like a screenshot.
+  const pngBase64 = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 96;
+    c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(0, 0, 96, 64);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(16, 12, 64, 40);
+    return c.toDataURL('image/png').split(',')[1];
+  });
   await lateTap('[data-agent-prompt-screenshot]', 80);
-  await page.waitForFunction(() => document.querySelector('[data-agent-prompt-screenshot]')?.getAttribute('data-agent-prompt-shot-on') === '1', null, { timeout: 5000 }).catch(() => {});
+  await page.waitForSelector('[data-agent-prompt-attach-photo]', { timeout: 5000 });
+  let choosers = 0;
+  const onChooser = () => { choosers += 1; };
+  page.on('filechooser', onChooser);
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser', { timeout: 5000 }),
+    lateTap('[data-agent-prompt-attach-photo]', 80),
+  ]);
+  await chooser.setFiles({ name: 'part-sketch.png', mimeType: 'image/png', buffer: Buffer.from(pngBase64, 'base64') });
+  await page.waitForFunction(() => document.querySelector('[data-agent-prompt-shot-source]')?.getAttribute('data-agent-prompt-shot-source') === 'photo', null, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  page.off('filechooser', onChooser);
+  await page.mouse.move(2, 2);
+  const photo = await cam();
+  check(`${label}: Photo opens one picker for the tap and its late click`, choosers === 1, String(choosers));
+  check(`${label}: the picked photo is attached: engaged button, "Photo attached", thumbnail, drawer closed`, photo && photo.on === '1' && photo.source === 'photo' && photo.cueText === 'Photo attached' && photo.thumb === true && photo.drawer === false && photo.bg === SUCCESS && photo.label === 'Discard photo', JSON.stringify(photo));
+  const photoShot = await page.evaluate(() => {
+    const img = document.querySelector('[data-agent-prompt-thumb]');
+    return img ? { png: img.src.startsWith('data:image/png;base64,'), w: img.naturalWidth, h: img.naturalHeight } : null;
+  });
+  check(`${label}: the photo payload is a PNG at its own size (no upscale)`, photoShot && photoShot.png === true && photoShot.w === 96 && photoShot.h === 64, JSON.stringify(photoShot));
+  before = await chatCount();
+  await page.fill('[data-agent-prompt-input]', 'Here is the sketch.');
+  await page.click('[data-agent-prompt-send]');
+  await page.waitForFunction((n) => Number(document.querySelector('[data-agent-reply]')?.getAttribute('data-agent-chat-count')) >= n + 2, before, { timeout: 10000 });
+  row = await lastUser();
+  check(`${label}: Send carries the photo with the message`, row && row.thumb === true && /Here is the sketch\./.test(row.text), JSON.stringify(row));
+
+  // Engage, then disengage: the pending image is dropped, so the next Send has none.
+  await engageScreenshot();
   await page.waitForTimeout(800);
   await lateTap('[data-agent-prompt-screenshot]', 80);
   await page.waitForTimeout(200);

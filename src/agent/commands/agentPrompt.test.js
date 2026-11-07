@@ -13,6 +13,7 @@ test('agent_prompt is registered with send/stop/dismiss/fold/unfold/screenshot u
     'data-agent-prompt-fold',
     'data-agent-prompt-unfold',
     'data-agent-prompt-screenshot',
+    'data-agent-prompt-attach-screenshot',
   ]);
   assert.equal(command.schema.additionalProperties, false);
   assert.deepEqual(command.schema.properties.action.enum, ['send', 'stop', 'dismiss', 'fold', 'unfold', 'screenshot']);
