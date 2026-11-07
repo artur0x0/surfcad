@@ -116,6 +116,9 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   assert.match(SRC, /error: 'send_failed'/);
   assert.match(SRC, /onPointerDown=\{keepFieldFocus\}/);
   assert.match(SRC, /onPointerUp=\{onActionPointerUp\}/);
+  // The field's auto-size runs before paint, so the caret iOS publishes for
+  // the cleared value sits on the one-line field, not the old five-line one.
+  assert.match(SRC, /useLayoutEffect\(\(\) => \{\s*if \(!shown\) \{\s*setFieldFocused\(false\);\s*return undefined;\s*\}\s*adjustHeight\(\);/);
   assert.match(SRC, /featureSheetEditLift\(/);
   assert.match(SRC, /useModalViewport\(/);
   // Phone keyboard: the prompt says so, the pill hides, and the rest bottom
