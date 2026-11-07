@@ -16,7 +16,7 @@ import {
 } from '../agent/agentPromptDemo.js';
 import { registerAgentPromptHandler } from '../agent/agentPromptHost.js';
 import { createPressGate } from '../agent/agentPromptPress.js';
-import { setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
+import { setAgentPromptBuilding, setAgentPromptWorking } from '../agent/agentFeaturePopupGate.js';
 import { pendingShown, typingSeed, typingShown, workingShown } from '../agent/agentPromptTyping.js';
 import {
   autoFoldTarget,
@@ -594,6 +594,14 @@ export default function PromptInput({
       if (agentBusy) setAgentPromptWorking(false);
     };
   }, [agentBusy]);
+  // The phone stage pill spins on the same working indicator as the chat
+  // (building), never on a prompt that is only in flight.
+  useEffect(() => {
+    setAgentPromptBuilding(working);
+    return () => {
+      if (working) setAgentPromptBuilding(false);
+    };
+  }, [working]);
 
   // Demo seeds start pending without an event. Every later event goes through
   // dispatchTyping, which restarts the deadline itself. This only catches the
@@ -760,6 +768,7 @@ export default function PromptInput({
     const id = pendingIdRef.current;
     if (typeof transport?.cancel === 'function') void transport.cancel(id);
     setAgentPromptWorking(false);
+    setAgentPromptBuilding(false);
     dispatchTyping({ type: 'stop' });
     dispatchSession({ type: 'stop' });
     dispatchFlow({ type: 'stop' });
