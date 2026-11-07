@@ -59,7 +59,7 @@ import {
   shouldOpenAgentChatOnConnect,
   shouldShowAgentBridgeDisconnect,
 } from '../agent/ws/pairingFlow.js';
-import { featureSheetEditLift, isTouchEditDevice } from '../utils/featureFieldEdit.js';
+import { featureSheetEditLift, isTouchEditDevice, keyboardOpen } from '../utils/featureFieldEdit.js';
 import { useModalViewport } from '../hooks/useModalViewport.js';
 import { useAgentBridgeHost } from './AgentBridgeHost.jsx';
 import { AgentPromptFrame } from './AgentPromptTail.jsx';
@@ -75,7 +75,12 @@ function keepFieldFocus(event) {
 
 /**
  * While the composer is focused on a touch device, park it on the visual
- * viewport with the same lift as the feature card.
+ * viewport with the same lift as the feature card. While the soft keyboard
+ * is up (the visual viewport is short, not focus alone) the prompt says so
+ * with data-agent-prompt-keyboard="1": the stage pill hides and the prompt
+ * rests close above the keyboard (index.css). Focus alone must not move the
+ * prompt: a tap on a prompt button that blurs the field would shift it
+ * under the finger, and a hardware keyboard has nothing to clear.
  */
 function AgentPromptFocusLift({ rootRef }) {
   useModalViewport();
@@ -87,14 +92,18 @@ function AgentPromptFocusLift({ rootRef }) {
       const pane = root.closest('.viewport-shell') || root.parentElement;
       if (!pane || typeof pane.getBoundingClientRect !== 'function') return;
       const vv = window.visualViewport;
+      const vvHeight = vv?.height ?? window.innerHeight;
+      const vvOffsetTop = vv?.offsetTop ?? 0;
       const lift = featureSheetEditLift({
         paneBottom: pane.getBoundingClientRect().bottom,
         docTop: document.documentElement.getBoundingClientRect().top,
         scrollY: window.scrollY || window.pageYOffset || 0,
-        vvHeight: vv?.height ?? window.innerHeight,
-        vvOffsetTop: vv?.offsetTop ?? 0,
+        vvHeight,
+        vvOffsetTop,
       });
       root.style.setProperty('--agent-prompt-lift', `${lift}px`);
+      const up = keyboardOpen({ layoutHeight: window.innerHeight, vvHeight, vvOffsetTop });
+      root.setAttribute('data-agent-prompt-keyboard', up ? '1' : '0');
     };
     apply();
     const vv = window.visualViewport;
@@ -112,6 +121,7 @@ function AgentPromptFocusLift({ rootRef }) {
       window.removeEventListener('resize', apply);
       ro?.disconnect();
       root.style.removeProperty('--agent-prompt-lift');
+      root.removeAttribute('data-agent-prompt-keyboard');
     };
   }, [rootRef]);
   return null;
@@ -893,7 +903,6 @@ export default function PromptInput({
       }${featurePopupOpen ? ' agent-prompt--away' : ''}${folded ? ' agent-prompt--folded' : ''}${folded && foldSettled ? ' agent-prompt--folded-hidden' : ''}`}
       data-agent-prompt=""
       data-agent-prompt-compact={isMobile ? '1' : '0'}
-      data-agent-prompt-keyboard={fieldFocused && touchEdit ? '1' : '0'}
       data-agent-prompt-working={working ? '1' : '0'}
       data-agent-prompt-state={effectiveMode}
       data-agent-session-state={session.mode}

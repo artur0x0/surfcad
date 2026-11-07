@@ -188,10 +188,11 @@ when it fits. The bubble rests above the pill by the pill's own numbers
 (`--home-indicator-pill-pad` + `--home-indicator-pill-height` + 18px for
 the tail and its gap), so the tail still fits when the pad grows to the
 home-indicator safe area (Safari toolbar minimised, or the installed app).
-While the composer has the keyboard on a touch device
-(`data-agent-prompt-keyboard="1"`), the stage pill is hidden and the bubble
-sits `--agent-prompt-keyboard-bottom` (20px) above the keyboard as a plain
-box; the pill and the tail return when the field blurs.
+While the soft keyboard is up with the composer focused on a touch device
+(`data-agent-prompt-keyboard="1"`, set from the visual viewport, never from
+focus alone), the stage pill is hidden and the bubble sits
+`--agent-prompt-keyboard-bottom` (20px) above the keyboard as a plain box;
+the pill and the tail return when the keyboard goes.
 The layer is never hidden, so the text does not float with no pane. User
 rows in that pane use `surface-panel` with `text-on-dark` so they stay
 readable over the glass. Agent rows stay `surface-dark`. Desktop has no

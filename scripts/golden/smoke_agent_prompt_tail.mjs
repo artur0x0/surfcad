@@ -162,6 +162,30 @@ const page = await browser.newPage({
 page.on('pageerror', (err) => pageErrors.push(err.message));
 await page.route('**/api/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authenticated: false }) }));
 await page.route('**/api/config', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+// Headless Chrome has no soft keyboard. A visualViewport stub, installed
+// before the app loads, lets the golden shorten it the way the keyboard
+// does (the same shape as smoke_feature_field_edit.mjs).
+await page.addInitScript(() => {
+  const listeners = { resize: new Set(), scroll: new Set() };
+  let height = 0;
+  let offsetTop = 0;
+  const vv = {
+    get height() { return height > 0 ? height : window.innerHeight; },
+    get offsetTop() { return offsetTop; },
+    get width() { return window.innerWidth; },
+    get pageTop() { return offsetTop; },
+    get scale() { return 1; },
+    addEventListener(type, fn) { (listeners[type] || (listeners[type] = new Set())).add(fn); },
+    removeEventListener(type, fn) { listeners[type] && listeners[type].delete(fn); },
+  };
+  Object.defineProperty(window, 'visualViewport', { configurable: true, get() { return vv; } });
+  window.__setVisualViewport = (h, top) => {
+    height = h;
+    offsetTop = top || 0;
+    (listeners.resize || []).forEach((fn) => fn());
+    (listeners.scroll || []).forEach((fn) => fn());
+  };
+});
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => !document.querySelector('[data-app-loading]') && !!document.querySelector('[data-agent-prompt]'), { timeout: 120000 });
 await waitReady(page);
@@ -355,30 +379,62 @@ const restGeometry = (page) => page.evaluate(() => {
 let rest = await restGeometry(page);
 check(
   'rest: 56px above the pane bottom, the pill shown, the tail drawn',
-  rest && rest.keyboard === '0' && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
+  rest && rest.keyboard === null && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
   JSON.stringify(rest),
 );
 
-// Composer focused on a touch device (the keyboard is up): the stage pill
-// is hidden and the chat drops to 20px above the visual viewport, as a
-// plain box. Artur, 2026-11-06: the box climbed too far on the phone.
+// Composer focused on a touch device. Focus alone changes nothing: the
+// flag follows the visual viewport, so a tap on a prompt button that blurs
+// the field never shifts the prompt under the finger (the chat golden's
+// jump tap found that). The keyboard (a visual viewport 300px short, so
+// the shell pins to it) hides the stage pill and drops the chat to 20px
+// above the keyboard, as a plain box. Artur, 2026-11-06: the box climbed
+// too far on the phone.
 await page.focus('[data-agent-prompt-input]');
+await page.waitForFunction(() => document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-keyboard') === '0', null, { timeout: 5000 });
+await waitReady(page);
+const focusedOnly = await restGeometry(page);
+check(
+  'composer focused, no keyboard: still 56px, the pill shown, the tail drawn',
+  focusedOnly && focusedOnly.focused && focusedOnly.keyboard === '0' && focusedOnly.bottom === '56px' && focusedOnly.gap === 56
+    && focusedOnly.pillDisplay !== 'none' && focusedOnly.shape === 'tail',
+  JSON.stringify(focusedOnly),
+);
+await page.evaluate(() => window.__setVisualViewport(window.innerHeight - 300, 0));
 await page.waitForFunction(() => document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-keyboard') === '1', null, { timeout: 5000 });
 await page.waitForFunction(() => document.querySelector('[data-agent-prompt-tail]')?.getAttribute('data-agent-prompt-tail-shape') === 'box', null, { timeout: 5000 });
-const typing = await restGeometry(page);
+await page.waitForTimeout(200);
+const typing = await page.evaluate(() => {
+  const prompt = document.querySelector('[data-agent-prompt]');
+  const pill = document.querySelector('[data-mobile-stage-home-indicator]');
+  const tail = document.querySelector('[data-agent-prompt-tail]');
+  const vv = window.visualViewport;
+  const pr = prompt.getBoundingClientRect();
+  return {
+    keyboard: prompt.getAttribute('data-agent-prompt-keyboard'),
+    bottom: getComputedStyle(prompt).bottom,
+    lift: prompt.style.getPropertyValue('--agent-prompt-lift'),
+    gapToKeyboard: Math.round(vv.offsetTop + vv.height - pr.bottom),
+    pillDisplay: pill ? getComputedStyle(pill).display : 'missing',
+    shape: tail?.getAttribute('data-agent-prompt-tail-shape'),
+    focused: document.activeElement?.hasAttribute('data-agent-prompt-input') === true,
+  };
+});
 check(
-  'composer focused: 20px above the pane bottom, the pill hidden, no tail',
-  typing && typing.focused && typing.keyboard === '1' && typing.bottom === '20px' && typing.gap === 20
+  'keyboard up: 20px above the keyboard, the pill hidden, no tail',
+  typing && typing.focused && typing.keyboard === '1' && typing.bottom === '20px' && typing.gapToKeyboard === 20
     && typing.pillDisplay === 'none' && typing.shape === 'box',
   JSON.stringify(typing),
 );
-await page.evaluate(() => document.querySelector('[data-agent-prompt-input]')?.blur());
+await page.evaluate(() => window.__setVisualViewport(window.innerHeight, 0));
 await page.waitForFunction(() => document.querySelector('[data-agent-prompt]')?.getAttribute('data-agent-prompt-keyboard') === '0', null, { timeout: 5000 });
+await page.evaluate(() => document.querySelector('[data-agent-prompt-input]')?.blur());
+await page.waitForFunction(() => !document.querySelector('[data-agent-prompt]')?.hasAttribute('data-agent-prompt-keyboard'), null, { timeout: 5000 });
 await waitReady(page);
 rest = await restGeometry(page);
 check(
-  'composer blurred: the pill and the tail are back at 56px',
-  rest && rest.keyboard === '0' && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
+  'keyboard down and blurred: the pill and the tail are back at 56px',
+  rest && rest.keyboard === null && rest.bottom === '56px' && rest.gap === 56 && rest.pillDisplay !== 'none' && rest.shape === 'tail',
   JSON.stringify(rest),
 );
 

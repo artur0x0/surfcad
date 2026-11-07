@@ -96,8 +96,12 @@ test('demo states seed idle, typing, replies, working, and camera on/off', () =>
   // Phone keyboard: the prompt says so, the pill hides, and the rest bottom
   // drops from the pill margin to the keyboard gap. The pill margin is the
   // pill's own pad and height plus room for the tail, so the tail fits when
-  // the pad grows to the home-indicator safe area (2026-11-06).
-  assert.match(SRC, /data-agent-prompt-keyboard=\{fieldFocused && touchEdit \? '1' : '0'\}/);
+  // the pad grows to the home-indicator safe area (2026-11-06). The flag
+  // follows the visual viewport (the keyboard), never focus alone: a focus
+  // flag moved the prompt under a tap that blurred the field.
+  assert.match(SRC, /const up = keyboardOpen\(\{ layoutHeight: window\.innerHeight, vvHeight, vvOffsetTop \}\);\s*root\.setAttribute\('data-agent-prompt-keyboard', up \? '1' : '0'\);/);
+  assert.match(SRC, /root\.removeAttribute\('data-agent-prompt-keyboard'\);/);
+  assert.doesNotMatch(SRC, /data-agent-prompt-keyboard=\{/);
   assert.match(css, /--agent-prompt-mobile-bottom: calc\(var\(--home-indicator-pill-pad\) \+ var\(--home-indicator-pill-height\) \+ 18px\);/);
   assert.match(css, /--home-indicator-pill-pad: max\(8px, env\(safe-area-inset-bottom, 0px\)\);/);
   assert.match(css, /\.agent-prompt--compact\[data-agent-prompt-keyboard="1"\] \{\s*--agent-prompt-rest-bottom: var\(--agent-prompt-keyboard-bottom\);/);

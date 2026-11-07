@@ -883,10 +883,11 @@ textarea {
     --agent-prompt-rest-bottom: var(--agent-prompt-mobile-bottom);
     width: var(--agent-prompt-mobile-width);
   }
-  /* Composer focused on a touch device: the keyboard is up, the focus lift
-     parks the pane on the visual viewport, the stage pill is hidden (see
-     [data-mobile-stage-home-indicator] above), and the chat sits close
-     above the keyboard with no tail. Artur, 2026-11-06: the box climbed too
+  /* The soft keyboard is up (PromptInput sets the flag from the visual
+     viewport while the composer is focused on a touch device; focus alone
+     is not the keyboard): the focus lift parks the pane on the visual
+     viewport, the stage pill is hidden (see [data-mobile-stage-home-indicator]
+     above), and the chat sits close above the keyboard with no tail. Artur, 2026-11-06: the box climbed too
      far when the keyboard opened. */
   .agent-prompt--compact[data-agent-prompt-keyboard="1"] {
     --agent-prompt-rest-bottom: var(--agent-prompt-keyboard-bottom);

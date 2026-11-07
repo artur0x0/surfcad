@@ -158,6 +158,25 @@ export function featureSheetEditLift({
   return Math.round(lift);
 }
 
+/** A visual viewport this much shorter than the layout viewport is the soft
+ *  keyboard (the same rule as the phone shell pin in App.jsx). */
+export const KEYBOARD_OVERLAP_MIN_PX = 80;
+
+/**
+ * Is the soft keyboard up? The band of the layout viewport the visual
+ * viewport does not cover, over the threshold. Focus alone is not the
+ * keyboard: a hardware keyboard, or a desktop-class browser, keeps the
+ * visual viewport whole.
+ */
+export function keyboardOpen({ layoutHeight, vvHeight, vvOffsetTop = 0 } = {}) {
+  const layout = Number(layoutHeight);
+  const height = Number(vvHeight);
+  if (!(layout > 0) || !(height > 0)) return false;
+  const top = Number(vvOffsetTop);
+  const overlap = layout - height - (Number.isFinite(top) ? top : 0);
+  return overlap > KEYBOARD_OVERLAP_MIN_PX;
+}
+
 /** Split a trailing unit token. An explicit unit wins. The caption can stay whole. */
 export function numberFieldLabelParts(label, unit) {
   const text = label == null ? '' : String(label).trim();
