@@ -388,7 +388,12 @@ export default function PromptInput({
     el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
   }, []);
 
-  useEffect(() => {
+  // A layout effect, not an effect: the field's height must be final in the
+  // same layout as the value it holds. After a send React committed the
+  // cleared value at the old five-line height, iOS published the caret rect
+  // there, and the effect then shrank the field to one line under it, so
+  // the caret floated over the "Waiting for agent" line (Artur, 2026-11-07).
+  useLayoutEffect(() => {
     if (!shown) {
       setFieldFocused(false);
       return undefined;
